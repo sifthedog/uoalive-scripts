@@ -1,3 +1,40 @@
+// Tuned once, in src/lib/timings.ts, and re-exported here so this file stays the only one any
+// consumer imports. To give lumberjacking its own value for one of these, delete it from this list
+// and declare it below.
+export {
+  EQUIP_ATTEMPTS,
+  EQUIP_POLL,
+  EQUIP_TIMEOUT,
+  HEARTBEAT_EVERY,
+  IDLE_LOG_EVERY,
+  IDLE_POLL,
+  LOG_EVERY,
+  MAX_CYCLES,
+  MAX_STEPS,
+  MAX_THROTTLED,
+  MAX_UNKNOWN,
+  PACK_LIMIT,
+  SAVE_DONE_TEXT,
+  SAVE_POLL,
+  SAVE_WAIT,
+  SAVING_TEXT,
+  SCAN_RADIUS,
+  STALL_STOP,
+  STALL_WARN,
+  STEP_DELAY,
+  TARGET_TIMEOUT,
+  THROTTLE_BACKOFF,
+  THROTTLE_BACKOFF_MAX,
+  UNSKILLED_TEXT,
+  UNREACHABLE_DELAY,
+  WALK_DELAY,
+} from '../lib/timings.js';
+
+// Imported as well as re-exported, because OUTCOME_TEXT below aliases it into its own `saving`
+// bucket: the chop reads a save as an outcome, while the conversion and the haul have no outcomes
+// at all and check the same wordings directly.
+import { SAVING_TEXT } from '../lib/timings.js';
+
 export const AXE_NAME = 'axe';
 
 // Optional: pin the spare bag instead of discovering it
@@ -16,9 +53,6 @@ export type Bounds = { minX: number; maxX: number; minY: number; maxY: number };
 // Trees outside it are still fair game as long as one can be reached from a tile inside it.
 export const BOUNDS: Bounds | undefined = { minX: 2400, maxX: 2580, minY: 400, maxY: 600 };
 
-// How far to look for a tree. The scan is a box, so this costs getTerrainList calls quadratically
-export const SCAN_RADIUS = 12;
-
 // How close you have to be to hit one. Two tiles is the stock harvest range
 export const CHOP_RANGE = 2;
 
@@ -35,28 +69,8 @@ export const BOARD_GRAPHICS = new Set([0x1bd7, 0x1bd9, 0x1bda, 0x1bdb]);
 // wait before it is, and the one knob to turn if the script returns to a tree that is still bare.
 export const REGROW_DELAY = 25 * 60 * 1000;
 
-// A tile a walk never closed on. Shorter than REGROW_DELAY and deliberately not permanent: what
-// blocked the path is usually another player or a pet, and this write-off now outlives the run.
-export const UNREACHABLE_DELAY = 5 * 60 * 1000;
-
-// How long to sleep at a time while waiting for a tile to regrow, and how often to say so. The wait
-// is sliced rather than slept through in one go: a single blocking sleep of minutes leaves the
-// client unresponsive for all of them, with no way to stop the script.
-export const IDLE_POLL = 10_000;
-export const IDLE_LOG_EVERY = 60_000;
-
-// Pause between cycles of the main loop
-export const STEP_DELAY = 300;
-
-// How long to wait for the chop target cursor. Without an explicit value the client falls back
-// to its own default, which is long enough to look like a hang.
-export const TARGET_TIMEOUT = 2000;
-
 // A swing plays its animation before the result arrives, so this has to outlast the animation
 export const CHOP_TIMEOUT = 8000;
-
-// Pause after each step, to stay under the server's movement throttle
-export const WALK_DELAY = 300;
 
 // Optional: pin the animals instead of discovering them. Order does not matter - the haul walks
 // to whichever is nearest first either way.
@@ -89,68 +103,8 @@ export const CONVERT_ATTEMPTS = 3;
 // Backstop on the conversion loop. One pass converts one stack, so this bounds a haul.
 export const MAX_CONVERT_PASSES = 60;
 
-// Guesses, like OUTCOME_TEXT. Worth having: this is the shard saying outright that a wood cannot
-// be worked, which is the one failure that no amount of retrying fixes.
-export const UNSKILLED_TEXT = [
-  'You are not skilled enough',
-  'You lack the required skill',
-  'You do not have enough skill',
-];
-
-// How long to wait for an equip to reach the hand layer, and how many times to reissue it
-export const EQUIP_TIMEOUT = 2000;
-export const EQUIP_POLL = 200;
-export const EQUIP_ATTEMPTS = 3;
-
-// Backstop on the main loop, so a misread outcome cannot swing forever
-export const MAX_CYCLES = 5000;
-
-// How often the loop says it is still alive, whatever it is doing. Every branch of the outcome
-// switch used to be able to go quiet - one of them indefinitely - and a silent script standing
-// still is indistinguishable from a hung one. This is the line that tells them apart.
-export const HEARTBEAT_EVERY = 30_000;
-
-// Cycles without a chop before the run complains, and before it gives up. Waiting for a tile to
-// regrow does not count: that one is intended, and it reports itself.
-export const STALL_WARN = 60;
-export const STALL_STOP = 300;
-
-// Consecutive "you must wait" refusals before giving up, and the backoff between them. The pause
-// grows by BACKOFF each time so a real harvest delay is out-waited within a couple of swings,
-// rather than being re-armed by a retry that comes back faster than the shard's own timer.
-export const MAX_THROTTLED = 20;
-export const THROTTLE_BACKOFF = 1000;
-export const THROTTLE_BACKOFF_MAX = 8000;
-
-// Consecutive unreadable outcomes before giving up. A wrong OUTCOME_TEXT trips this immediately,
-// which is the point: better to stop and be told than to flail at a tree for an hour.
-export const MAX_UNKNOWN = 5;
-
-// Steps to spend walking to one tree before writing it off as unreachable
-export const MAX_STEPS = 20;
-
 // Buffer, so the stop lands before the shard starts refusing to move the new logs
 export const WEIGHT_BUFFER = 40;
-export const PACK_LIMIT = 120;
-
-// Progress line every this many chops
-export const LOG_EVERY = 25;
-
-// How long to sit out a world save before carrying on regardless, and how often to look for the line
-// that says it is over. Sliced rather than slept through, for the same reason the regrow wait is: a
-// save that runs long must not leave the client unresponsive with no way to stop the script.
-export const SAVE_WAIT = 60_000;
-export const SAVE_POLL = 1000;
-
-// What the shard says when it has finished writing its world file. Missing it costs SAVE_WAIT of
-// standing still rather than anything worse, which is why the fallback is a plain timeout.
-export const SAVE_DONE_TEXT = ['World save complete', 'Save complete', 'World save is complete'];
-
-// Named separately from the OUTCOME_TEXT bucket below because three different things need it: the
-// chop, which reads it as an outcome, and the board conversion and the haul, which have no outcomes
-// at all and would otherwise read a frozen server as a wood that cannot be worked and an animal
-// that will not take any more.
-export const SAVING_TEXT = ['The world is saving', 'Saving world', 'World save started'];
 
 // Guesses for a RunUO-family shard. Correct these against the real journal after the first run -
 // a phrase that never matches shows up as 'unknown' outcomes, not as a silent wrong turn.

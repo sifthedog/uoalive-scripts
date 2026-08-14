@@ -1,3 +1,39 @@
+// Tuned once, in src/lib/timings.ts, and re-exported here so this file stays the only one any
+// consumer imports. To give mining its own value for one of these, delete it from this list and
+// declare it below.
+export {
+  EQUIP_ATTEMPTS,
+  EQUIP_POLL,
+  EQUIP_TIMEOUT,
+  HEARTBEAT_EVERY,
+  IDLE_LOG_EVERY,
+  IDLE_POLL,
+  LOG_EVERY,
+  MAX_CYCLES,
+  MAX_STEPS,
+  MAX_THROTTLED,
+  MAX_UNKNOWN,
+  PACK_LIMIT,
+  SAVE_DONE_TEXT,
+  SAVE_POLL,
+  SAVE_WAIT,
+  SAVING_TEXT,
+  SCAN_RADIUS,
+  STALL_STOP,
+  STALL_WARN,
+  STEP_DELAY,
+  TARGET_TIMEOUT,
+  THROTTLE_BACKOFF,
+  THROTTLE_BACKOFF_MAX,
+  UNREACHABLE_DELAY,
+  WALK_DELAY,
+} from '../lib/timings.js';
+
+// Imported as well as re-exported, because OUTCOME_TEXT below aliases SAVING_TEXT into its own
+// `saving` bucket: the swing reads a save as an outcome, while the smelt has no outcomes at all and
+// checks the same wordings directly.
+import { SAVING_TEXT, UNSKILLED_TEXT as SHARED_UNSKILLED_TEXT } from '../lib/timings.js';
+
 export const PICKAXE_NAME = 'pickaxe';
 
 // Optional: pin the bag the spare pickaxes live in instead of discovering it. Worth setting if the
@@ -37,9 +73,6 @@ export const NOT_ORE_GRAPHICS = new Set<number>();
 // minutes learning the same lesson over and over.
 export const ORE_STATIC_NAME = /cave|rock|mountain|ore/i;
 
-// How far to look for a vein. The scan is a box, so this costs getTerrainList calls quadratically
-export const SCAN_RADIUS = 12;
-
 // How close to stand before swinging. The swing itself names no tile - it answers the cursor with
 // yourself and lets the shard pick the ore - so this is not a range the shard enforces but the
 // distance at which the scan stops walking and starts mining. Two tiles is the stock harvest range;
@@ -49,26 +82,6 @@ export const MINE_RANGE = 2;
 // A vein comes back, so a tile that answers "there is no ore here" is worth returning to. This is
 // the wait before it is, and the one knob to turn if the script comes back to a vein still empty.
 export const RESPAWN_DELAY = 25 * 60 * 1000;
-
-// A tile a walk never closed on. Shorter than RESPAWN_DELAY and deliberately not permanent: what
-// blocked the path is usually another player or a pet, and this write-off now outlives the run.
-export const UNREACHABLE_DELAY = 5 * 60 * 1000;
-
-// How long to sleep at a time while waiting for a vein to come back, and how often to say so. The
-// wait is sliced rather than slept through in one go: a single blocking sleep of minutes leaves the
-// client unresponsive for all of them, with no way to stop the script.
-export const IDLE_POLL = 10_000;
-export const IDLE_LOG_EVERY = 60_000;
-
-// Pause between cycles of the main loop
-export const STEP_DELAY = 300;
-
-// Pause after each step, to stay under the server's movement throttle
-export const WALK_DELAY = 300;
-
-// How long to wait for a target cursor. Without an explicit value the client falls back to its own
-// default, which is long enough to look like a hang.
-export const TARGET_TIMEOUT = 2000;
 
 // A swing plays its animation before the result arrives, so this has to outlast the animation
 export const DIG_TIMEOUT = 8000;
@@ -130,13 +143,11 @@ export const SMELT_ATTEMPTS = 3;
 // Backstop on the smelting loop. One pass smelts one stack, so this bounds a smelt.
 export const MAX_SMELT_PASSES = 60;
 
-// Guesses, like OUTCOME_TEXT. Worth having: this is the shard saying outright that an ore cannot be
-// worked, which is the one failure that no amount of retrying fixes.
+// The shared wordings plus mining's own, which is about a coloured ore needing the skill to work it
+// and has no counterpart anywhere else
 export const UNSKILLED_TEXT = [
   'You have no idea how to smelt this strange ore',
-  'You are not skilled enough',
-  'You lack the required skill',
-  'You do not have enough skill',
+  ...SHARED_UNSKILLED_TEXT,
 ];
 
 // How long to wait for the mount layer to clear, and how many times to reissue the double-click
@@ -144,67 +155,10 @@ export const DISMOUNT_TIMEOUT = 2000;
 export const DISMOUNT_POLL = 200;
 export const DISMOUNT_ATTEMPTS = 3;
 
-// How long to wait for an equip to reach the hand layer, and how many times to reissue it
-export const EQUIP_TIMEOUT = 2000;
-export const EQUIP_POLL = 200;
-export const EQUIP_ATTEMPTS = 3;
-
-// Backstop on the main loop, so a misread outcome cannot swing forever
-export const MAX_CYCLES = 5000;
-
-// How often the loop says it is still alive, whatever it is doing. Every branch of the outcome
-// switch can go quiet - one of them indefinitely - and a silent script standing still is
-// indistinguishable from a hung one. This is the line that tells them apart.
-export const HEARTBEAT_EVERY = 30_000;
-
-// Cycles without a swing landing before the run complains, and before it gives up. Waiting for a
-// vein to come back does not count: that one is intended, and it reports itself.
-export const STALL_WARN = 60;
-export const STALL_STOP = 300;
-
-// Consecutive "you must wait" refusals before giving up, and the backoff between them. The pause
-// grows by BACKOFF each time so a real harvest delay is out-waited within a couple of swings,
-// rather than being re-armed by a retry that comes back faster than the shard's own timer.
-export const MAX_THROTTLED = 20;
-export const THROTTLE_BACKOFF = 1000;
-export const THROTTLE_BACKOFF_MAX = 8000;
-
 // Spots in a row that had nothing to harvest before the run stops to point at the likely cause.
 // Not a stop of its own: roaming past a few worked-out spots is ordinary, and the stall watchdog
 // already bounds a run that never lands a swing. This is the hint, printed once.
 export const NOTHING_NEARBY_HINT = 5;
-
-// Consecutive unreadable outcomes before giving up. A wrong OUTCOME_TEXT trips this immediately,
-// which is the point: better to stop and be told than to flail at a rock for an hour.
-export const MAX_UNKNOWN = 5;
-
-// Steps to spend walking to one vein before writing it off as unreachable
-export const MAX_STEPS = 20;
-
-// The container's item cap, not a weight. There is no WEIGHT_BUFFER here on purpose: smelting is
-// the one thing that frees weight, and it only happens once you are actually over the limit, so a
-// threshold below it would just be a second, earlier limit that fired first every time. What ends
-// an overweight run is a smelt that freed nothing, not the weight itself.
-export const PACK_LIMIT = 120;
-
-// Progress line every this many swings that landed
-export const LOG_EVERY = 25;
-
-// How long to sit out a world save before carrying on regardless, and how often to look for the
-// line that says it is over. The wait is sliced rather than slept through, for the same reason the
-// respawn wait is: a save that takes longer than expected must not leave the client unresponsive
-// with no way to stop the script.
-export const SAVE_WAIT = 60_000;
-export const SAVE_POLL = 1000;
-
-// What the shard says when it has finished writing its world file. Missing it costs SAVE_WAIT of
-// standing still rather than anything worse, which is why the fallback is a plain timeout.
-export const SAVE_DONE_TEXT = ['World save complete', 'Save complete', 'World save is complete'];
-
-// Named separately from the OUTCOME_TEXT bucket below because two different things need it: the
-// swing, which reads it as an outcome, and the smelt, which has no outcomes at all and would
-// otherwise read a frozen server as three silent failures and write the ore off as unworkable.
-export const SAVING_TEXT = ['The world is saving', 'Saving world', 'World save started'];
 
 // Guesses for a RunUO-family shard. Correct these against the real journal after the first run -
 // a phrase that never matches shows up as 'unknown' outcomes, not as a silent wrong turn.

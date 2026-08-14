@@ -3,6 +3,38 @@
   // src/lib/weight.ts
   var overweight = (buffer = 0) => player.weightMax > 0 && player.weight > player.weightMax - buffer;
 
+  // src/lib/timings.ts
+  var SCAN_RADIUS = 12;
+  var UNREACHABLE_DELAY = 5 * 60 * 1e3;
+  var IDLE_POLL = 1e4;
+  var IDLE_LOG_EVERY = 6e4;
+  var STEP_DELAY = 300;
+  var WALK_DELAY = 300;
+  var TARGET_TIMEOUT = 2e3;
+  var EQUIP_TIMEOUT = 2e3;
+  var EQUIP_POLL = 200;
+  var EQUIP_ATTEMPTS = 3;
+  var MAX_CYCLES = 5e3;
+  var HEARTBEAT_EVERY = 3e4;
+  var STALL_WARN = 60;
+  var STALL_STOP = 300;
+  var MAX_THROTTLED = 20;
+  var THROTTLE_BACKOFF = 1e3;
+  var THROTTLE_BACKOFF_MAX = 8e3;
+  var MAX_UNKNOWN = 5;
+  var MAX_STEPS = 20;
+  var PACK_LIMIT = 120;
+  var LOG_EVERY = 25;
+  var SAVE_WAIT = 6e4;
+  var SAVE_POLL = 1e3;
+  var SAVE_DONE_TEXT = ["World save complete", "Save complete", "World save is complete"];
+  var SAVING_TEXT = ["The world is saving", "Saving world", "World save started"];
+  var UNSKILLED_TEXT = [
+    "You are not skilled enough",
+    "You lack the required skill",
+    "You do not have enough skill"
+  ];
+
   // src/lib/arts.ts
   var INGOT_GRAPHICS = /* @__PURE__ */ new Set([7151, 7152, 7153, 7154]);
 
@@ -18,15 +50,8 @@
   ]);
   var NOT_ORE_GRAPHICS = /* @__PURE__ */ new Set();
   var ORE_STATIC_NAME = /cave|rock|mountain|ore/i;
-  var SCAN_RADIUS = 12;
   var MINE_RANGE = 2;
   var RESPAWN_DELAY = 25 * 60 * 1e3;
-  var UNREACHABLE_DELAY = 5 * 60 * 1e3;
-  var IDLE_POLL = 1e4;
-  var IDLE_LOG_EVERY = 6e4;
-  var STEP_DELAY = 300;
-  var WALK_DELAY = 300;
-  var TARGET_TIMEOUT = 2e3;
   var DIG_TIMEOUT = 8e3;
   var ORE_GRAPHICS = /* @__PURE__ */ new Set([6583, 6586, 6585, 6584]);
   var ORE_NAME = /\bore\b/i;
@@ -42,34 +67,14 @@
   var MIN_SMELT_AMOUNT = 2;
   var SMELT_ATTEMPTS = 3;
   var MAX_SMELT_PASSES = 60;
-  var UNSKILLED_TEXT = [
+  var UNSKILLED_TEXT2 = [
     "You have no idea how to smelt this strange ore",
-    "You are not skilled enough",
-    "You lack the required skill",
-    "You do not have enough skill"
+    ...UNSKILLED_TEXT
   ];
   var DISMOUNT_TIMEOUT = 2e3;
   var DISMOUNT_POLL = 200;
   var DISMOUNT_ATTEMPTS = 3;
-  var EQUIP_TIMEOUT = 2e3;
-  var EQUIP_POLL = 200;
-  var EQUIP_ATTEMPTS = 3;
-  var MAX_CYCLES = 5e3;
-  var HEARTBEAT_EVERY = 3e4;
-  var STALL_WARN = 60;
-  var STALL_STOP = 300;
-  var MAX_THROTTLED = 20;
-  var THROTTLE_BACKOFF = 1e3;
-  var THROTTLE_BACKOFF_MAX = 8e3;
   var NOTHING_NEARBY_HINT = 5;
-  var MAX_UNKNOWN = 5;
-  var MAX_STEPS = 20;
-  var PACK_LIMIT = 120;
-  var LOG_EVERY = 25;
-  var SAVE_WAIT = 6e4;
-  var SAVE_POLL = 1e3;
-  var SAVE_DONE_TEXT = ["World save complete", "Save complete", "World save is complete"];
-  var SAVING_TEXT = ["The world is saving", "Saving world", "World save started"];
   var OUTCOME_TEXT = {
     dug: ["You dig some", "You put", "You loosen some rocks"],
     // What parks a vein for RESPAWN_DELAY. Both wordings are in the wild: RunUO says metal, some
@@ -691,7 +696,7 @@
       learnIngots(changes);
       return true;
     }
-    if (UNSKILLED_TEXT.some((text) => journal.containsText(text))) {
+    if (UNSKILLED_TEXT2.some((text) => journal.containsText(text))) {
       unsmeltable.add(stackHue);
       log(`smelt: not skilled enough for hue ${stackHue}, leaving it as ore`);
       return false;

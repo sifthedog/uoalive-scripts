@@ -1,5 +1,13 @@
 "use strict";
 (() => {
+  // src/lib/timings.ts
+  var UNREACHABLE_DELAY = 5 * 60 * 1e3;
+  var UNSKILLED_TEXT = [
+    "You are not skilled enough",
+    "You lack the required skill",
+    "You do not have enough skill"
+  ];
+
   // src/mining/config.ts
   var range = (from, to) => Array.from({ length: to - from + 1 }, (_, offset) => from + offset);
   var ORE_TILE_GRAPHICS = /* @__PURE__ */ new Set([
@@ -11,7 +19,10 @@
   var NOT_ORE_GRAPHICS = /* @__PURE__ */ new Set();
   var ORE_STATIC_NAME = /cave|rock|mountain|ore/i;
   var RESPAWN_DELAY = 25 * 60 * 1e3;
-  var UNREACHABLE_DELAY = 5 * 60 * 1e3;
+  var UNSKILLED_TEXT2 = [
+    "You have no idea how to smelt this strange ore",
+    ...UNSKILLED_TEXT
+  ];
   var PROBE_RADIUS = 16;
 
   // src/lib/store.ts

@@ -71,39 +71,14 @@
     return found;
   };
 
-  // src/lumberjacking/config.ts
-  var AXE_NAME = "axe";
-  var SPARE_BAG_SERIAL = void 0;
-  var TREE_GRAPHICS = /* @__PURE__ */ new Set();
-  var NOT_TREE_GRAPHICS = /* @__PURE__ */ new Set();
-  var BOUNDS = { minX: 2400, maxX: 2580, minY: 400, maxY: 600 };
+  // src/lib/timings.ts
   var SCAN_RADIUS = 12;
-  var CHOP_RANGE = 2;
-  var LOG_GRAPHICS = /* @__PURE__ */ new Set([7133, 7136, 7134, 7135]);
-  var BOARD_GRAPHICS = /* @__PURE__ */ new Set([7127, 7129, 7130, 7131]);
-  var REGROW_DELAY = 25 * 60 * 1e3;
   var UNREACHABLE_DELAY = 5 * 60 * 1e3;
   var IDLE_POLL = 1e4;
   var IDLE_LOG_EVERY = 6e4;
   var STEP_DELAY = 300;
-  var TARGET_TIMEOUT = 2e3;
-  var CHOP_TIMEOUT = 8e3;
   var WALK_DELAY = 300;
-  var PACK_ANIMAL_SERIALS = [];
-  var PACK_ANIMAL_GRAPHICS = /* @__PURE__ */ new Set([291, 292, 791]);
-  var UNLOAD_RANGE = 2;
-  var HAUL_BUFFER = 120;
-  var CONVERT_DELAY = 700;
-  var MOVE_DELAY = 700;
-  var CONVERT_TIMEOUT = 4e3;
-  var CONVERT_POLL = 200;
-  var CONVERT_ATTEMPTS = 3;
-  var MAX_CONVERT_PASSES = 60;
-  var UNSKILLED_TEXT = [
-    "You are not skilled enough",
-    "You lack the required skill",
-    "You do not have enough skill"
-  ];
+  var TARGET_TIMEOUT = 2e3;
   var EQUIP_TIMEOUT = 2e3;
   var EQUIP_POLL = 200;
   var EQUIP_ATTEMPTS = 3;
@@ -116,13 +91,40 @@
   var THROTTLE_BACKOFF_MAX = 8e3;
   var MAX_UNKNOWN = 5;
   var MAX_STEPS = 20;
-  var WEIGHT_BUFFER = 40;
   var PACK_LIMIT = 120;
   var LOG_EVERY = 25;
   var SAVE_WAIT = 6e4;
   var SAVE_POLL = 1e3;
   var SAVE_DONE_TEXT = ["World save complete", "Save complete", "World save is complete"];
   var SAVING_TEXT = ["The world is saving", "Saving world", "World save started"];
+  var UNSKILLED_TEXT = [
+    "You are not skilled enough",
+    "You lack the required skill",
+    "You do not have enough skill"
+  ];
+
+  // src/lumberjacking/config.ts
+  var AXE_NAME = "axe";
+  var SPARE_BAG_SERIAL = void 0;
+  var TREE_GRAPHICS = /* @__PURE__ */ new Set();
+  var NOT_TREE_GRAPHICS = /* @__PURE__ */ new Set();
+  var BOUNDS = { minX: 2400, maxX: 2580, minY: 400, maxY: 600 };
+  var CHOP_RANGE = 2;
+  var LOG_GRAPHICS = /* @__PURE__ */ new Set([7133, 7136, 7134, 7135]);
+  var BOARD_GRAPHICS = /* @__PURE__ */ new Set([7127, 7129, 7130, 7131]);
+  var REGROW_DELAY = 25 * 60 * 1e3;
+  var CHOP_TIMEOUT = 8e3;
+  var PACK_ANIMAL_SERIALS = [];
+  var PACK_ANIMAL_GRAPHICS = /* @__PURE__ */ new Set([291, 292, 791]);
+  var UNLOAD_RANGE = 2;
+  var HAUL_BUFFER = 120;
+  var CONVERT_DELAY = 700;
+  var MOVE_DELAY = 700;
+  var CONVERT_TIMEOUT = 4e3;
+  var CONVERT_POLL = 200;
+  var CONVERT_ATTEMPTS = 3;
+  var MAX_CONVERT_PASSES = 60;
+  var WEIGHT_BUFFER = 40;
   var OUTCOME_TEXT = {
     chopped: ["You put", "You hack at the tree", "You chop some"],
     empty: ["There's not enough wood here to harvest", "There are no logs left"],
