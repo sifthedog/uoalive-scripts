@@ -1,3 +1,4 @@
+import { backoffFor, createIdleWait, createStallWatch } from '../lib/loop.js';
 import { overweight } from '../lib/weight.js';
 import {
   IDLE_LOG_EVERY,
@@ -19,8 +20,7 @@ import {
 } from './config.js';
 import { digOnce } from './dig.js';
 import { stopReason } from './guards.js';
-import { beat, resetBeat } from './heartbeat.js';
-import { now } from './memory.js';
+import { heartbeat, resetBeat } from './heartbeat.js';
 import { dismount } from './mount.js';
 import { groupOres, oreTotal } from './ore.js';
 import { equipPickaxe, pickaxeSerial, rememberPickaxe } from './pickaxe.js';
@@ -40,47 +40,19 @@ import { stepToward } from './walk.js';
 // Learn the pickaxe graphic from the one you start the script holding
 rememberPickaxe(player.equippedItems.oneHanded);
 
-const minutesLeft = (until: number) => Math.max(1, Math.round((until - now()) / 60_000));
+const idleUntil = createIdleWait({
+  prefix: 'mining',
+  waitingFor: 'everything in reach is worked out',
+  pollMs: IDLE_POLL,
+  logEveryMs: IDLE_LOG_EVERY,
+  stopReason,
+  onDone: resetBeat,
+});
 
 // Smelting happens for one reason only: the pack is over the limit and the shard has started
 // refusing to move things. Not on a depleted vein, not at a buffer below the limit, not at the end
 // of the run - ore travels as ore until it cannot travel at all. No buffer, for the same reason.
 const tooHeavy = (): boolean => overweight();
-
-// Sliced rather than slept through in one go, so the client stays responsive and the guards still
-// get a look in - a quarter of an hour is long enough to be killed standing there, and one long
-// sleep would carry on regardless. Bounded by the wait it was asked for as well as by the clock:
-// a clock that does not advance would otherwise turn this into a spin.
-const idleUntil = (respawnsAt: number): void => {
-  const wait = respawnsAt - now();
-  if (wait <= 0) {
-    return;
-  }
-
-  log(`mining: everything in reach is worked out, waiting ${minutesLeft(respawnsAt)}m`);
-
-  const slices = Math.ceil(wait / IDLE_POLL);
-  let since = 0;
-
-  for (let slice = 0; slice < slices && now() < respawnsAt; slice++) {
-    sleep(IDLE_POLL);
-    since += IDLE_POLL;
-
-    // Left to the loop to report and act on, so the wait has one way out and the run has one
-    if (stopReason()) {
-      return;
-    }
-
-    if (since >= IDLE_LOG_EVERY) {
-      since = 0;
-      log(`mining: ${minutesLeft(respawnsAt)}m to go`);
-    }
-  }
-
-  // This path reports on its own cadence, so start the next beat's interval from here rather than
-  // letting one land on top of the line above
-  resetBeat();
-};
 
 log(`mining: ${oreTotal()} ore in the pack to start, at ${player.x},${player.y}`);
 
@@ -103,9 +75,8 @@ let stop: string | undefined;
 // twenty-fifth swing, so a run that then walks, waits or is refused reprints the same line each time.
 let reported = 0;
 
-// Consecutive refusals to swing, and cycles since the last swing landed
+// Consecutive refusals to swing
 let throttled = 0;
-let sinceProgress = 0;
 
 // Spots in a row the shard said had nothing in them. A few is roaming; a lot in a row is the seeded
 // ORE_TILE_GRAPHICS matching ground that carries no ore, which looks identical from the outside.
@@ -115,21 +86,17 @@ let barren = 0;
 let walkingTo: string | undefined;
 let steps = 0;
 
-// Closes every cycle that was meant to make progress: says the run is alive whatever branch it
-// took, and counts the cycle against the watchdog. The respawn wait is the one path that does not
-// come through here - it reports on its own cadence, and waiting for ore to come back is the
-// script working, not the script stuck.
+const stall = createStallWatch({
+  prefix: 'mining',
+  without: 'cycles without a swing landing',
+  warnAt: STALL_WARN,
+  stopAt: STALL_STOP,
+  heartbeat,
+});
+
 const endCycle = (phase: string, cycle: number): void => {
-  beat(phase, cycle, mined);
-  sinceProgress++;
-
-  if (sinceProgress === STALL_WARN) {
-    log(`mining: ${STALL_WARN} cycles without a swing landing, last was '${phase}'`);
-  }
-
-  if (sinceProgress >= STALL_STOP) {
-    stop = `no progress in ${STALL_STOP} cycles, last was '${phase}'`;
-  }
+  stall.endCycle(phase, cycle, mined);
+  stop ??= stall.reason();
 };
 
 for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
@@ -242,7 +209,7 @@ for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
       unknown = 0;
       throttled = 0;
       barren = 0;
-      sinceProgress = 0;
+      stall.progressed();
       break;
 
     // The vein is worked out, not dead: markDepleted times it out and the scan picks it up again
@@ -324,7 +291,7 @@ for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
       waitOutSave();
       unknown = 0;
       throttled = 0;
-      sinceProgress = 0;
+      stall.progressed();
       break;
 
     // A fixed retry shorter than the harvest delay re-arms the very timer it is waiting on, so
@@ -337,7 +304,7 @@ for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
       // MAX_UNKNOWN without ever having produced five unreadable cycles in a row.
       unknown = 0;
       log(`mining: shard says wait (${throttled}/${MAX_THROTTLED}), backing off`);
-      sleep(Math.min(THROTTLE_BACKOFF * throttled, THROTTLE_BACKOFF_MAX));
+      sleep(backoffFor(throttled, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX));
 
       if (throttled >= MAX_THROTTLED) {
         stop = 'the shard kept refusing the swing';

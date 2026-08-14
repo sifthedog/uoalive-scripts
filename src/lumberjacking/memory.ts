@@ -18,7 +18,7 @@ export interface Memory {
   notTree: Set<number>;
 }
 
-const store = createStore<Memory>({
+const store = /* @__PURE__ */ createStore<Memory>({
   key: KEY,
   version: VERSION,
   seed: () => ({ blocked: new Map(), notTree: new Set() }),

@@ -1,5 +1,56 @@
 "use strict";
 (() => {
+  // src/lib/clock.ts
+  var now = () => Date.now();
+
+  // src/lib/loop.ts
+  var minutes = (ms) => Math.max(1, Math.round(ms / 6e4));
+  var minutesLeft = (until) => minutes(until - now());
+  var backoffFor = (count, step, cap) => Math.min(step * count, cap);
+  var createIdleWait = (options) => {
+    return (until) => {
+      const wait = until - now();
+      if (wait <= 0) {
+        return;
+      }
+      log(`${options.prefix}: ${options.waitingFor}, waiting ${minutesLeft(until)}m`);
+      const slices = Math.ceil(wait / options.pollMs);
+      let since = 0;
+      for (let slice = 0; slice < slices && now() < until; slice++) {
+        sleep(options.pollMs);
+        since += options.pollMs;
+        if (options.stopReason()) {
+          return;
+        }
+        if (since >= options.logEveryMs) {
+          since = 0;
+          log(`${options.prefix}: ${minutesLeft(until)}m to go`);
+        }
+      }
+      options.onDone();
+    };
+  };
+  var createStallWatch = (options) => {
+    let since = 0;
+    let reason2;
+    return {
+      endCycle: (phase, cycle, tally) => {
+        options.heartbeat.beat(phase, cycle, tally);
+        since++;
+        if (since === options.warnAt) {
+          log(`${options.prefix}: ${options.warnAt} ${options.without}, last was '${phase}'`);
+        }
+        if (since >= options.stopAt) {
+          reason2 = `no progress in ${options.stopAt} cycles, last was '${phase}'`;
+        }
+      },
+      progressed: () => {
+        since = 0;
+      },
+      reason: () => reason2
+    };
+  };
+
   // src/lib/weight.ts
   var overweight = (buffer = 0) => player.weightMax > 0 && player.weight > player.weightMax - buffer;
 
@@ -263,9 +314,6 @@
   // src/mining/guards.ts
   var stopReason = () => firstReason(dead, packFull(PACK_LIMIT));
 
-  // src/lib/clock.ts
-  var now = () => Date.now();
-
   // src/lib/heartbeat.ts
   var createHeartbeat = (options) => {
     let lastBeat;
@@ -293,54 +341,12 @@
   };
 
   // src/mining/heartbeat.ts
-  var { beat, resetBeat } = createHeartbeat({
+  var heartbeat = /* @__PURE__ */ createHeartbeat({
     prefix: "mining",
     noun: "swings",
     everyMs: HEARTBEAT_EVERY
   });
-
-  // src/lib/store.ts
-  var scope = globalThis;
-  var createStore = (options) => {
-    let held;
-    const load = () => {
-      const found = scope[options.key];
-      if (found?.version === options.version) {
-        const described = options.describe?.(found);
-        if (described) {
-          log(described);
-        }
-        return found;
-      }
-      const fresh = { ...options.seed(), version: options.version };
-      scope[options.key] = fresh;
-      return fresh;
-    };
-    return {
-      // Read through a call rather than handed out as the object itself, so forget() can actually
-      // forget: a module-scope `const memory = load()` would give every importer a reference that
-      // outlives it.
-      read: () => held ?? (held = load()),
-      // Tests only. The suite's vi.resetModules() gives each test a fresh module registry but leaves
-      // globalThis alone, which is precisely what this store is designed to survive.
-      forget: () => {
-        delete scope[options.key];
-        held = void 0;
-      }
-    };
-  };
-
-  // src/mining/memory.ts
-  var KEY = "__mining_memory";
-  var VERSION = 1;
-  var store = createStore({
-    key: KEY,
-    version: VERSION,
-    seed: () => ({ blocked: /* @__PURE__ */ new Map(), notOre: /* @__PURE__ */ new Set() }),
-    describe: (found) => found.blocked.size > 0 || found.notOre.size > 0 ? `memory: resuming with ${found.blocked.size} blocked tiles, ${found.notOre.size} arts` : void 0
-  });
-  var memory = store.read;
-  var forget = store.forget;
+  var { beat, resetBeat } = heartbeat;
 
   // src/lib/retry.ts
   var untilLanded = (options) => {
@@ -453,100 +459,6 @@
     return found;
   };
 
-  // src/mining/pickaxe.ts
-  var pickaxeGraphic;
-  var spareBagSerial = SPARE_BAG_SERIAL;
-  var reportedEmpty = false;
-  var isPickaxe = (item) => pickaxeGraphic !== void 0 && item.graphic === pickaxeGraphic || (item.name ?? "").toLowerCase().includes(PICKAXE_NAME);
-  var rememberPickaxe = (item) => {
-    if (item && pickaxeGraphic === void 0) {
-      pickaxeGraphic = item.graphic;
-      log(`pickaxe graphic is 0x${item.graphic.toString(16)}`);
-    }
-  };
-  var describeContents = (contents) => (contents ?? []).map((item) => {
-    const graphic = `0x${item.graphic.toString(16)}`;
-    return item.contents?.length ? `${graphic}[${describeContents(item.contents)}]` : graphic;
-  }).join(", ");
-  var reportEmptyPack = () => {
-    if (reportedEmpty) {
-      return;
-    }
-    log(`equipPickaxe: no pickaxe found. Pack holds: ${describeContents(player.backpack?.contents)}`);
-    log("equipPickaxe: if the spares are in a bag inside a bag, pin it as SPARE_BAG_SERIAL");
-    reportedEmpty = true;
-  };
-  var stillHolding = () => {
-    const held = player.equippedItems.oneHanded;
-    if (!held || !isPickaxe(held)) {
-      return false;
-    }
-    return client.findObject(held.serial) !== void 0;
-  };
-  var pickaxeSerial = () => player.equippedItems.oneHanded?.serial;
-  var equipPickaxe = () => {
-    if (stillHolding()) {
-      return true;
-    }
-    let pickaxe = findIn(player.backpack?.contents, isPickaxe);
-    if (!pickaxe && openContainers(spareBagSerial)) {
-      pickaxe = findIn(player.backpack?.contents, isPickaxe);
-    }
-    if (!pickaxe) {
-      client.headMsg("No pickaxe!", player, 33);
-      reportEmptyPack();
-      return false;
-    }
-    reportedEmpty = false;
-    rememberPickaxe(pickaxe);
-    if (pickaxe.container && pickaxe.container !== player.backpack?.serial) {
-      spareBagSerial = pickaxe.container;
-    }
-    target.cancel();
-    for (let attempt = 1; attempt <= EQUIP_ATTEMPTS; attempt++) {
-      player.equip(pickaxe.serial);
-      for (let waited = 0; waited < EQUIP_TIMEOUT; waited += EQUIP_POLL) {
-        sleep(EQUIP_POLL);
-        if (player.equippedItems.oneHanded?.serial === pickaxe.serial) {
-          return true;
-        }
-      }
-      log(`equipPickaxe: attempt ${attempt} did not land, reissuing`);
-    }
-    log("equipPickaxe: gave up equipping");
-    return false;
-  };
-
-  // src/lib/save.ts
-  var createSaveWatch = (options) => ({
-    isSaving: () => options.savingText.some((text) => journal.containsText(text)),
-    waitOutSave: () => {
-      log("save: the world is saving, waiting it out");
-      journal.clear();
-      for (let waited = 0; waited < options.waitMs; waited += options.pollMs) {
-        sleep(options.pollMs);
-        if (options.doneText.some((text) => journal.containsText(text))) {
-          break;
-        }
-        if (options.stopReason()) {
-          break;
-        }
-      }
-      options.onDone();
-    }
-  });
-
-  // src/mining/save.ts
-  var { isSaving, waitOutSave } = createSaveWatch({
-    savingText: SAVING_TEXT,
-    doneText: SAVE_DONE_TEXT,
-    waitMs: SAVE_WAIT,
-    pollMs: SAVE_POLL,
-    stopReason,
-    // This path reports on its own cadence, so the next beat starts a full interval from here
-    onDone: resetBeat
-  });
-
   // src/lib/entity.ts
   var hex = (value) => `0x${(value >>> 0).toString(16)}`;
   var distanceTo = (spot) => Math.max(Math.abs(spot.x - player.x), Math.abs(spot.y - player.y));
@@ -569,6 +481,208 @@
     }
     log(`${options.label}: still not next to ${hex(serial)} after ${options.maxSteps} steps`);
     return void 0;
+  };
+
+  // src/lib/tool.ts
+  var describeContents = (contents) => (contents ?? []).map(
+    (item) => item.contents?.length ? `${hex(item.graphic)}[${describeContents(item.contents)}]` : hex(item.graphic)
+  ).join(", ");
+  var createTool = (options) => {
+    let learned;
+    let spareBagSerial = options.spareBagSerial;
+    let reportedEmpty = false;
+    const is = (item) => learned !== void 0 && item.graphic === learned || (options.graphics?.has(item.graphic) ?? false) || (item.name ?? "").toLowerCase().includes(options.name);
+    const remember = (item) => {
+      if (item && learned === void 0) {
+        learned = item.graphic;
+        log(`${options.label}: graphic is ${hex(item.graphic)}`);
+      }
+    };
+    const reportEmptyPack = () => {
+      if (reportedEmpty) {
+        return;
+      }
+      log(`${options.label}: none found. Pack holds: ${describeContents(player.backpack?.contents)}`);
+      log(`${options.label}: if the spares are in a bag inside a bag, pin it as SPARE_BAG_SERIAL`);
+      reportedEmpty = true;
+    };
+    const find = () => {
+      let found = findIn(player.backpack?.contents, is);
+      if (!found && openContainers(spareBagSerial)) {
+        found = findIn(player.backpack?.contents, is);
+      }
+      if (!found) {
+        reportEmptyPack();
+        return void 0;
+      }
+      reportedEmpty = false;
+      remember(found);
+      if (found.container && found.container !== player.backpack?.serial) {
+        spareBagSerial = found.container;
+      }
+      return found;
+    };
+    const stillHolding = () => {
+      const item = options.held();
+      return !!item && is(item) && client.findObject(item.serial) !== void 0;
+    };
+    return {
+      is,
+      remember,
+      find,
+      serial: () => options.held()?.serial,
+      equip: () => {
+        if (stillHolding()) {
+          return true;
+        }
+        const found = find();
+        if (!found) {
+          client.headMsg(`No ${options.name}!`, player, 33);
+          return false;
+        }
+        target.cancel();
+        return untilLanded({
+          label: `equip ${options.name}`,
+          attempts: options.equip.attempts,
+          timeoutMs: options.equip.timeoutMs,
+          pollMs: options.equip.pollMs,
+          act: () => player.equip(found.serial),
+          landed: () => options.held()?.serial === found.serial
+        });
+      }
+    };
+  };
+
+  // src/mining/pickaxe.ts
+  var pickaxe = /* @__PURE__ */ createTool({
+    label: "pickaxe",
+    name: PICKAXE_NAME,
+    spareBagSerial: SPARE_BAG_SERIAL,
+    held: () => player.equippedItems.oneHanded,
+    equip: { attempts: EQUIP_ATTEMPTS, timeoutMs: EQUIP_TIMEOUT, pollMs: EQUIP_POLL }
+  });
+  var isPickaxe = pickaxe.is;
+  var rememberPickaxe = pickaxe.remember;
+  var pickaxeSerial = pickaxe.serial;
+  var equipPickaxe = pickaxe.equip;
+
+  // src/lib/save.ts
+  var createSaveWatch = (options) => ({
+    isSaving: () => options.savingText.some((text) => journal.containsText(text)),
+    waitOutSave: () => {
+      log("save: the world is saving, waiting it out");
+      journal.clear();
+      for (let waited = 0; waited < options.waitMs; waited += options.pollMs) {
+        sleep(options.pollMs);
+        if (options.doneText.some((text) => journal.containsText(text))) {
+          break;
+        }
+        if (options.stopReason()) {
+          break;
+        }
+      }
+      options.onDone();
+    }
+  });
+
+  // src/mining/save.ts
+  var { isSaving, waitOutSave } = /* @__PURE__ */ createSaveWatch({
+    savingText: SAVING_TEXT,
+    doneText: SAVE_DONE_TEXT,
+    waitMs: SAVE_WAIT,
+    pollMs: SAVE_POLL,
+    stopReason,
+    // This path reports on its own cadence, so the next beat starts a full interval from here
+    onDone: resetBeat
+  });
+
+  // src/lib/convert.ts
+  var createConverter = (options) => {
+    const writtenOff = /* @__PURE__ */ new Set();
+    const misses = /* @__PURE__ */ new Map();
+    const missed = (hue) => {
+      const count = (misses.get(hue) ?? 0) + 1;
+      misses.set(hue, count);
+      if (count >= options.attempts) {
+        writtenOff.add(hue);
+        log(`${options.label}: hue ${hue} failed ${count} times, ${options.leftAs}`);
+      }
+    };
+    const learnOutput = (changes) => {
+      for (const { key, delta } of changes) {
+        if (delta <= 0) {
+          continue;
+        }
+        const graphic = Number(key.split("/")[0]);
+        if (options.known().some((set) => set.has(graphic))) {
+          continue;
+        }
+        options.learn(graphic);
+        log(`${options.label}: ${options.learned} is ${hex(graphic)}`);
+      }
+    };
+    const waitForChange = (before) => {
+      for (let waited = 0; waited < options.timeoutMs; waited += options.pollMs) {
+        sleep(options.pollMs);
+        const changes = diffCounts(before, countsByGraphic());
+        if (changes.length > 0) {
+          return changes;
+        }
+      }
+      return [];
+    };
+    const convertOne = (stack) => {
+      const hue = stack.hue ?? 0;
+      const before = countsByGraphic();
+      if (!options.perform(stack)) {
+        missed(hue);
+        return;
+      }
+      const changes = waitForChange(before);
+      if (changes.length > 0) {
+        misses.delete(hue);
+        learnOutput(changes);
+        return;
+      }
+      if (options.unskilledText.some((text) => journal.containsText(text))) {
+        writtenOff.add(hue);
+        log(`${options.label}: not skilled enough for hue ${hue}, ${options.leftAs}`);
+        return;
+      }
+      missed(hue);
+    };
+    return {
+      writtenOff,
+      run: () => {
+        for (let pass = 0; pass < options.maxPasses; pass++) {
+          if (options.isSaving()) {
+            log(`${options.label}: the world is saving, leaving it for now`);
+            return false;
+          }
+          const stack = options.nextStack(writtenOff);
+          if (!stack) {
+            const skipped = options.describeSkipped?.(writtenOff);
+            if (skipped) {
+              log(`${options.label}: ${skipped}`);
+            }
+            return true;
+          }
+          convertOne(stack);
+          sleep(options.delayMs);
+        }
+        log(`${options.label}: hit the ${options.maxPasses} pass backstop`);
+        return false;
+      },
+      retry: () => {
+        if (writtenOff.size === 0) {
+          return false;
+        }
+        log(`${options.label}: giving ${writtenOff.size} hue(s) written off earlier another go`);
+        writtenOff.clear();
+        misses.clear();
+        return true;
+      }
+    };
   };
 
   // src/lib/walk.ts
@@ -605,10 +719,9 @@
   };
 
   // src/mining/walk.ts
-  var stepToward = createStepToward({ delayMs: WALK_DELAY });
+  var stepToward = /* @__PURE__ */ createStepToward({ delayMs: WALK_DELAY });
 
   // src/mining/smelt.ts
-  var unsmeltable = /* @__PURE__ */ new Set();
   var beetleSerial = FIRE_BEETLE_SERIAL;
   var reportedFound = false;
   var reportedMissing = false;
@@ -646,84 +759,14 @@
     maxSteps: MAX_BEETLE_STEPS,
     step: stepToward
   });
-  var learnIngots = (changes) => {
-    for (const { key, delta } of changes) {
-      if (delta <= 0) {
-        continue;
-      }
-      const graphic = Number(key.split("/")[0]);
-      if (ORE_GRAPHICS.has(graphic) || INGOT_GRAPHICS.has(graphic)) {
-        continue;
-      }
-      INGOT_GRAPHICS.add(graphic);
-      log(`smelt: ingot graphic is 0x${graphic.toString(16)}`);
-    }
-  };
-  var waitForChange = (before) => {
-    for (let waited = 0; waited < SMELT_TIMEOUT; waited += SMELT_POLL) {
-      sleep(SMELT_POLL);
-      const changes = diffCounts(before, countsByGraphic());
-      if (changes.length > 0) {
-        return changes;
-      }
-    }
-    return [];
-  };
-  var misses = /* @__PURE__ */ new Map();
-  var missed = (stackHue) => {
-    const count = (misses.get(stackHue) ?? 0) + 1;
-    misses.set(stackHue, count);
-    if (count >= SMELT_ATTEMPTS) {
-      unsmeltable.add(stackHue);
-      log(`smelt: hue ${stackHue} failed ${count} times, leaving it as ore`);
-    }
-  };
-  var smeltStack = (stack, beetle) => {
-    const stackHue = stack.hue ?? 0;
-    const before = countsByGraphic();
-    target.cancel();
-    journal.clear();
-    player.use(stack.serial);
-    if (!target.waitTargetEntity(beetle.serial, TARGET_TIMEOUT)) {
-      target.cancel();
-      log("smelt: no target cursor for the beetle");
-      missed(stackHue);
-      return false;
-    }
-    const changes = waitForChange(before);
-    if (changes.length > 0) {
-      misses.delete(stackHue);
-      learnIngots(changes);
-      return true;
-    }
-    if (UNSKILLED_TEXT2.some((text) => journal.containsText(text))) {
-      unsmeltable.add(stackHue);
-      log(`smelt: not skilled enough for hue ${stackHue}, leaving it as ore`);
-      return false;
-    }
-    missed(stackHue);
-    return false;
-  };
-  var retryUnsmeltable = () => {
-    if (unsmeltable.size === 0) {
-      return false;
-    }
-    log(`smelt: giving ${unsmeltable.size} hue(s) written off earlier another go`);
-    unsmeltable.clear();
-    misses.clear();
-    return true;
-  };
   var bigEnough = (item) => {
     const amount = item.amount ?? 0;
     return amount === 0 || amount >= MIN_SMELT_AMOUNT;
   };
-  var nextStack = () => collectIn(player.backpack?.contents, isOrePile).find(
-    (item) => !unsmeltable.has(item.hue ?? 0) && bigEnough(item)
-  );
-  var describePile = (item) => {
+  var describePile = (item, writtenOff) => {
     const amount = item.amount ?? 0;
     const hue = item.hue ?? 0;
-    if (unsmeltable.has(hue)) {
+    if (writtenOff.has(hue)) {
       return `${amount} hue ${hue} (written off)`;
     }
     if (!bigEnough(item)) {
@@ -731,13 +774,50 @@
     }
     return `${amount} hue ${hue}`;
   };
-  var smeltAll = () => {
-    if (!nextStack()) {
+  var nextOre = (writtenOff) => collectIn(player.backpack?.contents, isOrePile).find(
+    (item) => !writtenOff.has(item.hue ?? 0) && bigEnough(item)
+  );
+  var forge;
+  var converter = /* @__PURE__ */ createConverter({
+    label: "smelt",
+    leftAs: "leaving it as ore",
+    attempts: SMELT_ATTEMPTS,
+    timeoutMs: SMELT_TIMEOUT,
+    pollMs: SMELT_POLL,
+    delayMs: SMELT_DELAY,
+    maxPasses: MAX_SMELT_PASSES,
+    unskilledText: UNSKILLED_TEXT2,
+    isSaving,
+    nextStack: (writtenOff) => nextOre(writtenOff),
+    describeSkipped: (writtenOff) => {
       const piles = collectIn(player.backpack?.contents, isOrePile);
-      if (piles.length > 0) {
-        log(`smelt: nothing to smelt in ${piles.length} pile(s) - ${piles.map(describePile).join(", ")}`);
+      return piles.length > 0 ? `nothing to smelt in ${piles.length} pile(s) - ` + piles.map((pile) => describePile(pile, writtenOff)).join(", ") : void 0;
+    },
+    // The inverse of lumberjacking's makeBoards, which uses the tool and targets the resource: here
+    // the ore is double-clicked and the beetle is the target, the same as walking up to a forge
+    perform: (stack) => {
+      if (!forge) {
+        return false;
+      }
+      target.cancel();
+      journal.clear();
+      player.use(stack.serial);
+      if (!target.waitTargetEntity(forge.serial, TARGET_TIMEOUT)) {
+        target.cancel();
+        log("smelt: no target cursor for the beetle");
+        return false;
       }
       return true;
+    },
+    known: () => [ORE_GRAPHICS, INGOT_GRAPHICS],
+    learn: (graphic) => INGOT_GRAPHICS.add(graphic),
+    learned: "ingot graphic"
+  });
+  var unsmeltable = converter.writtenOff;
+  var retryUnsmeltable = converter.retry;
+  var smeltAll = () => {
+    if (!nextOre(converter.writtenOff)) {
+      return converter.run();
     }
     const found = findBeetle();
     if (!found) {
@@ -748,30 +828,135 @@
       return false;
     }
     reportedMissing = false;
-    const beetle = walkToBeetle(found.serial);
-    if (!beetle) {
+    forge = walkToBeetle(found.serial);
+    if (!forge) {
       return false;
     }
-    for (let pass = 0; pass < MAX_SMELT_PASSES; pass++) {
-      if (isSaving()) {
-        log("smelt: the world is saving, leaving the ore for now");
-        return false;
-      }
-      const stack = nextStack();
-      if (!stack) {
-        return true;
-      }
-      smeltStack(stack, beetle);
-      sleep(SMELT_DELAY);
-    }
-    log(`smelt: hit the ${MAX_SMELT_PASSES} pass backstop`);
-    return false;
+    return converter.run();
   };
+
+  // src/lib/tiles.ts
+  var tileKey = (tile) => `${tile.x},${tile.y},${tile.z},${tile.graphic}`;
+  var minutes2 = (ms) => Math.max(1, Math.round(ms / 6e4));
+  var createTileStore = (options) => {
+    const block = (tile, until) => options.blocked().set(tileKey(tile), until);
+    return {
+      block,
+      markDepleted: (tile) => {
+        block(tile, now() + options.depletedFor);
+        log(
+          `${options.label}: ${tile.x},${tile.y} ${options.depleted}, back in ${minutes2(options.depletedFor)}m`
+        );
+      },
+      markUnreachable: (tile) => {
+        block(tile, now() + options.unreachableFor);
+        log(
+          `${options.label}: ${tile.x},${tile.y} could not be walked to, retrying in ${minutes2(options.unreachableFor)}m`
+        );
+      },
+      markUnusable: (tile, reason2) => {
+        block(tile, Infinity);
+        log(`${options.label}: ${tile.x},${tile.y} ${reason2}, ignoring it from here on`);
+      }
+    };
+  };
+  var createScan = (options) => {
+    const reported3 = /* @__PURE__ */ new Set();
+    return () => {
+      const blocked = options.blocked();
+      const time = now();
+      let best;
+      let readyAt;
+      for (let dx = -options.radius; dx <= options.radius; dx++) {
+        for (let dy = -options.radius; dy <= options.radius; dy++) {
+          for (const tile of client.getTerrainList(player.x + dx, player.y + dy) ?? []) {
+            if (options.skipLand && tile.isLand) {
+              continue;
+            }
+            if (!options.matches(tile.graphic, tile.isLand)) {
+              continue;
+            }
+            if (options.reachable && !options.reachable(tile.x, tile.y)) {
+              continue;
+            }
+            const candidate = {
+              x: tile.x,
+              y: tile.y,
+              z: tile.z,
+              graphic: tile.graphic,
+              isLand: tile.isLand,
+              distance: distanceTo(tile)
+            };
+            const key = tileKey(candidate);
+            const until = blocked.get(key);
+            if (until !== void 0) {
+              if (time < until) {
+                if (Number.isFinite(until) && (readyAt === void 0 || until < readyAt)) {
+                  readyAt = until;
+                }
+                continue;
+              }
+              blocked.delete(key);
+            }
+            if (!best || candidate.distance < best.distance) {
+              best = candidate;
+            }
+          }
+        }
+      }
+      if (best && !reported3.has(best.graphic)) {
+        log(`${options.label}: matching ${hex(best.graphic)} ${options.describe(best)}`);
+        reported3.add(best.graphic);
+      }
+      return { found: best, readyAt };
+    };
+  };
+
+  // src/lib/store.ts
+  var scope = globalThis;
+  var createStore = (options) => {
+    let held;
+    const load = () => {
+      const found = scope[options.key];
+      if (found?.version === options.version) {
+        const described = options.describe?.(found);
+        if (described) {
+          log(described);
+        }
+        return found;
+      }
+      const fresh = { ...options.seed(), version: options.version };
+      scope[options.key] = fresh;
+      return fresh;
+    };
+    return {
+      // Read through a call rather than handed out as the object itself, so forget() can actually
+      // forget: a module-scope `const memory = load()` would give every importer a reference that
+      // outlives it.
+      read: () => held ?? (held = load()),
+      // Tests only. The suite's vi.resetModules() gives each test a fresh module registry but leaves
+      // globalThis alone, which is precisely what this store is designed to survive.
+      forget: () => {
+        delete scope[options.key];
+        held = void 0;
+      }
+    };
+  };
+
+  // src/mining/memory.ts
+  var KEY = "__mining_memory";
+  var VERSION = 1;
+  var store = /* @__PURE__ */ createStore({
+    key: KEY,
+    version: VERSION,
+    seed: () => ({ blocked: /* @__PURE__ */ new Map(), notOre: /* @__PURE__ */ new Set() }),
+    describe: (found) => found.blocked.size > 0 || found.notOre.size > 0 ? `memory: resuming with ${found.blocked.size} blocked tiles, ${found.notOre.size} arts` : void 0
+  });
+  var memory = store.read;
+  var forget = store.forget;
 
   // src/mining/vein.ts
   var known = /* @__PURE__ */ new Map();
-  var tileKey = (tile) => `${tile.x},${tile.y},${tile.z},${tile.graphic}`;
-  var minutes = (ms) => Math.max(1, Math.round(ms / 6e4));
   var artKey = (graphic, isLand) => `${isLand ? "land" : "static"}:${graphic}`;
   var isOre = (graphic, isLand) => {
     if (NOT_ORE_GRAPHICS.has(graphic) || memory().notOre.has(artKey(graphic, isLand))) {
@@ -789,11 +974,16 @@
     known.set(graphic, matches);
     return matches;
   };
-  var block = (tile, until) => memory().blocked.set(tileKey(tile), until);
-  var markDepleted = (tile) => {
-    block(tile, now() + RESPAWN_DELAY);
-    log(`vein: ${tile.x},${tile.y} is out of ore, back in ${minutes(RESPAWN_DELAY)}m`);
-  };
+  var store2 = /* @__PURE__ */ createTileStore({
+    label: "vein",
+    blocked: () => memory().blocked,
+    depletedFor: RESPAWN_DELAY,
+    unreachableFor: UNREACHABLE_DELAY,
+    depleted: "is out of ore"
+  });
+  var markDepleted = store2.markDepleted;
+  var markUnreachable = store2.markUnreachable;
+  var markUnusable = store2.markUnusable;
   var markAreaDepleted = (range2) => {
     const until = now() + RESPAWN_DELAY;
     let parked = 0;
@@ -803,7 +993,7 @@
           if (!isOre(tile.graphic, tile.isLand)) {
             continue;
           }
-          block(
+          store2.block(
             { x: tile.x, y: tile.y, z: tile.z, graphic: tile.graphic, isLand: tile.isLand },
             until
           );
@@ -812,17 +1002,9 @@
       }
     }
     log(
-      `vein: nothing harvestable at ${player.x},${player.y}, parking ${parked} tile(s) within ${range2} for ${minutes(RESPAWN_DELAY)}m`
+      `vein: nothing harvestable at ${player.x},${player.y}, parking ${parked} tile(s) within ${range2} for ${Math.max(1, Math.round(RESPAWN_DELAY / 6e4))}m`
     );
     return parked;
-  };
-  var markUnreachable = (tile) => {
-    block(tile, now() + UNREACHABLE_DELAY);
-    log(`vein: ${tile.x},${tile.y} could not be walked to, retrying in ${minutes(UNREACHABLE_DELAY)}m`);
-  };
-  var markUnusable = (tile, reason2) => {
-    block(tile, Infinity);
-    log(`vein: ${tile.x},${tile.y} ${reason2}, ignoring it from here on`);
   };
   var markNotMineable = (tile) => {
     const { notOre } = memory();
@@ -831,52 +1013,20 @@
       return;
     }
     notOre.add(key);
-    log(`vein: 0x${tile.graphic.toString(16)} cannot be mined, skipping that art from here on`);
+    log(`vein: ${hex(tile.graphic)} cannot be mined, skipping that art from here on`);
   };
-  var reportedGraphics = /* @__PURE__ */ new Set();
-  var distanceTo2 = (x, y) => Math.max(Math.abs(x - player.x), Math.abs(y - player.y));
+  var scan = /* @__PURE__ */ createScan({
+    label: "scanForVein",
+    radius: SCAN_RADIUS,
+    blocked: () => memory().blocked,
+    matches: isOre,
+    // Land is not skipped the way lumberjacking skips it - a mountainside *is* land, and it is the
+    // ordinary case rather than the exception
+    describe: (vein) => `'${vein.isLand ? "land" : client.getStatic(vein.graphic)?.name ?? "?"}'`
+  });
   var scanForVein = () => {
-    const { blocked } = memory();
-    const time = now();
-    let best;
-    let respawnsAt;
-    for (let dx = -SCAN_RADIUS; dx <= SCAN_RADIUS; dx++) {
-      for (let dy = -SCAN_RADIUS; dy <= SCAN_RADIUS; dy++) {
-        for (const tile of client.getTerrainList(player.x + dx, player.y + dy) ?? []) {
-          if (!isOre(tile.graphic, tile.isLand)) {
-            continue;
-          }
-          const vein = {
-            x: tile.x,
-            y: tile.y,
-            z: tile.z,
-            graphic: tile.graphic,
-            isLand: tile.isLand,
-            distance: distanceTo2(tile.x, tile.y)
-          };
-          const key = tileKey(vein);
-          const until = blocked.get(key);
-          if (until !== void 0) {
-            if (time < until) {
-              if (Number.isFinite(until) && (respawnsAt === void 0 || until < respawnsAt)) {
-                respawnsAt = until;
-              }
-              continue;
-            }
-            blocked.delete(key);
-          }
-          if (!best || vein.distance < best.distance) {
-            best = vein;
-          }
-        }
-      }
-    }
-    if (best && !reportedGraphics.has(best.graphic)) {
-      const name = best.isLand ? "land" : client.getStatic(best.graphic)?.name ?? "?";
-      log(`scanForVein: matching 0x${best.graphic.toString(16)} '${name}'`);
-      reportedGraphics.add(best.graphic);
-    }
-    return { vein: best, respawnsAt };
+    const { found, readyAt } = scan();
+    return { vein: found, respawnsAt: readyAt };
   };
 
   // src/mining/survey.ts
@@ -923,29 +1073,15 @@
 
   // src/mining/index.ts
   rememberPickaxe(player.equippedItems.oneHanded);
-  var minutesLeft = (until) => Math.max(1, Math.round((until - now()) / 6e4));
+  var idleUntil = createIdleWait({
+    prefix: "mining",
+    waitingFor: "everything in reach is worked out",
+    pollMs: IDLE_POLL,
+    logEveryMs: IDLE_LOG_EVERY,
+    stopReason,
+    onDone: resetBeat
+  });
   var tooHeavy = () => overweight();
-  var idleUntil = (respawnsAt) => {
-    const wait = respawnsAt - now();
-    if (wait <= 0) {
-      return;
-    }
-    log(`mining: everything in reach is worked out, waiting ${minutesLeft(respawnsAt)}m`);
-    const slices = Math.ceil(wait / IDLE_POLL);
-    let since = 0;
-    for (let slice = 0; slice < slices && now() < respawnsAt; slice++) {
-      sleep(IDLE_POLL);
-      since += IDLE_POLL;
-      if (stopReason()) {
-        return;
-      }
-      if (since >= IDLE_LOG_EVERY) {
-        since = 0;
-        log(`mining: ${minutesLeft(respawnsAt)}m to go`);
-      }
-    }
-    resetBeat();
-  };
   log(`mining: ${oreTotal()} ore in the pack to start, at ${player.x},${player.y}`);
   var startingHand = player.equippedItems.oneHanded;
   log(
@@ -956,19 +1092,19 @@
   var stop;
   var reported2 = 0;
   var throttled = 0;
-  var sinceProgress = 0;
   var barren = 0;
   var walkingTo;
   var steps = 0;
+  var stall = createStallWatch({
+    prefix: "mining",
+    without: "cycles without a swing landing",
+    warnAt: STALL_WARN,
+    stopAt: STALL_STOP,
+    heartbeat
+  });
   var endCycle = (phase, cycle) => {
-    beat(phase, cycle, mined);
-    sinceProgress++;
-    if (sinceProgress === STALL_WARN) {
-      log(`mining: ${STALL_WARN} cycles without a swing landing, last was '${phase}'`);
-    }
-    if (sinceProgress >= STALL_STOP) {
-      stop = `no progress in ${STALL_STOP} cycles, last was '${phase}'`;
-    }
+    stall.endCycle(phase, cycle, mined);
+    stop ?? (stop = stall.reason());
   };
   for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
     stop = stopReason();
@@ -1032,7 +1168,7 @@
         unknown = 0;
         throttled = 0;
         barren = 0;
-        sinceProgress = 0;
+        stall.progressed();
         break;
       // The vein is worked out, not dead: markDepleted times it out and the scan picks it up again
       // in RESPAWN_DELAY. Nothing is smelted here - a depleted vein says nothing about how heavy the
@@ -1100,7 +1236,7 @@
         waitOutSave();
         unknown = 0;
         throttled = 0;
-        sinceProgress = 0;
+        stall.progressed();
         break;
       // A fixed retry shorter than the harvest delay re-arms the very timer it is waiting on, so
       // back off further each time instead, and give up rather than spin
@@ -1108,7 +1244,7 @@
         throttled++;
         unknown = 0;
         log(`mining: shard says wait (${throttled}/${MAX_THROTTLED}), backing off`);
-        sleep(Math.min(THROTTLE_BACKOFF * throttled, THROTTLE_BACKOFF_MAX));
+        sleep(backoffFor(throttled, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX));
         if (throttled >= MAX_THROTTLED) {
           stop = "the shard kept refusing the swing";
         }

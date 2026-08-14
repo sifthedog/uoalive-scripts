@@ -20,7 +20,7 @@ export interface Memory {
   notOre: Set<string>;
 }
 
-const store = createStore<Memory>({
+const store = /* @__PURE__ */ createStore<Memory>({
   key: KEY,
   version: VERSION,
   seed: () => ({ blocked: new Map(), notOre: new Set() }),

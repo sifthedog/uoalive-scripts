@@ -25,6 +25,35 @@
   ];
   var PROBE_RADIUS = 16;
 
+  // src/lib/clock.ts
+  var now = () => Date.now();
+
+  // src/lib/tiles.ts
+  var tileKey = (tile) => `${tile.x},${tile.y},${tile.z},${tile.graphic}`;
+  var minutes = (ms) => Math.max(1, Math.round(ms / 6e4));
+  var createTileStore = (options) => {
+    const block = (tile, until) => options.blocked().set(tileKey(tile), until);
+    return {
+      block,
+      markDepleted: (tile) => {
+        block(tile, now() + options.depletedFor);
+        log(
+          `${options.label}: ${tile.x},${tile.y} ${options.depleted}, back in ${minutes(options.depletedFor)}m`
+        );
+      },
+      markUnreachable: (tile) => {
+        block(tile, now() + options.unreachableFor);
+        log(
+          `${options.label}: ${tile.x},${tile.y} could not be walked to, retrying in ${minutes(options.unreachableFor)}m`
+        );
+      },
+      markUnusable: (tile, reason) => {
+        block(tile, Infinity);
+        log(`${options.label}: ${tile.x},${tile.y} ${reason}, ignoring it from here on`);
+      }
+    };
+  };
+
   // src/lib/store.ts
   var scope = globalThis;
   var createStore = (options) => {
@@ -59,7 +88,7 @@
   // src/mining/memory.ts
   var KEY = "__mining_memory";
   var VERSION = 1;
-  var store = createStore({
+  var store = /* @__PURE__ */ createStore({
     key: KEY,
     version: VERSION,
     seed: () => ({ blocked: /* @__PURE__ */ new Map(), notOre: /* @__PURE__ */ new Set() }),
@@ -87,6 +116,16 @@
     known.set(graphic, matches);
     return matches;
   };
+  var store2 = /* @__PURE__ */ createTileStore({
+    label: "vein",
+    blocked: () => memory().blocked,
+    depletedFor: RESPAWN_DELAY,
+    unreachableFor: UNREACHABLE_DELAY,
+    depleted: "is out of ore"
+  });
+  var markDepleted = store2.markDepleted;
+  var markUnreachable = store2.markUnreachable;
+  var markUnusable = store2.markUnusable;
 
   // src/mining/survey.ts
   var surveyTerrain = (radius) => {

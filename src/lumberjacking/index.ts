@@ -1,3 +1,4 @@
+import { backoffFor, createIdleWait, createStallWatch } from '../lib/loop.js';
 import { overweight } from '../lib/weight.js';
 import { axeSerial, equipAxe, rememberAxe } from './axe.js';
 import { makeBoards } from './boards.js';
@@ -21,8 +22,7 @@ import {
 } from './config.js';
 import { stopReason } from './guards.js';
 import { unload } from './haul.js';
-import { beat, resetBeat } from './heartbeat.js';
-import { now } from './memory.js';
+import { heartbeat, resetBeat } from './heartbeat.js';
 import { isSaving, waitOutSave } from './save.js';
 import {
   markDepleted,
@@ -36,42 +36,14 @@ import { stepToward } from './walk.js';
 // Learn the axe graphic from the one you start the script holding
 rememberAxe(player.equippedItems.twoHanded ?? player.equippedItems.oneHanded);
 
-const minutesLeft = (until: number) => Math.max(1, Math.round((until - now()) / 60_000));
-
-// Sliced rather than slept through in one go, so the client stays responsive and the guards still
-// get a look in - a quarter of an hour is long enough to be killed standing there, and one long
-// sleep would carry on regardless. Bounded by the wait it was asked for as well as by the clock:
-// a clock that does not advance would otherwise turn this into a spin.
-const idleUntil = (regrowsAt: number): void => {
-  const wait = regrowsAt - now();
-  if (wait <= 0) {
-    return;
-  }
-
-  log(`lumberjack: everything in reach is regrowing, waiting ${minutesLeft(regrowsAt)}m`);
-
-  const slices = Math.ceil(wait / IDLE_POLL);
-  let since = 0;
-
-  for (let slice = 0; slice < slices && now() < regrowsAt; slice++) {
-    sleep(IDLE_POLL);
-    since += IDLE_POLL;
-
-    // Left to the loop to report and act on, so the wait has one way out and the run has one
-    if (stopReason()) {
-      return;
-    }
-
-    if (since >= IDLE_LOG_EVERY) {
-      since = 0;
-      log(`lumberjack: ${minutesLeft(regrowsAt)}m to go`);
-    }
-  }
-
-  // This path reports on its own cadence, so start the next beat's interval from here rather than
-  // letting one land on top of the line above
-  resetBeat();
-};
+const idleUntil = createIdleWait({
+  prefix: 'lumberjack',
+  waitingFor: 'everything in reach is regrowing',
+  pollMs: IDLE_POLL,
+  logEveryMs: IDLE_LOG_EVERY,
+  stopReason,
+  onDone: resetBeat,
+});
 
 log(`lumberjack: ${logTotal()} logs in the pack to start, staying within ${describeBounds()}`);
 
@@ -84,10 +56,9 @@ let stop: string | undefined;
 // twenty-fifth chop, so a run that then walks, waits or is refused reprints the same line each time.
 let reported = 0;
 
-// Consecutive refusals to swing, and cycles since the last chop landed. Neither branch used to
-// count anything, which is how a run could stand still and silent for the whole cycle backstop.
+// Consecutive refusals to swing. This used to count nothing, which is how a run could stand still
+// and silent for the whole cycle backstop.
 let throttled = 0;
-let sinceProgress = 0;
 
 // Latched off the first time a haul frees nothing, so a missing animal costs one search rather
 // than one per cycle for the rest of the run
@@ -97,21 +68,17 @@ let hauling = true;
 let walkingTo: string | undefined;
 let steps = 0;
 
-// Closes every cycle that was meant to make progress: says the run is alive whatever branch it
-// took, and counts the cycle against the watchdog. The regrow wait is the one path that does not
-// come through here - it reports on its own cadence, and waiting for wood to grow back is the
-// script working, not the script stuck.
+const stall = createStallWatch({
+  prefix: 'lumberjack',
+  without: 'cycles without a chop',
+  warnAt: STALL_WARN,
+  stopAt: STALL_STOP,
+  heartbeat,
+});
+
 const endCycle = (phase: string, cycle: number): void => {
-  beat(phase, cycle, chopped);
-  sinceProgress++;
-
-  if (sinceProgress === STALL_WARN) {
-    log(`lumberjack: ${STALL_WARN} cycles without a chop, last was '${phase}'`);
-  }
-
-  if (sinceProgress >= STALL_STOP) {
-    stop = `no progress in ${STALL_STOP} cycles, last was '${phase}'`;
-  }
+  stall.endCycle(phase, cycle, chopped);
+  stop ??= stall.reason();
 };
 
 for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
@@ -192,7 +159,7 @@ for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
       chopped++;
       unknown = 0;
       throttled = 0;
-      sinceProgress = 0;
+      stall.progressed();
       break;
 
     // A stump, not a dead tile: markDepleted times it out and the scan picks it up again later
@@ -229,17 +196,16 @@ for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
       unknown = 0;
       break;
 
-    // Nothing was learned about the tree and nothing went wrong: the shard was busy. The counters
-    // are reset rather than merely left alone, because whatever they had accumulated was measured
-    // against a server that was not answering.
-    // Sitting out a save is the script working, not the script stuck, so the stall watchdog is
-    // reset along with the rest: a shard that saves often would otherwise walk a run to STALL_STOP
-    // a save at a time, and the regrow wait is already excused on exactly this reasoning.
+    // Nothing was learned about the tree and nothing went wrong: the shard was busy. Every counter
+    // is reset rather than merely left alone, because whatever they had accumulated was measured
+    // against a server that was not answering - the stall watchdog included, or a shard that saves
+    // often walks a run to STALL_STOP a save at a time. The regrow wait is excused for the same
+    // reason, by not coming through endCycle at all.
     case 'saving':
       waitOutSave();
       unknown = 0;
       throttled = 0;
-      sinceProgress = 0;
+      stall.progressed();
       break;
 
     // The one branch that used to say nothing and count nothing. A fixed 600ms retry is shorter
@@ -254,7 +220,7 @@ for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
       // MAX_UNKNOWN without ever having produced five unreadable cycles in a row.
       unknown = 0;
       log(`lumberjack: shard says wait (${throttled}/${MAX_THROTTLED}), backing off`);
-      sleep(Math.min(THROTTLE_BACKOFF * throttled, THROTTLE_BACKOFF_MAX));
+      sleep(backoffFor(throttled, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX));
 
       if (throttled >= MAX_THROTTLED) {
         stop = 'the shard kept refusing the swing';

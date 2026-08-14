@@ -1,6 +1,6 @@
 import { collectIn } from '../lib/containers.js';
+import { createConverter } from '../lib/convert.js';
 import { approach, distanceTo, hex, isMobile, nameOf } from '../lib/entity.js';
-import { countsByGraphic, diffCounts, type Change, type Counts } from '../lib/pack.js';
 import {
   BEETLE_SCAN_RADIUS,
   FIRE_BEETLE_GRAPHICS,
@@ -21,9 +21,6 @@ import {
 import { isOrePile } from './ore.js';
 import { isSaving } from './save.js';
 import { stepToward } from './walk.js';
-
-// Hues this run has given up on, so a stack that cannot be smelted stops being picked every pass
-export const unsmeltable = new Set<number>();
 
 // Latched once found, but re-resolved through findObject every time it is used: the beetle is a
 // pet and it follows you, so its coordinates go stale within a cycle.
@@ -80,112 +77,6 @@ const walkToBeetle = (serial: number): Mobile | undefined =>
     step: stepToward,
   });
 
-// The smelt sends no message on stock RunUO, only a sound, so the pack diff is the only evidence of
-// it. That diff also names this shard's ingot graphics, whatever the art ids turn out to be.
-const learnIngots = (changes: Change[]): void => {
-  for (const { key, delta } of changes) {
-    if (delta <= 0) {
-      continue;
-    }
-
-    const graphic = Number(key.split('/')[0]);
-    if (ORE_GRAPHICS.has(graphic) || INGOT_GRAPHICS.has(graphic)) {
-      continue;
-    }
-
-    INGOT_GRAPHICS.add(graphic);
-    log(`smelt: ingot graphic is 0x${graphic.toString(16)}`);
-  }
-};
-
-// Watch the pack rather than sleeping a fixed amount and reading once. The action throttle can hold
-// a smelt well past any pause worth taking, and reading too early is indistinguishable from an ore
-// that cannot be worked - which is how a hue gets written off while it was only running late.
-const waitForChange = (before: Counts): Change[] => {
-  for (let waited = 0; waited < SMELT_TIMEOUT; waited += SMELT_POLL) {
-    sleep(SMELT_POLL);
-
-    const changes = diffCounts(before, countsByGraphic());
-    if (changes.length > 0) {
-      return changes;
-    }
-  }
-
-  return [];
-};
-
-// Silent misses per hue, cleared by a success, so only a hue that fails repeatedly is given up on
-const misses = new Map<number, number>();
-
-// Counts one failure against a hue and gives up on it once they add up. Every failing path has to
-// come through here: one that returned without counting would leave the candidate set unchanged,
-// so the next pass picks the same stack and the loop runs to its backstop instead of shrinking.
-const missed = (stackHue: number): void => {
-  const count = (misses.get(stackHue) ?? 0) + 1;
-  misses.set(stackHue, count);
-
-  if (count >= SMELT_ATTEMPTS) {
-    unsmeltable.add(stackHue);
-    log(`smelt: hue ${stackHue} failed ${count} times, leaving it as ore`);
-  }
-};
-
-// The inverse of lumberjacking's makeBoards, which uses the tool and targets the resource: here the
-// ore is the thing double-clicked and the beetle is the target, the same as walking up to a forge.
-const smeltStack = (stack: Item, beetle: Mobile): boolean => {
-  const stackHue = stack.hue ?? 0;
-  const before = countsByGraphic();
-
-  // A cursor left open by the last swing would swallow this one
-  target.cancel();
-  journal.clear();
-  player.use(stack.serial);
-
-  if (!target.waitTargetEntity(beetle.serial, TARGET_TIMEOUT)) {
-    target.cancel();
-    log('smelt: no target cursor for the beetle');
-    missed(stackHue);
-    return false;
-  }
-
-  const changes = waitForChange(before);
-  if (changes.length > 0) {
-    misses.delete(stackHue);
-    learnIngots(changes);
-    return true;
-  }
-
-  // The shard saying it outright is worth acting on immediately; a coloured ore needs the Mining
-  // skill to work it, and no amount of retrying supplies that.
-  if (UNSKILLED_TEXT.some((text) => journal.containsText(text))) {
-    unsmeltable.add(stackHue);
-    log(`smelt: not skilled enough for hue ${stackHue}, leaving it as ore`);
-    return false;
-  }
-
-  // Otherwise it was silent, which is also what a throttled or stale attempt looks like
-  missed(stackHue);
-
-  return false;
-};
-
-// Written off is not the same as impossible. Three silent passes is a thin basis for carrying a
-// hue home - a beetle that wandered out of range, a run of throttled attempts and a stack that was
-// briefly too small all look exactly like an ore that cannot be worked. So when the alternative is
-// ending the run overweight on a pack full of ore, the loop clears the write-offs and tries again
-// rather than taking the earlier verdict as final.
-export const retryUnsmeltable = (): boolean => {
-  if (unsmeltable.size === 0) {
-    return false;
-  }
-
-  log(`smelt: giving ${unsmeltable.size} hue(s) written off earlier another go`);
-  unsmeltable.clear();
-  misses.clear();
-
-  return true;
-};
-
 // Whether a pile has two ore in it. The amount is the only thing that answers that: the art does
 // not, whatever the stack-size table says - a pile of 33 on this shard is drawn with the same
 // graphic as a pile of one, so a size read off the graphic skips a full stack outright.
@@ -200,22 +91,14 @@ const bigEnough = (item: Item): boolean => {
   return amount === 0 || amount >= MIN_SMELT_AMOUNT;
 };
 
-// Two conditions, and they expire differently. A hue in `unsmeltable` is done for the run - the
-// shard has said so, or three silent passes have. A stack too small is only too small right now:
-// one more swing on that vein makes it big enough, so nothing is remembered about it.
-const nextStack = (): Item | undefined =>
-  collectIn(player.backpack?.contents, isOrePile).find(
-    (item) => !unsmeltable.has(item.hue ?? 0) && bigEnough(item),
-  );
-
 // Why a pile was passed over, for the one log line that has to explain itself: 'smelting freed
 // nothing' said over a pack with ore in it is an accusation without evidence, and every reason a
 // stack is skipped is invisible from outside this file.
-const describePile = (item: Item): string => {
+const describePile = (item: Item, writtenOff: Set<number>): string => {
   const amount = item.amount ?? 0;
   const hue = item.hue ?? 0;
 
-  if (unsmeltable.has(hue)) {
+  if (writtenOff.has(hue)) {
     return `${amount} hue ${hue} (written off)`;
   }
 
@@ -226,19 +109,77 @@ const describePile = (item: Item): string => {
   return `${amount} hue ${hue}`;
 };
 
-export const smeltAll = (): boolean => {
-  if (!nextStack()) {
-    // Nothing eligible is the ordinary case with an empty pack and a mystery with a full one, so
-    // the full one says what it is holding and why none of it counts
+// Two conditions, and they expire differently. A written-off hue is done for the run - the shard
+// has said so, or three silent passes have. A stack too small is only too small right now: one more
+// swing on that vein makes it big enough, so nothing is remembered about it.
+const nextOre = (writtenOff: Set<number>): Item | undefined =>
+  collectIn(player.backpack?.contents, isOrePile).find(
+    (item) => !writtenOff.has(item.hue ?? 0) && bigEnough(item),
+  );
+
+// Found and walked to once per smeltAll, then targeted by every pass. Held here rather than passed
+// through the shared engine, which has no business knowing that this conversion needs a forge.
+let forge: Mobile | undefined;
+
+const converter = /* @__PURE__ */ createConverter({
+  label: 'smelt',
+  leftAs: 'leaving it as ore',
+  attempts: SMELT_ATTEMPTS,
+  timeoutMs: SMELT_TIMEOUT,
+  pollMs: SMELT_POLL,
+  delayMs: SMELT_DELAY,
+  maxPasses: MAX_SMELT_PASSES,
+  unskilledText: UNSKILLED_TEXT,
+  isSaving,
+
+  nextStack: (writtenOff) => nextOre(writtenOff),
+
+  describeSkipped: (writtenOff) => {
     const piles = collectIn(player.backpack?.contents, isOrePile);
-    if (piles.length > 0) {
-      log(`smelt: nothing to smelt in ${piles.length} pile(s) - ${piles.map(describePile).join(', ')}`);
+
+    return piles.length > 0
+      ? `nothing to smelt in ${piles.length} pile(s) - ` +
+          piles.map((pile) => describePile(pile, writtenOff)).join(', ')
+      : undefined;
+  },
+
+  // The inverse of lumberjacking's makeBoards, which uses the tool and targets the resource: here
+  // the ore is double-clicked and the beetle is the target, the same as walking up to a forge
+  perform: (stack) => {
+    if (!forge) {
+      return false;
+    }
+
+    target.cancel();
+    journal.clear();
+    player.use(stack.serial);
+
+    if (!target.waitTargetEntity(forge.serial, TARGET_TIMEOUT)) {
+      target.cancel();
+      log('smelt: no target cursor for the beetle');
+      return false;
     }
 
     return true;
+  },
+
+  known: () => [ORE_GRAPHICS, INGOT_GRAPHICS],
+  learn: (graphic) => INGOT_GRAPHICS.add(graphic),
+  learned: 'ingot graphic',
+});
+
+export const unsmeltable = converter.writtenOff;
+export const retryUnsmeltable = converter.retry;
+
+export const smeltAll = (): boolean => {
+  // Asked before the beetle is looked for, so a pack with nothing eligible in it costs neither a
+  // search nor a walk. run() reports what it is holding and why none of it counts.
+  if (!nextOre(converter.writtenOff)) {
+    return converter.run();
   }
 
   const found = findBeetle();
+
   if (!found) {
     // Said once rather than every pass: a missing beetle is not fatal, the ore simply travels
     // unsmelted, and a line per cycle would bury everything else the run has to say.
@@ -250,34 +191,10 @@ export const smeltAll = (): boolean => {
   }
   reportedMissing = false;
 
-  const beetle = walkToBeetle(found.serial);
-  if (!beetle) {
+  forge = walkToBeetle(found.serial);
+  if (!forge) {
     return false;
   }
 
-  // One stack per pass, then rescan: a smelt consumes the stack and creates a new item, so every
-  // other serial in a snapshot goes stale the moment the first one converts.
-  for (let pass = 0; pass < MAX_SMELT_PASSES; pass++) {
-    // A frozen shard answers a smelt the same way an unworkable ore does - with nothing at all - so
-    // without this the world save costs three attempts and the hue is written off for the rest of
-    // the run. Left for the caller: the pack is still heavy, so the next cycle comes straight back.
-    if (isSaving()) {
-      log('smelt: the world is saving, leaving the ore for now');
-      return false;
-    }
-
-    const stack = nextStack();
-
-    if (!stack) {
-      return true;
-    }
-
-    smeltStack(stack, beetle);
-    sleep(SMELT_DELAY);
-  }
-
-  // Termination does not rest on this: a hue either smelts or is given up on after SMELT_ATTEMPTS,
-  // so the candidate set always shrinks. This is the backstop.
-  log(`smelt: hit the ${MAX_SMELT_PASSES} pass backstop`);
-  return false;
+  return converter.run();
 };

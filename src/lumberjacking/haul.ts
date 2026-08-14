@@ -1,7 +1,7 @@
 import { collectIn, type ItemPredicate } from '../lib/containers.js';
 import { approach, distanceTo, isMobile, nameOf } from '../lib/entity.js';
 import { overweight } from '../lib/weight.js';
-import { isBoard, unconvertible } from './boards.js';
+import { isBoard, makeBoards, retryUnconvertible, unconvertible } from './boards.js';
 import { isLog } from './chop.js';
 import {
   HAUL_BUFFER,
@@ -147,6 +147,18 @@ export const unload = (): boolean => {
     const logs = collectIn(player.backpack?.contents, isLog);
 
     if (logs.length > 0) {
+      // A hue written off after three silent passes is a thin basis for carrying wood home as wood:
+      // a throttled run of attempts and an axe that broke mid-conversion look exactly like a wood
+      // that cannot be worked. Reopened here, where the alternative is loading logs onto an animal
+      // that could have carried twice as many boards - mining reopens its own on the same reasoning,
+      // and returns false once there is nothing left to reconsider, so this cannot loop.
+      if (retryUnconvertible() && makeBoards()) {
+        const left = collectIn(player.backpack?.contents, isLog);
+        if (left.length === 0) {
+          return unloadTo(animals, isCargo) || moved;
+        }
+      }
+
       const total = logs.reduce((sum, item) => sum + (item.amount ?? 1), 0);
       log(`haul: ${total} logs would not convert in time, moving them as logs`);
       return unloadTo(animals, isLog) || moved;

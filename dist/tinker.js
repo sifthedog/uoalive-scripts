@@ -155,34 +155,109 @@
     return null;
   };
 
+  // src/lib/entity.ts
+  var hex = (value) => `0x${(value >>> 0).toString(16)}`;
+
+  // src/lib/retry.ts
+  var untilLanded = (options) => {
+    for (let attempt = 1; attempt <= options.attempts; attempt++) {
+      options.act();
+      for (let waited = 0; waited < options.timeoutMs; waited += options.pollMs) {
+        sleep(options.pollMs);
+        if (options.landed()) {
+          return true;
+        }
+      }
+      log(`${options.label}: attempt ${attempt} did not land, reissuing`);
+    }
+    log(`${options.label}: gave up`);
+    return false;
+  };
+
+  // src/lib/tool.ts
+  var describeContents = (contents) => (contents ?? []).map(
+    (item) => item.contents?.length ? `${hex(item.graphic)}[${describeContents(item.contents)}]` : hex(item.graphic)
+  ).join(", ");
+  var createTool = (options) => {
+    let learned;
+    let spareBagSerial = options.spareBagSerial;
+    let reportedEmpty = false;
+    const is = (item) => learned !== void 0 && item.graphic === learned || (options.graphics?.has(item.graphic) ?? false) || (item.name ?? "").toLowerCase().includes(options.name);
+    const remember = (item) => {
+      if (item && learned === void 0) {
+        learned = item.graphic;
+        log(`${options.label}: graphic is ${hex(item.graphic)}`);
+      }
+    };
+    const reportEmptyPack = () => {
+      if (reportedEmpty) {
+        return;
+      }
+      log(`${options.label}: none found. Pack holds: ${describeContents(player.backpack?.contents)}`);
+      log(`${options.label}: if the spares are in a bag inside a bag, pin it as SPARE_BAG_SERIAL`);
+      reportedEmpty = true;
+    };
+    const find = () => {
+      let found = findIn(player.backpack?.contents, is);
+      if (!found && openContainers(spareBagSerial)) {
+        found = findIn(player.backpack?.contents, is);
+      }
+      if (!found) {
+        reportEmptyPack();
+        return void 0;
+      }
+      reportedEmpty = false;
+      remember(found);
+      if (found.container && found.container !== player.backpack?.serial) {
+        spareBagSerial = found.container;
+      }
+      return found;
+    };
+    const stillHolding = () => {
+      const item = options.held();
+      return !!item && is(item) && client.findObject(item.serial) !== void 0;
+    };
+    return {
+      is,
+      remember,
+      find,
+      serial: () => options.held()?.serial,
+      equip: () => {
+        if (stillHolding()) {
+          return true;
+        }
+        const found = find();
+        if (!found) {
+          client.headMsg(`No ${options.name}!`, player, 33);
+          return false;
+        }
+        target.cancel();
+        return untilLanded({
+          label: `equip ${options.name}`,
+          attempts: options.equip.attempts,
+          timeoutMs: options.equip.timeoutMs,
+          pollMs: options.equip.pollMs,
+          act: () => player.equip(found.serial),
+          landed: () => options.held()?.serial === found.serial
+        });
+      }
+    };
+  };
+
   // src/tinkering/tool.ts
-  var toolGraphic;
-  var spareBagSerial = SPARE_BAG_SERIAL;
   var oplReportsUses = true;
-  var isTool = (item) => toolGraphic !== void 0 && item.graphic === toolGraphic || TOOL_GRAPHICS.has(item.graphic) || (item.name ?? "").toLowerCase().includes(TOOL_NAME);
-  var rememberTool = (item) => {
-    if (item && toolGraphic === void 0) {
-      toolGraphic = item.graphic;
-      log(`tool: tinker's tools graphic is 0x${item.graphic.toString(16)}`);
-    }
-  };
+  var tool = /* @__PURE__ */ createTool({
+    label: "tool",
+    name: TOOL_NAME,
+    graphics: TOOL_GRAPHICS,
+    spareBagSerial: SPARE_BAG_SERIAL,
+    held: () => void 0,
+    equip: { attempts: 0, timeoutMs: 0, pollMs: 0 }
+  });
+  var isTool = tool.is;
+  var rememberTool = tool.remember;
   var toolAlive = (serial) => serial !== void 0 && !!client.findObject(serial);
-  var findTool = () => {
-    let tool = findIn(player.backpack?.contents, isTool);
-    if (!tool && openContainers(spareBagSerial)) {
-      tool = findIn(player.backpack?.contents, isTool);
-    }
-    if (!tool) {
-      const graphics = (player.backpack?.contents ?? []).map((item) => `0x${item.graphic.toString(16)}`).join(", ");
-      log(`tool: no tinker's tools left. Top level of pack holds: ${graphics}`);
-      return void 0;
-    }
-    rememberTool(tool);
-    if (tool.container && tool.container !== player.backpack?.serial) {
-      spareBagSerial = tool.container;
-    }
-    return tool.serial;
-  };
+  var findTool = () => tool.find()?.serial;
   var usesRemaining = (serial) => {
     const opl = client.queryItemOPL(serial, 1e3);
     for (const property of opl?.properties ?? []) {

@@ -154,7 +154,7 @@ describe('equipPickaxe', () => {
     equipPickaxe();
     equipPickaxe();
 
-    expect(world.log.mock.calls.filter(([line]) => String(line).includes('no pickaxe found'))).toHaveLength(1);
+    expect(world.log.mock.calls.filter(([line]) => String(line).includes('none found'))).toHaveLength(1);
   });
 
   // A container's contents stay undefined until it has been opened, which is why the containers
@@ -192,7 +192,7 @@ describe('equipPickaxe', () => {
 
     expect(equipPickaxe()).toBe(false);
     expect(world.player.equip).toHaveBeenCalledTimes(EQUIP_ATTEMPTS);
-    expect(world.log).toHaveBeenCalledWith(expect.stringContaining('gave up equipping'));
+    expect(world.log).toHaveBeenCalledWith(expect.stringContaining('equip pickaxe: gave up'));
   });
 
   it('remembers the bag a spare came from', async () => {
