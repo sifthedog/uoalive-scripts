@@ -1,3 +1,4 @@
+import { overweight } from '../lib/weight.js';
 import {
   IDLE_LOG_EVERY,
   IDLE_POLL,
@@ -43,14 +44,8 @@ const minutesLeft = (until: number) => Math.max(1, Math.round((until - now()) / 
 
 // Smelting happens for one reason only: the pack is over the limit and the shard has started
 // refusing to move things. Not on a depleted vein, not at a buffer below the limit, not at the end
-// of the run - ore travels as ore until it cannot travel at all.
-//
-// The zero guard is not paranoia. The client refreshes weight and weightMax independently, and
-// reports a max of 0 in the window before it has been told - against which every weight in the game
-// is overweight. A run ended at 436/453 on exactly that: the branch below opened on a max of 0, the
-// figure had recovered by the time anything read it again, and the stop printed a weight that was
-// comfortably inside the limit it claimed to have exceeded.
-const tooHeavy = (): boolean => player.weightMax > 0 && player.weight > player.weightMax;
+// of the run - ore travels as ore until it cannot travel at all. No buffer, for the same reason.
+const tooHeavy = (): boolean => overweight();
 
 // Sliced rather than slept through in one go, so the client stays responsive and the guards still
 // get a look in - a quarter of an hour is long enough to be killed standing there, and one long
@@ -102,6 +97,11 @@ log(
 let mined = 0;
 let unknown = 0;
 let stop: string | undefined;
+
+// The tally at the last progress line. Compared against rather than `mined % LOG_EVERY`, which is a
+// property of the count and not of the cycle: it stays true for every cycle that follows the
+// twenty-fifth swing, so a run that then walks, waits or is refused reprints the same line each time.
+let reported = 0;
 
 // Consecutive refusals to swing, and cycles since the last swing landed
 let throttled = 0;
@@ -302,7 +302,7 @@ for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
     // destroy more. The vein is untouched - it is the pack that has to give. Consolidating is the
     // answer rather than smelting, because a full pack is a container at its item cap: forty piles
     // of one become one pile of forty, and thirty-nine slots come back. If the weight is the real
-    // problem, stow() smelts as well; if it is not, this is the cheaper fix anyway.
+    // problem, the next cycle's tooHeavy() branch smelts; if it is not, this is the cheaper fix.
     case 'packFull':
       log('mining: pack is full, consolidating before the next swing');
       groupOres();
@@ -317,16 +317,25 @@ for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
     // Nothing was learned about the vein and nothing went wrong: the shard was busy. The counters
     // are reset rather than merely left alone, because whatever they had accumulated was measured
     // against a server that was not answering.
+    // Sitting out a save is the script working, not the script stuck, so the stall watchdog is
+    // reset along with the rest: a shard that saves often would otherwise walk a run to STALL_STOP
+    // a save at a time, and the respawn wait is already excused on exactly this reasoning.
     case 'saving':
       waitOutSave();
       unknown = 0;
       throttled = 0;
+      sinceProgress = 0;
       break;
 
     // A fixed retry shorter than the harvest delay re-arms the very timer it is waiting on, so
     // back off further each time instead, and give up rather than spin
     case 'throttled':
       throttled++;
+
+      // A refusal is a read outcome, so it clears the unreadable count the way every other named
+      // branch does. Left standing, a shard alternating refusals with silence ends the run on
+      // MAX_UNKNOWN without ever having produced five unreadable cycles in a row.
+      unknown = 0;
       log(`mining: shard says wait (${throttled}/${MAX_THROTTLED}), backing off`);
       sleep(Math.min(THROTTLE_BACKOFF * throttled, THROTTLE_BACKOFF_MAX));
 
@@ -354,7 +363,8 @@ for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
     break;
   }
 
-  if (mined > 0 && mined % LOG_EVERY === 0) {
+  if (mined >= reported + LOG_EVERY) {
+    reported = mined;
     log(`mining: ${mined} swings, ${oreTotal()} ore, ${player.weight}/${player.weightMax}`);
   }
 

@@ -1,3 +1,4 @@
+import { overweight } from '../lib/weight.js';
 import { DROP_KEYS, PACK_LIMIT, WEIGHT_BUFFER } from './config.js';
 
 // Anything here ends the emptying pass; the loop asks before every box and reports what it said.
@@ -14,7 +15,7 @@ export const stopReason = (): string | undefined => {
 
   if (!DROP_KEYS) {
     // Buffer, so the stop lands before the shard starts refusing to move the new item
-    if (player.weight > player.weightMax - WEIGHT_BUFFER) {
+    if (overweight(WEIGHT_BUFFER)) {
       return `overweight (${player.weight}/${player.weightMax}) and keys are going into the pack`;
     }
 

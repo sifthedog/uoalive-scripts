@@ -34,7 +34,7 @@ export const waitOutSave = (): void => {
 
     // Left to the caller to report and act on, so the wait has one way out and the run has one
     if (stopReason()) {
-      return;
+      break;
     }
   }
 

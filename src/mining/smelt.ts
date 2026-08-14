@@ -83,7 +83,7 @@ export const findBeetle = (): Mobile | undefined => {
 // started. It is never double-clicked on the way: a fire beetle is rideable, so a double-click
 // mounts you - the exact thing mount.ts exists to undo.
 const approach = (serial: number): Mobile | undefined => {
-  for (let step = 0; step <= MAX_BEETLE_STEPS; step++) {
+  for (let step = 0; step < MAX_BEETLE_STEPS; step++) {
     const beetle = client.findObject(serial);
 
     if (!beetle || !isMobile(beetle)) {

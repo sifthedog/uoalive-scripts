@@ -1,10 +1,12 @@
 "use strict";
 (() => {
+  // src/lib/arts.ts
+  var INGOT_GRAPHICS = /* @__PURE__ */ new Set([7151, 7152, 7153, 7154]);
+
   // src/tinkering/config.ts
   var TOOL_NAME = "tool kit";
   var TOOL_GRAPHICS = /* @__PURE__ */ new Set([7864, 7868]);
   var SPARE_BAG_SERIAL = void 0;
-  var INGOT_GRAPHICS = /* @__PURE__ */ new Set([7151, 7152, 7153, 7154]);
   var INGOT_HUE = 0;
   var LOCKPICK_FROM = 450;
   var RING_FROM = 950;
@@ -247,12 +249,15 @@
     return matched ? outcomeFor(matched) : silentOutcome(toolSerial2, ingotsBefore);
   };
 
+  // src/lib/weight.ts
+  var overweight = (buffer = 0) => player.weightMax > 0 && player.weight > player.weightMax - buffer;
+
   // src/tinkering/guards.ts
   var stopReason = () => {
     if (player.isDead) {
       return "you are dead";
     }
-    if (player.weight > player.weightMax - WEIGHT_BUFFER) {
+    if (overweight(WEIGHT_BUFFER)) {
       return `overweight (${player.weight}/${player.weightMax})`;
     }
     const top = (player.backpack?.contents ?? []).length;
@@ -291,6 +296,7 @@
   var reopens = 0;
   var throttled = 0;
   var toolSerial;
+  var reported = 0;
   var stop = uncalibrated.length ? `${uncalibrated.join(" and ")} button IDs are unset - run dist/tinker-probe.js and fill in config.js` : void 0;
   for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
     stop = stopReason();
@@ -360,7 +366,8 @@
           stop = "no craft outcome could be detected - recheck OUTCOME_TEXT in config.js";
         }
     }
-    if (crafted > 0 && crafted % LOG_EVERY === 0) {
+    if (crafted >= reported + LOG_EVERY) {
+      reported = crafted;
       log(`tinker: ${crafted} made, ${failures} failed, base ${tenths(startedAt)} -> ${tenths(skillBase())}`);
     }
     sleep(STEP_DELAY);

@@ -53,7 +53,7 @@ export const oresByHue = (): Map<number, Item[]> => {
   return groups;
 };
 
-export const groupOres = (): boolean => {
+export const groupOres = (): void => {
   let previousPiles = Infinity;
 
   // A combine consumes one of the two piles, so rescan the pack between passes
@@ -63,7 +63,7 @@ export const groupOres = (): boolean => {
 
     if (piles >= previousPiles) {
       log(`groupOres: stalled at ${piles} piles`);
-      return true;
+      return;
     }
     previousPiles = piles;
 
@@ -91,7 +91,7 @@ export const groupOres = (): boolean => {
     }
 
     if (!combined) {
-      return true;
+      return;
     }
   }
 };

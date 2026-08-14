@@ -252,13 +252,16 @@
     return result("stalled");
   };
 
+  // src/lib/weight.ts
+  var overweight = (buffer = 0) => player.weightMax > 0 && player.weight > player.weightMax - buffer;
+
   // src/boxes/guards.ts
   var stopReason = () => {
     if (player.isDead) {
       return "you are dead";
     }
     if (!DROP_KEYS) {
-      if (player.weight > player.weightMax - WEIGHT_BUFFER) {
+      if (overweight(WEIGHT_BUFFER)) {
         return `overweight (${player.weight}/${player.weightMax}) and keys are going into the pack`;
       }
       const top = (player.backpack?.contents ?? []).length;

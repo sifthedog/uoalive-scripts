@@ -1,10 +1,12 @@
 "use strict";
 (() => {
+  // src/lib/arts.ts
+  var INGOT_GRAPHICS = /* @__PURE__ */ new Set([7151, 7152, 7153, 7154]);
+
   // src/tinkering/config.ts
   var TOOL_NAME = "tool kit";
   var TOOL_GRAPHICS = /* @__PURE__ */ new Set([7864, 7868]);
   var SPARE_BAG_SERIAL = void 0;
-  var INGOT_GRAPHICS = /* @__PURE__ */ new Set([7151, 7152, 7153, 7154]);
   var INGOT_HUE = 0;
   var GUMP_SERIAL = 3449376977;
   var CATEGORIES = {

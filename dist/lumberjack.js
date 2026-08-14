@@ -1,5 +1,8 @@
 "use strict";
 (() => {
+  // src/lib/weight.ts
+  var overweight = (buffer = 0) => player.weightMax > 0 && player.weight > player.weightMax - buffer;
+
   // src/lib/containers.ts
   var CONTAINER_GRAPHICS = /* @__PURE__ */ new Set([
     3701,
@@ -308,7 +311,7 @@
     if (!inBounds(player.x, player.y)) {
       return `at ${player.x},${player.y}, outside ${describeBounds()}`;
     }
-    if (player.weight > player.weightMax - WEIGHT_BUFFER) {
+    if (overweight(WEIGHT_BUFFER)) {
       return `overweight (${player.weight}/${player.weightMax})`;
     }
     const top = (player.backpack?.contents ?? []).length;
@@ -369,7 +372,7 @@
         break;
       }
       if (stopReason()) {
-        return;
+        break;
       }
     }
     resetBeat();
@@ -586,7 +589,7 @@
       return false;
     }
     const moved = unloadTo(animals, isCargo);
-    if (player.weight > player.weightMax - HAUL_BUFFER) {
+    if (overweight(HAUL_BUFFER)) {
       const logs = collectIn(player.backpack?.contents, isLog);
       if (logs.length > 0) {
         const total = logs.reduce((sum, item) => sum + (item.amount ?? 1), 0);
@@ -714,6 +717,7 @@
   var chopped = 0;
   var unknown = 0;
   var stop;
+  var reported2 = 0;
   var throttled = 0;
   var sinceProgress = 0;
   var hauling = true;
@@ -738,7 +742,7 @@
       stop = "no axe";
       break;
     }
-    if (hauling && player.weight > player.weightMax - HAUL_BUFFER) {
+    if (hauling && overweight(HAUL_BUFFER)) {
       const weightBefore = player.weight;
       makeBoards();
       unload();
@@ -815,10 +819,14 @@
       // Nothing was learned about the tree and nothing went wrong: the shard was busy. The counters
       // are reset rather than merely left alone, because whatever they had accumulated was measured
       // against a server that was not answering.
+      // Sitting out a save is the script working, not the script stuck, so the stall watchdog is
+      // reset along with the rest: a shard that saves often would otherwise walk a run to STALL_STOP
+      // a save at a time, and the regrow wait is already excused on exactly this reasoning.
       case "saving":
         waitOutSave();
         unknown = 0;
         throttled = 0;
+        sinceProgress = 0;
         break;
       // The one branch that used to say nothing and count nothing. A fixed 600ms retry is shorter
       // than the harvest delay on most shards, so the swing that was refused re-armed the very timer
@@ -826,14 +834,20 @@
       // Back off further each time instead, and give up rather than spin.
       case "throttled":
         throttled++;
+        unknown = 0;
         log(`lumberjack: shard says wait (${throttled}/${MAX_THROTTLED}), backing off`);
         sleep(Math.min(THROTTLE_BACKOFF * throttled, THROTTLE_BACKOFF_MAX));
         if (throttled >= MAX_THROTTLED) {
           stop = "the shard kept refusing the swing";
         }
         break;
+      // A cursor that never opened, with an axe demonstrably in hand, is the shard declining to start
+      // the swing rather than an empty hand - on a live mining run that was a third of them. Backed
+      // off like a throttle, but still counted: five in a row with nothing else happening is a stuck
+      // run whatever the cause.
       case "noCursor":
         unknown++;
+        sleep(THROTTLE_BACKOFF);
         break;
       default:
         unknown++;
@@ -843,7 +857,8 @@
       stop = `${MAX_UNKNOWN} unreadable outcomes in a row`;
       break;
     }
-    if (chopped > 0 && chopped % LOG_EVERY === 0) {
+    if (chopped >= reported2 + LOG_EVERY) {
+      reported2 = chopped;
       log(`lumberjack: ${chopped} chops, ${logTotal()} logs, ${player.weight}/${player.weightMax}`);
     }
     endCycle(outcome ?? "unknown", cycle);

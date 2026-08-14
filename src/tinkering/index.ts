@@ -37,6 +37,11 @@ let reopens = 0;
 let throttled = 0;
 let toolSerial: number | undefined;
 
+// The tally at the last progress line. Compared against rather than `crafted % LOG_EVERY`, which is
+// a property of the count and not of the cycle: it stays true for every cycle that follows the
+// twenty-fifth craft, so a run of failures or refusals after one reprints the same line each time.
+let reported = 0;
+
 // Seeding the loop's own stop flag rather than trusting exit() to halt, so an uncalibrated
 // config can never reach reply() with an undefined button ID
 let stop = uncalibrated.length
@@ -130,7 +135,8 @@ for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
       }
   }
 
-  if (crafted > 0 && crafted % LOG_EVERY === 0) {
+  if (crafted >= reported + LOG_EVERY) {
+    reported = crafted;
     log(`tinker: ${crafted} made, ${failures} failed, base ${tenths(startedAt)} -> ${tenths(skillBase())}`);
   }
 

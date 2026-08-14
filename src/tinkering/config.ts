@@ -8,7 +8,7 @@ export const SPARE_BAG_SERIAL: number | undefined = undefined;
 
 // Iron ingots. Like ore piles, an ingot stack's graphic changes with its size, so match the
 // whole art range and pin the hue instead - hue 0 is iron, coloured ores keep their own hue.
-export const INGOT_GRAPHICS = new Set([0x1bef, 0x1bf0, 0x1bf1, 0x1bf2]);
+export { INGOT_GRAPHICS } from '../lib/arts.js';
 export const INGOT_HUE = 0;
 
 // Skill gates, in tenths the way getSkill() reports them: 95.0 is 950

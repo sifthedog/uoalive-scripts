@@ -1,3 +1,4 @@
+import { overweight } from '../lib/weight.js';
 import { PACK_LIMIT, WEIGHT_BUFFER } from './config.js';
 
 // Anything here ends the run cleanly; the loop asks before every craft
@@ -7,7 +8,7 @@ export const stopReason = () => {
   }
 
   // Buffer, so the stop lands before the shard starts refusing to move the new item
-  if (player.weight > player.weightMax - WEIGHT_BUFFER) {
+  if (overweight(WEIGHT_BUFFER)) {
     return `overweight (${player.weight}/${player.weightMax})`;
   }
 

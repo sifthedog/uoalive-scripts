@@ -1,5 +1,11 @@
 "use strict";
 (() => {
+  // src/lib/weight.ts
+  var overweight = (buffer = 0) => player.weightMax > 0 && player.weight > player.weightMax - buffer;
+
+  // src/lib/arts.ts
+  var INGOT_GRAPHICS = /* @__PURE__ */ new Set([7151, 7152, 7153, 7154]);
+
   // src/mining/config.ts
   var PICKAXE_NAME = "pickaxe";
   var SPARE_BAG_SERIAL = void 0;
@@ -24,7 +30,6 @@
   var DIG_TIMEOUT = 8e3;
   var ORE_GRAPHICS = /* @__PURE__ */ new Set([6583, 6586, 6585, 6584]);
   var ORE_NAME = /\bore\b/i;
-  var INGOT_GRAPHICS = /* @__PURE__ */ new Set([7151, 7154, 7150, 7153]);
   var COMBINE_DELAY = 700;
   var FIRE_BEETLE_GRAPHICS = /* @__PURE__ */ new Set([169]);
   var FIRE_BEETLE_SERIAL = void 0;
@@ -214,7 +219,7 @@
       const piles = [...groups.values()].reduce((total, items) => total + items.length, 0);
       if (piles >= previousPiles) {
         log(`groupOres: stalled at ${piles} piles`);
-        return true;
+        return;
       }
       previousPiles = piles;
       let combined = false;
@@ -236,7 +241,7 @@
         sleep(COMBINE_DELAY);
       }
       if (!combined) {
-        return true;
+        return;
       }
     }
   };
@@ -420,7 +425,7 @@
         break;
       }
       if (stopReason()) {
-        return;
+        break;
       }
     }
     resetBeat();
@@ -522,7 +527,7 @@
     return beetle;
   };
   var approach = (serial) => {
-    for (let step = 0; step <= MAX_BEETLE_STEPS; step++) {
+    for (let step = 0; step < MAX_BEETLE_STEPS; step++) {
       const beetle = client.findObject(serial);
       if (!beetle || !isMobile(beetle)) {
         log("smelt: lost track of the fire beetle");
@@ -817,7 +822,7 @@
   // src/mining/index.ts
   rememberPickaxe(player.equippedItems.oneHanded);
   var minutesLeft = (until) => Math.max(1, Math.round((until - now()) / 6e4));
-  var tooHeavy = () => player.weightMax > 0 && player.weight > player.weightMax;
+  var tooHeavy = () => overweight();
   var idleUntil = (respawnsAt) => {
     const wait = respawnsAt - now();
     if (wait <= 0) {
@@ -847,6 +852,7 @@
   var mined = 0;
   var unknown = 0;
   var stop;
+  var reported2 = 0;
   var throttled = 0;
   var sinceProgress = 0;
   var barren = 0;
@@ -972,7 +978,7 @@
       // destroy more. The vein is untouched - it is the pack that has to give. Consolidating is the
       // answer rather than smelting, because a full pack is a container at its item cap: forty piles
       // of one become one pile of forty, and thirty-nine slots come back. If the weight is the real
-      // problem, stow() smelts as well; if it is not, this is the cheaper fix anyway.
+      // problem, the next cycle's tooHeavy() branch smelts; if it is not, this is the cheaper fix.
       case "packFull":
         log("mining: pack is full, consolidating before the next swing");
         groupOres();
@@ -985,15 +991,20 @@
       // Nothing was learned about the vein and nothing went wrong: the shard was busy. The counters
       // are reset rather than merely left alone, because whatever they had accumulated was measured
       // against a server that was not answering.
+      // Sitting out a save is the script working, not the script stuck, so the stall watchdog is
+      // reset along with the rest: a shard that saves often would otherwise walk a run to STALL_STOP
+      // a save at a time, and the respawn wait is already excused on exactly this reasoning.
       case "saving":
         waitOutSave();
         unknown = 0;
         throttled = 0;
+        sinceProgress = 0;
         break;
       // A fixed retry shorter than the harvest delay re-arms the very timer it is waiting on, so
       // back off further each time instead, and give up rather than spin
       case "throttled":
         throttled++;
+        unknown = 0;
         log(`mining: shard says wait (${throttled}/${MAX_THROTTLED}), backing off`);
         sleep(Math.min(THROTTLE_BACKOFF * throttled, THROTTLE_BACKOFF_MAX));
         if (throttled >= MAX_THROTTLED) {
@@ -1016,7 +1027,8 @@
       stop = `${MAX_UNKNOWN} unreadable outcomes in a row`;
       break;
     }
-    if (mined > 0 && mined % LOG_EVERY === 0) {
+    if (mined >= reported2 + LOG_EVERY) {
+      reported2 = mined;
       log(`mining: ${mined} swings, ${oreTotal()} ore, ${player.weight}/${player.weightMax}`);
     }
     endCycle(outcome ?? "unknown", cycle);

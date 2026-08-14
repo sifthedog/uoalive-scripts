@@ -64,4 +64,13 @@ describe('stopReason', () => {
 
     expect(stopReason()).toBeUndefined();
   });
+
+  // A max of 0 is the client refreshing stats, not a character who can carry nothing
+  it('does not read a stat refresh as an overloaded character', async () => {
+    installGlobals({ player: { weight: 436, weightMax: 0 } });
+
+    const { stopReason } = await withKeys(false);
+
+    expect(stopReason()).toBeUndefined();
+  });
 });

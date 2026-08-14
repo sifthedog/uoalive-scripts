@@ -1,4 +1,5 @@
 import { collectIn, type ItemPredicate } from '../lib/containers.js';
+import { overweight } from '../lib/weight.js';
 import { isBoard, unconvertible } from './boards.js';
 import { isLog } from './chop.js';
 import {
@@ -165,7 +166,7 @@ export const unload = (): boolean => {
   // Only asked once every animal has had a turn at the boards - a full first animal is no
   // evidence the conversion fell behind. Ending the run overweight would be worse than carrying
   // logs across, but say so: boards are what belongs on an animal.
-  if (player.weight > player.weightMax - HAUL_BUFFER) {
+  if (overweight(HAUL_BUFFER)) {
     const logs = collectIn(player.backpack?.contents, isLog);
 
     if (logs.length > 0) {

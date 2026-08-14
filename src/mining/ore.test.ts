@@ -160,14 +160,16 @@ describe('oreTotal', () => {
 
 describe('groupOres', () => {
   it('does nothing when there is no ore', () => {
-    expect(groupOres()).toBe(true);
+    groupOres();
+
     expect(world.player.use).not.toHaveBeenCalled();
   });
 
   it('does nothing when each hue is already a single pile', () => {
     installGlobals({ backpack: [ore(1, IRON, 5), ore(2, COPPER, 5)] });
 
-    expect(groupOres()).toBe(true);
+    groupOres();
+
     expect(world.player.use).not.toHaveBeenCalled();
   });
 
@@ -195,7 +197,8 @@ describe('groupOres', () => {
   it('bails out rather than looping when a pass makes no progress', () => {
     world = installGlobals({ backpack: [ore(1, IRON, 3), ore(2, IRON, 30)] });
 
-    expect(groupOres()).toBe(true);
+    groupOres();
+
     expect(world.log).toHaveBeenCalledWith(expect.stringContaining('stalled'));
   });
 
@@ -225,7 +228,8 @@ describe('groupOres', () => {
       return true;
     });
 
-    expect(groupOres()).toBe(true);
+    groupOres();
+
     expect(world.log).not.toHaveBeenCalledWith(expect.stringContaining('stalled'));
     expect(world.player.use).toHaveBeenCalledTimes(1);
   });

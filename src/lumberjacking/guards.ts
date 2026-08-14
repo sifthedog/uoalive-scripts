@@ -1,3 +1,4 @@
+import { overweight } from '../lib/weight.js';
 import { describeBounds, inBounds } from './bounds.js';
 import { PACK_LIMIT, WEIGHT_BUFFER } from './config.js';
 
@@ -14,7 +15,7 @@ export const stopReason = () => {
   }
 
   // Buffer, so the stop lands before the shard starts refusing to move the new logs
-  if (player.weight > player.weightMax - WEIGHT_BUFFER) {
+  if (overweight(WEIGHT_BUFFER)) {
     return `overweight (${player.weight}/${player.weightMax})`;
   }
 

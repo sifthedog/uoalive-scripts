@@ -86,10 +86,9 @@ export const ORE_GRAPHICS = new Set([0x19b7, 0x19ba, 0x19b9, 0x19b8]);
 // costs one tooltip and then goes back to being a graphic lookup.
 export const ORE_NAME = /\bore\b/i;
 
-// A seed only, and the same shape as the ore set because ingots stack the same way. The real
-// graphics are learned by diffing the pack across the first successful smelt, so a wrong guess
-// here costs nothing.
-export const INGOT_GRAPHICS = new Set([0x1bef, 0x1bf2, 0x1bee, 0x1bf1]);
+// A seed only: the real graphics are learned by diffing the pack across the first successful smelt,
+// so a wrong guess here costs nothing. Shared with tinkering, which does depend on it.
+export { INGOT_GRAPHICS } from '../lib/arts.js';
 
 // Pause after each ore combine, to stay under the server's action throttle
 export const COMBINE_DELAY = 700;
@@ -182,11 +181,10 @@ export const MAX_UNKNOWN = 5;
 // Steps to spend walking to one vein before writing it off as unreachable
 export const MAX_STEPS = 20;
 
-// Smelting is the one thing that frees weight here, and it only happens once you are actually over
-// the limit - the shard starts refusing to move things at that point, which is the signal. There is
-// deliberately no buffer: a threshold below the limit would just be a second, earlier limit, and the
-// guards have no weight check for the same reason. What ends an overweight run is a smelt that
-// freed nothing, not the weight itself.
+// The container's item cap, not a weight. There is no WEIGHT_BUFFER here on purpose: smelting is
+// the one thing that frees weight, and it only happens once you are actually over the limit, so a
+// threshold below it would just be a second, earlier limit that fired first every time. What ends
+// an overweight run is a smelt that freed nothing, not the weight itself.
 export const PACK_LIMIT = 120;
 
 // Progress line every this many swings that landed

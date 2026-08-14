@@ -1,3 +1,4 @@
+import { overweight } from '../lib/weight.js';
 import { axeSerial, equipAxe, rememberAxe } from './axe.js';
 import { makeBoards } from './boards.js';
 import { describeBounds } from './bounds.js';
@@ -78,6 +79,11 @@ let chopped = 0;
 let unknown = 0;
 let stop: string | undefined;
 
+// The tally at the last progress line. Compared against rather than `chopped % LOG_EVERY`, which is
+// a property of the count and not of the cycle: it stays true for every cycle that follows the
+// twenty-fifth chop, so a run that then walks, waits or is refused reprints the same line each time.
+let reported = 0;
+
 // Consecutive refusals to swing, and cycles since the last chop landed. Neither branch used to
 // count anything, which is how a run could stand still and silent for the whole cycle backstop.
 let throttled = 0;
@@ -121,7 +127,7 @@ for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
 
   // Fires below the guards' overweight threshold, so there is still room to work in. The boards
   // are made first: an unconvertible hue still gets hauled, but a convertible one travels lighter.
-  if (hauling && player.weight > player.weightMax - HAUL_BUFFER) {
+  if (hauling && overweight(HAUL_BUFFER)) {
     const weightBefore = player.weight;
 
     makeBoards();
@@ -226,10 +232,14 @@ for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
     // Nothing was learned about the tree and nothing went wrong: the shard was busy. The counters
     // are reset rather than merely left alone, because whatever they had accumulated was measured
     // against a server that was not answering.
+    // Sitting out a save is the script working, not the script stuck, so the stall watchdog is
+    // reset along with the rest: a shard that saves often would otherwise walk a run to STALL_STOP
+    // a save at a time, and the regrow wait is already excused on exactly this reasoning.
     case 'saving':
       waitOutSave();
       unknown = 0;
       throttled = 0;
+      sinceProgress = 0;
       break;
 
     // The one branch that used to say nothing and count nothing. A fixed 600ms retry is shorter
@@ -238,6 +248,11 @@ for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
     // Back off further each time instead, and give up rather than spin.
     case 'throttled':
       throttled++;
+
+      // A refusal is a read outcome, so it clears the unreadable count the way every other named
+      // branch does. Left standing, a shard alternating refusals with silence ends the run on
+      // MAX_UNKNOWN without ever having produced five unreadable cycles in a row.
+      unknown = 0;
       log(`lumberjack: shard says wait (${throttled}/${MAX_THROTTLED}), backing off`);
       sleep(Math.min(THROTTLE_BACKOFF * throttled, THROTTLE_BACKOFF_MAX));
 
@@ -246,8 +261,13 @@ for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
       }
       break;
 
+    // A cursor that never opened, with an axe demonstrably in hand, is the shard declining to start
+    // the swing rather than an empty hand - on a live mining run that was a third of them. Backed
+    // off like a throttle, but still counted: five in a row with nothing else happening is a stuck
+    // run whatever the cause.
     case 'noCursor':
       unknown++;
+      sleep(THROTTLE_BACKOFF);
       break;
 
     default:
@@ -260,7 +280,8 @@ for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
     break;
   }
 
-  if (chopped > 0 && chopped % LOG_EVERY === 0) {
+  if (chopped >= reported + LOG_EVERY) {
+    reported = chopped;
     log(`lumberjack: ${chopped} chops, ${logTotal()} logs, ${player.weight}/${player.weightMax}`);
   }
 
