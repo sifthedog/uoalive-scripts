@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Directions, installGlobals, type FakeWorld } from '../test-support/uo.js';
 
+// The stepping itself is covered in src/lib/walk.test.ts. What is worth pinning here is the box:
+// stepToward is the only thing that ever moves the character, so it is the only place BOUNDS can be
+// enforced, and mining's binding deliberately has no constraint at all.
 const BOX = { minX: 0, maxX: 100, minY: 0, maxY: 100 };
 
 let world: FakeWorld;
@@ -19,60 +22,30 @@ beforeEach(() => {
 });
 
 describe('stepToward', () => {
-  // RunUO's numbering, where Right/Down/Left/Up are the diagonals NE/SE/SW/NW rather than the
-  // cardinals their names suggest. Getting one wrong walks the character the wrong way.
-  const cases: [string, { x: number; y: number }, number][] = [
-    ['north', { x: 50, y: 40 }, Directions.North],
-    ['north-east', { x: 60, y: 40 }, Directions.Right],
-    ['east', { x: 60, y: 50 }, Directions.East],
-    ['south-east', { x: 60, y: 60 }, Directions.Down],
-    ['south', { x: 50, y: 60 }, Directions.South],
-    ['south-west', { x: 40, y: 60 }, Directions.Left],
-    ['west', { x: 40, y: 50 }, Directions.West],
-    ['north-west', { x: 40, y: 40 }, Directions.Up],
-  ];
-
-  for (const [name, tree, direction] of cases) {
-    it(`runs ${name} toward a tree ${name} of the character`, async () => {
-      const { stepToward } = await loadWalk();
-
-      stepToward(tree);
-
-      expect(world.player.run).toHaveBeenCalledWith(direction);
-    });
-  }
-
-  // The first packet in a new direction only turns the character, so a single run() would leave it
-  // facing the tree without having moved
-  it('issues the direction twice, because the first one only turns', async () => {
+  it('walks toward a tree inside the box', async () => {
     const { stepToward } = await loadWalk();
 
     stepToward({ x: 60, y: 50 });
 
-    expect(world.player.run).toHaveBeenCalledTimes(2);
-    expect(world.player.run.mock.calls).toEqual([[Directions.East], [Directions.East]]);
+    expect(world.player.run).toHaveBeenCalledWith(Directions.East);
   });
 
-  it('reports movement when the position changed', async () => {
+  // A box is mostly edge, so a diagonal that would leave it falls back to whichever cardinal half
+  // stays inside - the character slides along the edge rather than giving up on the tree
+  it('slides along the edge instead of stepping out of the box', async () => {
+    world = installGlobals({ player: { x: 100, y: 50 } });
     const { stepToward } = await loadWalk();
-    world.player.run.mockImplementation(() => {
-      world.player.x += 1;
-    });
 
-    expect(stepToward({ x: 60, y: 50 })).toBe(true);
+    stepToward({ x: 110, y: 60 });
+
+    expect(world.player.run).toHaveBeenCalledWith(Directions.South);
   });
 
-  // How the caller notices a fence and writes the tree off rather than shuffling into it forever
-  it('reports no movement when the character did not budge', async () => {
+  it('refuses a step that would leave the box on both axes', async () => {
+    world = installGlobals({ player: { x: 100, y: 100 } });
     const { stepToward } = await loadWalk();
 
-    expect(stepToward({ x: 60, y: 50 })).toBe(false);
-  });
-
-  it('does not move at all when standing on the tree', async () => {
-    const { stepToward } = await loadWalk();
-
-    expect(stepToward({ x: 50, y: 50 })).toBe(false);
+    expect(stepToward({ x: 110, y: 110 })).toBe(false);
     expect(world.player.run).not.toHaveBeenCalled();
   });
 });

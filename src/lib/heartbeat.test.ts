@@ -1,16 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { installGlobals, type FakeWorld } from '../test-support/uo.js';
-import { HEARTBEAT_EVERY } from './config.js';
+import { createHeartbeat } from './heartbeat.js';
+
+const HEARTBEAT_EVERY = 30_000;
 
 let world: FakeWorld;
 
-// The module holds the clock of the last beat, so every test needs a fresh copy of it - the same
-// way a restart of the script gives it one
-const loadHeartbeat = async () => {
-  vi.resetModules();
-  return import('./heartbeat.js');
-};
+// The factory holds the clock of the last beat, so every test needs its own - the same way a
+// restart of the script gives the script one
+const loadHeartbeat = async () =>
+  createHeartbeat({ prefix: 'lumberjack', noun: 'chops', everyMs: HEARTBEAT_EVERY });
 
 const at = (ms: number) => vi.setSystemTime(new Date(ms));
 
