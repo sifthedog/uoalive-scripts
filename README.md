@@ -28,7 +28,7 @@ top-level `const` collides with the previous run's and the client fails with
 ## Layout
 
 ```
-src/lib/          shared helpers (container detection and search, pack diffing, vendor gumps)
+src/lib/          everything more than one script does (see below)
 src/boxes/        empty the crafted wooden boxes, keys on the floor (+ a key dump and a drop probe)
 src/lumberjacking/ chop the nearest tree, make boards, load the pack animals
 src/mining/       mine the nearest vein, smelt the ore on a fire beetle (+ an ore tile probe)
@@ -39,7 +39,40 @@ scripts/          type retrieval and patching
 dist/             build output - this is what you paste
 ```
 
-Tunables live in each folder's `config.ts` — item names, delays, how much to keep back.
+Tunables live in each folder's `config.ts` — item names, delays, how much to keep back. Some of
+those are re-exported straight out of `src/lib/timings.ts`, which is where a value both harvest
+scripts agreed on lives; the folder is still the only file anything imports, and giving one its own
+value means deleting it from the re-export list and declaring it below.
+
+`src/lib/` holds what more than one script does, parameterised so the folder keeps its own wordings
+and its own state:
+
+```
+arts        graphics two scripts would otherwise disagree about
+clock       one Date.now(), so tests have one thing to fake
+containers  container detection, opening, and depth-first search
+convert     resource -> product, judged by pack diff, with per-hue write-off
+die         exit() that the compiler will narrow on
+entity      hex, Chebyshev distance, item-vs-mobile, name-or-serial, walk-to-a-mobile
+guards      the stop conditions, composed per folder
+heartbeat   'still here', on the clock rather than per cycle
+loop        the idle wait, the stall watchdog, the throttle backoff
+outcomes    a journal phrase table and the reverse lookup off it
+pack        counting and diffing what the backpack holds
+retry       issue, poll for the proof, reissue
+save        sitting out a world save
+store       state parked on globalThis so it outlives the run
+tiles       the tile cooldown map and the terrain scan
+timings     the constants both harvest scripts agreed on
+tool        find it, learn its graphic, equip it, notice it break
+vendor      sell gumps
+walk        one naive step, optionally inside a box
+weight      the one place player.weightMax is read
+```
+
+Nothing in `src/lib/` imports a folder's `config.ts`; the parameters come in through the call. The
+modules that hold state are factories rather than singletons for that reason — two scripts in one
+test process must not share a latch.
 
 ## Tests
 
@@ -53,11 +86,17 @@ transform `build.mjs` already uses — so the `.js`-extension imports work with 
 in milliseconds. Globals are assigned rather than stubbed because `walk.ts` and `tinkering/gump.ts`
 read them *while being evaluated*, before any test body runs.
 
-Two things to know before adding tests:
+Where a test belongs: the shared module, if that is where the logic is. `src/lib/walk.test.ts`
+covers the stepping, and `lumberjacking/walk.test.ts` covers only the thing the folder decides —
+that it passes `allowedStep` and slides along the box edge, where mining passes no constraint at
+all. Before the extraction those two files were one test suite and one untested copy of it.
 
-- **Modules keep state between tests.** `tree.ts` memoizes tiledata lookups, `boards.ts` counts
-  misses per hue, `axe.ts` / `pickaxe.ts` / `tool.ts` latch the graphic they learned. Those tests
-  call `vi.resetModules()` and then `await import(...)`.
+Three things to know before adding tests:
+
+- **Modules keep state between tests.** `tree.ts` memoizes tiledata lookups, the converters count
+  misses per hue, and the tools latch the graphic they learned. Those tests call `vi.resetModules()`
+  and then `await import(...)`. A shared factory can also just be called again for a fresh one,
+  which is why `lib/heartbeat.test.ts` needs no module reset.
 - **`vi.resetModules()` does not clear `globalThis`,** and `memory.ts` is on `globalThis` on
   purpose. `tree.test.ts` calls `forget()` from a freshly imported `memory.js` *before* importing
   `tree.js`, or each test inherits the last one's blocked tiles. That same non-clearing is what the
@@ -75,9 +114,10 @@ actually gets pasted.
 What the suite is for is pinning the decisions in *Notes on the shard* below, most of which were
 expensive to learn: the pack-diff key carrying hue as well as graphic, `isContainer` refusing to
 guess (`player.use()` on a potion drinks it), giving up on a wood only after `CONVERT_ATTEMPTS`
-silent tries rather than one, `allowedStep` sliding along the box edge instead of giving up, and
-skill phases reading `.base` so a +Tinkering ring cannot fake a finish. It cannot check anything
-under *Known unverified* — those need a shard.
+silent tries rather than one, `allowedStep` sliding along the box edge instead of giving up, skill
+phases reading `.base` so a +Tinkering ring cannot fake a finish, and `overweight()` refusing to
+read a `weightMax` of 0 as an overloaded character. It cannot check anything under *Known
+unverified* — those need a shard.
 
 ## Clearing a pack of tinkered boxes
 
@@ -388,10 +428,27 @@ Written against UOAlive.
   likeliest way a run ends on a shard whose tile numbering `ORE_TILE_GRAPHICS` does not match, and
   on its own it is unactionable, so the stop prints the commonest arts under your feet and marks
   which ones the config matches. `src/mining/survey.ts` is that listing, shared with the probe.
-- `src/mining/` carries its own copies of `walk.ts`, `guards.ts`, `heartbeat.ts` and `memory.ts`
-  rather than sharing lumberjacking's. That is deliberate, not an accident: each folder is one
-  paste-ready script with its own `config.ts`, only one of them has a box at all, and the two memory
-  stores are keyed apart so one script's bans cannot hide the other's tiles.
+- **`src/mining/` used to carry its own copies of `walk.ts`, `guards.ts`, `heartbeat.ts`,
+  `memory.ts` and most of the rest, and the reasons given for it turned out to be reasons for
+  separate *configuration and state*, not separate code.** Each folder is still one paste-ready
+  script with its own `config.ts`, only one of them has a box, and the two memory stores are still
+  keyed apart so one script's bans cannot hide the other's tiles — all of which the shared modules
+  take as parameters. What the copies actually cost is that a lesson learned in one folder never
+  reached the other: `player.weightMax` reading 0 mid-refresh killed a mining run and was guarded
+  there, while the same unguarded expression sat in lumberjacking's guards, its haul trigger, its
+  haul fallback, and in tinkering's and boxes' guards, where it would have stopped a run on cycle
+  zero. Sharing is what stops that happening a fourth time. Bundling is per entry, so it costs
+  nothing in `dist/` beyond the parameterisation.
+- **`player.weightMax` reads 0 while the client is refreshing stats**, and every weight in the game
+  is greater than zero, so an unguarded `weight > weightMax - buffer` reads a stat refresh as an
+  overloaded character. A live run ended at *overweight (436/453)* on exactly that: the branch
+  opened on a max of 0, the figure had recovered by the time anything read it again, and the stop
+  printed a weight comfortably inside the limit it claimed to have exceeded. Every read of the limit
+  goes through `src/lib/weight.ts`.
+- **A progress line counted with `tally % LOG_EVERY === 0` reprints itself.** That is a property of
+  the count, not of the cycle, so it stays true for every cycle after the twenty-fifth chop until
+  the next one lands — a run that then walks, waits or is refused says the same line over and over.
+  All three loops compare against the tally at the last line instead.
 - One tree is several statics and only the trunk is harvestable, so a tile that runs out of wood
   is tracked per tile — a stump regrows, and a neighbour of the same art may still have wood.
 - **A depleted tile is a cooldown, not a write-off.** The stump grows back, so *not enough wood*
@@ -568,3 +625,19 @@ Written against UOAlive.
   which the iron-only ingot count cannot see.
 - Whether lockpicks still grant gains all the way to 95.0 here. On stock difficulty tables they
   top out nearer 70, so a third recipe may be needed between the two phases.
+- **Three of mining's `OUTCOME_TEXT` phrasings, which the deduplication put side by side with
+  lumberjacking's and which do not obviously agree with it.** `'You cannot mine there'` sits in the
+  `empty` bucket, so it parks the tile for `RESPAWN_DELAY`; on most shards that sentence means the
+  tile is not mineable at all, which is `notOre` and a permanent ban. `'There is nothing here to
+  harvest'` (`nothingNearby`) and `'There is no ore here to mine'` (`empty`) are close enough that a
+  shard using a hybrid wording lands in whichever key `Object.keys` reaches first, and `empty`
+  precedes `nothingNearby`. Both are one journal line from being settled.
+- Whether the `notOre` branch wants to mark the tile as well as the art. It calls
+  `markNotMineable(vein)` and `markUnusable(vein, ...)` both, and once the art is banned the tile
+  ban can never be reached — harmless, but it double-logs, and if the two ever disagree it is the
+  art ban that is right.
+- Whether the ingot arts in `src/lib/arts.ts` are the right four. Mining and tinkering shipped two
+  different sets for the same item — mining had `0x1bee` where tinkering had `0x1bf0` — and they
+  were reconciled onto tinkering's contiguous run, which is the one that is actually load-bearing
+  (mining only reads the set to avoid re-logging an art it has already learned). Nothing has
+  confirmed either against the shard.
