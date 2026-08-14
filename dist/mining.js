@@ -1,0 +1,1033 @@
+"use strict";
+(() => {
+  // src/mining/config.ts
+  var PICKAXE_NAME = "pickaxe";
+  var SPARE_BAG_SERIAL = void 0;
+  var range = (from, to) => Array.from({ length: to - from + 1 }, (_, offset) => from + offset);
+  var ORE_TILE_GRAPHICS = /* @__PURE__ */ new Set([
+    ...range(220, 251),
+    ...range(1339, 1359),
+    ...range(1361, 1383),
+    ...range(1386, 1394)
+  ]);
+  var NOT_ORE_GRAPHICS = /* @__PURE__ */ new Set();
+  var ORE_STATIC_NAME = /cave|rock|mountain|ore/i;
+  var SCAN_RADIUS = 12;
+  var MINE_RANGE = 2;
+  var RESPAWN_DELAY = 25 * 60 * 1e3;
+  var UNREACHABLE_DELAY = 5 * 60 * 1e3;
+  var IDLE_POLL = 1e4;
+  var IDLE_LOG_EVERY = 6e4;
+  var STEP_DELAY = 300;
+  var WALK_DELAY = 300;
+  var TARGET_TIMEOUT = 2e3;
+  var DIG_TIMEOUT = 8e3;
+  var ORE_GRAPHICS = /* @__PURE__ */ new Set([6583, 6586, 6585, 6584]);
+  var ORE_NAME = /\bore\b/i;
+  var INGOT_GRAPHICS = /* @__PURE__ */ new Set([7151, 7154, 7150, 7153]);
+  var COMBINE_DELAY = 700;
+  var FIRE_BEETLE_GRAPHICS = /* @__PURE__ */ new Set([169]);
+  var FIRE_BEETLE_SERIAL = void 0;
+  var BEETLE_SCAN_RADIUS = 18;
+  var SMELT_RANGE = 2;
+  var MAX_BEETLE_STEPS = 24;
+  var SMELT_DELAY = 700;
+  var SMELT_TIMEOUT = 4e3;
+  var SMELT_POLL = 200;
+  var MIN_SMELT_AMOUNT = 2;
+  var SMELT_ATTEMPTS = 3;
+  var MAX_SMELT_PASSES = 60;
+  var UNSKILLED_TEXT = [
+    "You have no idea how to smelt this strange ore",
+    "You are not skilled enough",
+    "You lack the required skill",
+    "You do not have enough skill"
+  ];
+  var DISMOUNT_TIMEOUT = 2e3;
+  var DISMOUNT_POLL = 200;
+  var DISMOUNT_ATTEMPTS = 3;
+  var EQUIP_TIMEOUT = 2e3;
+  var EQUIP_POLL = 200;
+  var EQUIP_ATTEMPTS = 3;
+  var MAX_CYCLES = 5e3;
+  var HEARTBEAT_EVERY = 3e4;
+  var STALL_WARN = 60;
+  var STALL_STOP = 300;
+  var MAX_THROTTLED = 20;
+  var THROTTLE_BACKOFF = 1e3;
+  var THROTTLE_BACKOFF_MAX = 8e3;
+  var NOTHING_NEARBY_HINT = 5;
+  var MAX_UNKNOWN = 5;
+  var MAX_STEPS = 20;
+  var PACK_LIMIT = 120;
+  var LOG_EVERY = 25;
+  var SAVE_WAIT = 6e4;
+  var SAVE_POLL = 1e3;
+  var SAVE_DONE_TEXT = ["World save complete", "Save complete", "World save is complete"];
+  var SAVING_TEXT = ["The world is saving", "Saving world", "World save started"];
+  var OUTCOME_TEXT = {
+    dug: ["You dig some", "You put", "You loosen some rocks"],
+    // What parks a vein for RESPAWN_DELAY. Both wordings are in the wild: RunUO says metal, some
+    // shards say ore, and reading either one as unknown would stop the run on a worked-out vein.
+    empty: [
+      "There is no metal here to mine",
+      "There is no ore here to mine",
+      "You cannot mine there"
+    ],
+    // Confirmed from a live run on this shard. Distinct from `empty` because of that last word: this
+    // one is the shard answering about everything within reach of where you are standing, which is
+    // the only kind of answer a swing that names no tile can really get. It parks the whole area
+    // rather than a tile, and that is what makes the character walk away - reading it as `empty`
+    // would park one tile, swing again from the same spot, and get the same sentence back.
+    nothingNearby: [
+      "There are no harvestable resources nearby",
+      "There is nothing here to harvest"
+    ],
+    // About the art rather than the tile, so the whole graphic is banned - the same lesson
+    // lumberjacking learned when the tiledata called a whole family of statics a tree
+    notOre: ["You can't mine that", "Try mining in rock", "You can only mine"],
+    tooFar: ["That is too far away", "You cannot reach that"],
+    // Line of sight, not range - the tile is inside MINE_RANGE and the shard still will not have it,
+    // so no amount of walking closer or waiting fixes it
+    notSeen: ["Target cannot be seen"],
+    // The ore is destroyed when this fires, not dropped, so it has to trigger a smelt rather than
+    // another swing. Lumberjacking has no equivalent: it stops on weight long before the item cap.
+    packFull: ["Your backpack is full", "That container cannot hold more"],
+    wornOut: ["You have worn out your tool"],
+    // The shard freezing to write its world file. Nothing works while it does: the swing is refused,
+    // the journal answers with none of the wordings above, and every cycle of it reads as an
+    // unreadable outcome - five in a row and the run is over, which is what a save did to a live one.
+    // It is not a failure of anything and nothing about the vein is learned from it; it is a pause.
+    saving: SAVING_TEXT,
+    // Full wordings first: the bare prefix also catches "You must wait N seconds" from systems that
+    // have nothing to do with harvesting, and reading one of those as a mining throttle is how a
+    // swing that was never refused ends up being retried forever. Kept last as a fallback all the
+    // same - a phrase this list misses reads as an unreadable outcome, which is worse.
+    throttled: ["You must wait to perform another action", "You must wait a moment", "You must wait"]
+  };
+  var SURVEY_ARTS = 15;
+
+  // src/lib/containers.ts
+  var CONTAINER_GRAPHICS = /* @__PURE__ */ new Set([
+    3701,
+    // backpack
+    3702,
+    // bag
+    3705,
+    // pouch
+    3709,
+    // wooden box
+    3651,
+    // wooden chest
+    2472,
+    // metal box
+    2475,
+    // metal chest
+    3644,
+    // crate
+    3645,
+    // crate
+    3648,
+    // gold chest
+    3649
+    // gold chest
+  ]);
+  var isContainer = (item) => Array.isArray(item.contents) || CONTAINER_GRAPHICS.has(item.graphic);
+  var openContainers = (preferredSerial) => {
+    if (preferredSerial) {
+      player.use(preferredSerial);
+      sleep(800);
+      return true;
+    }
+    let opened = false;
+    for (const item of player.backpack?.contents ?? []) {
+      if (!isContainer(item)) {
+        continue;
+      }
+      player.use(item.serial);
+      sleep(800);
+      opened = true;
+    }
+    return opened;
+  };
+  var findIn = (contents, matches) => {
+    for (const item of contents ?? []) {
+      if (matches(item)) {
+        return item;
+      }
+      if (item.contents && item.contents.length > 0) {
+        const foundInSub = findIn(item.contents, matches);
+        if (foundInSub) return foundInSub;
+      }
+    }
+    return null;
+  };
+  var collectIn = (contents, matches) => {
+    const found = [];
+    for (const item of contents ?? []) {
+      if (matches(item)) {
+        found.push(item);
+      }
+      if (item.contents && item.contents.length > 0) {
+        found.push(...collectIn(item.contents, matches));
+      }
+    }
+    return found;
+  };
+
+  // src/mining/ore.ts
+  var isOrePile = (item) => {
+    if (ORE_GRAPHICS.has(item.graphic)) {
+      return true;
+    }
+    if (!ORE_NAME.test(item.name ?? "")) {
+      return false;
+    }
+    ORE_GRAPHICS.add(item.graphic);
+    log(`ore: 0x${item.graphic.toString(16)} '${item.name}' is ore too, remembering the art`);
+    return true;
+  };
+  var oreTotal = () => collectIn(player.backpack?.contents, isOrePile).reduce(
+    (total, item) => total + (item.amount ?? 1),
+    0
+  );
+  var oresByHue = () => {
+    const groups = /* @__PURE__ */ new Map();
+    for (const item of player.backpack?.contents ?? []) {
+      if (!isOrePile(item)) {
+        continue;
+      }
+      const oreHue = item.hue ?? 0;
+      const group = groups.get(oreHue);
+      if (group) {
+        group.push(item);
+      } else {
+        groups.set(oreHue, [item]);
+      }
+    }
+    return groups;
+  };
+  var groupOres = () => {
+    let previousPiles = Infinity;
+    while (true) {
+      const groups = oresByHue();
+      const piles = [...groups.values()].reduce((total, items) => total + items.length, 0);
+      if (piles >= previousPiles) {
+        log(`groupOres: stalled at ${piles} piles`);
+        return true;
+      }
+      previousPiles = piles;
+      let combined = false;
+      for (const [oreHue, items] of groups) {
+        if (items.length <= 1) {
+          continue;
+        }
+        const primary = items.reduce((a, b) => (b.amount ?? 1) > (a.amount ?? 1) ? b : a);
+        const dup = items.find((item) => item.serial !== primary.serial);
+        if (!dup) {
+          continue;
+        }
+        player.use(dup.serial);
+        if (!target.waitTargetEntity(primary.serial, TARGET_TIMEOUT)) {
+          log(`groupOres: no target cursor for hue ${oreHue}`);
+          target.cancel();
+        }
+        combined = true;
+        sleep(COMBINE_DELAY);
+      }
+      if (!combined) {
+        return true;
+      }
+    }
+  };
+
+  // src/mining/dig.ts
+  var ALL_OUTCOME_TEXT = Object.values(OUTCOME_TEXT).flat();
+  var outcomeFor = (matched) => Object.keys(OUTCOME_TEXT).find((name) => OUTCOME_TEXT[name].includes(matched));
+  var silentOutcome = (serial, oreBefore) => {
+    if (serial !== void 0 && !client.findObject(serial)) {
+      return "wornOut";
+    }
+    if (oreTotal() > oreBefore) {
+      return "dug";
+    }
+    return "unknown";
+  };
+  var digOnce = (serial) => {
+    target.cancel();
+    const oreBefore = oreTotal();
+    journal.clear();
+    player.useItemInHand();
+    if (!target.waitTargetSelf(TARGET_TIMEOUT)) {
+      target.cancel();
+      log("digOnce: no target cursor, nothing usable in hand?");
+      return "noCursor";
+    }
+    const matched = journal.waitForTextAny(ALL_OUTCOME_TEXT, void 0, DIG_TIMEOUT);
+    return matched ? outcomeFor(matched) : silentOutcome(serial, oreBefore);
+  };
+
+  // src/mining/guards.ts
+  var stopReason = () => {
+    if (player.isDead) {
+      return "you are dead";
+    }
+    const top = (player.backpack?.contents ?? []).length;
+    if (top >= PACK_LIMIT) {
+      return `pack is full (${top} items at the top level)`;
+    }
+    return void 0;
+  };
+
+  // src/mining/memory.ts
+  var KEY = "__mining_memory";
+  var VERSION = 1;
+  var now = () => Date.now();
+  var scope = globalThis;
+  var load = () => {
+    const found = scope[KEY];
+    if (found?.version === VERSION) {
+      if (found.blocked.size > 0 || found.notOre.size > 0) {
+        log(`memory: resuming with ${found.blocked.size} blocked tiles, ${found.notOre.size} arts`);
+      }
+      return found;
+    }
+    const store2 = { version: VERSION, blocked: /* @__PURE__ */ new Map(), notOre: /* @__PURE__ */ new Set() };
+    scope[KEY] = store2;
+    return store2;
+  };
+  var store;
+  var memory = () => store ?? (store = load());
+
+  // src/mining/heartbeat.ts
+  var lastBeat;
+  var beat = (phase, cycle, mined2) => {
+    const time = now();
+    if (lastBeat === void 0) {
+      lastBeat = time;
+      return;
+    }
+    if (time - lastBeat < HEARTBEAT_EVERY) {
+      return;
+    }
+    lastBeat = time;
+    log(
+      `mining: still here - ${phase}, cycle ${cycle}, at ${player.x},${player.y}, ${player.weight}/${player.weightMax}, ${mined2} swings`
+    );
+  };
+  var resetBeat = () => {
+    lastBeat = now();
+  };
+
+  // src/mining/mount.ts
+  var reported = false;
+  var dismount = () => {
+    if (!player.equippedItems.mount) {
+      return true;
+    }
+    if (!reported) {
+      log("mount: getting off before working");
+      reported = true;
+    }
+    target.cancel();
+    for (let attempt = 1; attempt <= DISMOUNT_ATTEMPTS; attempt++) {
+      player.use(player.serial);
+      for (let waited = 0; waited < DISMOUNT_TIMEOUT; waited += DISMOUNT_POLL) {
+        sleep(DISMOUNT_POLL);
+        if (!player.equippedItems.mount) {
+          reported = false;
+          return true;
+        }
+      }
+      log(`dismount: attempt ${attempt} did not land, reissuing`);
+    }
+    log("dismount: gave up getting off the mount");
+    return false;
+  };
+
+  // src/mining/pickaxe.ts
+  var pickaxeGraphic;
+  var spareBagSerial = SPARE_BAG_SERIAL;
+  var reportedEmpty = false;
+  var isPickaxe = (item) => pickaxeGraphic !== void 0 && item.graphic === pickaxeGraphic || (item.name ?? "").toLowerCase().includes(PICKAXE_NAME);
+  var rememberPickaxe = (item) => {
+    if (item && pickaxeGraphic === void 0) {
+      pickaxeGraphic = item.graphic;
+      log(`pickaxe graphic is 0x${item.graphic.toString(16)}`);
+    }
+  };
+  var describeContents = (contents) => (contents ?? []).map((item) => {
+    const graphic = `0x${item.graphic.toString(16)}`;
+    return item.contents?.length ? `${graphic}[${describeContents(item.contents)}]` : graphic;
+  }).join(", ");
+  var reportEmptyPack = () => {
+    if (reportedEmpty) {
+      return;
+    }
+    log(`equipPickaxe: no pickaxe found. Pack holds: ${describeContents(player.backpack?.contents)}`);
+    log("equipPickaxe: if the spares are in a bag inside a bag, pin it as SPARE_BAG_SERIAL");
+    reportedEmpty = true;
+  };
+  var stillHolding = () => {
+    const held = player.equippedItems.oneHanded;
+    if (!held || !isPickaxe(held)) {
+      return false;
+    }
+    return client.findObject(held.serial) !== void 0;
+  };
+  var pickaxeSerial = () => player.equippedItems.oneHanded?.serial;
+  var equipPickaxe = () => {
+    if (stillHolding()) {
+      return true;
+    }
+    let pickaxe = findIn(player.backpack?.contents, isPickaxe);
+    if (!pickaxe && openContainers(spareBagSerial)) {
+      pickaxe = findIn(player.backpack?.contents, isPickaxe);
+    }
+    if (!pickaxe) {
+      client.headMsg("No pickaxe!", player, 33);
+      reportEmptyPack();
+      return false;
+    }
+    reportedEmpty = false;
+    rememberPickaxe(pickaxe);
+    if (pickaxe.container && pickaxe.container !== player.backpack?.serial) {
+      spareBagSerial = pickaxe.container;
+    }
+    target.cancel();
+    for (let attempt = 1; attempt <= EQUIP_ATTEMPTS; attempt++) {
+      player.equip(pickaxe.serial);
+      for (let waited = 0; waited < EQUIP_TIMEOUT; waited += EQUIP_POLL) {
+        sleep(EQUIP_POLL);
+        if (player.equippedItems.oneHanded?.serial === pickaxe.serial) {
+          return true;
+        }
+      }
+      log(`equipPickaxe: attempt ${attempt} did not land, reissuing`);
+    }
+    log("equipPickaxe: gave up equipping");
+    return false;
+  };
+
+  // src/mining/save.ts
+  var isSaving = () => SAVING_TEXT.some((text) => journal.containsText(text));
+  var waitOutSave = () => {
+    log("save: the world is saving, waiting it out");
+    journal.clear();
+    for (let waited = 0; waited < SAVE_WAIT; waited += SAVE_POLL) {
+      sleep(SAVE_POLL);
+      if (SAVE_DONE_TEXT.some((text) => journal.containsText(text))) {
+        break;
+      }
+      if (stopReason()) {
+        return;
+      }
+    }
+    resetBeat();
+  };
+
+  // src/lib/pack.ts
+  var countsByGraphic = (contents = player.backpack?.contents) => {
+    const counts = /* @__PURE__ */ new Map();
+    const walk = (items) => {
+      for (const item of items ?? []) {
+        const key = `0x${item.graphic.toString(16)}/${item.hue ?? 0}`;
+        counts.set(key, (counts.get(key) ?? 0) + (item.amount ?? 1));
+        walk(item.contents);
+      }
+    };
+    walk(contents);
+    return counts;
+  };
+  var diffCounts = (before, after) => {
+    const changes = [];
+    for (const [key, total] of after) {
+      const delta = total - (before.get(key) ?? 0);
+      if (delta !== 0) {
+        changes.push({ key, delta });
+      }
+    }
+    for (const [key, total] of before) {
+      if (!after.has(key)) {
+        changes.push({ key, delta: -total });
+      }
+    }
+    return changes;
+  };
+
+  // src/mining/walk.ts
+  var DIRECTION_BY_STEP = /* @__PURE__ */ new Map([
+    ["0,-1", Directions.North],
+    ["1,-1", Directions.Right],
+    ["1,0", Directions.East],
+    ["1,1", Directions.Down],
+    ["0,1", Directions.South],
+    ["-1,1", Directions.Left],
+    ["-1,0", Directions.West],
+    ["-1,-1", Directions.Up]
+  ]);
+  var stepToward = (spot) => {
+    const stepX = Math.sign(spot.x - player.x);
+    const stepY = Math.sign(spot.y - player.y);
+    if (stepX === 0 && stepY === 0) {
+      return false;
+    }
+    const direction = DIRECTION_BY_STEP.get(`${stepX},${stepY}`);
+    if (direction === void 0) {
+      return false;
+    }
+    const beforeX = player.x;
+    const beforeY = player.y;
+    player.run(direction);
+    sleep(WALK_DELAY);
+    player.run(direction);
+    sleep(WALK_DELAY);
+    return player.x !== beforeX || player.y !== beforeY;
+  };
+
+  // src/mining/smelt.ts
+  var unsmeltable = /* @__PURE__ */ new Set();
+  var distanceTo = (entity) => Math.max(Math.abs(entity.x - player.x), Math.abs(entity.y - player.y));
+  var isMobile = (entity) => entity._tag === "Mobile";
+  var beetleSerial = FIRE_BEETLE_SERIAL;
+  var reportedFound = false;
+  var reportedMissing = false;
+  var nameOf = (beetle) => beetle.name ?? `0x${beetle.serial.toString(16)}`;
+  var findBeetle = () => {
+    if (beetleSerial !== void 0) {
+      const pinned = client.findObject(beetleSerial);
+      if (pinned && isMobile(pinned)) {
+        return pinned;
+      }
+      if (FIRE_BEETLE_SERIAL !== void 0) {
+        return void 0;
+      }
+      beetleSerial = void 0;
+    }
+    const found = [];
+    for (const graphic of FIRE_BEETLE_GRAPHICS) {
+      found.push(...client.findAllMobilesOfType(graphic, null, null, null, BEETLE_SCAN_RADIUS));
+    }
+    if (found.length === 0) {
+      return void 0;
+    }
+    const mine = found.filter((beetle2) => beetle2.isRenamable);
+    const candidates = mine.length ? mine : found;
+    const beetle = candidates.sort((a, b) => distanceTo(a) - distanceTo(b))[0];
+    if (!reportedFound) {
+      log(`smelt: using '${nameOf(beetle)}' 0x${beetle.graphic.toString(16)} as the forge`);
+      reportedFound = true;
+    }
+    beetleSerial = beetle.serial;
+    return beetle;
+  };
+  var approach = (serial) => {
+    for (let step = 0; step <= MAX_BEETLE_STEPS; step++) {
+      const beetle = client.findObject(serial);
+      if (!beetle || !isMobile(beetle)) {
+        log("smelt: lost track of the fire beetle");
+        return void 0;
+      }
+      if (distanceTo(beetle) <= SMELT_RANGE) {
+        return beetle;
+      }
+      if (!stepToward(beetle)) {
+        log("smelt: cannot reach the fire beetle");
+        return void 0;
+      }
+    }
+    log(`smelt: still not next to the fire beetle after ${MAX_BEETLE_STEPS} steps`);
+    return void 0;
+  };
+  var learnIngots = (changes) => {
+    for (const { key, delta } of changes) {
+      if (delta <= 0) {
+        continue;
+      }
+      const graphic = Number(key.split("/")[0]);
+      if (ORE_GRAPHICS.has(graphic) || INGOT_GRAPHICS.has(graphic)) {
+        continue;
+      }
+      INGOT_GRAPHICS.add(graphic);
+      log(`smelt: ingot graphic is 0x${graphic.toString(16)}`);
+    }
+  };
+  var waitForChange = (before) => {
+    for (let waited = 0; waited < SMELT_TIMEOUT; waited += SMELT_POLL) {
+      sleep(SMELT_POLL);
+      const changes = diffCounts(before, countsByGraphic());
+      if (changes.length > 0) {
+        return changes;
+      }
+    }
+    return [];
+  };
+  var misses = /* @__PURE__ */ new Map();
+  var missed = (stackHue) => {
+    const count = (misses.get(stackHue) ?? 0) + 1;
+    misses.set(stackHue, count);
+    if (count >= SMELT_ATTEMPTS) {
+      unsmeltable.add(stackHue);
+      log(`smelt: hue ${stackHue} failed ${count} times, leaving it as ore`);
+    }
+  };
+  var smeltStack = (stack, beetle) => {
+    const stackHue = stack.hue ?? 0;
+    const before = countsByGraphic();
+    target.cancel();
+    journal.clear();
+    player.use(stack.serial);
+    if (!target.waitTargetEntity(beetle.serial, TARGET_TIMEOUT)) {
+      target.cancel();
+      log("smelt: no target cursor for the beetle");
+      missed(stackHue);
+      return false;
+    }
+    const changes = waitForChange(before);
+    if (changes.length > 0) {
+      misses.delete(stackHue);
+      learnIngots(changes);
+      return true;
+    }
+    if (UNSKILLED_TEXT.some((text) => journal.containsText(text))) {
+      unsmeltable.add(stackHue);
+      log(`smelt: not skilled enough for hue ${stackHue}, leaving it as ore`);
+      return false;
+    }
+    missed(stackHue);
+    return false;
+  };
+  var retryUnsmeltable = () => {
+    if (unsmeltable.size === 0) {
+      return false;
+    }
+    log(`smelt: giving ${unsmeltable.size} hue(s) written off earlier another go`);
+    unsmeltable.clear();
+    misses.clear();
+    return true;
+  };
+  var bigEnough = (item) => {
+    const amount = item.amount ?? 0;
+    return amount === 0 || amount >= MIN_SMELT_AMOUNT;
+  };
+  var nextStack = () => collectIn(player.backpack?.contents, isOrePile).find(
+    (item) => !unsmeltable.has(item.hue ?? 0) && bigEnough(item)
+  );
+  var describePile = (item) => {
+    const amount = item.amount ?? 0;
+    const hue = item.hue ?? 0;
+    if (unsmeltable.has(hue)) {
+      return `${amount} hue ${hue} (written off)`;
+    }
+    if (!bigEnough(item)) {
+      return `${amount} hue ${hue} (too small)`;
+    }
+    return `${amount} hue ${hue}`;
+  };
+  var smeltAll = () => {
+    if (!nextStack()) {
+      const piles = collectIn(player.backpack?.contents, isOrePile);
+      if (piles.length > 0) {
+        log(`smelt: nothing to smelt in ${piles.length} pile(s) - ${piles.map(describePile).join(", ")}`);
+      }
+      return true;
+    }
+    const found = findBeetle();
+    if (!found) {
+      if (!reportedMissing) {
+        log("smelt: no fire beetle nearby, keeping the ore as it is");
+        reportedMissing = true;
+      }
+      return false;
+    }
+    reportedMissing = false;
+    const beetle = approach(found.serial);
+    if (!beetle) {
+      return false;
+    }
+    for (let pass = 0; pass < MAX_SMELT_PASSES; pass++) {
+      if (isSaving()) {
+        log("smelt: the world is saving, leaving the ore for now");
+        return false;
+      }
+      const stack = nextStack();
+      if (!stack) {
+        return true;
+      }
+      smeltStack(stack, beetle);
+      sleep(SMELT_DELAY);
+    }
+    log(`smelt: hit the ${MAX_SMELT_PASSES} pass backstop`);
+    return false;
+  };
+
+  // src/mining/vein.ts
+  var known = /* @__PURE__ */ new Map();
+  var tileKey = (tile) => `${tile.x},${tile.y},${tile.z},${tile.graphic}`;
+  var minutes = (ms) => Math.max(1, Math.round(ms / 6e4));
+  var artKey = (graphic, isLand) => `${isLand ? "land" : "static"}:${graphic}`;
+  var isOre = (graphic, isLand) => {
+    if (NOT_ORE_GRAPHICS.has(graphic) || memory().notOre.has(artKey(graphic, isLand))) {
+      return false;
+    }
+    if (isLand) {
+      return ORE_TILE_GRAPHICS.has(graphic);
+    }
+    const remembered = known.get(graphic);
+    if (remembered !== void 0) {
+      return remembered;
+    }
+    const name = client.getStatic(graphic)?.name ?? "";
+    const matches = ORE_STATIC_NAME.test(name);
+    known.set(graphic, matches);
+    return matches;
+  };
+  var block = (tile, until) => memory().blocked.set(tileKey(tile), until);
+  var markDepleted = (tile) => {
+    block(tile, now() + RESPAWN_DELAY);
+    log(`vein: ${tile.x},${tile.y} is out of ore, back in ${minutes(RESPAWN_DELAY)}m`);
+  };
+  var markAreaDepleted = (range2) => {
+    const until = now() + RESPAWN_DELAY;
+    let parked = 0;
+    for (let dx = -range2; dx <= range2; dx++) {
+      for (let dy = -range2; dy <= range2; dy++) {
+        for (const tile of client.getTerrainList(player.x + dx, player.y + dy) ?? []) {
+          if (!isOre(tile.graphic, tile.isLand)) {
+            continue;
+          }
+          block(
+            { x: tile.x, y: tile.y, z: tile.z, graphic: tile.graphic, isLand: tile.isLand },
+            until
+          );
+          parked++;
+        }
+      }
+    }
+    log(
+      `vein: nothing harvestable at ${player.x},${player.y}, parking ${parked} tile(s) within ${range2} for ${minutes(RESPAWN_DELAY)}m`
+    );
+    return parked;
+  };
+  var markUnreachable = (tile) => {
+    block(tile, now() + UNREACHABLE_DELAY);
+    log(`vein: ${tile.x},${tile.y} could not be walked to, retrying in ${minutes(UNREACHABLE_DELAY)}m`);
+  };
+  var markUnusable = (tile, reason2) => {
+    block(tile, Infinity);
+    log(`vein: ${tile.x},${tile.y} ${reason2}, ignoring it from here on`);
+  };
+  var markNotMineable = (tile) => {
+    const { notOre } = memory();
+    const key = artKey(tile.graphic, tile.isLand);
+    if (notOre.has(key)) {
+      return;
+    }
+    notOre.add(key);
+    log(`vein: 0x${tile.graphic.toString(16)} cannot be mined, skipping that art from here on`);
+  };
+  var reportedGraphics = /* @__PURE__ */ new Set();
+  var distanceTo2 = (x, y) => Math.max(Math.abs(x - player.x), Math.abs(y - player.y));
+  var scanForVein = () => {
+    const { blocked } = memory();
+    const time = now();
+    let best;
+    let respawnsAt;
+    for (let dx = -SCAN_RADIUS; dx <= SCAN_RADIUS; dx++) {
+      for (let dy = -SCAN_RADIUS; dy <= SCAN_RADIUS; dy++) {
+        for (const tile of client.getTerrainList(player.x + dx, player.y + dy) ?? []) {
+          if (!isOre(tile.graphic, tile.isLand)) {
+            continue;
+          }
+          const vein = {
+            x: tile.x,
+            y: tile.y,
+            z: tile.z,
+            graphic: tile.graphic,
+            isLand: tile.isLand,
+            distance: distanceTo2(tile.x, tile.y)
+          };
+          const key = tileKey(vein);
+          const until = blocked.get(key);
+          if (until !== void 0) {
+            if (time < until) {
+              if (Number.isFinite(until) && (respawnsAt === void 0 || until < respawnsAt)) {
+                respawnsAt = until;
+              }
+              continue;
+            }
+            blocked.delete(key);
+          }
+          if (!best || vein.distance < best.distance) {
+            best = vein;
+          }
+        }
+      }
+    }
+    if (best && !reportedGraphics.has(best.graphic)) {
+      const name = best.isLand ? "land" : client.getStatic(best.graphic)?.name ?? "?";
+      log(`scanForVein: matching 0x${best.graphic.toString(16)} '${name}'`);
+      reportedGraphics.add(best.graphic);
+    }
+    return { vein: best, respawnsAt };
+  };
+
+  // src/mining/survey.ts
+  var surveyTerrain = (radius) => {
+    const seen = /* @__PURE__ */ new Map();
+    for (let dx = -radius; dx <= radius; dx++) {
+      for (let dy = -radius; dy <= radius; dy++) {
+        for (const tile of client.getTerrainList(player.x + dx, player.y + dy) ?? []) {
+          const key = `${tile.graphic}/${tile.isLand}`;
+          const already = seen.get(key);
+          if (already) {
+            already.tiles++;
+            continue;
+          }
+          seen.set(key, {
+            graphic: tile.graphic,
+            isLand: tile.isLand,
+            flags: tile.flags,
+            tiles: 1,
+            name: tile.isLand ? "" : client.getStatic(tile.graphic)?.name ?? "?",
+            matches: isOre(tile.graphic, tile.isLand)
+          });
+        }
+      }
+    }
+    return [...seen.values()].sort((a, b) => b.tiles - a.tiles);
+  };
+  var describeArt = (art) => {
+    const kind = art.isLand ? "land" : `static '${art.name}'`;
+    const mark = art.matches ? "MATCHES" : "-";
+    return `${art.graphic} (0x${art.graphic.toString(16)}) ${kind}, flags 0x${art.flags.toString(16)}, ${art.tiles} tiles, ${mark}`;
+  };
+  var reportTerrain = (radius, limit = Infinity) => {
+    const found = surveyTerrain(radius);
+    log(`survey: ${found.length} distinct arts within ${radius} tiles of ${player.x},${player.y}`);
+    for (const art of found.slice(0, limit)) {
+      log(`survey: ${describeArt(art)}`);
+    }
+    if (found.length > limit) {
+      log(`survey: ${found.length - limit} rarer arts not shown, run dist/mine-probe.js for all`);
+    }
+    return found;
+  };
+
+  // src/mining/index.ts
+  rememberPickaxe(player.equippedItems.oneHanded);
+  var minutesLeft = (until) => Math.max(1, Math.round((until - now()) / 6e4));
+  var tooHeavy = () => player.weightMax > 0 && player.weight > player.weightMax;
+  var idleUntil = (respawnsAt) => {
+    const wait = respawnsAt - now();
+    if (wait <= 0) {
+      return;
+    }
+    log(`mining: everything in reach is worked out, waiting ${minutesLeft(respawnsAt)}m`);
+    const slices = Math.ceil(wait / IDLE_POLL);
+    let since = 0;
+    for (let slice = 0; slice < slices && now() < respawnsAt; slice++) {
+      sleep(IDLE_POLL);
+      since += IDLE_POLL;
+      if (stopReason()) {
+        return;
+      }
+      if (since >= IDLE_LOG_EVERY) {
+        since = 0;
+        log(`mining: ${minutesLeft(respawnsAt)}m to go`);
+      }
+    }
+    resetBeat();
+  };
+  log(`mining: ${oreTotal()} ore in the pack to start, at ${player.x},${player.y}`);
+  var startingHand = player.equippedItems.oneHanded;
+  log(
+    `mining: mounted ${player.equippedItems.mount ? "yes" : "no"}, hand ${startingHand ? `0x${startingHand.graphic.toString(16)} '${startingHand.name ?? ""}'` : "empty"}, weight ${player.weight}/${player.weightMax}`
+  );
+  var mined = 0;
+  var unknown = 0;
+  var stop;
+  var throttled = 0;
+  var sinceProgress = 0;
+  var barren = 0;
+  var walkingTo;
+  var steps = 0;
+  var endCycle = (phase, cycle) => {
+    beat(phase, cycle, mined);
+    sinceProgress++;
+    if (sinceProgress === STALL_WARN) {
+      log(`mining: ${STALL_WARN} cycles without a swing landing, last was '${phase}'`);
+    }
+    if (sinceProgress >= STALL_STOP) {
+      stop = `no progress in ${STALL_STOP} cycles, last was '${phase}'`;
+    }
+  };
+  for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
+    stop = stopReason();
+    if (stop) {
+      break;
+    }
+    if (!dismount()) {
+      stop = "could not get off the mount";
+      break;
+    }
+    if (!equipPickaxe()) {
+      stop = "no pickaxe";
+      break;
+    }
+    if (tooHeavy()) {
+      const oreBefore = oreTotal();
+      groupOres();
+      smeltAll();
+      if (oreTotal() < oreBefore) {
+        endCycle("smelting", cycle);
+        sleep(STEP_DELAY);
+        continue;
+      }
+      if (retryUnsmeltable()) {
+        endCycle("smelting", cycle);
+        sleep(STEP_DELAY);
+        continue;
+      }
+      stop = `overweight (${player.weight}/${player.weightMax}) with ${oreTotal()} ore left, and smelting freed nothing`;
+      break;
+    }
+    const { vein, respawnsAt } = scanForVein();
+    if (!vein) {
+      if (respawnsAt === void 0) {
+        log("mining: nothing matched, here is what is actually on the ground");
+        reportTerrain(SCAN_RADIUS, SURVEY_ARTS);
+        stop = "no ore in range";
+        break;
+      }
+      idleUntil(respawnsAt);
+      continue;
+    }
+    if (vein.distance > MINE_RANGE) {
+      const key = `${vein.x},${vein.y}`;
+      if (key !== walkingTo) {
+        walkingTo = key;
+        steps = 0;
+      }
+      if (!stepToward(vein) || ++steps > MAX_STEPS) {
+        markUnreachable(vein);
+        walkingTo = void 0;
+      }
+      endCycle("walking", cycle);
+      continue;
+    }
+    walkingTo = void 0;
+    const outcome = digOnce(pickaxeSerial());
+    switch (outcome) {
+      case "dug":
+        mined++;
+        unknown = 0;
+        throttled = 0;
+        barren = 0;
+        sinceProgress = 0;
+        break;
+      // The vein is worked out, not dead: markDepleted times it out and the scan picks it up again
+      // in RESPAWN_DELAY. Nothing is smelted here - a depleted vein says nothing about how heavy the
+      // pack is, and walking to the beetle every time one runs dry is a lot of walking.
+      case "empty":
+        markDepleted(vein);
+        unknown = 0;
+        break;
+      // The shard answering about where you stand rather than about a tile, which is what a swing
+      // that names no tile mostly gets. Everything in reach goes on the respawn cooldown together,
+      // so the next scan has to look further out and the loop walks off. Parking only the vein it
+      // happened to pick would leave the character standing on the spot the shard just wrote off,
+      // swinging for the same sentence until the run ended - which is exactly how it did end before
+      // this had a bucket of its own.
+      case "nothingNearby":
+        markAreaDepleted(MINE_RANGE);
+        unknown = 0;
+        if (++barren === NOTHING_NEARBY_HINT) {
+          log(
+            `mining: ${NOTHING_NEARBY_HINT} spots in a row had nothing to harvest - ORE_TILE_GRAPHICS is probably matching ground that carries no ore`
+          );
+          reportTerrain(MINE_RANGE, SURVEY_ARTS);
+        }
+        break;
+      // The whole art is scenery, not just this tile - a wrong band in ORE_TILE_GRAPHICS is a whole
+      // stretch of mountain - so ban the graphic and stop walking to its copies one at a time
+      case "notOre":
+        markNotMineable(vein);
+        markUnusable(vein, "cannot be mined");
+        unknown = 0;
+        break;
+      // Already inside MINE_RANGE, so this is the shard disagreeing about the range rather than a
+      // walk that fell short. Treat the tile as unreachable instead of swinging at it again.
+      case "tooFar":
+        markUnusable(vein, `is out of reach at ${vein.distance} tiles`);
+        unknown = 0;
+        break;
+      // Line of sight, so walking closer would not help and neither would waiting - something is
+      // simply in the way
+      case "notSeen":
+        markUnusable(vein, "is not in line of sight");
+        unknown = 0;
+        break;
+      // The ore this swing produced was destroyed rather than dropped, so swinging again would only
+      // destroy more. The vein is untouched - it is the pack that has to give. Consolidating is the
+      // answer rather than smelting, because a full pack is a container at its item cap: forty piles
+      // of one become one pile of forty, and thirty-nine slots come back. If the weight is the real
+      // problem, stow() smelts as well; if it is not, this is the cheaper fix anyway.
+      case "packFull":
+        log("mining: pack is full, consolidating before the next swing");
+        groupOres();
+        unknown = 0;
+        break;
+      case "wornOut":
+        log("mining: pickaxe worn out, swapping");
+        unknown = 0;
+        break;
+      // Nothing was learned about the vein and nothing went wrong: the shard was busy. The counters
+      // are reset rather than merely left alone, because whatever they had accumulated was measured
+      // against a server that was not answering.
+      case "saving":
+        waitOutSave();
+        unknown = 0;
+        throttled = 0;
+        break;
+      // A fixed retry shorter than the harvest delay re-arms the very timer it is waiting on, so
+      // back off further each time instead, and give up rather than spin
+      case "throttled":
+        throttled++;
+        log(`mining: shard says wait (${throttled}/${MAX_THROTTLED}), backing off`);
+        sleep(Math.min(THROTTLE_BACKOFF * throttled, THROTTLE_BACKOFF_MAX));
+        if (throttled >= MAX_THROTTLED) {
+          stop = "the shard kept refusing the swing";
+        }
+        break;
+      // A cursor that never opened, with a pickaxe demonstrably in hand, is the shard declining to
+      // start the swing rather than an empty hand - which on a live run turned out to be a third of
+      // them. Backed off like a throttle, but still counted: five in a row with nothing else
+      // happening is a stuck run whatever the cause.
+      case "noCursor":
+        unknown++;
+        sleep(THROTTLE_BACKOFF);
+        break;
+      default:
+        unknown++;
+        log(`mining: unreadable outcome (${unknown}/${MAX_UNKNOWN}), check OUTCOME_TEXT`);
+    }
+    if (unknown >= MAX_UNKNOWN) {
+      stop = `${MAX_UNKNOWN} unreadable outcomes in a row`;
+      break;
+    }
+    if (mined > 0 && mined % LOG_EVERY === 0) {
+      log(`mining: ${mined} swings, ${oreTotal()} ore, ${player.weight}/${player.weightMax}`);
+    }
+    endCycle(outcome ?? "unknown", cycle);
+    sleep(STEP_DELAY);
+  }
+  groupOres();
+  if (tooHeavy()) {
+    smeltAll();
+  }
+  var reason = stop ?? `hit the ${MAX_CYCLES} cycle backstop`;
+  log(`mining: ${mined} swings, ${oreTotal()} ore still in the pack`);
+  log(`mining: stopping - ${reason}`);
+  exit(`mining: ${reason}`);
+})();

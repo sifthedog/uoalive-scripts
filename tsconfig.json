@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": [
+      "ES2020"
+    ],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "isolatedModules": true,
+    "strict": true,
+    "noEmit": true,
+    "types": []
+  },
+  "include": [
+    "src/**/*.ts",
+    "types/classicuo.d.ts"
+  ],
+  // The scripts run in QuickJS: no process, no Buffer, no setTimeout. Keeping the test files out
+  // keeps that true - importing vitest would drag @types/node into the program and quietly make
+  // all of it look available. Tests are type-checked by tsconfig.test.json instead.
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/test-support"
+  ]
+}
