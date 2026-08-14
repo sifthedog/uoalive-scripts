@@ -1,1 +1,21 @@
+# Dependencies
 node_modules/
+
+# Local tooling state
+.claude/settings.local.json
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# dist/ is intentionally committed: the built files in it are the paste-ready
+# scripts for the ClassicUO client, so they need to be readable from the repo.
