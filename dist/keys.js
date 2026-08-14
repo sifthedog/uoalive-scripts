@@ -20,6 +20,9 @@
     throw new Error(reason);
   };
 
+  // src/lib/entity.ts
+  var hex = (value) => `0x${(value >>> 0).toString(16)}`;
+
   // src/boxes/config.ts
   var DROP_SPREAD = [
     { x: 0, y: 0, z: 0 },
@@ -94,7 +97,6 @@
 
   // src/boxes/boxes.ts
   var keyGraphic;
-  var hex = (value) => `0x${(value >>> 0).toString(16)}`;
   var KEY_WORD = /\bkey\b/i;
   var isKey = (item) => keyGraphic !== void 0 && item.graphic === keyGraphic || KEY_GRAPHICS.has(item.graphic) || KEY_WORD.test(item.name ?? "");
   var dumpPack = () => {

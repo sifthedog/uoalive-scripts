@@ -1,39 +1,15 @@
+import { createSaveWatch } from '../lib/save.js';
 import { SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT, SAVING_TEXT } from './config.js';
 import { stopReason } from './guards.js';
 import { resetBeat } from './heartbeat.js';
 
-// A world save is a pause, not a fault. The shard stops answering for several seconds while it
-// writes its world file, and everything attempted in that window is refused: the swing sends no
-// cursor, the journal answers with none of the harvest wordings, and the pack diff a conversion is
-// judged by never moves. Every one of those looks exactly like a failure of the thing being
-// attempted, which is how a save ended a live run after five 'unreadable outcome' cycles.
-
-export const isSaving = (): boolean => SAVING_TEXT.some((text) => journal.containsText(text));
-
-export const waitOutSave = (): void => {
-  log('save: the world is saving, waiting it out');
-
-  // Cleared first so the completion line has to arrive *after* this point: the message that got us
-  // here is still sitting in the journal, and on a shard that words both ends of the save alike a
-  // stale line would end the wait before the save did.
-  journal.clear();
-
-  // Sliced rather than slept through in one go, so the client stays responsive and the guards still
-  // get a look in. The timeout is the fallback for a shard whose completion wording SAVE_DONE_TEXT
-  // does not have: standing still for SAVE_WAIT is the cost of missing it, which is survivable.
-  for (let waited = 0; waited < SAVE_WAIT; waited += SAVE_POLL) {
-    sleep(SAVE_POLL);
-
-    if (SAVE_DONE_TEXT.some((text) => journal.containsText(text))) {
-      break;
-    }
-
-    // Left to the caller to report and act on, so the wait has one way out and the run has one
-    if (stopReason()) {
-      break;
-    }
-  }
+export const { isSaving, waitOutSave } = createSaveWatch({
+  savingText: SAVING_TEXT,
+  doneText: SAVE_DONE_TEXT,
+  waitMs: SAVE_WAIT,
+  pollMs: SAVE_POLL,
+  stopReason,
 
   // This path reports on its own cadence, so the next beat starts a full interval from here
-  resetBeat();
-};
+  onDone: resetBeat,
+});

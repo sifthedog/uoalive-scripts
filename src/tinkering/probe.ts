@@ -34,10 +34,8 @@ import { backToCategories, craftGump, openCraftGump, pageWith } from './gump.js'
 import { ingotTotal } from './ingots.js';
 import { countsByGraphic, describeDiff, diffCounts } from '../lib/pack.js';
 import { die } from '../lib/die.js';
+import { hex } from '../lib/entity.js';
 import { findTool, toolAlive } from './tool.js';
-
-// Serials come back as signed 32-bit ints, so a plain toString(16) yields "0x-3266af2f"
-const hex = (value: number): string => `0x${(value >>> 0).toString(16)}`;
 
 log('probe: pack contents (graphic / hue / amount / name)');
 for (const item of player.backpack?.contents ?? []) {

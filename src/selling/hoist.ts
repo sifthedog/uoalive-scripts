@@ -1,8 +1,8 @@
 import { collectIn, isContainer } from '../lib/containers.js';
+import { hex } from '../lib/entity.js';
 import { MAX_HOIST_PASSES, MOVE_DELAY, OPEN_DELAY, OPL_TIMEOUT } from './config.js';
 
-// Serials come back as signed 32-bit ints, so a plain toString(16) yields "0x-3266af2f"
-export const hex = (value: number): string => `0x${(value >>> 0).toString(16)}`;
+export { hex };
 
 // An item the client already has tooltip data for names itself, and asking again costs a round trip
 // per item. Only the nameless ones are worth OPL_TIMEOUT.

@@ -20,13 +20,15 @@
     throw new Error(reason);
   };
 
+  // src/lib/entity.ts
+  var hex = (value) => `0x${(value >>> 0).toString(16)}`;
+
   // src/boxes/config.ts
   var PROBE_DELAY = 1200;
   var KEY_GRAPHICS = /* @__PURE__ */ new Set([4110, 4111, 4112, 4113, 4114, 4115]);
 
   // src/boxes/boxes.ts
   var keyGraphic;
-  var hex = (value) => `0x${(value >>> 0).toString(16)}`;
   var KEY_WORD = /\bkey\b/i;
   var isKey = (item) => keyGraphic !== void 0 && item.graphic === keyGraphic || KEY_GRAPHICS.has(item.graphic) || KEY_WORD.test(item.name ?? "");
 

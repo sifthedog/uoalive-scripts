@@ -1,4 +1,5 @@
 import { collectIn, type ItemPredicate } from '../lib/containers.js';
+import { approach, distanceTo, isMobile, nameOf } from '../lib/entity.js';
 import { overweight } from '../lib/weight.js';
 import { isBoard, unconvertible } from './boards.js';
 import { isLog } from './chop.js';
@@ -16,12 +17,6 @@ import { stepToward } from './walk.js';
 // Boards, plus the logs of a wood this run has given up on converting. A log that is merely
 // waiting its turn stays in the pack: it is worth more as boards, and the next haul retries it.
 const isCargo = (item: Item): boolean => isBoard(item) || (isLog(item) && unconvertible.has(item.hue ?? 0));
-
-const distanceTo = (entity: { x: number; y: number }) =>
-  Math.max(Math.abs(entity.x - player.x), Math.abs(entity.y - player.y));
-
-// _tag is how the client's own typings tell an Item from a Mobile, and it costs no round trip
-const isMobile = (entity: Item | Mobile): entity is Mobile => entity._tag === 'Mobile';
 
 let reported = false;
 
@@ -71,29 +66,13 @@ const animalPack = (animal: Mobile): Item | undefined => {
   return client.findItemOnLayer(animal.serial, Layers.Backpack);
 };
 
-// The animal follows you, so it is a moving target: re-resolve it rather than walking at the
-// coordinates it had when the haul started.
-const approach = (serial: number): boolean => {
-  for (let step = 0; step <= MAX_STEPS; step++) {
-    const animal = client.findObject(serial);
-    if (!animal) {
-      log('haul: lost track of the pack animal');
-      return false;
-    }
-
-    if (distanceTo(animal) <= UNLOAD_RANGE) {
-      return true;
-    }
-
-    if (!stepToward(animal)) {
-      log('haul: cannot reach the pack animal');
-      return false;
-    }
-  }
-
-  log(`haul: still not next to the pack animal after ${MAX_STEPS} steps`);
-  return false;
-};
+const walkToAnimal = (serial: number): boolean =>
+  approach(serial, {
+    label: 'haul',
+    range: UNLOAD_RANGE,
+    maxSteps: MAX_STEPS,
+    step: stepToward,
+  }) !== undefined;
 
 // Moves are asynchronous, so rescan between passes rather than trusting moveItem's return value.
 // A pass that shifts nothing means this animal is full, which the caller reports.
@@ -115,8 +94,6 @@ const moveAll = (packSerial: number, matches: ItemPredicate): void => {
   }
 };
 
-const nameOf = (animal: Mobile): string => animal.name ?? `0x${animal.serial.toString(16)}`;
-
 // Works down the animals until the pack is clear or every one of them has had a turn. An animal
 // that stops accepting is full rather than broken, so what is left over goes to the next one.
 const unloadTo = (animals: Mobile[], matches: ItemPredicate): boolean => {
@@ -128,7 +105,7 @@ const unloadTo = (animals: Mobile[], matches: ItemPredicate): boolean => {
       break;
     }
 
-    if (!approach(animal.serial)) {
+    if (!walkToAnimal(animal.serial)) {
       continue;
     }
 

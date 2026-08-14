@@ -1,29 +1,27 @@
-import { overweight } from '../lib/weight.js';
+import { dead, firstReason, heavy, packFull, type Guard } from '../lib/guards.js';
 import { DROP_KEYS, PACK_LIMIT, WEIGHT_BUFFER } from './config.js';
 
-// Anything here ends the emptying pass; the loop asks before every box and reports what it said.
-//
 // The weight and pack-slot checks are inherited from the crafting scripts, where every cycle *adds*
 // to the pack, and they are wrong here unless the keys are being kept: emptying a box moves what is
 // in it onto the floor, which frees weight and a pack slot rather than costing either. Left in
 // unconditionally they stop the run before the first box on exactly the overloaded character the
 // run would have relieved - which is what "15 wooden boxes, emptied 0" turned out to be.
-export const stopReason = (): string | undefined => {
-  if (player.isDead) {
-    return 'you are dead';
-  }
-
-  if (!DROP_KEYS) {
-    // Buffer, so the stop lands before the shard starts refusing to move the new item
-    if (overweight(WEIGHT_BUFFER)) {
-      return `overweight (${player.weight}/${player.weightMax}) and keys are going into the pack`;
+const whenKeepingKeys =
+  (guard: Guard): Guard =>
+  () => {
+    if (DROP_KEYS) {
+      return undefined;
     }
 
-    const top = (player.backpack?.contents ?? []).length;
-    if (top >= PACK_LIMIT) {
-      return `pack is full (${top} items at the top level) and keys are going into the pack`;
-    }
-  }
+    const reason = guard();
 
-  return undefined;
-};
+    return reason && `${reason} and keys are going into the pack`;
+  };
+
+// Anything here ends the emptying pass; the loop asks before every box and reports what it said.
+export const stopReason = (): string | undefined =>
+  firstReason(
+    dead,
+    whenKeepingKeys(heavy(WEIGHT_BUFFER)),
+    whenKeepingKeys(packFull(PACK_LIMIT)),
+  );

@@ -50,6 +50,12 @@
   var WEIGHT_BUFFER = 40;
   var PACK_LIMIT = 120;
 
+  // src/lib/outcomes.ts
+  var outcomeVocabulary = (text) => ({
+    all: Object.values(text).flat(),
+    outcomeFor: (matched) => Object.keys(text).find((name) => text[name].includes(matched))
+  });
+
   // src/tinkering/gump.ts
   var SERIALS = GUMP_SERIAL === void 0 ? [] : [.../* @__PURE__ */ new Set([GUMP_SERIAL >>> 0, GUMP_SERIAL | 0])];
   var craftGump = () => {
@@ -83,13 +89,15 @@
     return pageWith(categoryButton, GUMP_TIMEOUT);
   };
 
-  // src/tinkering/ingots.ts
-  var isIngot = (item) => INGOT_GRAPHICS.has(item.graphic) && (item.hue ?? 0) === INGOT_HUE;
-  var totalIn = (contents) => (contents ?? []).reduce(
-    (total, item) => total + (isIngot(item) ? item.amount ?? 1 : 0) + totalIn(item.contents),
+  // src/lib/pack.ts
+  var totalMatching = (matches, contents = player.backpack?.contents) => (contents ?? []).reduce(
+    (total, item) => total + (matches(item) ? item.amount ?? 1 : 0) + totalMatching(matches, item.contents ?? []),
     0
   );
-  var ingotTotal = (contents = player.backpack?.contents) => totalIn(contents);
+
+  // src/tinkering/ingots.ts
+  var isIngot = (item) => INGOT_GRAPHICS.has(item.graphic) && (item.hue ?? 0) === INGOT_HUE;
+  var ingotTotal = (contents) => totalMatching(isIngot, contents);
 
   // src/lib/containers.ts
   var CONTAINER_GRAPHICS = /* @__PURE__ */ new Set([
@@ -203,8 +211,7 @@
   };
 
   // src/tinkering/craft.ts
-  var ALL_OUTCOME_TEXT = Object.values(OUTCOME_TEXT).flat();
-  var outcomeFor = (matched) => Object.keys(OUTCOME_TEXT).find((name) => OUTCOME_TEXT[name].includes(matched));
+  var { all: ALL_OUTCOME_TEXT, outcomeFor } = outcomeVocabulary(OUTCOME_TEXT);
   var silentOutcome = (toolSerial2, ingotsBefore) => {
     if (!toolAlive(toolSerial2)) {
       return "wornOut";
@@ -252,20 +259,25 @@
   // src/lib/weight.ts
   var overweight = (buffer = 0) => player.weightMax > 0 && player.weight > player.weightMax - buffer;
 
-  // src/tinkering/guards.ts
-  var stopReason = () => {
-    if (player.isDead) {
-      return "you are dead";
-    }
-    if (overweight(WEIGHT_BUFFER)) {
-      return `overweight (${player.weight}/${player.weightMax})`;
-    }
+  // src/lib/guards.ts
+  var dead = () => player.isDead ? "you are dead" : void 0;
+  var heavy = (buffer) => () => overweight(buffer) ? `overweight (${player.weight}/${player.weightMax})` : void 0;
+  var packFull = (limit) => () => {
     const top = (player.backpack?.contents ?? []).length;
-    if (top >= PACK_LIMIT) {
-      return `pack is full (${top} items at the top level)`;
+    return top >= limit ? `pack is full (${top} items at the top level)` : void 0;
+  };
+  var firstReason = (...guards) => {
+    for (const guard of guards) {
+      const reason = guard();
+      if (reason) {
+        return reason;
+      }
     }
     return void 0;
   };
+
+  // src/tinkering/guards.ts
+  var stopReason = () => firstReason(dead, heavy(WEIGHT_BUFFER), packFull(PACK_LIMIT));
 
   // src/tinkering/phase.ts
   var skillBase = () => player.getSkill(Skills.Tinkering)?.base ?? 0;

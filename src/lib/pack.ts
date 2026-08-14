@@ -1,3 +1,5 @@
+import type { ItemPredicate } from './containers.js';
+
 export type Counts = Map<string, number>;
 
 export interface Change {
@@ -43,6 +45,22 @@ export const diffCounts = (before: Counts, after: Counts): Change[] => {
 
   return changes;
 };
+
+// How many of something the pack holds, sub-containers included, because the shard spends resources
+// out of those too. A lower bound either way: an unopened container reports `contents: undefined`.
+//
+// Recursion goes through a second parameter rather than the exported call, because a plain item has
+// no `contents` and passing undefined back into a defaulted parameter would restart at the backpack
+// forever - the trap all three hand-written copies of this had to comment on.
+export const totalMatching = (
+  matches: ItemPredicate,
+  contents: Item[] | undefined = player.backpack?.contents,
+): number =>
+  (contents ?? []).reduce(
+    (total, item) =>
+      total + (matches(item) ? item.amount ?? 1 : 0) + totalMatching(matches, item.contents ?? []),
+    0,
+  );
 
 export const describeDiff = (changes: Change[]): string =>
   changes.length

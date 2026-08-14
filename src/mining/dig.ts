@@ -1,3 +1,4 @@
+import { outcomeVocabulary } from '../lib/outcomes.js';
 import { DIG_TIMEOUT, OUTCOME_TEXT, TARGET_TIMEOUT } from './config.js';
 import { oreTotal } from './ore.js';
 
@@ -5,10 +6,7 @@ import { oreTotal } from './ore.js';
 export type Outcome = keyof typeof OUTCOME_TEXT;
 export type DigOutcome = Outcome | 'noCursor' | 'unknown';
 
-export const ALL_OUTCOME_TEXT = Object.values(OUTCOME_TEXT).flat();
-
-export const outcomeFor = (matched: string): Outcome | undefined =>
-  (Object.keys(OUTCOME_TEXT) as Outcome[]).find((name) => OUTCOME_TEXT[name].includes(matched));
+export const { all: ALL_OUTCOME_TEXT, outcomeFor } = outcomeVocabulary(OUTCOME_TEXT);
 
 // A shard that words its harvest messages differently leaves the journal silent, so read the world
 // instead. Ore landing in the pack is the only proof of a swing that does not depend on wording.

@@ -112,6 +112,274 @@
   };
   var SURVEY_ARTS = 15;
 
+  // src/lib/outcomes.ts
+  var outcomeVocabulary = (text) => ({
+    all: Object.values(text).flat(),
+    outcomeFor: (matched) => Object.keys(text).find((name) => text[name].includes(matched))
+  });
+
+  // src/lib/pack.ts
+  var countsByGraphic = (contents = player.backpack?.contents) => {
+    const counts = /* @__PURE__ */ new Map();
+    const walk = (items) => {
+      for (const item of items ?? []) {
+        const key = `0x${item.graphic.toString(16)}/${item.hue ?? 0}`;
+        counts.set(key, (counts.get(key) ?? 0) + (item.amount ?? 1));
+        walk(item.contents);
+      }
+    };
+    walk(contents);
+    return counts;
+  };
+  var diffCounts = (before, after) => {
+    const changes = [];
+    for (const [key, total] of after) {
+      const delta = total - (before.get(key) ?? 0);
+      if (delta !== 0) {
+        changes.push({ key, delta });
+      }
+    }
+    for (const [key, total] of before) {
+      if (!after.has(key)) {
+        changes.push({ key, delta: -total });
+      }
+    }
+    return changes;
+  };
+  var totalMatching = (matches, contents = player.backpack?.contents) => (contents ?? []).reduce(
+    (total, item) => total + (matches(item) ? item.amount ?? 1 : 0) + totalMatching(matches, item.contents ?? []),
+    0
+  );
+
+  // src/mining/ore.ts
+  var isOrePile = (item) => {
+    if (ORE_GRAPHICS.has(item.graphic)) {
+      return true;
+    }
+    if (!ORE_NAME.test(item.name ?? "")) {
+      return false;
+    }
+    ORE_GRAPHICS.add(item.graphic);
+    log(`ore: 0x${item.graphic.toString(16)} '${item.name}' is ore too, remembering the art`);
+    return true;
+  };
+  var oreTotal = (contents) => totalMatching(isOrePile, contents);
+  var oresByHue = () => {
+    const groups = /* @__PURE__ */ new Map();
+    for (const item of player.backpack?.contents ?? []) {
+      if (!isOrePile(item)) {
+        continue;
+      }
+      const oreHue = item.hue ?? 0;
+      const group = groups.get(oreHue);
+      if (group) {
+        group.push(item);
+      } else {
+        groups.set(oreHue, [item]);
+      }
+    }
+    return groups;
+  };
+  var groupOres = () => {
+    let previousPiles = Infinity;
+    while (true) {
+      const groups = oresByHue();
+      const piles = [...groups.values()].reduce((total, items) => total + items.length, 0);
+      if (piles >= previousPiles) {
+        log(`groupOres: stalled at ${piles} piles`);
+        return;
+      }
+      previousPiles = piles;
+      let combined = false;
+      for (const [oreHue, items] of groups) {
+        if (items.length <= 1) {
+          continue;
+        }
+        const primary = items.reduce((a, b) => (b.amount ?? 1) > (a.amount ?? 1) ? b : a);
+        const dup = items.find((item) => item.serial !== primary.serial);
+        if (!dup) {
+          continue;
+        }
+        player.use(dup.serial);
+        if (!target.waitTargetEntity(primary.serial, TARGET_TIMEOUT)) {
+          log(`groupOres: no target cursor for hue ${oreHue}`);
+          target.cancel();
+        }
+        combined = true;
+        sleep(COMBINE_DELAY);
+      }
+      if (!combined) {
+        return;
+      }
+    }
+  };
+
+  // src/mining/dig.ts
+  var { all: ALL_OUTCOME_TEXT, outcomeFor } = outcomeVocabulary(OUTCOME_TEXT);
+  var silentOutcome = (serial, oreBefore) => {
+    if (serial !== void 0 && !client.findObject(serial)) {
+      return "wornOut";
+    }
+    if (oreTotal() > oreBefore) {
+      return "dug";
+    }
+    return "unknown";
+  };
+  var digOnce = (serial) => {
+    target.cancel();
+    const oreBefore = oreTotal();
+    journal.clear();
+    player.useItemInHand();
+    if (!target.waitTargetSelf(TARGET_TIMEOUT)) {
+      target.cancel();
+      log("digOnce: no target cursor, nothing usable in hand?");
+      return "noCursor";
+    }
+    const matched = journal.waitForTextAny(ALL_OUTCOME_TEXT, void 0, DIG_TIMEOUT);
+    return matched ? outcomeFor(matched) : silentOutcome(serial, oreBefore);
+  };
+
+  // src/lib/guards.ts
+  var dead = () => player.isDead ? "you are dead" : void 0;
+  var packFull = (limit) => () => {
+    const top = (player.backpack?.contents ?? []).length;
+    return top >= limit ? `pack is full (${top} items at the top level)` : void 0;
+  };
+  var firstReason = (...guards) => {
+    for (const guard of guards) {
+      const reason2 = guard();
+      if (reason2) {
+        return reason2;
+      }
+    }
+    return void 0;
+  };
+
+  // src/mining/guards.ts
+  var stopReason = () => firstReason(dead, packFull(PACK_LIMIT));
+
+  // src/lib/clock.ts
+  var now = () => Date.now();
+
+  // src/lib/heartbeat.ts
+  var createHeartbeat = (options) => {
+    let lastBeat;
+    return {
+      beat: (phase, cycle, tally) => {
+        const time = now();
+        if (lastBeat === void 0) {
+          lastBeat = time;
+          return;
+        }
+        if (time - lastBeat < options.everyMs) {
+          return;
+        }
+        lastBeat = time;
+        log(
+          `${options.prefix}: still here - ${phase}, cycle ${cycle}, at ${player.x},${player.y}, ${player.weight}/${player.weightMax}, ${tally} ${options.noun}`
+        );
+      },
+      // For the paths that report on their own cadence, so the next beat is a full interval after they
+      // stop rather than immediately on top of their last line
+      resetBeat: () => {
+        lastBeat = now();
+      }
+    };
+  };
+
+  // src/mining/heartbeat.ts
+  var { beat, resetBeat } = createHeartbeat({
+    prefix: "mining",
+    noun: "swings",
+    everyMs: HEARTBEAT_EVERY
+  });
+
+  // src/lib/store.ts
+  var scope = globalThis;
+  var createStore = (options) => {
+    let held;
+    const load = () => {
+      const found = scope[options.key];
+      if (found?.version === options.version) {
+        const described = options.describe?.(found);
+        if (described) {
+          log(described);
+        }
+        return found;
+      }
+      const fresh = { ...options.seed(), version: options.version };
+      scope[options.key] = fresh;
+      return fresh;
+    };
+    return {
+      // Read through a call rather than handed out as the object itself, so forget() can actually
+      // forget: a module-scope `const memory = load()` would give every importer a reference that
+      // outlives it.
+      read: () => held ?? (held = load()),
+      // Tests only. The suite's vi.resetModules() gives each test a fresh module registry but leaves
+      // globalThis alone, which is precisely what this store is designed to survive.
+      forget: () => {
+        delete scope[options.key];
+        held = void 0;
+      }
+    };
+  };
+
+  // src/mining/memory.ts
+  var KEY = "__mining_memory";
+  var VERSION = 1;
+  var store = createStore({
+    key: KEY,
+    version: VERSION,
+    seed: () => ({ blocked: /* @__PURE__ */ new Map(), notOre: /* @__PURE__ */ new Set() }),
+    describe: (found) => found.blocked.size > 0 || found.notOre.size > 0 ? `memory: resuming with ${found.blocked.size} blocked tiles, ${found.notOre.size} arts` : void 0
+  });
+  var memory = store.read;
+  var forget = store.forget;
+
+  // src/lib/retry.ts
+  var untilLanded = (options) => {
+    for (let attempt = 1; attempt <= options.attempts; attempt++) {
+      options.act();
+      for (let waited = 0; waited < options.timeoutMs; waited += options.pollMs) {
+        sleep(options.pollMs);
+        if (options.landed()) {
+          return true;
+        }
+      }
+      log(`${options.label}: attempt ${attempt} did not land, reissuing`);
+    }
+    log(`${options.label}: gave up`);
+    return false;
+  };
+
+  // src/mining/mount.ts
+  var reported = false;
+  var dismount = () => {
+    if (!player.equippedItems.mount) {
+      return true;
+    }
+    if (!reported) {
+      log("mount: getting off before working");
+      reported = true;
+    }
+    target.cancel();
+    const off = untilLanded({
+      label: "dismount",
+      attempts: DISMOUNT_ATTEMPTS,
+      timeoutMs: DISMOUNT_TIMEOUT,
+      pollMs: DISMOUNT_POLL,
+      // Double-clicking yourself is how you get off; there is no dismount call in this API
+      act: () => player.use(player.serial),
+      // The mount layer clearing is the proof
+      landed: () => !player.equippedItems.mount
+    });
+    if (off) {
+      reported = false;
+    }
+    return off;
+  };
+
   // src/lib/containers.ts
   var CONTAINER_GRAPHICS = /* @__PURE__ */ new Set([
     3701,
@@ -180,176 +448,6 @@
     return found;
   };
 
-  // src/mining/ore.ts
-  var isOrePile = (item) => {
-    if (ORE_GRAPHICS.has(item.graphic)) {
-      return true;
-    }
-    if (!ORE_NAME.test(item.name ?? "")) {
-      return false;
-    }
-    ORE_GRAPHICS.add(item.graphic);
-    log(`ore: 0x${item.graphic.toString(16)} '${item.name}' is ore too, remembering the art`);
-    return true;
-  };
-  var oreTotal = () => collectIn(player.backpack?.contents, isOrePile).reduce(
-    (total, item) => total + (item.amount ?? 1),
-    0
-  );
-  var oresByHue = () => {
-    const groups = /* @__PURE__ */ new Map();
-    for (const item of player.backpack?.contents ?? []) {
-      if (!isOrePile(item)) {
-        continue;
-      }
-      const oreHue = item.hue ?? 0;
-      const group = groups.get(oreHue);
-      if (group) {
-        group.push(item);
-      } else {
-        groups.set(oreHue, [item]);
-      }
-    }
-    return groups;
-  };
-  var groupOres = () => {
-    let previousPiles = Infinity;
-    while (true) {
-      const groups = oresByHue();
-      const piles = [...groups.values()].reduce((total, items) => total + items.length, 0);
-      if (piles >= previousPiles) {
-        log(`groupOres: stalled at ${piles} piles`);
-        return;
-      }
-      previousPiles = piles;
-      let combined = false;
-      for (const [oreHue, items] of groups) {
-        if (items.length <= 1) {
-          continue;
-        }
-        const primary = items.reduce((a, b) => (b.amount ?? 1) > (a.amount ?? 1) ? b : a);
-        const dup = items.find((item) => item.serial !== primary.serial);
-        if (!dup) {
-          continue;
-        }
-        player.use(dup.serial);
-        if (!target.waitTargetEntity(primary.serial, TARGET_TIMEOUT)) {
-          log(`groupOres: no target cursor for hue ${oreHue}`);
-          target.cancel();
-        }
-        combined = true;
-        sleep(COMBINE_DELAY);
-      }
-      if (!combined) {
-        return;
-      }
-    }
-  };
-
-  // src/mining/dig.ts
-  var ALL_OUTCOME_TEXT = Object.values(OUTCOME_TEXT).flat();
-  var outcomeFor = (matched) => Object.keys(OUTCOME_TEXT).find((name) => OUTCOME_TEXT[name].includes(matched));
-  var silentOutcome = (serial, oreBefore) => {
-    if (serial !== void 0 && !client.findObject(serial)) {
-      return "wornOut";
-    }
-    if (oreTotal() > oreBefore) {
-      return "dug";
-    }
-    return "unknown";
-  };
-  var digOnce = (serial) => {
-    target.cancel();
-    const oreBefore = oreTotal();
-    journal.clear();
-    player.useItemInHand();
-    if (!target.waitTargetSelf(TARGET_TIMEOUT)) {
-      target.cancel();
-      log("digOnce: no target cursor, nothing usable in hand?");
-      return "noCursor";
-    }
-    const matched = journal.waitForTextAny(ALL_OUTCOME_TEXT, void 0, DIG_TIMEOUT);
-    return matched ? outcomeFor(matched) : silentOutcome(serial, oreBefore);
-  };
-
-  // src/mining/guards.ts
-  var stopReason = () => {
-    if (player.isDead) {
-      return "you are dead";
-    }
-    const top = (player.backpack?.contents ?? []).length;
-    if (top >= PACK_LIMIT) {
-      return `pack is full (${top} items at the top level)`;
-    }
-    return void 0;
-  };
-
-  // src/mining/memory.ts
-  var KEY = "__mining_memory";
-  var VERSION = 1;
-  var now = () => Date.now();
-  var scope = globalThis;
-  var load = () => {
-    const found = scope[KEY];
-    if (found?.version === VERSION) {
-      if (found.blocked.size > 0 || found.notOre.size > 0) {
-        log(`memory: resuming with ${found.blocked.size} blocked tiles, ${found.notOre.size} arts`);
-      }
-      return found;
-    }
-    const store2 = { version: VERSION, blocked: /* @__PURE__ */ new Map(), notOre: /* @__PURE__ */ new Set() };
-    scope[KEY] = store2;
-    return store2;
-  };
-  var store;
-  var memory = () => store ?? (store = load());
-
-  // src/mining/heartbeat.ts
-  var lastBeat;
-  var beat = (phase, cycle, mined2) => {
-    const time = now();
-    if (lastBeat === void 0) {
-      lastBeat = time;
-      return;
-    }
-    if (time - lastBeat < HEARTBEAT_EVERY) {
-      return;
-    }
-    lastBeat = time;
-    log(
-      `mining: still here - ${phase}, cycle ${cycle}, at ${player.x},${player.y}, ${player.weight}/${player.weightMax}, ${mined2} swings`
-    );
-  };
-  var resetBeat = () => {
-    lastBeat = now();
-  };
-
-  // src/mining/mount.ts
-  var reported = false;
-  var dismount = () => {
-    if (!player.equippedItems.mount) {
-      return true;
-    }
-    if (!reported) {
-      log("mount: getting off before working");
-      reported = true;
-    }
-    target.cancel();
-    for (let attempt = 1; attempt <= DISMOUNT_ATTEMPTS; attempt++) {
-      player.use(player.serial);
-      for (let waited = 0; waited < DISMOUNT_TIMEOUT; waited += DISMOUNT_POLL) {
-        sleep(DISMOUNT_POLL);
-        if (!player.equippedItems.mount) {
-          reported = false;
-          return true;
-        }
-      }
-      log(`dismount: attempt ${attempt} did not land, reissuing`);
-    }
-    log("dismount: gave up getting off the mount");
-    return false;
-  };
-
   // src/mining/pickaxe.ts
   var pickaxeGraphic;
   var spareBagSerial = SPARE_BAG_SERIAL;
@@ -414,53 +512,61 @@
     return false;
   };
 
+  // src/lib/save.ts
+  var createSaveWatch = (options) => ({
+    isSaving: () => options.savingText.some((text) => journal.containsText(text)),
+    waitOutSave: () => {
+      log("save: the world is saving, waiting it out");
+      journal.clear();
+      for (let waited = 0; waited < options.waitMs; waited += options.pollMs) {
+        sleep(options.pollMs);
+        if (options.doneText.some((text) => journal.containsText(text))) {
+          break;
+        }
+        if (options.stopReason()) {
+          break;
+        }
+      }
+      options.onDone();
+    }
+  });
+
   // src/mining/save.ts
-  var isSaving = () => SAVING_TEXT.some((text) => journal.containsText(text));
-  var waitOutSave = () => {
-    log("save: the world is saving, waiting it out");
-    journal.clear();
-    for (let waited = 0; waited < SAVE_WAIT; waited += SAVE_POLL) {
-      sleep(SAVE_POLL);
-      if (SAVE_DONE_TEXT.some((text) => journal.containsText(text))) {
-        break;
+  var { isSaving, waitOutSave } = createSaveWatch({
+    savingText: SAVING_TEXT,
+    doneText: SAVE_DONE_TEXT,
+    waitMs: SAVE_WAIT,
+    pollMs: SAVE_POLL,
+    stopReason,
+    // This path reports on its own cadence, so the next beat starts a full interval from here
+    onDone: resetBeat
+  });
+
+  // src/lib/entity.ts
+  var hex = (value) => `0x${(value >>> 0).toString(16)}`;
+  var distanceTo = (spot) => Math.max(Math.abs(spot.x - player.x), Math.abs(spot.y - player.y));
+  var isMobile = (entity) => entity._tag === "Mobile";
+  var nameOf = (entity) => entity.name ?? hex(entity.serial);
+  var approach = (serial, options) => {
+    for (let taken = 0; taken < options.maxSteps; taken++) {
+      const found = client.findObject(serial);
+      if (!found || !isMobile(found)) {
+        log(`${options.label}: lost track of ${hex(serial)}`);
+        return void 0;
       }
-      if (stopReason()) {
-        break;
+      if (distanceTo(found) <= options.range) {
+        return found;
+      }
+      if (!options.step(found)) {
+        log(`${options.label}: cannot reach ${nameOf(found)}`);
+        return void 0;
       }
     }
-    resetBeat();
+    log(`${options.label}: still not next to ${hex(serial)} after ${options.maxSteps} steps`);
+    return void 0;
   };
 
-  // src/lib/pack.ts
-  var countsByGraphic = (contents = player.backpack?.contents) => {
-    const counts = /* @__PURE__ */ new Map();
-    const walk = (items) => {
-      for (const item of items ?? []) {
-        const key = `0x${item.graphic.toString(16)}/${item.hue ?? 0}`;
-        counts.set(key, (counts.get(key) ?? 0) + (item.amount ?? 1));
-        walk(item.contents);
-      }
-    };
-    walk(contents);
-    return counts;
-  };
-  var diffCounts = (before, after) => {
-    const changes = [];
-    for (const [key, total] of after) {
-      const delta = total - (before.get(key) ?? 0);
-      if (delta !== 0) {
-        changes.push({ key, delta });
-      }
-    }
-    for (const [key, total] of before) {
-      if (!after.has(key)) {
-        changes.push({ key, delta: -total });
-      }
-    }
-    return changes;
-  };
-
-  // src/mining/walk.ts
+  // src/lib/walk.ts
   var DIRECTION_BY_STEP = /* @__PURE__ */ new Map([
     ["0,-1", Directions.North],
     ["1,-1", Directions.Right],
@@ -471,33 +577,36 @@
     ["-1,0", Directions.West],
     ["-1,-1", Directions.Up]
   ]);
-  var stepToward = (spot) => {
-    const stepX = Math.sign(spot.x - player.x);
-    const stepY = Math.sign(spot.y - player.y);
-    if (stepX === 0 && stepY === 0) {
-      return false;
-    }
-    const direction = DIRECTION_BY_STEP.get(`${stepX},${stepY}`);
-    if (direction === void 0) {
-      return false;
-    }
-    const beforeX = player.x;
-    const beforeY = player.y;
-    player.run(direction);
-    sleep(WALK_DELAY);
-    player.run(direction);
-    sleep(WALK_DELAY);
-    return player.x !== beforeX || player.y !== beforeY;
+  var createStepToward = (options) => {
+    return (spot) => {
+      const wantX = Math.sign(spot.x - player.x);
+      const wantY = Math.sign(spot.y - player.y);
+      const step = options.constrain ? options.constrain(wantX, wantY) : wantX === 0 && wantY === 0 ? void 0 : [wantX, wantY];
+      if (step === void 0) {
+        return false;
+      }
+      const direction = DIRECTION_BY_STEP.get(`${step[0]},${step[1]}`);
+      if (direction === void 0) {
+        return false;
+      }
+      const beforeX = player.x;
+      const beforeY = player.y;
+      player.run(direction);
+      sleep(options.delayMs);
+      player.run(direction);
+      sleep(options.delayMs);
+      return player.x !== beforeX || player.y !== beforeY;
+    };
   };
+
+  // src/mining/walk.ts
+  var stepToward = createStepToward({ delayMs: WALK_DELAY });
 
   // src/mining/smelt.ts
   var unsmeltable = /* @__PURE__ */ new Set();
-  var distanceTo = (entity) => Math.max(Math.abs(entity.x - player.x), Math.abs(entity.y - player.y));
-  var isMobile = (entity) => entity._tag === "Mobile";
   var beetleSerial = FIRE_BEETLE_SERIAL;
   var reportedFound = false;
   var reportedMissing = false;
-  var nameOf = (beetle) => beetle.name ?? `0x${beetle.serial.toString(16)}`;
   var findBeetle = () => {
     if (beetleSerial !== void 0) {
       const pinned = client.findObject(beetleSerial);
@@ -520,30 +629,18 @@
     const candidates = mine.length ? mine : found;
     const beetle = candidates.sort((a, b) => distanceTo(a) - distanceTo(b))[0];
     if (!reportedFound) {
-      log(`smelt: using '${nameOf(beetle)}' 0x${beetle.graphic.toString(16)} as the forge`);
+      log(`smelt: using '${nameOf(beetle)}' ${hex(beetle.graphic)} as the forge`);
       reportedFound = true;
     }
     beetleSerial = beetle.serial;
     return beetle;
   };
-  var approach = (serial) => {
-    for (let step = 0; step < MAX_BEETLE_STEPS; step++) {
-      const beetle = client.findObject(serial);
-      if (!beetle || !isMobile(beetle)) {
-        log("smelt: lost track of the fire beetle");
-        return void 0;
-      }
-      if (distanceTo(beetle) <= SMELT_RANGE) {
-        return beetle;
-      }
-      if (!stepToward(beetle)) {
-        log("smelt: cannot reach the fire beetle");
-        return void 0;
-      }
-    }
-    log(`smelt: still not next to the fire beetle after ${MAX_BEETLE_STEPS} steps`);
-    return void 0;
-  };
+  var walkToBeetle = (serial) => approach(serial, {
+    label: "smelt",
+    range: SMELT_RANGE,
+    maxSteps: MAX_BEETLE_STEPS,
+    step: stepToward
+  });
   var learnIngots = (changes) => {
     for (const { key, delta } of changes) {
       if (delta <= 0) {
@@ -646,7 +743,7 @@
       return false;
     }
     reportedMissing = false;
-    const beetle = approach(found.serial);
+    const beetle = walkToBeetle(found.serial);
     if (!beetle) {
       return false;
     }

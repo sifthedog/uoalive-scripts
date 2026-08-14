@@ -14,24 +14,48 @@
   var UNREACHABLE_DELAY = 5 * 60 * 1e3;
   var PROBE_RADIUS = 16;
 
+  // src/lib/store.ts
+  var scope = globalThis;
+  var createStore = (options) => {
+    let held;
+    const load = () => {
+      const found2 = scope[options.key];
+      if (found2?.version === options.version) {
+        const described = options.describe?.(found2);
+        if (described) {
+          log(described);
+        }
+        return found2;
+      }
+      const fresh = { ...options.seed(), version: options.version };
+      scope[options.key] = fresh;
+      return fresh;
+    };
+    return {
+      // Read through a call rather than handed out as the object itself, so forget() can actually
+      // forget: a module-scope `const memory = load()` would give every importer a reference that
+      // outlives it.
+      read: () => held ?? (held = load()),
+      // Tests only. The suite's vi.resetModules() gives each test a fresh module registry but leaves
+      // globalThis alone, which is precisely what this store is designed to survive.
+      forget: () => {
+        delete scope[options.key];
+        held = void 0;
+      }
+    };
+  };
+
   // src/mining/memory.ts
   var KEY = "__mining_memory";
   var VERSION = 1;
-  var scope = globalThis;
-  var load = () => {
-    const found2 = scope[KEY];
-    if (found2?.version === VERSION) {
-      if (found2.blocked.size > 0 || found2.notOre.size > 0) {
-        log(`memory: resuming with ${found2.blocked.size} blocked tiles, ${found2.notOre.size} arts`);
-      }
-      return found2;
-    }
-    const store2 = { version: VERSION, blocked: /* @__PURE__ */ new Map(), notOre: /* @__PURE__ */ new Set() };
-    scope[KEY] = store2;
-    return store2;
-  };
-  var store;
-  var memory = () => store ?? (store = load());
+  var store = createStore({
+    key: KEY,
+    version: VERSION,
+    seed: () => ({ blocked: /* @__PURE__ */ new Map(), notOre: /* @__PURE__ */ new Set() }),
+    describe: (found2) => found2.blocked.size > 0 || found2.notOre.size > 0 ? `memory: resuming with ${found2.blocked.size} blocked tiles, ${found2.notOre.size} arts` : void 0
+  });
+  var memory = store.read;
+  var forget = store.forget;
 
   // src/mining/vein.ts
   var known = /* @__PURE__ */ new Map();

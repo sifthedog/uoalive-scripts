@@ -1,3 +1,4 @@
+import { untilLanded } from '../lib/retry.js';
 import { DISMOUNT_ATTEMPTS, DISMOUNT_POLL, DISMOUNT_TIMEOUT } from './config.js';
 
 // Riding breaks both halves of this script at once: most shards refuse the swing outright to a
@@ -21,23 +22,22 @@ export const dismount = (): boolean => {
   // A cursor left open by the last swing would swallow the double-click
   target.cancel();
 
-  for (let attempt = 1; attempt <= DISMOUNT_ATTEMPTS; attempt++) {
+  const off = untilLanded({
+    label: 'dismount',
+    attempts: DISMOUNT_ATTEMPTS,
+    timeoutMs: DISMOUNT_TIMEOUT,
+    pollMs: DISMOUNT_POLL,
+
     // Double-clicking yourself is how you get off; there is no dismount call in this API
-    player.use(player.serial);
+    act: () => player.use(player.serial),
 
-    // The mount layer clearing is the proof. The action is asynchronous, so a fixed sleep would be
-    // a guess at how long the shard takes and would hand the next swing a character still mounted.
-    for (let waited = 0; waited < DISMOUNT_TIMEOUT; waited += DISMOUNT_POLL) {
-      sleep(DISMOUNT_POLL);
-      if (!player.equippedItems.mount) {
-        reported = false;
-        return true;
-      }
-    }
+    // The mount layer clearing is the proof
+    landed: () => !player.equippedItems.mount,
+  });
 
-    log(`dismount: attempt ${attempt} did not land, reissuing`);
+  if (off) {
+    reported = false;
   }
 
-  log('dismount: gave up getting off the mount');
-  return false;
+  return off;
 };

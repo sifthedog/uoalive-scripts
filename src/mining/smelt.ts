@@ -1,4 +1,5 @@
 import { collectIn } from '../lib/containers.js';
+import { approach, distanceTo, hex, isMobile, nameOf } from '../lib/entity.js';
 import { countsByGraphic, diffCounts, type Change, type Counts } from '../lib/pack.js';
 import {
   BEETLE_SCAN_RADIUS,
@@ -24,19 +25,11 @@ import { stepToward } from './walk.js';
 // Hues this run has given up on, so a stack that cannot be smelted stops being picked every pass
 export const unsmeltable = new Set<number>();
 
-const distanceTo = (entity: { x: number; y: number }) =>
-  Math.max(Math.abs(entity.x - player.x), Math.abs(entity.y - player.y));
-
-// _tag is how the client's own typings tell an Item from a Mobile, and it costs no round trip
-const isMobile = (entity: Item | Mobile): entity is Mobile => entity._tag === 'Mobile';
-
 // Latched once found, but re-resolved through findObject every time it is used: the beetle is a
 // pet and it follows you, so its coordinates go stale within a cycle.
 let beetleSerial = FIRE_BEETLE_SERIAL;
 let reportedFound = false;
 let reportedMissing = false;
-
-const nameOf = (beetle: Mobile): string => beetle.name ?? `0x${beetle.serial.toString(16)}`;
 
 export const findBeetle = (): Mobile | undefined => {
   if (beetleSerial !== undefined) {
@@ -71,7 +64,7 @@ export const findBeetle = (): Mobile | undefined => {
   const beetle = candidates.sort((a, b) => distanceTo(a) - distanceTo(b))[0];
 
   if (!reportedFound) {
-    log(`smelt: using '${nameOf(beetle)}' 0x${beetle.graphic.toString(16)} as the forge`);
+    log(`smelt: using '${nameOf(beetle)}' ${hex(beetle.graphic)} as the forge`);
     reportedFound = true;
   }
 
@@ -79,31 +72,13 @@ export const findBeetle = (): Mobile | undefined => {
   return beetle;
 };
 
-// The beetle moves, so re-resolve it every step rather than walking at where it was when the smelt
-// started. It is never double-clicked on the way: a fire beetle is rideable, so a double-click
-// mounts you - the exact thing mount.ts exists to undo.
-const approach = (serial: number): Mobile | undefined => {
-  for (let step = 0; step < MAX_BEETLE_STEPS; step++) {
-    const beetle = client.findObject(serial);
-
-    if (!beetle || !isMobile(beetle)) {
-      log('smelt: lost track of the fire beetle');
-      return undefined;
-    }
-
-    if (distanceTo(beetle) <= SMELT_RANGE) {
-      return beetle;
-    }
-
-    if (!stepToward(beetle)) {
-      log('smelt: cannot reach the fire beetle');
-      return undefined;
-    }
-  }
-
-  log(`smelt: still not next to the fire beetle after ${MAX_BEETLE_STEPS} steps`);
-  return undefined;
-};
+const walkToBeetle = (serial: number): Mobile | undefined =>
+  approach(serial, {
+    label: 'smelt',
+    range: SMELT_RANGE,
+    maxSteps: MAX_BEETLE_STEPS,
+    step: stepToward,
+  });
 
 // The smelt sends no message on stock RunUO, only a sound, so the pack diff is the only evidence of
 // it. That diff also names this shard's ingot graphics, whatever the art ids turn out to be.
@@ -275,7 +250,7 @@ export const smeltAll = (): boolean => {
   }
   reportedMissing = false;
 
-  const beetle = approach(found.serial);
+  const beetle = walkToBeetle(found.serial);
   if (!beetle) {
     return false;
   }

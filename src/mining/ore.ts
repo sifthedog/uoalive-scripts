@@ -1,4 +1,4 @@
-import { collectIn } from '../lib/containers.js';
+import { totalMatching } from '../lib/pack.js';
 import { COMBINE_DELAY, ORE_GRAPHICS, ORE_NAME, TARGET_TIMEOUT } from './config.js';
 
 // Named for the item rather than the tile, because vein.ts already owns `isOre` for the ground.
@@ -24,11 +24,7 @@ export const isOrePile = (item: Item): boolean => {
 };
 
 // Hue-blind on purpose: every ore type counts toward the pack, whatever it smelts into
-export const oreTotal = (): number =>
-  collectIn(player.backpack?.contents, isOrePile).reduce(
-    (total, item) => total + (item.amount ?? 1),
-    0,
-  );
+export const oreTotal = (contents?: Item[]): number => totalMatching(isOrePile, contents);
 
 // Top level only, unlike oreTotal: these are the piles the combine and the smelt actually work on,
 // and both act by serial on loose items in the pack.

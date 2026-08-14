@@ -1,5 +1,11 @@
 "use strict";
 (() => {
+  // src/lib/outcomes.ts
+  var outcomeVocabulary = (text) => ({
+    all: Object.values(text).flat(),
+    outcomeFor: (matched) => Object.keys(text).find((name) => text[name].includes(matched))
+  });
+
   // src/lib/arts.ts
   var INGOT_GRAPHICS = /* @__PURE__ */ new Set([7151, 7152, 7153, 7154]);
 
@@ -99,13 +105,43 @@
     return openCraftGump(toolSerial2, categoryButton);
   };
 
-  // src/tinkering/ingots.ts
-  var isIngot = (item) => INGOT_GRAPHICS.has(item.graphic) && (item.hue ?? 0) === INGOT_HUE;
-  var totalIn = (contents) => (contents ?? []).reduce(
-    (total, item) => total + (isIngot(item) ? item.amount ?? 1 : 0) + totalIn(item.contents),
+  // src/lib/pack.ts
+  var countsByGraphic = (contents = player.backpack?.contents) => {
+    const counts = /* @__PURE__ */ new Map();
+    const walk = (items) => {
+      for (const item of items ?? []) {
+        const key = `0x${item.graphic.toString(16)}/${item.hue ?? 0}`;
+        counts.set(key, (counts.get(key) ?? 0) + (item.amount ?? 1));
+        walk(item.contents);
+      }
+    };
+    walk(contents);
+    return counts;
+  };
+  var diffCounts = (before, after) => {
+    const changes = [];
+    for (const [key, total] of after) {
+      const delta = total - (before.get(key) ?? 0);
+      if (delta !== 0) {
+        changes.push({ key, delta });
+      }
+    }
+    for (const [key, total] of before) {
+      if (!after.has(key)) {
+        changes.push({ key, delta: -total });
+      }
+    }
+    return changes;
+  };
+  var totalMatching = (matches, contents = player.backpack?.contents) => (contents ?? []).reduce(
+    (total, item) => total + (matches(item) ? item.amount ?? 1 : 0) + totalMatching(matches, item.contents ?? []),
     0
   );
-  var ingotTotal = (contents = player.backpack?.contents) => totalIn(contents);
+  var describeDiff = (changes) => changes.length ? changes.map(({ key, delta }) => `${key} ${delta > 0 ? "+" : ""}${delta}`).join(", ") : "no change";
+
+  // src/tinkering/ingots.ts
+  var isIngot = (item) => INGOT_GRAPHICS.has(item.graphic) && (item.hue ?? 0) === INGOT_HUE;
+  var ingotTotal = (contents) => totalMatching(isIngot, contents);
 
   // src/lib/containers.ts
   var CONTAINER_GRAPHICS = /* @__PURE__ */ new Set([
@@ -192,38 +228,7 @@
   };
 
   // src/tinkering/craft.ts
-  var ALL_OUTCOME_TEXT = Object.values(OUTCOME_TEXT).flat();
-  var outcomeFor = (matched) => Object.keys(OUTCOME_TEXT).find((name) => OUTCOME_TEXT[name].includes(matched));
-
-  // src/lib/pack.ts
-  var countsByGraphic = (contents = player.backpack?.contents) => {
-    const counts = /* @__PURE__ */ new Map();
-    const walk = (items) => {
-      for (const item of items ?? []) {
-        const key = `0x${item.graphic.toString(16)}/${item.hue ?? 0}`;
-        counts.set(key, (counts.get(key) ?? 0) + (item.amount ?? 1));
-        walk(item.contents);
-      }
-    };
-    walk(contents);
-    return counts;
-  };
-  var diffCounts = (before, after) => {
-    const changes = [];
-    for (const [key, total] of after) {
-      const delta = total - (before.get(key) ?? 0);
-      if (delta !== 0) {
-        changes.push({ key, delta });
-      }
-    }
-    for (const [key, total] of before) {
-      if (!after.has(key)) {
-        changes.push({ key, delta: -total });
-      }
-    }
-    return changes;
-  };
-  var describeDiff = (changes) => changes.length ? changes.map(({ key, delta }) => `${key} ${delta > 0 ? "+" : ""}${delta}`).join(", ") : "no change";
+  var { all: ALL_OUTCOME_TEXT, outcomeFor } = outcomeVocabulary(OUTCOME_TEXT);
 
   // src/lib/die.ts
   var die = (reason) => {
@@ -231,8 +236,10 @@
     throw new Error(reason);
   };
 
-  // src/tinkering/probe.ts
+  // src/lib/entity.ts
   var hex = (value) => `0x${(value >>> 0).toString(16)}`;
+
+  // src/tinkering/probe.ts
   log("probe: pack contents (graphic / hue / amount / name)");
   for (const item of player.backpack?.contents ?? []) {
     log(`probe:   ${hex(item.graphic)} hue ${item.hue ?? 0} x${item.amount ?? 1} "${item.name ?? ""}"`);

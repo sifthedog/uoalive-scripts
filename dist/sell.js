@@ -58,6 +58,9 @@
     return found;
   };
 
+  // src/lib/entity.ts
+  var hex = (value) => `0x${(value >>> 0).toString(16)}`;
+
   // src/selling/hoist.ts
   var nameOf = (item) => {
     const known = (item.name ?? "").trim();
@@ -130,8 +133,7 @@
     }
     const name = resolveName(serial);
     if (!name) {
-      const label = (serial >>> 0).toString(16);
-      log(`sell: no name for 0x${label}, the vendor list can only be matched by name`);
+      log(`sell: no name for ${hex(serial)}, the vendor list can only be matched by name`);
       return void 0;
     }
     return { serial, name };

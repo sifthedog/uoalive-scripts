@@ -62,6 +62,9 @@
     return found;
   };
 
+  // src/lib/entity.ts
+  var hex = (value) => `0x${(value >>> 0).toString(16)}`;
+
   // src/boxes/config.ts
   var BOX_GRAPHICS = /* @__PURE__ */ new Set([2474, 3709, 3710]);
   var BOX_NAME = "wooden box";
@@ -156,7 +159,6 @@
   // src/boxes/boxes.ts
   var boxGraphic;
   var keyGraphic;
-  var hex = (value) => `0x${(value >>> 0).toString(16)}`;
   var isBox = (item) => boxGraphic !== void 0 && item.graphic === boxGraphic || BOX_GRAPHICS.has(item.graphic) || (item.name ?? "").toLowerCase().includes(BOX_NAME);
   var KEY_WORD = /\bkey\b/i;
   var isKey = (item) => keyGraphic !== void 0 && item.graphic === keyGraphic || KEY_GRAPHICS.has(item.graphic) || KEY_WORD.test(item.name ?? "");
@@ -255,22 +257,36 @@
   // src/lib/weight.ts
   var overweight = (buffer = 0) => player.weightMax > 0 && player.weight > player.weightMax - buffer;
 
-  // src/boxes/guards.ts
-  var stopReason = () => {
-    if (player.isDead) {
-      return "you are dead";
-    }
-    if (!DROP_KEYS) {
-      if (overweight(WEIGHT_BUFFER)) {
-        return `overweight (${player.weight}/${player.weightMax}) and keys are going into the pack`;
-      }
-      const top = (player.backpack?.contents ?? []).length;
-      if (top >= PACK_LIMIT) {
-        return `pack is full (${top} items at the top level) and keys are going into the pack`;
+  // src/lib/guards.ts
+  var dead = () => player.isDead ? "you are dead" : void 0;
+  var heavy = (buffer) => () => overweight(buffer) ? `overweight (${player.weight}/${player.weightMax})` : void 0;
+  var packFull = (limit) => () => {
+    const top = (player.backpack?.contents ?? []).length;
+    return top >= limit ? `pack is full (${top} items at the top level)` : void 0;
+  };
+  var firstReason = (...guards) => {
+    for (const guard of guards) {
+      const reason = guard();
+      if (reason) {
+        return reason;
       }
     }
     return void 0;
   };
+
+  // src/boxes/guards.ts
+  var whenKeepingKeys = (guard) => () => {
+    if (DROP_KEYS) {
+      return void 0;
+    }
+    const reason = guard();
+    return reason && `${reason} and keys are going into the pack`;
+  };
+  var stopReason = () => firstReason(
+    dead,
+    whenKeepingKeys(heavy(WEIGHT_BUFFER)),
+    whenKeepingKeys(packFull(PACK_LIMIT))
+  );
 
   // src/boxes/peek.ts
   var oplReportsContents = true;

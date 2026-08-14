@@ -1,3 +1,5 @@
+import { outcomeVocabulary } from '../lib/outcomes.js';
+import { totalMatching } from '../lib/pack.js';
 import { CHOP_TIMEOUT, LOG_GRAPHICS, OUTCOME_TEXT, TARGET_TIMEOUT } from './config.js';
 import type { Tree } from './tree.js';
 
@@ -5,24 +7,12 @@ import type { Tree } from './tree.js';
 export type Outcome = keyof typeof OUTCOME_TEXT;
 export type ChopOutcome = Outcome | 'noCursor' | 'unknown';
 
-export const ALL_OUTCOME_TEXT = Object.values(OUTCOME_TEXT).flat();
-
-export const outcomeFor = (matched: string): Outcome | undefined =>
-  (Object.keys(OUTCOME_TEXT) as Outcome[]).find((name) => OUTCOME_TEXT[name].includes(matched));
+export const { all: ALL_OUTCOME_TEXT, outcomeFor } = outcomeVocabulary(OUTCOME_TEXT);
 
 // Hue-blind on purpose: special woods are hued, and they count toward the pack all the same
 export const isLog = (item: Item): boolean => LOG_GRAPHICS.has(item.graphic);
 
-// Recursing through this rather than through logTotal itself: a plain item has no `contents`, and
-// passing undefined back into a defaulted parameter would restart at the backpack forever.
-const totalIn = (contents: Item[] | undefined): number =>
-  (contents ?? []).reduce(
-    (total, item) => total + (isLog(item) ? item.amount ?? 1 : 0) + totalIn(item.contents),
-    0,
-  );
-
-export const logTotal = (contents: Item[] | undefined = player.backpack?.contents): number =>
-  totalIn(contents);
+export const logTotal = (contents?: Item[]): number => totalMatching(isLog, contents);
 
 // A shard that words its harvest messages differently leaves the journal silent, so read the world
 // instead. Logs landing in the pack is the only proof of a chop that does not depend on wording.

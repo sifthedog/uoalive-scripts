@@ -240,16 +240,21 @@
     }
     return changes;
   };
-
-  // src/lumberjacking/chop.ts
-  var ALL_OUTCOME_TEXT = Object.values(OUTCOME_TEXT).flat();
-  var outcomeFor = (matched) => Object.keys(OUTCOME_TEXT).find((name) => OUTCOME_TEXT[name].includes(matched));
-  var isLog = (item) => LOG_GRAPHICS.has(item.graphic);
-  var totalIn = (contents) => (contents ?? []).reduce(
-    (total, item) => total + (isLog(item) ? item.amount ?? 1 : 0) + totalIn(item.contents),
+  var totalMatching = (matches, contents = player.backpack?.contents) => (contents ?? []).reduce(
+    (total, item) => total + (matches(item) ? item.amount ?? 1 : 0) + totalMatching(matches, item.contents ?? []),
     0
   );
-  var logTotal = (contents = player.backpack?.contents) => totalIn(contents);
+
+  // src/lib/outcomes.ts
+  var outcomeVocabulary = (text) => ({
+    all: Object.values(text).flat(),
+    outcomeFor: (matched) => Object.keys(text).find((name) => text[name].includes(matched))
+  });
+
+  // src/lumberjacking/chop.ts
+  var { all: ALL_OUTCOME_TEXT, outcomeFor } = outcomeVocabulary(OUTCOME_TEXT);
+  var isLog = (item) => LOG_GRAPHICS.has(item.graphic);
+  var logTotal = (contents) => totalMatching(isLog, contents);
   var silentOutcome = (serial, logsBefore) => {
     if (serial !== void 0 && !client.findObject(serial)) {
       return "wornOut";
@@ -272,6 +277,42 @@
     target.terrain(tree.x, tree.y, tree.z, tree.graphic);
     const matched = journal.waitForTextAny(ALL_OUTCOME_TEXT, void 0, CHOP_TIMEOUT);
     return matched ? outcomeFor(matched) : silentOutcome(serial, logsBefore);
+  };
+
+  // src/lib/save.ts
+  var createSaveWatch = (options) => ({
+    isSaving: () => options.savingText.some((text) => journal.containsText(text)),
+    waitOutSave: () => {
+      log("save: the world is saving, waiting it out");
+      journal.clear();
+      for (let waited = 0; waited < options.waitMs; waited += options.pollMs) {
+        sleep(options.pollMs);
+        if (options.doneText.some((text) => journal.containsText(text))) {
+          break;
+        }
+        if (options.stopReason()) {
+          break;
+        }
+      }
+      options.onDone();
+    }
+  });
+
+  // src/lib/guards.ts
+  var dead = () => player.isDead ? "you are dead" : void 0;
+  var heavy = (buffer) => () => overweight(buffer) ? `overweight (${player.weight}/${player.weightMax})` : void 0;
+  var packFull = (limit) => () => {
+    const top = (player.backpack?.contents ?? []).length;
+    return top >= limit ? `pack is full (${top} items at the top level)` : void 0;
+  };
+  var firstReason = (...guards) => {
+    for (const guard of guards) {
+      const reason = guard();
+      if (reason) {
+        return reason;
+      }
+    }
+    return void 0;
   };
 
   // src/lumberjacking/bounds.ts
@@ -304,79 +345,55 @@
   };
 
   // src/lumberjacking/guards.ts
-  var stopReason = () => {
-    if (player.isDead) {
-      return "you are dead";
-    }
-    if (!inBounds(player.x, player.y)) {
-      return `at ${player.x},${player.y}, outside ${describeBounds()}`;
-    }
-    if (overweight(WEIGHT_BUFFER)) {
-      return `overweight (${player.weight}/${player.weightMax})`;
-    }
-    const top = (player.backpack?.contents ?? []).length;
-    if (top >= PACK_LIMIT) {
-      return `pack is full (${top} items at the top level)`;
-    }
-    return void 0;
-  };
+  var insideBounds = () => inBounds(player.x, player.y) ? void 0 : `at ${player.x},${player.y}, outside ${describeBounds()}`;
+  var stopReason = () => firstReason(dead, insideBounds, heavy(WEIGHT_BUFFER), packFull(PACK_LIMIT));
 
-  // src/lumberjacking/memory.ts
-  var KEY = "__lumberjack_memory";
-  var VERSION = 1;
+  // src/lib/clock.ts
   var now = () => Date.now();
-  var scope = globalThis;
-  var load = () => {
-    const found = scope[KEY];
-    if (found?.version === VERSION) {
-      if (found.blocked.size > 0 || found.notTree.size > 0) {
-        log(`memory: resuming with ${found.blocked.size} blocked tiles, ${found.notTree.size} arts`);
+
+  // src/lib/heartbeat.ts
+  var createHeartbeat = (options) => {
+    let lastBeat;
+    return {
+      beat: (phase, cycle, tally) => {
+        const time = now();
+        if (lastBeat === void 0) {
+          lastBeat = time;
+          return;
+        }
+        if (time - lastBeat < options.everyMs) {
+          return;
+        }
+        lastBeat = time;
+        log(
+          `${options.prefix}: still here - ${phase}, cycle ${cycle}, at ${player.x},${player.y}, ${player.weight}/${player.weightMax}, ${tally} ${options.noun}`
+        );
+      },
+      // For the paths that report on their own cadence, so the next beat is a full interval after they
+      // stop rather than immediately on top of their last line
+      resetBeat: () => {
+        lastBeat = now();
       }
-      return found;
-    }
-    const store2 = { version: VERSION, blocked: /* @__PURE__ */ new Map(), notTree: /* @__PURE__ */ new Set() };
-    scope[KEY] = store2;
-    return store2;
+    };
   };
-  var store;
-  var memory = () => store ?? (store = load());
 
   // src/lumberjacking/heartbeat.ts
-  var lastBeat;
-  var beat = (phase, cycle, chopped2) => {
-    const time = now();
-    if (lastBeat === void 0) {
-      lastBeat = time;
-      return;
-    }
-    if (time - lastBeat < HEARTBEAT_EVERY) {
-      return;
-    }
-    lastBeat = time;
-    log(
-      `lumberjack: still here - ${phase}, cycle ${cycle}, at ${player.x},${player.y}, ${player.weight}/${player.weightMax}, ${chopped2} chops`
-    );
-  };
-  var resetBeat = () => {
-    lastBeat = now();
-  };
+  var { beat, resetBeat } = createHeartbeat({
+    prefix: "lumberjack",
+    noun: "chops",
+    everyMs: HEARTBEAT_EVERY
+  });
 
   // src/lumberjacking/save.ts
-  var isSaving = () => SAVING_TEXT.some((text) => journal.containsText(text));
-  var waitOutSave = () => {
-    log("save: the world is saving, waiting it out");
-    journal.clear();
-    for (let waited = 0; waited < SAVE_WAIT; waited += SAVE_POLL) {
-      sleep(SAVE_POLL);
-      if (SAVE_DONE_TEXT.some((text) => journal.containsText(text))) {
-        break;
-      }
-      if (stopReason()) {
-        break;
-      }
-    }
-    resetBeat();
-  };
+  var { isSaving, waitOutSave } = createSaveWatch({
+    savingText: SAVING_TEXT,
+    doneText: SAVE_DONE_TEXT,
+    waitMs: SAVE_WAIT,
+    pollMs: SAVE_POLL,
+    stopReason,
+    // This path reports on its own cadence, so the next beat starts a full interval from here
+    onDone: resetBeat
+  });
 
   // src/lumberjacking/boards.ts
   var unconvertible = /* @__PURE__ */ new Set();
@@ -458,7 +475,31 @@
     return false;
   };
 
-  // src/lumberjacking/walk.ts
+  // src/lib/entity.ts
+  var hex = (value) => `0x${(value >>> 0).toString(16)}`;
+  var distanceTo = (spot) => Math.max(Math.abs(spot.x - player.x), Math.abs(spot.y - player.y));
+  var isMobile = (entity) => entity._tag === "Mobile";
+  var nameOf = (entity) => entity.name ?? hex(entity.serial);
+  var approach = (serial, options) => {
+    for (let taken = 0; taken < options.maxSteps; taken++) {
+      const found = client.findObject(serial);
+      if (!found || !isMobile(found)) {
+        log(`${options.label}: lost track of ${hex(serial)}`);
+        return void 0;
+      }
+      if (distanceTo(found) <= options.range) {
+        return found;
+      }
+      if (!options.step(found)) {
+        log(`${options.label}: cannot reach ${nameOf(found)}`);
+        return void 0;
+      }
+    }
+    log(`${options.label}: still not next to ${hex(serial)} after ${options.maxSteps} steps`);
+    return void 0;
+  };
+
+  // src/lib/walk.ts
   var DIRECTION_BY_STEP = /* @__PURE__ */ new Map([
     ["0,-1", Directions.North],
     ["1,-1", Directions.Right],
@@ -469,28 +510,33 @@
     ["-1,0", Directions.West],
     ["-1,-1", Directions.Up]
   ]);
-  var stepToward = (tree) => {
-    const step = allowedStep(Math.sign(tree.x - player.x), Math.sign(tree.y - player.y));
-    if (step === void 0) {
-      return false;
-    }
-    const direction = DIRECTION_BY_STEP.get(`${step[0]},${step[1]}`);
-    if (direction === void 0) {
-      return false;
-    }
-    const beforeX = player.x;
-    const beforeY = player.y;
-    player.run(direction);
-    sleep(WALK_DELAY);
-    player.run(direction);
-    sleep(WALK_DELAY);
-    return player.x !== beforeX || player.y !== beforeY;
+  var createStepToward = (options) => {
+    return (spot) => {
+      const wantX = Math.sign(spot.x - player.x);
+      const wantY = Math.sign(spot.y - player.y);
+      const step = options.constrain ? options.constrain(wantX, wantY) : wantX === 0 && wantY === 0 ? void 0 : [wantX, wantY];
+      if (step === void 0) {
+        return false;
+      }
+      const direction = DIRECTION_BY_STEP.get(`${step[0]},${step[1]}`);
+      if (direction === void 0) {
+        return false;
+      }
+      const beforeX = player.x;
+      const beforeY = player.y;
+      player.run(direction);
+      sleep(options.delayMs);
+      player.run(direction);
+      sleep(options.delayMs);
+      return player.x !== beforeX || player.y !== beforeY;
+    };
   };
+
+  // src/lumberjacking/walk.ts
+  var stepToward = createStepToward({ delayMs: WALK_DELAY, constrain: allowedStep });
 
   // src/lumberjacking/haul.ts
   var isCargo = (item) => isBoard(item) || isLog(item) && unconvertible.has(item.hue ?? 0);
-  var distanceTo = (entity) => Math.max(Math.abs(entity.x - player.x), Math.abs(entity.y - player.y));
-  var isMobile = (entity) => entity._tag === "Mobile";
   var reported = false;
   var findPackAnimals = () => {
     if (PACK_ANIMAL_SERIALS.length > 0) {
@@ -523,24 +569,12 @@
     sleep(800);
     return client.findItemOnLayer(animal.serial, Layers.Backpack);
   };
-  var approach = (serial) => {
-    for (let step = 0; step <= MAX_STEPS; step++) {
-      const animal = client.findObject(serial);
-      if (!animal) {
-        log("haul: lost track of the pack animal");
-        return false;
-      }
-      if (distanceTo(animal) <= UNLOAD_RANGE) {
-        return true;
-      }
-      if (!stepToward(animal)) {
-        log("haul: cannot reach the pack animal");
-        return false;
-      }
-    }
-    log(`haul: still not next to the pack animal after ${MAX_STEPS} steps`);
-    return false;
-  };
+  var walkToAnimal = (serial) => approach(serial, {
+    label: "haul",
+    range: UNLOAD_RANGE,
+    maxSteps: MAX_STEPS,
+    step: stepToward
+  }) !== void 0;
   var moveAll = (packSerial, matches) => {
     let previousStacks = Infinity;
     while (true) {
@@ -555,7 +589,6 @@
       }
     }
   };
-  var nameOf = (animal) => animal.name ?? `0x${animal.serial.toString(16)}`;
   var unloadTo = (animals, matches) => {
     let moved = false;
     for (const animal of animals) {
@@ -563,7 +596,7 @@
       if (before === 0) {
         break;
       }
-      if (!approach(animal.serial)) {
+      if (!walkToAnimal(animal.serial)) {
         continue;
       }
       const pack = animalPack(animal);
@@ -599,6 +632,49 @@
     }
     return moved;
   };
+
+  // src/lib/store.ts
+  var scope = globalThis;
+  var createStore = (options) => {
+    let held2;
+    const load = () => {
+      const found = scope[options.key];
+      if (found?.version === options.version) {
+        const described = options.describe?.(found);
+        if (described) {
+          log(described);
+        }
+        return found;
+      }
+      const fresh = { ...options.seed(), version: options.version };
+      scope[options.key] = fresh;
+      return fresh;
+    };
+    return {
+      // Read through a call rather than handed out as the object itself, so forget() can actually
+      // forget: a module-scope `const memory = load()` would give every importer a reference that
+      // outlives it.
+      read: () => held2 ?? (held2 = load()),
+      // Tests only. The suite's vi.resetModules() gives each test a fresh module registry but leaves
+      // globalThis alone, which is precisely what this store is designed to survive.
+      forget: () => {
+        delete scope[options.key];
+        held2 = void 0;
+      }
+    };
+  };
+
+  // src/lumberjacking/memory.ts
+  var KEY = "__lumberjack_memory";
+  var VERSION = 1;
+  var store = createStore({
+    key: KEY,
+    version: VERSION,
+    seed: () => ({ blocked: /* @__PURE__ */ new Map(), notTree: /* @__PURE__ */ new Set() }),
+    describe: (found) => found.blocked.size > 0 || found.notTree.size > 0 ? `memory: resuming with ${found.blocked.size} blocked tiles, ${found.notTree.size} arts` : void 0
+  });
+  var memory = store.read;
+  var forget = store.forget;
 
   // src/lumberjacking/tree.ts
   var known = /* @__PURE__ */ new Map();

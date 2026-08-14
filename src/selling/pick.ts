@@ -1,3 +1,4 @@
+import { hex } from '../lib/entity.js';
 import { OPL_TIMEOUT } from './config.js';
 
 export interface Picked {
@@ -36,9 +37,7 @@ export const pickItem = (): Picked | undefined => {
 
   const name = resolveName(serial);
   if (!name) {
-    // Serials come back as signed 32-bit ints, so a plain toString(16) yields "0x-3266af2f"
-    const label = (serial >>> 0).toString(16);
-    log(`sell: no name for 0x${label}, the vendor list can only be matched by name`);
+    log(`sell: no name for ${hex(serial)}, the vendor list can only be matched by name`);
     return undefined;
   }
 

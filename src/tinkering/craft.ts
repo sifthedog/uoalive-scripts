@@ -1,3 +1,4 @@
+import { outcomeVocabulary } from '../lib/outcomes.js';
 import {
   CRAFT_TIMEOUT,
   GUMP_POLL,
@@ -14,10 +15,7 @@ import { toolAlive } from './tool.js';
 export type Outcome = keyof typeof OUTCOME_TEXT;
 export type CraftOutcome = Outcome | 'used' | 'unknown' | 'noGump';
 
-export const ALL_OUTCOME_TEXT = Object.values(OUTCOME_TEXT).flat();
-
-export const outcomeFor = (matched: string): Outcome | undefined =>
-  (Object.keys(OUTCOME_TEXT) as Outcome[]).find((name) => OUTCOME_TEXT[name].includes(matched));
+export const { all: ALL_OUTCOME_TEXT, outcomeFor } = outcomeVocabulary(OUTCOME_TEXT);
 
 // Stock RunUO renders craft results inside the reopened craft gump, not as a system message, so
 // the journal may stay silent on every cycle. Read the world instead: ingots leave the pack on a

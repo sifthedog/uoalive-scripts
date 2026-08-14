@@ -1,4 +1,5 @@
 import { collectIn, openContainers } from '../lib/containers.js';
+import { hex } from '../lib/entity.js';
 import {
   BOX_GRAPHICS,
   BOX_NAME,
@@ -17,8 +18,7 @@ export type EmptyOutcome = 'emptied' | 'stalled' | 'unopened';
 let boxGraphic: number | undefined;
 let keyGraphic: number | undefined;
 
-// Serials come back as signed 32-bit ints, so a plain toString(16) yields "0x-3266af2f"
-export const hex = (value: number): string => `0x${(value >>> 0).toString(16)}`;
+export { hex };
 
 // Finding a box by name is a substring test, which is the opposite of how the *sell gump* is
 // matched. Deliberately: naming the wrong thing here costs a box that will not open and gets
