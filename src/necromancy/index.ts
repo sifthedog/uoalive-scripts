@@ -1,21 +1,23 @@
-// Bushido on src/lib/trainer.ts. The table in config.ts is the whole policy, so another skill is
-// another table rather than another script - src/necromancy/ is this loop with a different one.
-//
-// The two halves of this run want opposite things from the character's hands: these are weapon
-// abilities, and meditation is refused while anything is equipped. See weapon.ts.
+// Necromancy on src/lib/trainer.ts, the same loop src/training/ runs Bushido on. Three differences,
+// all settled in config.ts: three of the five bands are transformations, which stand until re-cast
+// rather than expiring, so the toggle back off is counted as the cast it is; one band is cast at the
+// character and one drains it, so there is a health floor and the run bandages itself at it; and
+// nothing is ever held, so unlike the weapon trainer no stow is needed.
 
 import { createCaster } from '../lib/cast.js';
-import { describeItem } from '../lib/entity.js';
 import { createManaWait } from '../lib/meditate.js';
 import { createSkillReader } from '../lib/skill.js';
 import { runTrainer } from '../lib/trainer.js';
 import {
+  BANDAGE,
+  BANDAGE_GRAPHIC,
   BUFF_WAIT,
   CASTING_WAIT,
   CAST_DELAY,
   CAST_TIMEOUT,
   COOLDOWN_BACKOFF,
   COOLDOWN_BACKOFF_MAX,
+  DISABLED_IS_PROGRESS,
   LOG_EVERY,
   MANA_LOG_EVERY,
   MANA_POLL,
@@ -42,13 +44,13 @@ import {
   THROTTLE_BACKOFF,
   THROTTLE_BACKOFF_MAX,
 } from './config.js';
-import { stopReason } from './guards.js';
 import { restore, stow, stripMore, survey } from './gear.js';
+import { stopReason } from './guards.js';
+import { mend } from './heal.js';
 import { beat, resetBeat } from './heartbeat.js';
 import { waitOutSave } from './save.js';
-import { held, rearm, rememberWeapon } from './weapon.js';
 
-const PREFIX = 'train';
+const PREFIX = 'necro';
 
 const skill = createSkillReader({
   skill: SKILL,
@@ -63,6 +65,8 @@ const { castOnce } = createCaster({
   skipWhenBuffed: SKIP_WHEN_BUFFED,
 });
 
+// This run puts nothing in the character's hands, so what the strip is for is the armour - and that
+// only ever comes off on a shard that refuses a trance for it. See ./gear.ts.
 const mana = createManaWait({
   prefix: PREFIX,
   outcomeText: MEDITATE_OUTCOME_TEXT,
@@ -74,9 +78,6 @@ const mana = createManaWait({
   pollMs: MANA_POLL,
   logEveryMs: MANA_LOG_EVERY,
   regenTimeoutMs: REGEN_TIMEOUT,
-  // ./gear.ts and no longer ./weapon.ts. The weapon still comes off for every trance, but it goes
-  // back on by the serial that came off rather than by graphic - so a weapon with properties on it
-  // returns as itself - and the shield or armour this shard may also refuse comes off with it.
   stow,
   restore,
   stripMore,
@@ -91,27 +92,27 @@ runTrainer({
   skill,
   castOnce,
   regainMana: mana.regainMana,
-  manaBlocked: mana.blocked,
-  rearm,
+  disabledIsProgress: DISABLED_IS_PROGRESS,
   stopReason,
+  recover: mend,
   beat,
   waitOutSave,
 
   preflight: () => {
-    // Learned from what is in hand, so the draw after each trance matches on this weapon's graphic
-    // rather than on whatever WEAPON_NAME finds in the pack
-    const weapon = held();
-    rememberWeapon(weapon);
+    log(
+      `${PREFIX}: ${player.hits}/${player.maxHits} hits, ${player.mana}/${player.maxMana} mana`,
+    );
 
-    log(`${PREFIX}: hand ${describeItem(weapon)}, ${player.mana}/${player.maxMana} mana`);
-
-    if (!weapon) {
-      log(`${PREFIX}: nothing in hand - these are weapon abilities, so the first cast may be refused`);
-    }
-
-    // Also the line that catches a client whose findItemOnLayer does not answer for the player: an
-    // empty survey on a dressed character means nothing will ever be stripped
+    // Reported rather than warned about, now that the run takes these off and puts the same items
+    // back. Said at start-up because it is also the line that catches a client whose findItemOnLayer
+    // does not answer for the player: an empty survey on a dressed character means nothing will ever
+    // be stripped and the run will quietly fall back on natural regeneration.
     log(`${PREFIX}: ${survey()}`);
+
+    // Said now rather than discovered at the floor, which on the Lich Form band is an hour in
+    if (BANDAGE && !client.findType(BANDAGE_GRAPHIC, undefined, player.backpack?.serial)) {
+      log(`${PREFIX}: no bandages in the pack - the health floor will stop the run instead`);
+    }
   },
 
   timings: {

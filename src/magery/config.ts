@@ -26,37 +26,34 @@ import type { MeditateText } from '../lib/meditate.js';
 import type { Stage } from '../lib/stages.js';
 import { SAVING_TEXT, THROTTLED_TEXT, UNSKILLED_TEXT } from '../lib/timings.js';
 
-export const SKILL = Skills.Bushido;
+export const SKILL = Skills.Magery;
 
 // Used in the log lines until the skill list arrives
-export const SKILL_LABEL = 'Bushido';
+export const SKILL_LABEL = 'Magery';
 
-// upTo is in the client's tenths - 600 is 60.0 - and exclusive, so the bands butt together.
-//
-// 1050 assumes a 105 power scroll; without one the shard caps the skill at 1000 and the last band
-// can never be finished, which the loop says at start-up rather than quietly retargeting itself.
-//
-// buff stops the run re-issuing an ability that is already standing, and doubles as the proof a cast
-// landed that does not go through the journal.
+// upTo is in the client's tenths - 500 is 50.0 - and exclusive, so the bands butt together.
+// These are the spells the usual guides name as gaining without a victim to throw them at: a
+// punchbag has to be found, kept alive and kept in range, which is three more ways for a run to end.
 export const STAGES: Stage[] = [
-  { upTo: 600, spell: Spells.Confidence, mana: 10, buff: BuffDebuffs.Confidence },
-  { upTo: 750, spell: Spells.CounterAttack, mana: 5, buff: BuffDebuffs.CounterAttack },
-  { upTo: 1050, spell: Spells.Evasion, mana: 10, buff: BuffDebuffs.Evasion },
+  // 3rd circle. Below about 30 the sensible thing is to buy the skill from an NPC trainer.
+  { upTo: 500, spell: Spells.Bless, mana: 9, buff: BuffDebuffs.Bless, target: 'self' },
+
+  // 4th circle
+  {
+    upTo: 650,
+    spell: Spells.ArchProtection,
+    mana: 11,
+    buff: BuffDebuffs.ArchProtection,
+    target: 'self',
+  },
+
+  // 6th. The 5th and 7th circles are skipped because their spells want a cursor over ground or a
+  // gump answered, and neither is something this loop can do.
+  { upTo: 850, spell: Spells.Invisibility, mana: 20, buff: BuffDebuffs.Invisibility, target: 'self' },
+
+  // 8th. An area attack that hits everything nearby, so this band belongs somewhere empty.
+  { upTo: 1200, spell: Spells.Earthquake, mana: 50 },
 ];
-
-// Matched as a substring, case-insensitively. Only used for a draw that cannot use the graphic:
-// weapon.ts learns the graphic from whatever is in hand at start-up.
-export const WEAPON_NAME = "double axe";
-
-// The bag inside the pack to open when a plain search misses - openContainers opens the top level of
-// the pack and no deeper.
-export const SPARE_BAG_SERIAL: number | undefined = undefined;
-
-// Deliberately not the EQUIP_ trio, though they hold the same numbers today: an equip and a stow are
-// independent facts about the shard.
-export const DISARM_TIMEOUT = 2000;
-export const DISARM_POLL = 200;
-export const DISARM_ATTEMPTS = 3;
 
 export const SKILL_TIMEOUT = 1_000;
 export const SKILL_POLL = 500;
@@ -64,36 +61,34 @@ export const SKILL_POLL = 500;
 // Consecutive cycles the client answered nothing for the skill before giving up
 export const MAX_BLIND_READS = 5;
 
-// Far shorter than the harvest scripts' timeouts: an ability resolves at once, with no swing
-// animation to outlast.
-export const CAST_TIMEOUT = 500;
+// A spell has an incantation to get through, and a refusal arriving after the wait has closed reads
+// as an unknown outcome.
+export const CAST_TIMEOUT = 2000;
 
-// Pacing rather than a wait: these abilities have cooldowns of their own and the shard refuses one
-// that comes too early.
-export const CAST_DELAY = 500;
+// Pacing, not a wait: an eighth-circle cast is seconds long, and coming back sooner just earns 'you
+// are already casting'. The alreadyCasting backoff finds the rest.
+export const CAST_DELAY = 3000;
 
-// Off, because this shard lets the same ability be recast while its buff is up - confirmed in play.
-// Turn it on for a RunUO-family shard where these are SpecialMoves and a second cast *disables* the
-// one already standing; the symptom is the `disabled` outcome, or a buff that keeps going out.
+// Gating on the buff would cap the run at one cast per buff duration.
 export const SKIP_WHEN_BUFFED = false;
 
-// Not a backoff: the buff expires on its own schedule and nothing the run does hurries it.
+// On, because Protection and Magic Reflection are toggles here: the cast was charged for and the
+// skill rolled either way.
+export const DISABLED_IS_PROGRESS = true;
+
 export const BUFF_WAIT = 2000;
 
-// Nothing to out-wait but the ability's own casting time
+// Nothing to out-wait but the spell's own casting time
 export const CASTING_WAIT = 750;
 
-// Growing rather than fixed because the cooldown is not a number this script knows - it varies by
-// ability and by skill. The ceiling is well above THROTTLE_BACKOFF_MAX because an ability can be a
-// good part of a minute between uses.
+// Backs off from alreadyCasting; the ceiling is high because the eighth-circle band is the slow one.
 export const COOLDOWN_BACKOFF = 2000;
 export const COOLDOWN_BACKOFF_MAX = 20_000;
 
 // Off waits for natural regeneration instead: slower, always available.
 export const MEDITATE = true;
 
-// Every stretch of meditation costs a stow and a draw, so topping the pool right off spreads that
-// fixed cost over many casts.
+// The last band charges 50 a cast, so a pool topped right up pays for several casts.
 export const MEDITATE_TO_FULL = true;
 
 export const MEDITATE_TIMEOUT = 20_000;
@@ -137,41 +132,41 @@ export const STRIP_MOVE_DELAY = 500;
 // a shard already known to block, to save one refused trance.
 export const STRIP_AT_ONCE = false;
 
+// Deliberately not the EQUIP_ trio, though they hold the same numbers today: an equip and a stow are
+// independent facts about the shard.
+export const DISARM_TIMEOUT = 2000;
+export const DISARM_POLL = 200;
+export const DISARM_ATTEMPTS = 3;
 
-// More than one, because a fight, a world save and a discarded trance all look the same from here.
+
 export const MAX_HUNGRY = 5;
 
 // Guesses - correct them against the real journal after the first run. A phrase that never matches
 // shows up as an unknown outcome, not as a silent wrong turn.
 export const OUTCOME_TEXT: OutcomeText = {
   // Not depended on: the mana leaving the pool and the buff arriving are the proof
-  cast: ['You have enabled', 'You are infused with', 'You gain confidence'],
+  cast: ['You feel a surge of magic', 'You are now protected'],
 
-  // The commonest outcome at a low skill. The shard charges nothing for it, which is why it reads as
-  // silence to silentOutcome and has to be read from the words instead.
-  fizzled: ['The spell fizzles'],
+  fizzled: ['The spell fizzles', 'You have failed to cast the spell'],
 
-  noMana: [
-    'You do not have enough mana to perform that attack',
-    'You lack sufficient mana',
-    'Insufficient mana',
+  noReagents: [
+    'You do not have enough reagents',
+    'More reagents are needed',
+    'You lack the required reagents',
   ],
+
+  noMana: ['You do not have enough mana', 'Insufficient mana'],
 
   alreadyUp: ['You are already under the effect'],
 
-  disabled: ['You have disabled'],
-
-  // An empty hand is what a draw that did not land leaves behind, which is why the loop answers this
-  // by drawing again rather than by stopping.
-  noWeapon: ['You must have a weapon', 'You cannot perform this ability'],
+  disabled: ['You are no longer', 'You have dispelled'],
 
   unskilled: UNSKILLED_TEXT,
   saving: SAVING_TEXT,
 
-  // Must come before throttled: waitForTextAny hands back whichever string it found, and
-  // THROTTLED_TEXT ends in a bare 'You must wait' that this sentence contains. Bucketed together,
-  // Evasion's ordinary cooldown would end every run that reaches its band.
-  cooldown: ['You must wait before trying again'],
+  // Before throttled: waitForTextAny hands back whichever string it found, and THROTTLED_TEXT ends
+  // in a bare 'You must wait' that a longer sentence can contain.
+  alreadyCasting: ['You are already casting a spell', 'You are already casting'],
 
   throttled: THROTTLED_TEXT,
 };
@@ -183,16 +178,12 @@ export const MEDITATE_OUTCOME_TEXT: MeditateText = {
 
   // Before unfocused, whose trailing full stop is deliberate: without it 'You cannot focus your
   // concentration' would also match the equipped-weapon sentence.
-  //
-  // The run stows the weapon before meditating, so reaching this means something else is refusing
-  // the trance and nothing retried fixes it: meditation latches off and regeneration takes over.
   blocked: [
     'You cannot focus your concentration with an equipped weapon',
     'You cannot focus your concentration with an equipped shield',
     'You are preoccupied with thoughts of battle',
   ],
 
-  // A failed roll or a trance broken by a hit - both fixed by using the skill again in a moment
   unfocused: ['You cannot focus your concentration.', 'You lose your concentration'],
 
   unskilled: UNSKILLED_TEXT,

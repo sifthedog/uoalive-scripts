@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { installGlobals, item } from '../test-support/uo.js';
-import { dead, firstReason, heavy, packFull } from './guards.js';
+import { dead, firstReason, heavy, hurt, packFull } from './guards.js';
 
 beforeEach(() => {
   installGlobals();
@@ -19,6 +19,21 @@ describe('the individual checks', () => {
 
     expect(heavy(40)()).toBe('overweight (370/400)');
     expect(heavy(0)()).toBeUndefined();
+  });
+
+  it('stops a character who has been hurt past the floor', () => {
+    installGlobals({ player: { hits: 40, maxHits: 100 } });
+
+    expect(hurt(0.5)()).toBe('hurt (40/100)');
+    expect(hurt(0.25)()).toBeUndefined();
+  });
+
+  // The stat-refresh fault again: a maximum of 0 makes the floor 0, and every reading of it is a lie
+  // in one direction or the other
+  it('says nothing about health while the client is refreshing stats', () => {
+    installGlobals({ player: { hits: 0, maxHits: 0 } });
+
+    expect(hurt(0.5)()).toBeUndefined();
   });
 
   it('stops once the top level of the pack is full', () => {

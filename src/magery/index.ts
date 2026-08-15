@@ -1,11 +1,10 @@
-// Bushido on src/lib/trainer.ts. The table in config.ts is the whole policy, so another skill is
-// another table rather than another script - src/necromancy/ is this loop with a different one.
+// Magery on src/lib/trainer.ts, the same loop the other three trainers run on.
 //
-// The two halves of this run want opposite things from the character's hands: these are weapon
-// abilities, and meditation is refused while anything is equipped. See weapon.ts.
+// The table is the thing to read. Every guide trains Magery on damage spells thrown at a creature and
+// this one does not - a punchbag has to be found, kept alive and kept in range - so it casts the
+// spells that gain without a victim. See config.ts.
 
 import { createCaster } from '../lib/cast.js';
-import { describeItem } from '../lib/entity.js';
 import { createManaWait } from '../lib/meditate.js';
 import { createSkillReader } from '../lib/skill.js';
 import { runTrainer } from '../lib/trainer.js';
@@ -16,6 +15,7 @@ import {
   CAST_TIMEOUT,
   COOLDOWN_BACKOFF,
   COOLDOWN_BACKOFF_MAX,
+  DISABLED_IS_PROGRESS,
   LOG_EVERY,
   MANA_LOG_EVERY,
   MANA_POLL,
@@ -42,13 +42,12 @@ import {
   THROTTLE_BACKOFF,
   THROTTLE_BACKOFF_MAX,
 } from './config.js';
-import { stopReason } from './guards.js';
 import { restore, stow, stripMore, survey } from './gear.js';
+import { stopReason } from './guards.js';
 import { beat, resetBeat } from './heartbeat.js';
 import { waitOutSave } from './save.js';
-import { held, rearm, rememberWeapon } from './weapon.js';
 
-const PREFIX = 'train';
+const PREFIX = 'mage';
 
 const skill = createSkillReader({
   skill: SKILL,
@@ -63,6 +62,9 @@ const { castOnce } = createCaster({
   skipWhenBuffed: SKIP_WHEN_BUFFED,
 });
 
+// The hands are already empty here - a spellbook lives in the pack rather than on a layer - so what
+// the strip is for is the armour, and it only ever comes off on a shard that refuses a trance for it.
+// See ./gear.ts.
 const mana = createManaWait({
   prefix: PREFIX,
   outcomeText: MEDITATE_OUTCOME_TEXT,
@@ -74,9 +76,6 @@ const mana = createManaWait({
   pollMs: MANA_POLL,
   logEveryMs: MANA_LOG_EVERY,
   regenTimeoutMs: REGEN_TIMEOUT,
-  // ./gear.ts and no longer ./weapon.ts. The weapon still comes off for every trance, but it goes
-  // back on by the serial that came off rather than by graphic - so a weapon with properties on it
-  // returns as itself - and the shield or armour this shard may also refuse comes off with it.
   stow,
   restore,
   stripMore,
@@ -91,26 +90,18 @@ runTrainer({
   skill,
   castOnce,
   regainMana: mana.regainMana,
-  manaBlocked: mana.blocked,
-  rearm,
+  disabledIsProgress: DISABLED_IS_PROGRESS,
   stopReason,
   beat,
   waitOutSave,
 
   preflight: () => {
-    // Learned from what is in hand, so the draw after each trance matches on this weapon's graphic
-    // rather than on whatever WEAPON_NAME finds in the pack
-    const weapon = held();
-    rememberWeapon(weapon);
+    log(`${PREFIX}: ${player.mana}/${player.maxMana} mana`);
 
-    log(`${PREFIX}: hand ${describeItem(weapon)}, ${player.mana}/${player.maxMana} mana`);
-
-    if (!weapon) {
-      log(`${PREFIX}: nothing in hand - these are weapon abilities, so the first cast may be refused`);
-    }
-
-    // Also the line that catches a client whose findItemOnLayer does not answer for the player: an
-    // empty survey on a dressed character means nothing will ever be stripped
+    // Reported rather than warned about, now that the run takes these off and puts the same items
+    // back. Said at start-up because it is also the line that catches a client whose findItemOnLayer
+    // does not answer for the player: an empty survey on a dressed character means nothing will ever
+    // be stripped and the run will quietly fall back on natural regeneration.
     log(`${PREFIX}: ${survey()}`);
   },
 

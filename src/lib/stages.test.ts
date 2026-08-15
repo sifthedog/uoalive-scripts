@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { finalTarget, orderedStages, stageFor, type Stage } from './stages.js';
+import { createPlan, finalTarget, orderedStages, spellName, stageFor, type Stage } from './stages.js';
 import { installGlobals } from '../test-support/uo.js';
 
 // The stage table is the whole policy of a trainer, and every one of these runs with no client at
@@ -92,5 +92,45 @@ describe('finalTarget', () => {
 
   it('is 0 for an empty table', () => {
     expect(finalTarget([])).toBe(0);
+  });
+});
+
+describe('spellName', () => {
+  // The client's enums carry their reverse mapping, which is what lets a log line name the ability
+  it('names a spell after the enum member', () => {
+    expect(spellName(Spells.Confidence)).toBe('Confidence');
+  });
+
+  it('says something rather than crashing on a value that is in no enum', () => {
+    expect(spellName(9999 as Spells)).toBe('spell 9999');
+  });
+});
+
+describe('createPlan', () => {
+  // The sort happens once, where the table comes in, so stageFor stays a plain find()
+  it('sorts the table it was given', () => {
+    const plan = createPlan([BANDS[2], BANDS[0], BANDS[1]]);
+
+    expect(plan.stages.map((stage) => stage.upTo)).toEqual([600, 750, 1050]);
+    expect(plan.stageNow(500)?.spell).toBe(Spells.Confidence);
+  });
+
+  it('aims at the last band, and says so in the order the bands will be worked', () => {
+    const plan = createPlan([BANDS[2], BANDS[0], BANDS[1]]);
+
+    expect(plan.goal).toBe(1050);
+    expect(plan.describe()).toBe(
+      'Confidence to 60.0, CounterAttack to 75.0, Evasion to 105.0',
+    );
+  });
+
+  // The caller has to refuse this before the loop: an empty table reads as a run that is already
+  // finished, which is the one ending that should never be reported by accident
+  it('is empty and finished for an empty table', () => {
+    const plan = createPlan([]);
+
+    expect(plan.stages).toEqual([]);
+    expect(plan.goal).toBe(0);
+    expect(plan.stageNow(0)).toBeUndefined();
   });
 });

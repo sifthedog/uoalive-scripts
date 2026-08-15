@@ -35,7 +35,72 @@ export const Directions = {
   Up: 7,
 } as const;
 
-export const Layers = { Invalid: 0, OneHanded: 1, TwoHanded: 2, Backpack: 21 } as const;
+// All of them rather than the four the scripts used to name, because gear.ts takes its strip list
+// from a folder's config and a layer missing from here is `undefined` at import time - which reads as
+// a layer nobody wears rather than as the typo it is. Plain values and no enumOf: nothing prints a
+// layer name, since gear names what it moves with describeItem the way the rest of the repo does.
+export const Layers = {
+  Invalid: 0,
+  OneHanded: 1,
+  TwoHanded: 2,
+  Shoes: 3,
+  Pants: 4,
+  Shirt: 5,
+  Helmet: 6,
+  Gloves: 7,
+  Ring: 8,
+  Talisman: 9,
+  Necklace: 10,
+  Hair: 11,
+  Waist: 12,
+  Torso: 13,
+  Bracelet: 14,
+  Face: 15,
+  Beard: 16,
+  Tunic: 17,
+  Earrings: 18,
+  Arms: 19,
+  Cloak: 20,
+  Backpack: 21,
+  Robe: 22,
+  Skirt: 23,
+  Legs: 24,
+  Mount: 25,
+  ShopBuyRestock: 26,
+  ShopBuy: 27,
+  ShopSell: 28,
+  Bank: 29,
+} as const;
+
+// Which equippedItems key each layer shows up under, so the fixture's two views of the same character
+// cannot disagree. Backpack is deliberately absent: the client's equippedItems has no key for it, and
+// haul.ts - the only reader of that layer - mocks findItemOnLayer wholesale.
+const LAYER_KEYS: Record<number, keyof FakePlayer['equippedItems']> = {
+  [Layers.OneHanded]: 'oneHanded',
+  [Layers.TwoHanded]: 'twoHanded',
+  [Layers.Shoes]: 'shoes',
+  [Layers.Pants]: 'pants',
+  [Layers.Shirt]: 'shirt',
+  [Layers.Helmet]: 'helmet',
+  [Layers.Gloves]: 'gloves',
+  [Layers.Ring]: 'ring',
+  [Layers.Talisman]: 'talisman',
+  [Layers.Necklace]: 'necklace',
+  [Layers.Hair]: 'hair',
+  [Layers.Waist]: 'waist',
+  [Layers.Torso]: 'torso',
+  [Layers.Bracelet]: 'bracelet',
+  [Layers.Face]: 'face',
+  [Layers.Beard]: 'beard',
+  [Layers.Tunic]: 'tunic',
+  [Layers.Earrings]: 'earrings',
+  [Layers.Arms]: 'arms',
+  [Layers.Cloak]: 'cloak',
+  [Layers.Robe]: 'robe',
+  [Layers.Skirt]: 'skirt',
+  [Layers.Legs]: 'legs',
+  [Layers.Mount]: 'mount',
+};
 
 // The client's Skills/Spells/BuffDebuffs are real TypeScript enums, so they carry the reverse mapping
 // and plan.ts leans on it to make a spell name itself in a log line. The stand-ins do the same, or a
@@ -51,9 +116,29 @@ const enumOf = (members: Record<string, number>): Record<string, number | string
 };
 
 // Real values, copied from types/classicuo.d.ts, and only the members the scripts name
-export const Skills = enumOf({ Meditation: 46, Bushido: 52 });
+export const Skills = enumOf({
+  Magery: 25,
+  Meditation: 46,
+  Necromancy: 49,
+  Chivalry: 51,
+  Bushido: 52,
+});
 
 export const Spells = enumOf({
+  Bless: 17,
+  ArchProtection: 26,
+  Invisibility: 44,
+  Earthquake: 57,
+  HorrificBeast: 106,
+  LichForm: 107,
+  PainSpike: 109,
+  VampiricEmbrace: 113,
+  Wither: 115,
+  ConsecrateWeapon: 203,
+  DivineFury: 205,
+  EnemyOfOne: 206,
+  HolyLight: 207,
+  NobleSacrifice: 208,
   HonorableExecution: 401,
   Confidence: 402,
   Evasion: 403,
@@ -62,8 +147,21 @@ export const Spells = enumOf({
   MomentumStrike: 406,
 });
 
+// Wither, Earthquake, Holy Light and Noble Sacrifice are missing on purpose and not by omission: the
+// client publishes no buff for any of them, which is what each folder's stages.test.ts checks its
+// table is honest about.
 export const BuffDebuffs = enumOf({
+  DivineFury: 1010,
+  EnemyOfOne: 1011,
   ActiveMeditation: 1013,
+  PainSpike: 1018,
+  ArchProtection: 1030,
+  Invisibility: 1036,
+  Bless: 1048,
+  ConsecrateWeapon: 1082,
+  HorrificBeast: 1085,
+  LichForm: 1086,
+  VampiricEmbrace: 1087,
   HonorableExecution: 1092,
   Confidence: 1093,
   Evasion: 1094,
@@ -92,10 +190,39 @@ export interface FakePlayer {
   weight: number;
   weightMax: number;
   isDead: boolean;
+  hits: number;
+  maxHits: number;
   mana: number;
   maxMana: number;
   backpack?: { serial: number; contents?: Item[] };
-  equippedItems: { oneHanded?: Item; twoHanded?: Item; mount?: Item };
+  // The whole keyed set from types/classicuo.d.ts, not just the three the harvest scripts read: gear
+  // strips fifteen layers, and a test that cannot dress a character in a tunic cannot pin it.
+  equippedItems: {
+    shirt?: Item;
+    pants?: Item;
+    shoes?: Item;
+    legs?: Item;
+    torso?: Item;
+    ring?: Item;
+    talisman?: Item;
+    bracelet?: Item;
+    face?: Item;
+    arms?: Item;
+    gloves?: Item;
+    skirt?: Item;
+    tunic?: Item;
+    robe?: Item;
+    necklace?: Item;
+    hair?: Item;
+    waist?: Item;
+    beard?: Item;
+    earrings?: Item;
+    oneHanded?: Item;
+    helmet?: Item;
+    twoHanded?: Item;
+    cloak?: Item;
+    mount?: Item;
+  };
   use: ReturnType<typeof vi.fn>;
   equip: ReturnType<typeof vi.fn>;
   moveItem: ReturnType<typeof vi.fn>;
@@ -104,6 +231,7 @@ export interface FakePlayer {
   say: ReturnType<typeof vi.fn>;
   useItemInHand: ReturnType<typeof vi.fn>;
   cast: ReturnType<typeof vi.fn>;
+  castTo: ReturnType<typeof vi.fn>;
   useSkill: ReturnType<typeof vi.fn>;
   getSkill: ReturnType<typeof vi.fn>;
   hasBuffDebuff: ReturnType<typeof vi.fn>;
@@ -112,6 +240,7 @@ export interface FakePlayer {
 
 export interface FakeClient {
   findObject: ReturnType<typeof vi.fn>;
+  findType: ReturnType<typeof vi.fn>;
   findAllMobilesOfType: ReturnType<typeof vi.fn>;
   findItemOnLayer: ReturnType<typeof vi.fn>;
   getTerrainList: ReturnType<typeof vi.fn>;
@@ -161,78 +290,98 @@ export interface WorldOverrides {
 
 // Deliberately inert: nothing is found, nothing is in the journal, every wait succeeds. A test that
 // depends on an outcome has to say so, so the fixture never quietly supplies the thing under test.
-const defaults = (): FakeWorld => ({
-  player: {
-    serial: 0x00000001,
-    x: 100,
-    y: 100,
-    z: 0,
-    weight: 0,
-    weightMax: 400,
-    isDead: false,
+const defaults = (): FakeWorld => {
+  const world: FakeWorld = {
+    player: {
+      serial: 0x00000001,
+      x: 100,
+      y: 100,
+      z: 0,
+      weight: 0,
+      weightMax: 400,
+      isDead: false,
 
-    // Rested and unhurt, which is this fixture's version of inert: a character with nothing to wait
-    // for. Deliberately not 0/0 - that is the stat-refresh fault src/lib/vitals.ts exists for, and
-    // making it the default would quietly put every test on that path.
-    mana: 50,
-    maxMana: 50,
+      // Rested and unhurt, which is this fixture's version of inert: a character with nothing to wait
+      // for. Deliberately not 0/0 - that is the stat-refresh fault src/lib/vitals.ts exists for, and
+      // making it the default would quietly put every test on that path.
+      hits: 100,
+      maxHits: 100,
+      mana: 50,
+      maxMana: 50,
 
-    backpack: { serial: 0x40000000, contents: [] },
-    equippedItems: {},
-    use: vi.fn(),
-    equip: vi.fn(),
-    moveItem: vi.fn(),
-    moveItemOnGroundOffset: vi.fn(),
-    run: vi.fn(),
-    say: vi.fn(),
-    useItemInHand: vi.fn(),
-    cast: vi.fn(),
-    useSkill: vi.fn(),
+      backpack: { serial: 0x40000000, contents: [] },
+      equippedItems: {},
+      use: vi.fn(),
+      equip: vi.fn(),
+      moveItem: vi.fn(),
+      moveItemOnGroundOffset: vi.fn(),
+      run: vi.fn(),
+      say: vi.fn(),
+      useItemInHand: vi.fn(),
+      cast: vi.fn(),
+      castTo: vi.fn(),
+      useSkill: vi.fn(),
 
-    // Inert on the 'nothing is found' side rather than the 'every wait succeeds' side: a skill the
-    // client has not been told about, and a buff nobody put up. A trainer test has to supply both,
-    // which is the point - the fixture must never quietly answer the question under test.
-    getSkill: vi.fn(() => undefined),
-    hasBuffDebuff: vi.fn(() => false),
-    waitForBuffDebuff: vi.fn(() => null),
-  },
-  client: {
-    findObject: vi.fn(() => undefined),
-    findAllMobilesOfType: vi.fn(() => []),
-    findItemOnLayer: vi.fn(() => undefined),
-    getTerrainList: vi.fn(() => []),
-    getStatic: vi.fn(() => undefined),
-    headMsg: vi.fn(),
-    queryItemOPL: vi.fn(() => undefined),
-    sendSellRequest: vi.fn(() => true),
-    closeAllGumps: vi.fn(),
-  },
-  target: {
-    open: false,
-    cancel: vi.fn(),
-    wait: vi.fn(() => true),
-    terrain: vi.fn(),
-    waitTargetEntity: vi.fn(() => true),
-    waitTargetSelf: vi.fn(() => true),
-    // Inert like the rest: a cursor nobody clicks answers with nothing
-    query: vi.fn(() => undefined),
-  },
-  journal: {
-    clear: vi.fn(),
-    containsText: vi.fn(() => false),
-    waitForTextAny: vi.fn(() => undefined),
-  },
-  gump: {
-    exists: vi.fn(() => false),
-    findOrWait: vi.fn(() => undefined),
-    waitForVendorGumpData: vi.fn(() => undefined),
-  },
-  log: vi.fn(),
-  // A no-op, so the poll loops in pickaxe.ts and boards.ts finish instantly instead of
-  // busy-waiting the way QuickJS does
-  sleep: vi.fn(),
-  exit: vi.fn(),
-});
+      // Inert on the 'nothing is found' side rather than the 'every wait succeeds' side: a skill the
+      // client has not been told about, and a buff nobody put up. A trainer test has to supply both,
+      // which is the point - the fixture must never quietly answer the question under test.
+      getSkill: vi.fn(() => undefined),
+      hasBuffDebuff: vi.fn(() => false),
+      waitForBuffDebuff: vi.fn(() => null),
+    },
+    client: {
+      findObject: vi.fn(() => undefined),
+      findType: vi.fn(() => undefined),
+      findAllMobilesOfType: vi.fn(() => []),
+      findItemOnLayer: vi.fn(() => undefined),
+      getTerrainList: vi.fn(() => []),
+      getStatic: vi.fn(() => undefined),
+      headMsg: vi.fn(),
+      queryItemOPL: vi.fn(() => undefined),
+      sendSellRequest: vi.fn(() => true),
+      closeAllGumps: vi.fn(),
+    },
+    target: {
+      open: false,
+      cancel: vi.fn(),
+      wait: vi.fn(() => true),
+      terrain: vi.fn(),
+      waitTargetEntity: vi.fn(() => true),
+      waitTargetSelf: vi.fn(() => true),
+      // Inert like the rest: a cursor nobody clicks answers with nothing
+      query: vi.fn(() => undefined),
+    },
+    journal: {
+      clear: vi.fn(),
+      containsText: vi.fn(() => false),
+      waitForTextAny: vi.fn(() => undefined),
+    },
+    gump: {
+      exists: vi.fn(() => false),
+      findOrWait: vi.fn(() => undefined),
+      waitForVendorGumpData: vi.fn(() => undefined),
+    },
+    log: vi.fn(),
+    // A no-op, so the poll loops in pickaxe.ts and boards.ts finish instantly instead of
+    // busy-waiting the way QuickJS does
+    sleep: vi.fn(),
+    exit: vi.fn(),
+  };
+
+  // Derived from equippedItems rather than inert, and this is the one fixture default that answers a
+  // question instead of refusing to. The real client's two views of a layer agree by construction, and
+  // a fixture where they can disagree lets a strip pass that put a serial back on the wrong layer -
+  // which is the exact fault gear.ts's serial comparisons exist to catch. Answers only for the
+  // player: nothing here knows what anyone else is wearing.
+  world.client.findItemOnLayer = vi.fn((serial: unknown, layer: number) => {
+    const mine = serial === world.player || serial === world.player.serial;
+    const key = LAYER_KEYS[layer];
+
+    return mine && key ? world.player.equippedItems[key] : undefined;
+  });
+
+  return world;
+};
 
 // Assigned onto globalThis rather than stubbed, because a module can read globals while it is
 // being evaluated - walk.ts builds DIRECTION_BY_STEP from Directions - so the values have to be

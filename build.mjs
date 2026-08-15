@@ -1,14 +1,16 @@
 import * as esbuild from 'esbuild';
 
-// Each entry becomes one paste-ready script in dist/
 const ENTRIES = [
   { in: 'src/boxes/index.ts', out: 'boxes' },
   { in: 'src/boxes/keys.ts', out: 'keys' },
   { in: 'src/boxes/probe.ts', out: 'key-probe' },
+  { in: 'src/chivalry/index.ts', out: 'chivalry' },
   { in: 'src/lumberjacking/index.ts', out: 'lumberjack' },
+  { in: 'src/magery/index.ts', out: 'magery' },
   { in: 'src/mining/here.ts', out: 'mine-here' },
   { in: 'src/mining/index.ts', out: 'mining' },
   { in: 'src/mining/probe.ts', out: 'mine-probe' },
+  { in: 'src/necromancy/index.ts', out: 'necro' },
   { in: 'src/selling/index.ts', out: 'sell' },
   { in: 'src/selling/watch.ts', out: 'sell-watch' },
   { in: 'src/training/index.ts', out: 'train' },

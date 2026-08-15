@@ -1,25 +1,27 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { installGlobals, item, type FakeWorld } from '../test-support/uo.js';
-
-// The module keeps a learned graphic between calls, so every test gets a fresh copy of it
-const freshWeapon = async () => {
-  vi.resetModules();
-
-  return import('./weapon.js');
-};
+import { createWeapon, type Weapon } from './weapon.js';
 
 const katana = item({ serial: 0x4000_0101, graphic: 0x13ff, name: 'a katana' });
 
 let world: FakeWorld;
+
+// A fresh one per test, which is what the factory is for: it latches the graphic it learned, and two
+// scripts in one process must not share that
+const weapon = (): Weapon =>
+  createWeapon({
+    prefix: 'train',
+    name: 'katana',
+    equip: { attempts: 3, timeoutMs: 2000, pollMs: 200 },
+    disarm: { attempts: 3, timeoutMs: 2000, pollMs: 200 },
+  });
 
 beforeEach(() => {
   world = installGlobals();
 });
 
 describe('disarm', () => {
-  it('moves what is in hand into the backpack', async () => {
-    const { disarm } = await freshWeapon();
-
+  it('moves what is in hand into the backpack', () => {
     world.player.equippedItems.oneHanded = katana;
     world.player.moveItem.mockImplementation(() => {
       world.player.equippedItems.oneHanded = undefined;
@@ -27,14 +29,12 @@ describe('disarm', () => {
       return 1;
     });
 
-    expect(disarm()).toBe(true);
+    expect(weapon().disarm()).toBe(true);
     expect(world.player.moveItem).toHaveBeenCalledWith(katana.serial, 0x40000000);
   });
 
   // A no-dachi is two-handed and a katana one-handed, and both train the same abilities
-  it('stows a two-handed weapon in preference to a one-handed one', async () => {
-    const { disarm } = await freshWeapon();
-
+  it('stows a two-handed weapon in preference to a one-handed one', () => {
     const noDachi = item({ serial: 0x4000_0202, graphic: 0x27a2, name: 'a no-dachi' });
     world.player.equippedItems.twoHanded = noDachi;
     world.player.equippedItems.oneHanded = katana;
@@ -44,55 +44,49 @@ describe('disarm', () => {
       return 1;
     });
 
-    disarm();
+    weapon().disarm();
 
     expect(world.player.moveItem).toHaveBeenCalledWith(noDachi.serial, 0x40000000);
   });
 
-  it('does nothing and succeeds with empty hands', async () => {
-    const { disarm } = await freshWeapon();
-
-    expect(disarm()).toBe(true);
+  it('does nothing and succeeds with empty hands', () => {
+    expect(weapon().disarm()).toBe(true);
     expect(world.player.moveItem).not.toHaveBeenCalled();
   });
 
   // Answered rather than thrown: the caller falls back on natural regeneration with the weapon still
   // in hand, which is slower and always available
-  it('gives up when the client reports no backpack', async () => {
-    const { disarm } = await freshWeapon();
-
+  it('gives up when the client reports no backpack', () => {
     world.player.equippedItems.oneHanded = katana;
     world.player.backpack = undefined;
 
-    expect(disarm()).toBe(false);
+    expect(weapon().disarm()).toBe(false);
     expect(world.player.moveItem).not.toHaveBeenCalled();
   });
 
-  it('gives up when the weapon never leaves the hand', async () => {
-    const { disarm } = await freshWeapon();
-
+  it('gives up when the weapon never leaves the hand', () => {
     world.player.equippedItems.oneHanded = katana;
 
-    expect(disarm()).toBe(false);
+    expect(weapon().disarm()).toBe(false);
   });
 });
 
 describe('rearm', () => {
-  it('does nothing when the weapon is already held', async () => {
-    const { rearm, rememberWeapon } = await freshWeapon();
+  it('does nothing when the weapon is already held', () => {
+    const armed = weapon();
 
-    rememberWeapon(katana);
+    armed.remember(katana);
     world.player.equippedItems.oneHanded = katana;
     world.client.findObject.mockReturnValue(katana);
 
-    expect(rearm()).toBe(true);
+    expect(armed.rearm()).toBe(true);
     expect(world.player.equip).not.toHaveBeenCalled();
   });
 
   // The graphic learned at start-up is what matches, so the draw finds the weapon actually being
-  // trained with rather than whatever WEAPON_NAME happens to turn up
-  it('finds the stowed weapon by the graphic it learned', async () => {
-    const { disarm, rearm } = await freshWeapon();
+  // trained with rather than whatever the configured name happens to turn up
+  it('finds the stowed weapon by the graphic it learned', () => {
+    const armed = weapon();
 
     world.player.equippedItems.oneHanded = katana;
     world.player.moveItem.mockImplementation(() => {
@@ -105,15 +99,19 @@ describe('rearm', () => {
       world.player.equippedItems.oneHanded = katana;
     });
 
-    disarm();
+    armed.disarm();
 
-    expect(rearm()).toBe(true);
+    expect(armed.rearm()).toBe(true);
     expect(world.player.equip).toHaveBeenCalledWith(katana.serial);
   });
 
-  it('gives up when nothing matching is in the pack', async () => {
-    const { rearm } = await freshWeapon();
+  it('gives up when nothing matching is in the pack', () => {
+    expect(weapon().rearm()).toBe(false);
+  });
+});
 
-    expect(rearm()).toBe(false);
+describe('held', () => {
+  it('is what a script with nothing in hand sees, which is nothing', () => {
+    expect(weapon().held()).toBeUndefined();
   });
 });

@@ -7,21 +7,22 @@ Builds one script:
 | `dist/train.js` | Casts the ability that still gains at the level the skill has reached, meditates when the mana runs out, and stops when the last stage is done |
 
 Configured for **Bushido** out of the box. The stage table in `config.ts` is the whole policy, so
-another skill is another table rather than another script.
+another skill is another table rather than another loop: the loop itself is `src/lib/trainer.ts`, and
+`src/necromancy/` is that same loop with a different table under it.
+
+What is in this folder is what Bushido decides — the table, the wordings, the guards, and which
+weapon to draw. The cast, the skill read, the mana wait and the stow-and-draw are `src/lib/cast.ts`,
+`src/lib/skill.ts`, `src/lib/meditate.ts` and `src/lib/weapon.ts`.
 
 ## Why it exists
 
-Training a casting skill is a loop of *cast the cheapest thing that still gains, wait for mana, cast
-it again*, and the thing that still gains changes as the skill climbs. Written by hand that becomes a
-chain of `if (value < 600) … else if (value < 750) …`, and the chain is where the bugs live: the
-bounds, their order and whether they cover the whole range are spread across the branches, so a
-branch that can never run looks exactly like one that simply has not run yet.
+Written by hand this is a chain of `if (value < 600) … else if (value < 750) …`, and the chain is
+where the bugs live: the bounds, their order and whether they cover the whole range are spread across
+the branches, so a branch that can never run looks exactly like one that has not run yet.
 
-That is not hypothetical. The script this replaced had `else if (bushido.value < 105)` sitting after
-the `< 750` branch — `105` is **10.5**, not 105.0, so it was a band below every other one, placed
-after them, and Evasion was never cast once. The table makes each band a row, sorts them, and
-`src/lib/stages.test.ts` checks the bounds; the same typo now fails a test instead of quietly
-costing an afternoon.
+The script this replaced had `else if (bushido.value < 105)` sitting after the `< 750` branch — `105`
+is **10.5**, not 105.0 — so Evasion was never cast once. The table makes each band a row, sorts them,
+and `src/lib/stages.test.ts` checks the bounds.
 
 ## What it does
 
@@ -92,6 +93,9 @@ order they will be worked.
 | `WEAPON_NAME` | Substring match for the draw, used only before a graphic has been learned |
 | `SPARE_BAG_SERIAL` | The bag inside the pack to open when a plain search misses |
 | `DISARM_TIMEOUT` / `DISARM_POLL` / `DISARM_ATTEMPTS` | How long a stow is given before it is reissued, and how many times |
+| `STRIP_LAYERS` | Every layer that comes off for a trance, in the order it comes off — which is also the order it goes back on. Hands first. Jewellery is deliberately absent, and so is `Layers.Necklace`, because that layer carries gorgets too |
+| `STRIP_MOVE_DELAY` | Pause between the individual moves inside one strip, to stay under the shard's action throttle |
+| `STRIP_AT_ONCE` | On strips the armour from the first trance instead of waiting to be refused once |
 
 ### Mana
 
@@ -104,10 +108,10 @@ order they will be worked.
 | `REGEN_TIMEOUT` | How long to wait on natural regeneration when meditation is off or refused |
 | `MAX_HUNGRY` | Failed mana stretches in a row before the run gives up |
 
-`MEDITATE_TO_FULL` is **on**, and the reason is the weapon rather than the mana: every stretch of
-meditation costs a stow and a draw, two item moves each polled for proof. That cost is paid per
-stretch, so filling the pool spreads it over many casts. Turning it off pays it again for every
-single cast.
+`MEDITATE_TO_FULL` is **on**, and the reason is the kit rather than the mana: every stretch of
+meditation costs a stow and a draw, paid per stretch — and on a shard that also refuses a trance with
+armour on, that is up to thirty item moves rather than two. Filling the pool spreads the cost over
+many casts.
 
 ### Casting and stopping
 
@@ -121,10 +125,9 @@ single cast.
 | `MAX_BLIND_READS` | Cycles the client may answer nothing for the skill before the run stops |
 | `OUTCOME_TEXT` / `MEDITATE_OUTCOME_TEXT` | What the shard says. Mostly guesses — see *Known unverified* |
 
-There is **no stall watchdog**, deliberately. `createStallWatch` counts cycles without progress, and
-this script's cycles are mostly mana coming back on purpose — a character with a big pool and slow
-regeneration would trip it while training perfectly well. `src/selling/watch.ts` skipped it for the
-same reason. The heartbeat stays, because the trances are the longest silences in the repo.
+There is **no stall watchdog**, deliberately: this script's cycles are mostly mana coming back on
+purpose, so a character with a big pool and slow regeneration would trip it while training perfectly
+well. The heartbeat stays, because the trances are the longest silences in the repo.
 
 ## When it goes wrong
 
@@ -140,9 +143,15 @@ same reason. The heartbeat stays, because the trances are the longest silences i
   not: that is the ability's cooldown being read as the action throttle. Check that
   `OUTCOME_TEXT.cooldown` carries the exact wording your shard uses, and that it is listed before
   `throttled`.
-- **`the shard refuses meditation (blocked)`** — the weapon is already stowed by the time this fires,
-  so something else is refusing the trance. Take off the shield or the off-hand item. The run
+- **`the shard refuses meditation (blocked)`** — by the time this fires the weapon *and* everything
+  on `STRIP_LAYERS` is already off, so what is refusing the trance is something the run cannot reach:
+  jewellery, a layer missing from the list, or a shard that gates meditation another way. The run
   degrades to natural regeneration rather than stopping.
+- **`the trance was refused with armour on - took more off, trying again`** — expected, once, on a
+  shard that blocks on armour. The lesson latches, so every later trance strips fully up front. Seeing
+  it more than once a run means the latch is not holding.
+- **`… would not go back on`** — a piece the restore could not return. The run carries on slightly
+  weaker and retries it at the next trance; only an empty *hand* ends the run.
 - **`refused for mana at N`** — the stage's `mana` is lower than the shard actually charges. Raise it.
 - **It stops at 100.0 saying nothing is left to train.** The last stage aims at 105.0 and you have no
   power scroll. The start-up line warned about this.
@@ -151,50 +160,48 @@ same reason. The heartbeat stays, because the trances are the longest silences i
 
 ## Notes on the shard
 
-- **`player.getSkill()` returns `undefined`, and the typings say so.** The JSDoc example in
-  `types/classicuo.d.ts` is `player.getSkill(Skills.Anatomy).value`, which does not compile under
-  `strict` — the declared return is optional. Every read goes through `skill.ts`, and a blind client
-  is **never** read as `0`: `0` is a real skill value, and taking it would cast the first band's
-  ability at a character who has capped the skill.
+- **`player.getSkill()` returns `undefined`, and the typings say so** — the JSDoc example in
+  `types/classicuo.d.ts` does not compile under `strict`. Every read goes through `skill.ts`, and a
+  blind client is **never** read as `0`: `0` is a real skill value, and taking it would cast the
+  first band's ability at a character who has capped the skill.
 - **Skill values are integers in tenths.** 74.6 arrives as `746`. Every bound in `STAGES` is in those
   units, and every log line divides by ten to print it.
-- **Meditation and weapon abilities want opposite things.** Meditation is refused while anything is in
-  hand; CounterAttack and the rest are weapon abilities and are refused with an empty one. The run
-  stows the weapon for the trance and draws it again afterwards, and the draw sits on a single exit
-  path that every outcome flows through — a timeout, a refusal and a guard firing mid-trance all
-  reach it. Getting this wrong is silent and total in both directions.
-- **`player.maxMana` reads 0 while the client is refreshing stats**, exactly as `weightMax` does, and
-  it is worse here: a ceiling of 0 makes "wait until the pool is full" true the instant it is asked,
-  so the run would meditate for no time at all and then cast with no mana forever. Read through
+- **Meditation and weapon abilities want opposite things.** The run stows the weapon for the trance
+  and draws it again afterwards, and the draw sits on a single exit path every outcome flows through
+  — a timeout, a refusal and a guard firing mid-trance all reach it. Getting this wrong is silent and
+  total in both directions.
+- **`player.maxMana` reads 0 while the client is refreshing stats**, exactly as `weightMax` does,
+  and a ceiling of 0 makes "wait until the pool is full" true the instant it is asked. Read through
   `src/lib/vitals.ts`, and recomputed on every poll rather than captured once.
 - **Waiting on `mana != maxMana` does not work.** A regenerating pool passes a figure as often as it
   lands on it, and a maximum that moves — a stat refresh, a buff, a ring taken off — is never equal to
   anything for long. The comparison is `>=`.
-- **The same ability can be recast while its buff is still up** — confirmed in play, and it is why
-  `SKIP_WHEN_BUFFED` is off. It matters more than it sounds: gating on the buff would cap the run at
-  one cast per buff duration, which is most of its throughput thrown away. On a RunUO-family shard
-  these are `SpecialMove`s and a second cast *disables* the first, so the gate is kept as a setting
-  for a shard that behaves that way.
+- **The same ability can be recast while its buff is still up** — confirmed in play, and why
+  `SKIP_WHEN_BUFFED` is off: gating on the buff would cap the run at one cast per buff duration. On a
+  RunUO-family shard these are `SpecialMove`s and a second cast *disables* the first, so the gate is
+  kept as a setting for a shard that behaves that way.
 - **The success wording for an ability is the least trustworthy thing in the phrase table.** Unlike
   the harvest scripts, the journal's job here is to explain failures: a cast is proved by the mana
   leaving the pool and the buff arriving, both of which are wording-free.
 - **Evasion has a cooldown of its own, and it is not the action throttle.** `'You must wait before
   trying again'` is the ability's timer; `'You must wait to perform another action'` is the shard
-  refusing the run. They read almost alike and mean opposite things — one is normal and one is worth
-  giving up over — and the first *contains* the bare `'You must wait'` that `THROTTLED_TEXT` ends in,
-  so the cooldown bucket is listed first to win the match. Bucketed together, the Evasion stage ends
-  every run that reaches it after twenty refusals.
+  refusing the run. One is normal and one is worth giving up over, and the first *contains* the bare
+  `'You must wait'` that `THROTTLED_TEXT` ends in — so the cooldown bucket is listed first to win the
+  match. Bucketed together, the Evasion stage ends every run that reaches it.
 - **The Evasion band is rate-limited by that cooldown, not by `CAST_DELAY`.** No timing constant
   shortens it. Confidence and CounterAttack are freely recastable, so the three stages do not run at
   remotely the same speed, and the last one is much the slowest.
-- **A fizzle costs no mana here.** `'The spell fizzles'` was the outcome that ended the first live run
-  at five unknowns in a row, and the reason it read as unknown rather than as a cast is that nothing
-  left the pool — so the mana proof saw a cast that had never happened as a cast that never happened,
-  correctly, and only the wording was missing. Fizzles are counted separately in the summary, because
-  a character fizzling most of what it casts is training far slower than the cast tally suggests.
+- **A fizzle costs no mana here.** `'The spell fizzles'` ended the first live run at five unknowns in
+  a row: nothing left the pool, so the mana proof correctly saw no cast and only the wording was
+  missing. Fizzles are counted separately in the summary, because a character fizzling most of what
+  it casts is training far slower than the cast tally suggests.
 - **`'You enter a meditative trance.'` is not a guess** — it is the exact sentence the client's own
   documentation for `journal.waitForTextAny` uses, in a meditation example. It is the only phrase in
   `config.ts` that is not a hypothesis.
+- **Two of the endings never ended anything.** The line asking the mana half whether it lost the
+  weapon used to assign to the same `stop` the outcome switch had just set, so `unskilled` and the
+  twentieth throttle were both overwritten on the way out of the switch. It is `stop = stop ?? …`
+  now, and `src/lib/trainer.test.ts` pins both endings.
 - **`CAST_DELAY` is pacing, not a wait.** These abilities have a cooldown of their own and the shard
   refuses one that comes too early; a loop with no pause re-arms that timer with every retry. The
   original script had no sleep between casts at all.
@@ -206,8 +213,20 @@ same reason. The heartbeat stays, because the trances are the longest silences i
   buffs, and a miss surfaces as `unknown` rather than as a silent wrong turn.
 - **Whether `BuffDebuffs.ActiveMeditation` is published here.** Every use of it is a fast path;
   `false` everywhere is the behaviour without it.
-- **Whether a shield or an off-hand item also blocks the trance.** The `blocked` bucket covers it and
-  falls back to natural regeneration, but the run does not take those off — only the weapon.
+- **Whether `client.findItemOnLayer` answers for the player's own layers on this shard.** Everything
+  the strip does rests on it. The start-up survey line is the check: if it names nothing on a dressed
+  character, nothing will ever be stripped and the run quietly falls back on natural regeneration.
+- **Whether fifteen item moves in one burst trip the shard's action throttle** at `STRIP_MOVE_DELAY`.
+  A strip that needs its reissue every trance is the symptom, and it is slow rather than dangerous.
+- **Whether a pack near the 120-item cap can refuse the strip.** The run logs what would not move and
+  carries on.
+- **Whether any shard cares about the order gear goes back on.** Each item owns its own layer, so it
+  should not; restore order is strip order, so `STRIP_LAYERS` is the fix if one does.
+- **Whether jewellery blocks the trance anywhere.** It is left on deliberately — add `Layers.Ring` and
+  the rest to `STRIP_LAYERS` if your shard disagrees.
+- **Whether `player.dressKr` / `undressKr` are honoured here.** They would strip in one call rather
+  than fifteen, but both return `void`, so there would be no proof to poll — which is the whole safety
+  story of every item move in this repo. Worth revisiting only if a shard is confirmed to answer them.
 - **Whether two identical weapons in the pack confuse the draw.** `createTool` matches on graphic, so
   it would draw whichever it finds first. Harmless, but the log line would name a weapon you did not
   stow.
