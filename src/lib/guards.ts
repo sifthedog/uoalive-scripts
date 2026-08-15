@@ -1,3 +1,4 @@
+import { packContents } from './containers.js';
 import { overweight } from './weight.js';
 
 // Anything a guard returns ends the run, and the string it returns is what says why. Composed per
@@ -17,7 +18,7 @@ export const heavy =
 export const packFull =
   (limit: number): Guard =>
   () => {
-    const top = (player.backpack?.contents ?? []).length;
+    const top = (packContents() ?? []).length;
 
     return top >= limit ? `pack is full (${top} items at the top level)` : undefined;
   };

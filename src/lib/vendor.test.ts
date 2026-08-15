@@ -134,6 +134,31 @@ describe('waitForSale', () => {
     expect(waitForSale([{ serial: 2, amount: 5 }], 1000, 200)).toBe(0);
   });
 
+  // A vendor that sells out of a bag offers goods that were never at the top level. Counting the
+  // top level alone read those as gone the instant they were offered, so a silent refusal came back
+  // as a completed sale.
+  it('does not call it sold when the goods are sitting in a bag', () => {
+    installGlobals({
+      backpack: [item({ serial: 0x10, graphic: 0x0e76, contents: [stack(1, 20)] })],
+    });
+
+    expect(waitForSale([{ serial: 1, amount: 20 }], 1000, 200)).toBe(0);
+  });
+
+  it('reports the sale when the goods leave the bag', () => {
+    const world = installGlobals({
+      backpack: [item({ serial: 0x10, graphic: 0x0e76, contents: [stack(1, 20)] })],
+    });
+
+    world.sleep.mockImplementation(() => {
+      if (world.player.backpack) {
+        world.player.backpack.contents = [item({ serial: 0x10, graphic: 0x0e76, contents: [] })];
+      }
+    });
+
+    expect(waitForSale([{ serial: 1, amount: 20 }], 1000, 200)).toBe(20);
+  });
+
   // Polled rather than read once: the pack updates when the server says so, not when the request
   // is sent, and a sale read too early looks like a sale that never happened
   it('keeps looking until the goods go', () => {

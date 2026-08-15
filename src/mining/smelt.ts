@@ -1,4 +1,4 @@
-import { collectIn } from '../lib/containers.js';
+import { collectIn, packContents } from '../lib/containers.js';
 import { createConverter } from '../lib/convert.js';
 import { approach, distanceTo, hex, isMobile, nameOf } from '../lib/entity.js';
 import {
@@ -16,6 +16,7 @@ import {
   SMELT_RANGE,
   SMELT_TIMEOUT,
   TARGET_TIMEOUT,
+  THROTTLED_TEXT,
   UNSKILLED_TEXT,
 } from './config.js';
 import { isOrePile } from './ore.js';
@@ -77,6 +78,30 @@ const walkToBeetle = (serial: number): Mobile | undefined =>
     step: stepToward,
   });
 
+// The stationary counterpart, for the run that has promised not to take a step: a beetle that is not
+// already next to you is not a forge this run can use, and the ore travels unsmelted instead.
+//
+// The serial is re-resolved rather than the findBeetle result trusted, for the reason forgeGone
+// exists - the beetle is a pet, so its coordinates go stale within a cycle, and the one thing this
+// function is for is the distance.
+const beetleInRange = (serial: number): Mobile | undefined => {
+  const found = client.findObject(serial);
+
+  if (!found || !isMobile(found)) {
+    log(`smelt: lost track of ${hex(serial)}`);
+    return undefined;
+  }
+
+  const away = distanceTo(found);
+
+  if (away > SMELT_RANGE) {
+    log(`smelt: the beetle is ${away} tiles off and this run does not walk`);
+    return undefined;
+  }
+
+  return found;
+};
+
 // Whether a pile has two ore in it. The amount is the only thing that answers that: the art does
 // not, whatever the stack-size table says - a pile of 33 on this shard is drawn with the same
 // graphic as a pile of one, so a size read off the graphic skips a full stack outright.
@@ -113,13 +138,38 @@ const describePile = (item: Item, writtenOff: Set<number>): string => {
 // has said so, or three silent passes have. A stack too small is only too small right now: one more
 // swing on that vein makes it big enough, so nothing is remembered about it.
 const nextOre = (writtenOff: Set<number>): Item | undefined =>
-  collectIn(player.backpack?.contents, isOrePile).find(
+  collectIn(packContents(), isOrePile).find(
     (item) => !writtenOff.has(item.hue ?? 0) && bigEnough(item),
   );
 
 // Found and walked to once per smeltAll, then targeted by every pass. Held here rather than passed
 // through the shared engine, which has no business knowing that this conversion needs a forge.
 let forge: Mobile | undefined;
+
+// The beetle is a pet - it follows, and it wanders. A smelt aimed at one that has drifted out of
+// range fails the same way an ore that cannot be worked does: silently, with nothing in the pack
+// diff and nothing in the journal. Three of those write the hue off for the rest of the run, and on
+// a live one that took 86 ore of a single colour out of circulation while the beetle was standing
+// two tiles further away than it had been.
+//
+// So the position is re-read rather than trusted. walkToBeetle proves it is in range once per
+// smeltAll; this is what notices when that stops being true, and it ends the pass instead of
+// blaming the ore. smeltAll walks to it again next time it is called.
+const forgeGone = (): string | undefined => {
+  if (!forge) {
+    return 'no beetle to smelt against';
+  }
+
+  const here = client.findObject(forge.serial);
+
+  if (!here || !isMobile(here)) {
+    return `the beetle ${hex(forge.serial)} is out of sight`;
+  }
+
+  const away = distanceTo(here);
+
+  return away > SMELT_RANGE ? `the beetle has wandered ${away} tiles off` : undefined;
+};
 
 const converter = /* @__PURE__ */ createConverter({
   label: 'smelt',
@@ -130,12 +180,14 @@ const converter = /* @__PURE__ */ createConverter({
   delayMs: SMELT_DELAY,
   maxPasses: MAX_SMELT_PASSES,
   unskilledText: UNSKILLED_TEXT,
+  throttledText: THROTTLED_TEXT,
   isSaving,
+  notNow: forgeGone,
 
   nextStack: (writtenOff) => nextOre(writtenOff),
 
   describeSkipped: (writtenOff) => {
-    const piles = collectIn(player.backpack?.contents, isOrePile);
+    const piles = collectIn(packContents(), isOrePile);
 
     return piles.length > 0
       ? `nothing to smelt in ${piles.length} pile(s) - ` +
@@ -171,7 +223,10 @@ const converter = /* @__PURE__ */ createConverter({
 export const unsmeltable = converter.writtenOff;
 export const retryUnsmeltable = converter.retry;
 
-export const smeltAll = (): boolean => {
+// How the beetle is reached is the only thing the two smelts disagree about, so it is the only thing
+// that is passed in. Everything else - when to bother looking, what a missing one costs, how the
+// conversion itself is judged - is the same question whether or not the run is allowed to walk.
+const smeltAgainst = (reach: (serial: number) => Mobile | undefined): boolean => {
   // Asked before the beetle is looked for, so a pack with nothing eligible in it costs neither a
   // search nor a walk. run() reports what it is holding and why none of it counts.
   if (!nextOre(converter.writtenOff)) {
@@ -191,10 +246,19 @@ export const smeltAll = (): boolean => {
   }
   reportedMissing = false;
 
-  forge = walkToBeetle(found.serial);
+  forge = reach(found.serial);
   if (!forge) {
     return false;
   }
 
   return converter.run();
 };
+
+// Walks to the beetle if it has drifted, which is what dist/mining.js wants: it is about to walk
+// somewhere else anyway, and the ore is why it is walking at all.
+export const smeltAll = (): boolean => smeltAgainst(walkToBeetle);
+
+// Smelts only against a beetle already in range, which is what dist/mine-here.js wants: that run
+// stands still, and a smelt is not worth breaking that for. It costs a pass rather than the ore -
+// the pack keeps it, and the next call tries again.
+export const smeltHere = (): boolean => smeltAgainst(beetleInRange);

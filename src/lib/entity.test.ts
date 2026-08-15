@@ -10,7 +10,7 @@ beforeEach(() => {
 });
 
 describe('hex', () => {
-  // The tinkering gump, which prints as 0x-3266af2f without the shift
+  // A real gump serial off the shard, which prints as 0x-3266af2f without the shift
   it('prints a serial the client reports as a negative int', () => {
     expect(hex(-0x3266af2f)).toBe('0xcd9950d1');
   });

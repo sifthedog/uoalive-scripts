@@ -76,8 +76,8 @@ export const findBoxes = (): Item[] => {
   return boxes;
 };
 
-// A container's window is looked up under the container's own serial, the way tinkering/gump.ts
-// looks up the craft gump. If container windows are not gumps in that sense the lookup simply
+// A container's window is looked up under the container's own serial, the way a craft gump is
+// looked up under its type id. If container windows are not gumps in that sense the lookup simply
 // answers nothing - better than closing the character window along with everything else.
 export const closeBox = (serial: number): void => {
   if (CLOSE_BOXES !== 'perBox') {

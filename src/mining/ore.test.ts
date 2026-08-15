@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { installGlobals, item, type FakeWorld } from '../test-support/uo.js';
-import { ORE_GRAPHICS } from './config.js';
-import { groupOres, oreTotal, oresByHue } from './ore.js';
+import { ORE_GRAPHICS, ORE_SETTLE_POLL, ORE_SETTLE_TIMEOUT } from './config.js';
+import { groupOres, oreTotal, oresByHue, waitForOre } from './ore.js';
 
 const IRON = 0;
 const COPPER = 0x60c;
@@ -232,5 +232,54 @@ describe('groupOres', () => {
 
     expect(world.log).not.toHaveBeenCalledWith(expect.stringContaining('stalled'));
     expect(world.player.use).toHaveBeenCalledTimes(1);
+  });
+});
+
+// The wait the loop takes before grouping, so a swing's ore is in the pack by the time the piles are
+// counted. A pack that arrives late is the reason it exists; a pack that never changes is the reason
+// it is bounded.
+describe('waitForOre', () => {
+  // The common case, and the one worth keeping cheap: the ore is usually already there by the time
+  // the journal line announcing it has been read, so this must not cost a poll interval per swing.
+  it('returns at once when the ore has already landed, without sleeping', () => {
+    world = installGlobals({ backpack: [ore(1, IRON, 33)] });
+
+    expect(waitForOre(0)).toBe(true);
+    expect(world.sleep).not.toHaveBeenCalled();
+  });
+
+  it('waits for a pile that arrives a poll or two later', () => {
+    const packs = [[ore(1, IRON, 30)], [ore(1, IRON, 30), ore(2, IRON, 3)]];
+    let arrived = 0;
+
+    world = installGlobals();
+    Object.defineProperty(world.player, 'backpack', {
+      configurable: true,
+      get: () => ({ serial: 0x40000000, contents: packs[Math.min(arrived, 1)] }),
+    });
+    world.sleep.mockImplementation(() => {
+      arrived++;
+    });
+
+    expect(waitForOre(30)).toBe(true);
+    expect(world.sleep).toHaveBeenCalledTimes(1);
+  });
+
+  // A swing read as 'dug' whose ore never turns up. Grouping still happens - the caller ignores this
+  // - so the only thing that matters is that it stops asking.
+  it('gives up at the timeout when nothing arrives', () => {
+    world = installGlobals({ backpack: [ore(1, IRON, 30)] });
+
+    expect(waitForOre(30)).toBe(false);
+    expect(world.sleep).toHaveBeenCalledTimes(ORE_SETTLE_TIMEOUT / ORE_SETTLE_POLL);
+  });
+
+  // Hue-blind and pile-blind both: what is being waited for is ore in the pack, whatever colour it
+  // came out as and whether the shard delivered it loose or merged into the pile already there.
+  it('is satisfied by ore that merged into an existing pile', () => {
+    world = installGlobals({ backpack: [ore(1, COPPER, 31)] });
+
+    expect(waitForOre(30)).toBe(true);
+    expect(world.sleep).not.toHaveBeenCalled();
   });
 });

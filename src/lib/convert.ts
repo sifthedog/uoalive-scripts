@@ -39,7 +39,18 @@ export const createConverter = (options: {
   maxPasses: number;
   unskilledText: string[];
 
+  // The shard refusing the gesture because it is busy. Silent in the pack diff and therefore
+  // indistinguishable from a material that cannot be worked, so without this a run of busy moments
+  // writes off a perfectly good hue - which on a live mining run cost 86 ore of a single colour.
+  throttledText?: string[];
+
   isSaving: () => boolean;
+
+  // Anything else that makes this pass hopeless without saying anything about the material: a fire
+  // beetle that has wandered out of range, a forge left behind. Returns the reason, which ends the
+  // pass the way a world save does - uncounted, for the caller to come back to. Asked only once a
+  // stack has been chosen, so a pack with nothing to convert never needs the target to exist.
+  notNow?: () => string | undefined;
 
   // The next stack worth attempting, or undefined when there is nothing left. Rescanned every pass
   // rather than planned up front: a conversion consumes the stack and creates a new item, so every
@@ -129,6 +140,14 @@ export const createConverter = (options: {
       return;
     }
 
+    // A refusal is not a verdict on the material - nothing was attempted for it to be one - so it is
+    // left uncounted the way a world save is. Checked before the unskilled wordings only because it
+    // is the commoner of the two; they cannot both be in a journal this attempt just cleared.
+    if (options.throttledText?.some((text) => journal.containsText(text))) {
+      log(`${options.label}: the shard says wait, not counting it against hue ${hue}`);
+      return;
+    }
+
     // The shard saying it outright is worth acting on immediately; a material that needs a skill you
     // do not have is not something retrying supplies.
     if (options.unskilledText.some((text) => journal.containsText(text))) {
@@ -162,6 +181,15 @@ export const createConverter = (options: {
             log(`${options.label}: ${skipped}`);
           }
           return true;
+        }
+
+        // Asked only once there is something that needs it. A pack with nothing to convert in it is
+        // finished rather than blocked, and it reports that without a forge, a beetle or a walk -
+        // which is the whole reason smeltAll can afford to be called every time a vein runs dry.
+        const blocked = options.notNow?.();
+        if (blocked) {
+          log(`${options.label}: ${blocked}, leaving it for now`);
+          return false;
         }
 
         convertOne(stack);

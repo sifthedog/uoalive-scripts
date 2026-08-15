@@ -1,13 +1,30 @@
 "use strict";
 (() => {
+  // src/lib/entity.ts
+  var hex = (value) => `0x${(value >>> 0).toString(16)}`;
+
   // src/lib/containers.ts
+  var unreadable = /* @__PURE__ */ new Set();
+  var contentsOf = (item) => {
+    try {
+      return item?.contents;
+    } catch (error) {
+      const serial2 = item?.serial ?? 0;
+      if (!unreadable.has(serial2)) {
+        unreadable.add(serial2);
+        log(`contents: ${hex(serial2)} would not answer - ${String(error)}`);
+      }
+      return void 0;
+    }
+  };
   var findIn = (contents, matches) => {
     for (const item of contents ?? []) {
       if (matches(item)) {
         return item;
       }
-      if (item.contents && item.contents.length > 0) {
-        const foundInSub = findIn(item.contents, matches);
+      const sub = contentsOf(item);
+      if (sub && sub.length > 0) {
+        const foundInSub = findIn(sub, matches);
         if (foundInSub) return foundInSub;
       }
     }
@@ -19,9 +36,6 @@
     exit(reason);
     throw new Error(reason);
   };
-
-  // src/lib/entity.ts
-  var hex = (value) => `0x${(value >>> 0).toString(16)}`;
 
   // src/boxes/config.ts
   var PROBE_DELAY = 1200;

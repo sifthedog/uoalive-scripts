@@ -7,7 +7,7 @@ import {
   SALE_TIMEOUT,
   SELL_DELAY,
 } from './config.js';
-import { looseMatches } from './hoist.js';
+import { sellableMatches } from './hoist.js';
 import { withKeepBack } from './offer.js';
 
 const amountOf = (items: Item[]): number =>
@@ -43,7 +43,7 @@ export const sellAll = (name: string): number => {
 
     const toSell = withKeepBack(matches);
     if (toSell.length === 0) {
-      log(`sell: ${amountOf(looseMatches(name))} left, keeping them back`);
+      log(`sell: ${amountOf(sellableMatches(name))} left, keeping them back`);
       break;
     }
 
@@ -61,7 +61,7 @@ export const sellAll = (name: string): number => {
       break;
     }
 
-    const left = amountOf(looseMatches(name));
+    const left = amountOf(sellableMatches(name));
     if (left <= KEEP) {
       break;
     }

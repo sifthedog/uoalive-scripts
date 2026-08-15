@@ -6,11 +6,11 @@ const ENTRIES = [
   { in: 'src/boxes/keys.ts', out: 'keys' },
   { in: 'src/boxes/probe.ts', out: 'key-probe' },
   { in: 'src/lumberjacking/index.ts', out: 'lumberjack' },
+  { in: 'src/mining/here.ts', out: 'mine-here' },
   { in: 'src/mining/index.ts', out: 'mining' },
   { in: 'src/mining/probe.ts', out: 'mine-probe' },
   { in: 'src/selling/index.ts', out: 'sell' },
-  { in: 'src/tinkering/index.ts', out: 'tinker' },
-  { in: 'src/tinkering/probe.ts', out: 'tinker-probe' },
+  { in: 'src/selling/watch.ts', out: 'sell-watch' },
 ];
 
 // iife matters: the QuickJS context persists between runs, so top-level declarations

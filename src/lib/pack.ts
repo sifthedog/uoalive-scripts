@@ -1,4 +1,4 @@
-import type { ItemPredicate } from './containers.js';
+import { contentsOf, packContents, type ItemPredicate } from './containers.js';
 
 export type Counts = Map<string, number>;
 
@@ -9,16 +9,14 @@ export interface Change {
 
 // Keyed by graphic and hue together, because a recipe's output is told apart from the ingots it
 // consumed by graphic, and coloured variants of the same item share a graphic.
-export const countsByGraphic = (
-  contents: Item[] | undefined = player.backpack?.contents,
-): Counts => {
+export const countsByGraphic = (contents: Item[] | undefined = packContents()): Counts => {
   const counts: Counts = new Map();
 
   const walk = (items: Item[] | undefined) => {
     for (const item of items ?? []) {
       const key = `0x${item.graphic.toString(16)}/${item.hue ?? 0}`;
       counts.set(key, (counts.get(key) ?? 0) + (item.amount ?? 1));
-      walk(item.contents);
+      walk(contentsOf(item));
     }
   };
 
@@ -54,11 +52,13 @@ export const diffCounts = (before: Counts, after: Counts): Change[] => {
 // forever - the trap all three hand-written copies of this had to comment on.
 export const totalMatching = (
   matches: ItemPredicate,
-  contents: Item[] | undefined = player.backpack?.contents,
+  contents: Item[] | undefined = packContents(),
 ): number =>
   (contents ?? []).reduce(
     (total, item) =>
-      total + (matches(item) ? item.amount ?? 1 : 0) + totalMatching(matches, item.contents ?? []),
+      total +
+      (matches(item) ? item.amount ?? 1 : 0) +
+      totalMatching(matches, contentsOf(item) ?? []),
     0,
   );
 

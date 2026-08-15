@@ -37,8 +37,6 @@ export const Directions = {
 
 export const Layers = { Invalid: 0, OneHanded: 1, TwoHanded: 2, Backpack: 21 } as const;
 
-export const Skills = { Tinkering: 37 } as const;
-
 export interface FakePlayer {
   // The character's own serial, which mount.ts double-clicks to get off a mount
   serial: number;
@@ -50,7 +48,6 @@ export interface FakePlayer {
   isDead: boolean;
   backpack?: { serial: number; contents?: Item[] };
   equippedItems: { oneHanded?: Item; twoHanded?: Item; mount?: Item };
-  getSkill: ReturnType<typeof vi.fn>;
   use: ReturnType<typeof vi.fn>;
   equip: ReturnType<typeof vi.fn>;
   moveItem: ReturnType<typeof vi.fn>;
@@ -119,7 +116,6 @@ const defaults = (): FakeWorld => ({
     isDead: false,
     backpack: { serial: 0x40000000, contents: [] },
     equippedItems: {},
-    getSkill: vi.fn(() => ({ base: 0, value: 0 })),
     use: vi.fn(),
     equip: vi.fn(),
     moveItem: vi.fn(),
@@ -165,9 +161,9 @@ const defaults = (): FakeWorld => ({
   exit: vi.fn(),
 });
 
-// Assigned onto globalThis rather than stubbed, because two modules read globals while they are
-// being evaluated - walk.ts builds DIRECTION_BY_STEP from Directions, tinkering/gump.ts computes
-// SERIALS - so the values have to be there before the import, not just before the test body.
+// Assigned onto globalThis rather than stubbed, because a module can read globals while it is
+// being evaluated - walk.ts builds DIRECTION_BY_STEP from Directions - so the values have to be
+// there before the import, not just before the test body.
 export const installGlobals = (overrides: WorldOverrides = {}): FakeWorld => {
   const world = defaults();
 
@@ -189,7 +185,6 @@ export const installGlobals = (overrides: WorldOverrides = {}): FakeWorld => {
   scope.Gump = world.gump;
   scope.Directions = Directions;
   scope.Layers = Layers;
-  scope.Skills = Skills;
   scope.log = world.log;
   scope.sleep = world.sleep;
   scope.exit = world.exit;

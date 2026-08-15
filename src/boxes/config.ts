@@ -85,7 +85,7 @@ export const LOG_EVERY_BOX = true;
 // Leave this many boxes behind
 export const KEEP = 0;
 
-// Read each box's tooltip before opening it and skip the ones the shard says are empty. A tinkering
+// Read each box's tooltip before opening it and skip the ones the shard says are empty. A crafted
 // pile is mostly boxes whose keys are already out, and the tooltip costs a query rather than a
 // double-click, an OPEN_DELAY and a window. Set false to open everything the old way.
 export const PEEK_CONTENTS = true;

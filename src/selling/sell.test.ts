@@ -32,15 +32,29 @@ const gumpShowing = (...rounds: VendorEntry[][]) => {
 const vendorTaking = () =>
   vi.fn((_vendor: Mobile, items: { serial: number; amount: number }[]) => {
     const sold = new Map(items.map((entry) => [entry.serial, entry.amount]));
+
+    // Down every bag, because this shard's vendors sell out of one
+    const taken = (contents: Item[] | undefined): Item[] =>
+      (contents ?? [])
+        .map((held) => {
+          const gone = sold.get(held.serial) ?? 0;
+
+          if (gone) {
+            return ingot(held.serial, (held.amount ?? 1) - gone);
+          }
+
+          if (Array.isArray(held.contents)) {
+            (held as { contents: Item[] }).contents = taken(held.contents);
+          }
+
+          return held;
+        })
+        .filter((held) => (held.amount ?? 1) > 0);
+
     const pack = world.player.backpack;
 
     if (pack) {
-      pack.contents = (pack.contents ?? [])
-        .map((held) => {
-          const gone = sold.get(held.serial) ?? 0;
-          return gone ? ingot(held.serial, (held.amount ?? 1) - gone) : held;
-        })
-        .filter((held) => (held.amount ?? 1) > 0);
+      pack.contents = taken(pack.contents);
     }
 
     return true;
@@ -89,14 +103,14 @@ describe('sellAll', () => {
     expect(world.player.say).toHaveBeenCalledTimes(2);
   });
 
-  // Ingots still in a bag are not on offer and never will be without a hoist, so they are not a
-  // reason to ask the vendor again
-  it('does not reopen for matches sitting in a bag', () => {
+  // This shard's vendors sell out of a bag, so ingots the gump did not list are still on offer and
+  // still worth another pass. Counting the top level alone stopped the run with the bag full.
+  it('reopens for matches sitting in a bag', () => {
     packHolding(ingot(1, 20), item({ serial: 0x10, graphic: 0x0e76, contents: [ingot(2, 5)] }));
-    world.gump.waitForVendorGumpData = gumpShowing([listed(1, 20)]);
+    world.gump.waitForVendorGumpData = gumpShowing([listed(1, 20)], [listed(2, 5)]);
 
-    expect(sellAll('iron ingot')).toBe(20);
-    expect(world.player.say).toHaveBeenCalledTimes(1);
+    expect(sellAll('iron ingot')).toBe(25);
+    expect(world.player.say).toHaveBeenCalledTimes(2);
   });
 
   // The request went out and the ingots are still there, which is what a refusal looks like

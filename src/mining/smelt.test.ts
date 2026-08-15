@@ -197,6 +197,39 @@ describe('smeltAll', () => {
     expect(unsmeltable.has(IRON)).toBe(true);
   });
 
+  // The two failures that say nothing about the ore. Both look exactly like a hue that cannot be
+  // worked - silence in the pack diff - and counting either one wrote off a pile of 86 on a live run.
+  it('does not count a refusal against the hue', async () => {
+    world = installGlobals({ player: { x: 100, y: 100 }, backpack: [ore(1, IRON)] });
+    beetleNearby();
+    world.journal.containsText.mockImplementation((text: string) =>
+      text.startsWith('You must wait'),
+    );
+    const { smeltAll, unsmeltable } = await loadSmelt();
+
+    smeltAll();
+
+    expect(unsmeltable.has(IRON)).toBe(false);
+    expect(world.log).toHaveBeenCalledWith(expect.stringContaining('shard says wait'));
+  });
+
+  it('stops rather than counting a failure when the beetle has wandered off', async () => {
+    world = installGlobals({ player: { x: 100, y: 100 }, backpack: [ore(1, IRON)] });
+    beetleNearby();
+    const { smeltAll, unsmeltable } = await loadSmelt();
+
+    // Next to you for the walk that opens the smelt - approach resolves it once and returns - and
+    // three tiles off by the time the first pass goes to target it
+    world.client.findObject
+      .mockReturnValueOnce(beetle())
+      .mockReturnValue(beetle({ x: 103, y: 103 }));
+
+    expect(smeltAll()).toBe(false);
+    expect(unsmeltable.has(IRON)).toBe(false);
+    expect(world.player.use).not.toHaveBeenCalled();
+    expect(world.log).toHaveBeenCalledWith(expect.stringContaining('wandered'));
+  });
+
   it('counts a missing target cursor as one of those failures', async () => {
     world = installGlobals({ player: { x: 100, y: 100 }, backpack: [ore(1, IRON)] });
     beetleNearby();
@@ -413,5 +446,60 @@ describe('smeltAll', () => {
     smeltAll();
 
     expect(world.client.findAllMobilesOfType).not.toHaveBeenCalled();
+  });
+});
+
+// What dist/mine-here.js smelts with. Everything above holds for it too - it is the same conversion
+// through the same engine - so what is tested here is only the one thing it does differently.
+describe('smeltHere', () => {
+  it('smelts against a beetle that is already next to you', async () => {
+    world = installGlobals({ player: { x: 100, y: 100 }, backpack: [ore(1, IRON)] });
+    beetleNearby();
+    smeltWorks([[ore(1, IRON)], [item({ serial: 2, graphic: INGOT, hue: IRON, amount: 5 })]]);
+    const { smeltHere } = await loadSmelt();
+
+    smeltHere();
+
+    expect(world.player.use).toHaveBeenCalledWith(1);
+    expect(world.target.waitTargetEntity).toHaveBeenCalledWith(BEETLE, expect.any(Number));
+  });
+
+  // The whole point of the pair. A run that has promised to stand still cannot pay for a smelt with
+  // a walk, and the same fixture put to smeltAll is what shows the promise is the only difference.
+  it('keeps the ore rather than walking to a beetle that has drifted off', async () => {
+    world = installGlobals({ player: { x: 100, y: 100 }, backpack: [ore(1, IRON)] });
+    beetleNearby([beetle({ x: 110, y: 100 })]);
+    const { smeltAll, smeltHere } = await loadSmelt();
+
+    expect(smeltHere()).toBe(false);
+    expect(world.player.run).not.toHaveBeenCalled();
+    expect(world.player.use).not.toHaveBeenCalled();
+    expect(world.log).toHaveBeenCalledWith(expect.stringContaining('does not walk'));
+
+    smeltAll();
+    expect(world.player.run).toHaveBeenCalled();
+  });
+
+  // Nothing to smelt is still nothing to smelt, and a run standing on a vein calls this on every
+  // cycle it is overweight - so the cheap path has to stay cheap
+  it('does not go looking for a beetle when there is no ore', async () => {
+    beetleNearby();
+    const { smeltHere } = await loadSmelt();
+
+    expect(smeltHere()).toBe(true);
+    expect(world.client.findAllMobilesOfType).not.toHaveBeenCalled();
+  });
+
+  // A pet that has walked out of sight altogether, rather than merely out of range. Distinguished
+  // because the two say different things about what to do: one is a beetle to call back, the other
+  // is a serial that is not going to resolve again.
+  it('says so when the beetle cannot be resolved at all', async () => {
+    world = installGlobals({ player: { x: 100, y: 100 }, backpack: [ore(1, IRON)] });
+    world.client.findAllMobilesOfType.mockReturnValue([beetle()]);
+    world.client.findObject.mockReturnValue(undefined);
+    const { smeltHere } = await loadSmelt();
+
+    expect(smeltHere()).toBe(false);
+    expect(world.log).toHaveBeenCalledWith(expect.stringContaining('lost track of'));
   });
 });

@@ -1,7 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { installGlobals, item, type FakeWorld } from '../test-support/uo.js';
-import { collectIn, findIn, isContainer, openContainers } from './containers.js';
+import {
+  collectIn,
+  contentsOf,
+  findIn,
+  isContainer,
+  openContainers,
+  packContents,
+} from './containers.js';
 
 const BACKPACK = 0x0e75;
 const BAG = 0x0e76;
@@ -20,8 +27,14 @@ describe('isContainer', () => {
     );
   });
 
-  it('accepts an empty contents array - an opened container is still a container', () => {
-    expect(isContainer(item({ serial: 1, graphic: 0x1234, contents: [] }))).toBe(true);
+  // The live client answers `[]` for plain items, so an empty array is not evidence of anything -
+  // taking it as proof made every item in the pack a container and the sell run clicked them all
+  it('takes an empty contents array as no evidence, leaving it to the graphic', () => {
+    expect(isContainer(item({ serial: 1, graphic: 0x1234, contents: [] }))).toBe(false);
+  });
+
+  it('still accepts an emptied bag, on its graphic', () => {
+    expect(isContainer(item({ serial: 1, graphic: BAG, contents: [] }))).toBe(true);
   });
 
   it('falls back to the graphic list when contents are unknown', () => {
@@ -137,5 +150,71 @@ describe('openContainers', () => {
 
     expect(openContainers()).toBe(false);
     expect(world.player.use).not.toHaveBeenCalled();
+  });
+});
+
+// `contents` is a question put to the client, and a live run died on the client failing the question
+// rather than answering it:
+//
+//   Exception executing 'itemGetContents': Unexpected end of JSON input
+//
+// Nothing above these functions has a try in it, so an unreadable bag took the whole run with it.
+describe('contentsOf', () => {
+  // A bag whose contents getter throws on every read
+  const unreadableBag = (serial: number): Item => {
+    const bag = item({ serial, graphic: BAG });
+
+    Object.defineProperty(bag, 'contents', {
+      configurable: true,
+      get: () => {
+        throw new SyntaxError('Unexpected end of JSON input');
+      },
+    });
+
+    return bag;
+  };
+
+  it('reads an ordinary container normally', () => {
+    const bag = item({ serial: 1, graphic: BAG, contents: [item({ serial: 2, graphic: POTION })] });
+
+    expect(contentsOf(bag)).toHaveLength(1);
+  });
+
+  it('treats a bag that will not answer as one that has not been opened', () => {
+    expect(contentsOf(unreadableBag(1))).toBeUndefined();
+  });
+
+  it('says so once rather than once per scan', () => {
+    const bag = unreadableBag(2);
+
+    contentsOf(bag);
+    contentsOf(bag);
+    contentsOf(bag);
+
+    expect(world.log).toHaveBeenCalledTimes(1);
+    expect(world.log).toHaveBeenCalledWith(expect.stringContaining('would not answer'));
+  });
+
+  // The crash was thrown out of a recursive walk, so the searches have to survive it too - and a
+  // lower bound is what they already promise over containers nobody has opened
+  it('lets a search step over an unreadable bag instead of dying in it', () => {
+    const contents = [
+      unreadableBag(3),
+      item({ serial: 4, graphic: BAG, contents: [item({ serial: 5, graphic: POTION })] }),
+    ];
+
+    expect(collectIn(contents, (found) => found.graphic === POTION)).toHaveLength(1);
+    expect(findIn(contents, (found) => found.graphic === POTION)?.serial).toBe(5);
+  });
+
+  it('reads the pack as empty when the pack itself will not answer', () => {
+    Object.defineProperty(world.player, 'backpack', {
+      configurable: true,
+      get: () => {
+        throw new SyntaxError('Unexpected end of JSON input');
+      },
+    });
+
+    expect(packContents()).toBeUndefined();
   });
 });

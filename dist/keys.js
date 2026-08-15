@@ -1,14 +1,31 @@
 "use strict";
 (() => {
+  // src/lib/entity.ts
+  var hex = (value) => `0x${(value >>> 0).toString(16)}`;
+
   // src/lib/containers.ts
+  var unreadable = /* @__PURE__ */ new Set();
+  var contentsOf = (item) => {
+    try {
+      return item?.contents;
+    } catch (error) {
+      const serial = item?.serial ?? 0;
+      if (!unreadable.has(serial)) {
+        unreadable.add(serial);
+        log(`contents: ${hex(serial)} would not answer - ${String(error)}`);
+      }
+      return void 0;
+    }
+  };
   var collectIn = (contents, matches) => {
     const found = [];
     for (const item of contents ?? []) {
       if (matches(item)) {
         found.push(item);
       }
-      if (item.contents && item.contents.length > 0) {
-        found.push(...collectIn(item.contents, matches));
+      const sub = contentsOf(item);
+      if (sub && sub.length > 0) {
+        found.push(...collectIn(sub, matches));
       }
     }
     return found;
@@ -19,9 +36,6 @@
     exit(reason);
     throw new Error(reason);
   };
-
-  // src/lib/entity.ts
-  var hex = (value) => `0x${(value >>> 0).toString(16)}`;
 
   // src/boxes/config.ts
   var DROP_SPREAD = [

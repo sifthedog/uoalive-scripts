@@ -23,6 +23,7 @@ export {
   STALL_WARN,
   STEP_DELAY,
   TARGET_TIMEOUT,
+  THROTTLED_TEXT,
   THROTTLE_BACKOFF,
   THROTTLE_BACKOFF_MAX,
   UNREACHABLE_DELAY,
@@ -32,7 +33,11 @@ export {
 // Imported as well as re-exported, because OUTCOME_TEXT below aliases SAVING_TEXT into its own
 // `saving` bucket: the swing reads a save as an outcome, while the smelt has no outcomes at all and
 // checks the same wordings directly.
-import { SAVING_TEXT, UNSKILLED_TEXT as SHARED_UNSKILLED_TEXT } from '../lib/timings.js';
+import {
+  SAVING_TEXT,
+  THROTTLED_TEXT as SHARED_THROTTLED_TEXT,
+  UNSKILLED_TEXT as SHARED_UNSKILLED_TEXT,
+} from '../lib/timings.js';
 
 export const PICKAXE_NAME = 'pickaxe';
 
@@ -100,11 +105,18 @@ export const ORE_GRAPHICS = new Set([0x19b7, 0x19ba, 0x19b9, 0x19b8]);
 export const ORE_NAME = /\bore\b/i;
 
 // A seed only: the real graphics are learned by diffing the pack across the first successful smelt,
-// so a wrong guess here costs nothing. Shared with tinkering, which does depend on it.
+// so a wrong guess here costs nothing.
 export { INGOT_GRAPHICS } from '../lib/arts.js';
 
 // Pause after each ore combine, to stay under the server's action throttle
 export const COMBINE_DELAY = 700;
+
+// A swing's ore arrives after the sentence that announced it, so grouping the instant the journal
+// reads 'dug' can consolidate a pack the new pile has not turned up in yet. Polled rather than
+// slept through, on the reasoning in convert.ts's waitForChange - the common case is that it has
+// already landed and costs nothing, and the wait only shows up on the swings that need it.
+export const ORE_SETTLE_TIMEOUT = 1500;
+export const ORE_SETTLE_POLL = 150;
 
 // The fire beetle is the whole reason this script does not need a forge. Stock body is 0xa9; the
 // search logs the name and body of whatever it actually finds, so a wrong guess here is visible
@@ -196,11 +208,10 @@ export const OUTCOME_TEXT = {
   // unreadable outcome - five in a row and the run is over, which is what a save did to a live one.
   // It is not a failure of anything and nothing about the vein is learned from it; it is a pause.
   saving: SAVING_TEXT,
-  // Full wordings first: the bare prefix also catches "You must wait N seconds" from systems that
-  // have nothing to do with harvesting, and reading one of those as a mining throttle is how a
-  // swing that was never refused ends up being retried forever. Kept last as a fallback all the
-  // same - a phrase this list misses reads as an unreadable outcome, which is worse.
-  throttled: ['You must wait to perform another action', 'You must wait a moment', 'You must wait'],
+  // Shared with the smelt, which reads the same refusal with no outcomes to read it as: to the
+  // conversion a throttle is silence, and silence is what writes a hue off. One list, so a wording
+  // corrected against this shard's journal fixes both.
+  throttled: SHARED_THROTTLED_TEXT,
 };
 
 // How far around you dist/mine-probe.js looks. Larger than SCAN_RADIUS on purpose: the probe is

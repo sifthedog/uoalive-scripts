@@ -5,9 +5,9 @@ import { PROBE_DELAY } from './config.js';
 
 // Nothing about putting an item on the floor is settled: `moveItemOnGroundOffset` is the only call
 // named for it and three ways of using it changed nothing on a live run. Rather than guess a
-// fourth, this tries every plausible shape on ONE key and reports what each did - the same method
-// the tinkering probe uses on the craft gump, for the same reason: the calls return an undocumented
-// number and a refused move is silent, so the only honest signal is whether the item actually went.
+// fourth, this tries every plausible shape on ONE key and reports what each did: the calls return
+// an undocumented number and a refused move is silent, so the only honest signal is whether the
+// item actually went.
 
 // The container serial the UO drop packet uses to mean "the ground"
 const GROUND = 0xffffffff;

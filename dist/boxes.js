@@ -6,6 +6,9 @@
     throw new Error(reason);
   };
 
+  // src/lib/entity.ts
+  var hex = (value) => `0x${(value >>> 0).toString(16)}`;
+
   // src/lib/containers.ts
   var CONTAINER_GRAPHICS = /* @__PURE__ */ new Set([
     3701,
@@ -31,7 +34,31 @@
     3649
     // gold chest
   ]);
-  var isContainer = (item) => Array.isArray(item.contents) || CONTAINER_GRAPHICS.has(item.graphic);
+  var unreadable = /* @__PURE__ */ new Set();
+  var contentsOf = (item) => {
+    try {
+      return item?.contents;
+    } catch (error) {
+      const serial = item?.serial ?? 0;
+      if (!unreadable.has(serial)) {
+        unreadable.add(serial);
+        log(`contents: ${hex(serial)} would not answer - ${String(error)}`);
+      }
+      return void 0;
+    }
+  };
+  var packContents = () => {
+    try {
+      return contentsOf(player.backpack);
+    } catch (error) {
+      if (!unreadable.has(0)) {
+        unreadable.add(0);
+        log(`contents: the backpack would not answer - ${String(error)}`);
+      }
+      return void 0;
+    }
+  };
+  var isContainer = (item) => (contentsOf(item)?.length ?? 0) > 0 || CONTAINER_GRAPHICS.has(item.graphic);
   var openContainers = (preferredSerial) => {
     if (preferredSerial) {
       player.use(preferredSerial);
@@ -39,7 +66,7 @@
       return true;
     }
     let opened = false;
-    for (const item of player.backpack?.contents ?? []) {
+    for (const item of packContents() ?? []) {
       if (!isContainer(item)) {
         continue;
       }
@@ -55,15 +82,13 @@
       if (matches(item)) {
         found.push(item);
       }
-      if (item.contents && item.contents.length > 0) {
-        found.push(...collectIn(item.contents, matches));
+      const sub = contentsOf(item);
+      if (sub && sub.length > 0) {
+        found.push(...collectIn(sub, matches));
       }
     }
     return found;
   };
-
-  // src/lib/entity.ts
-  var hex = (value) => `0x${(value >>> 0).toString(16)}`;
 
   // src/boxes/config.ts
   var BOX_GRAPHICS = /* @__PURE__ */ new Set([2474, 3709, 3710]);
@@ -261,7 +286,7 @@
   var dead = () => player.isDead ? "you are dead" : void 0;
   var heavy = (buffer) => () => overweight(buffer) ? `overweight (${player.weight}/${player.weightMax})` : void 0;
   var packFull = (limit) => () => {
-    const top = (player.backpack?.contents ?? []).length;
+    const top = (packContents() ?? []).length;
     return top >= limit ? `pack is full (${top} items at the top level)` : void 0;
   };
   var firstReason = (...guards) => {
@@ -327,14 +352,17 @@
     return toSell;
   };
   var totalOf = (entries) => entries.reduce((sum, entry) => sum + (entry.amount ?? 1), 0);
-  var looseTotal = (serials) => (player.backpack?.contents ?? []).filter((item) => serials.has(item.serial)).reduce((sum, item) => sum + (item.amount ?? 1), 0);
+  var packTotal = (serials) => collectIn(packContents(), (item) => serials.has(item.serial)).reduce(
+    (sum, item) => sum + (item.amount ?? 1),
+    0
+  );
   var waitForSale = (offered, timeoutMs, pollMs) => {
     const serials = new Set(offered.map((item) => item.serial));
     const total = offered.reduce((sum, item) => sum + item.amount, 0);
     let remaining = total;
     for (let waited = 0; waited < timeoutMs && remaining > 0; waited += pollMs) {
       sleep(pollMs);
-      remaining = looseTotal(serials);
+      remaining = packTotal(serials);
     }
     return total - remaining;
   };

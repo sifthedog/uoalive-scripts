@@ -4,32 +4,7 @@
   var now = () => Date.now();
 
   // src/lib/loop.ts
-  var minutes = (ms) => Math.max(1, Math.round(ms / 6e4));
-  var minutesLeft = (until) => minutes(until - now());
   var backoffFor = (count, step, cap) => Math.min(step * count, cap);
-  var createIdleWait = (options) => {
-    return (until) => {
-      const wait = until - now();
-      if (wait <= 0) {
-        return;
-      }
-      log(`${options.prefix}: ${options.waitingFor}, waiting ${minutesLeft(until)}m`);
-      const slices = Math.ceil(wait / options.pollMs);
-      let since = 0;
-      for (let slice = 0; slice < slices && now() < until; slice++) {
-        sleep(options.pollMs);
-        since += options.pollMs;
-        if (options.stopReason()) {
-          return;
-        }
-        if (since >= options.logEveryMs) {
-          since = 0;
-          log(`${options.prefix}: ${minutesLeft(until)}m to go`);
-        }
-      }
-      options.onDone();
-    };
-  };
   var createStallWatch = (options) => {
     let since = 0;
     let reason2;
@@ -55,12 +30,8 @@
   var overweight = (buffer = 0) => player.weightMax > 0 && player.weight > player.weightMax - buffer;
 
   // src/lib/timings.ts
-  var SCAN_RADIUS = 12;
   var UNREACHABLE_DELAY = 5 * 60 * 1e3;
-  var IDLE_POLL = 1e4;
-  var IDLE_LOG_EVERY = 6e4;
   var STEP_DELAY = 300;
-  var WALK_DELAY = 300;
   var TARGET_TIMEOUT = 2e3;
   var EQUIP_TIMEOUT = 2e3;
   var EQUIP_POLL = 200;
@@ -73,7 +44,6 @@
   var THROTTLE_BACKOFF = 1e3;
   var THROTTLE_BACKOFF_MAX = 8e3;
   var MAX_UNKNOWN = 5;
-  var MAX_STEPS = 20;
   var PACK_LIMIT = 120;
   var LOG_EVERY = 25;
   var SAVE_WAIT = 6e4;
@@ -104,9 +74,6 @@
     ...range(1361, 1383),
     ...range(1386, 1394)
   ]);
-  var NOT_ORE_GRAPHICS = /* @__PURE__ */ new Set();
-  var ORE_STATIC_NAME = /cave|rock|mountain|ore/i;
-  var MINE_RANGE = 2;
   var RESPAWN_DELAY = 25 * 60 * 1e3;
   var DIG_TIMEOUT = 8e3;
   var ORE_GRAPHICS = /* @__PURE__ */ new Set([6583, 6586, 6585, 6584]);
@@ -118,7 +85,6 @@
   var FIRE_BEETLE_SERIAL = void 0;
   var BEETLE_SCAN_RADIUS = 18;
   var SMELT_RANGE = 2;
-  var MAX_BEETLE_STEPS = 24;
   var SMELT_DELAY = 700;
   var SMELT_TIMEOUT = 4e3;
   var SMELT_POLL = 200;
@@ -132,7 +98,6 @@
   var DISMOUNT_TIMEOUT = 2e3;
   var DISMOUNT_POLL = 200;
   var DISMOUNT_ATTEMPTS = 3;
-  var NOTHING_NEARBY_HINT = 5;
   var OUTCOME_TEXT = {
     dug: ["You dig some", "You put", "You loosen some rocks"],
     // What parks a vein for RESPAWN_DELAY. Both wordings are in the wild: RunUO says metal, some
@@ -172,7 +137,6 @@
     // corrected against this shard's journal fixes both.
     throttled: THROTTLED_TEXT
   };
-  var SURVEY_ARTS = 15;
 
   // src/lib/outcomes.ts
   var outcomeVocabulary = (text) => ({
@@ -185,24 +149,6 @@
   var distanceTo = (spot) => Math.max(Math.abs(spot.x - player.x), Math.abs(spot.y - player.y));
   var isMobile = (entity) => entity._tag === "Mobile";
   var nameOf = (entity) => entity.name ?? hex(entity.serial);
-  var approach = (serial, options) => {
-    for (let taken = 0; taken < options.maxSteps; taken++) {
-      const found = client.findObject(serial);
-      if (!found || !isMobile(found)) {
-        log(`${options.label}: lost track of ${hex(serial)}`);
-        return void 0;
-      }
-      if (distanceTo(found) <= options.range) {
-        return found;
-      }
-      if (!options.step(found)) {
-        log(`${options.label}: cannot reach ${nameOf(found)}`);
-        return void 0;
-      }
-    }
-    log(`${options.label}: still not next to ${hex(serial)} after ${options.maxSteps} steps`);
-    return void 0;
-  };
 
   // src/lib/containers.ts
   var CONTAINER_GRAPHICS = /* @__PURE__ */ new Set([
@@ -747,30 +693,6 @@
     ["-1,0", Directions.West],
     ["-1,-1", Directions.Up]
   ]);
-  var createStepToward = (options) => {
-    return (spot) => {
-      const wantX = Math.sign(spot.x - player.x);
-      const wantY = Math.sign(spot.y - player.y);
-      const step = options.constrain ? options.constrain(wantX, wantY) : wantX === 0 && wantY === 0 ? void 0 : [wantX, wantY];
-      if (step === void 0) {
-        return false;
-      }
-      const direction = DIRECTION_BY_STEP.get(`${step[0]},${step[1]}`);
-      if (direction === void 0) {
-        return false;
-      }
-      const beforeX = player.x;
-      const beforeY = player.y;
-      player.run(direction);
-      sleep(options.delayMs);
-      player.run(direction);
-      sleep(options.delayMs);
-      return player.x !== beforeX || player.y !== beforeY;
-    };
-  };
-
-  // src/mining/walk.ts
-  var stepToward = /* @__PURE__ */ createStepToward({ delayMs: WALK_DELAY });
 
   // src/mining/smelt.ts
   var beetleSerial = FIRE_BEETLE_SERIAL;
@@ -804,12 +726,19 @@
     beetleSerial = beetle.serial;
     return beetle;
   };
-  var walkToBeetle = (serial) => approach(serial, {
-    label: "smelt",
-    range: SMELT_RANGE,
-    maxSteps: MAX_BEETLE_STEPS,
-    step: stepToward
-  });
+  var beetleInRange = (serial) => {
+    const found = client.findObject(serial);
+    if (!found || !isMobile(found)) {
+      log(`smelt: lost track of ${hex(serial)}`);
+      return void 0;
+    }
+    const away = distanceTo(found);
+    if (away > SMELT_RANGE) {
+      log(`smelt: the beetle is ${away} tiles off and this run does not walk`);
+      return void 0;
+    }
+    return found;
+  };
   var bigEnough = (item) => {
     const amount = item.amount ?? 0;
     return amount === 0 || amount >= MIN_SMELT_AMOUNT;
@@ -898,274 +827,24 @@
     }
     return converter.run();
   };
-  var smeltAll = () => smeltAgainst(walkToBeetle);
+  var smeltHere = () => smeltAgainst(beetleInRange);
 
-  // src/lib/tiles.ts
-  var tileKey = (tile) => `${tile.x},${tile.y},${tile.z},${tile.graphic}`;
-  var minutes2 = (ms) => Math.max(1, Math.round(ms / 6e4));
-  var createTileStore = (options) => {
-    const block = (tile, until) => options.blocked().set(tileKey(tile), until);
-    return {
-      block,
-      markDepleted: (tile) => {
-        block(tile, now() + options.depletedFor);
-        log(
-          `${options.label}: ${tile.x},${tile.y} ${options.depleted}, back in ${minutes2(options.depletedFor)}m`
-        );
-      },
-      markUnreachable: (tile) => {
-        block(tile, now() + options.unreachableFor);
-        log(
-          `${options.label}: ${tile.x},${tile.y} could not be walked to, retrying in ${minutes2(options.unreachableFor)}m`
-        );
-      },
-      markUnusable: (tile, reason2) => {
-        block(tile, Infinity);
-        log(`${options.label}: ${tile.x},${tile.y} ${reason2}, ignoring it from here on`);
-      }
-    };
-  };
-  var createScan = (options) => {
-    const reported3 = /* @__PURE__ */ new Set();
-    return () => {
-      const blocked = options.blocked();
-      const time = now();
-      let best;
-      let readyAt;
-      for (let dx = -options.radius; dx <= options.radius; dx++) {
-        for (let dy = -options.radius; dy <= options.radius; dy++) {
-          for (const tile of client.getTerrainList(player.x + dx, player.y + dy) ?? []) {
-            if (options.skipLand && tile.isLand) {
-              continue;
-            }
-            if (!options.matches(tile.graphic, tile.isLand)) {
-              continue;
-            }
-            if (options.reachable && !options.reachable(tile.x, tile.y)) {
-              continue;
-            }
-            const candidate = {
-              x: tile.x,
-              y: tile.y,
-              z: tile.z,
-              graphic: tile.graphic,
-              isLand: tile.isLand,
-              distance: distanceTo(tile)
-            };
-            const key = tileKey(candidate);
-            const until = blocked.get(key);
-            if (until !== void 0) {
-              if (time < until) {
-                if (Number.isFinite(until) && (readyAt === void 0 || until < readyAt)) {
-                  readyAt = until;
-                }
-                continue;
-              }
-              blocked.delete(key);
-            }
-            if (!best || candidate.distance < best.distance) {
-              best = candidate;
-            }
-          }
-        }
-      }
-      if (best && !reported3.has(best.graphic)) {
-        log(`${options.label}: matching ${hex(best.graphic)} ${options.describe(best)}`);
-        reported3.add(best.graphic);
-      }
-      return { found: best, readyAt };
-    };
-  };
-
-  // src/lib/store.ts
-  var scope = globalThis;
-  var createStore = (options) => {
-    let held;
-    const load = () => {
-      const found = scope[options.key];
-      if (found?.version === options.version) {
-        const described = options.describe?.(found);
-        if (described) {
-          log(described);
-        }
-        return found;
-      }
-      const fresh = { ...options.seed(), version: options.version };
-      scope[options.key] = fresh;
-      return fresh;
-    };
-    return {
-      // Read through a call rather than handed out as the object itself, so forget() can actually
-      // forget: a module-scope `const memory = load()` would give every importer a reference that
-      // outlives it.
-      read: () => held ?? (held = load()),
-      // Tests only. The suite's vi.resetModules() gives each test a fresh module registry but leaves
-      // globalThis alone, which is precisely what this store is designed to survive.
-      forget: () => {
-        delete scope[options.key];
-        held = void 0;
-      }
-    };
-  };
-
-  // src/mining/memory.ts
-  var KEY = "__mining_memory";
-  var VERSION = 1;
-  var store = /* @__PURE__ */ createStore({
-    key: KEY,
-    version: VERSION,
-    seed: () => ({ blocked: /* @__PURE__ */ new Map(), notOre: /* @__PURE__ */ new Set() }),
-    describe: (found) => found.blocked.size > 0 || found.notOre.size > 0 ? `memory: resuming with ${found.blocked.size} blocked tiles, ${found.notOre.size} arts` : void 0
-  });
-  var memory = store.read;
-  var forget = store.forget;
-
-  // src/mining/vein.ts
-  var known = /* @__PURE__ */ new Map();
-  var artKey = (graphic, isLand) => `${isLand ? "land" : "static"}:${graphic}`;
-  var isOre = (graphic, isLand) => {
-    if (NOT_ORE_GRAPHICS.has(graphic) || memory().notOre.has(artKey(graphic, isLand))) {
-      return false;
-    }
-    if (isLand) {
-      return ORE_TILE_GRAPHICS.has(graphic);
-    }
-    const remembered = known.get(graphic);
-    if (remembered !== void 0) {
-      return remembered;
-    }
-    const name = client.getStatic(graphic)?.name ?? "";
-    const matches = ORE_STATIC_NAME.test(name);
-    known.set(graphic, matches);
-    return matches;
-  };
-  var store2 = /* @__PURE__ */ createTileStore({
-    label: "vein",
-    blocked: () => memory().blocked,
-    depletedFor: RESPAWN_DELAY,
-    unreachableFor: UNREACHABLE_DELAY,
-    depleted: "is out of ore"
-  });
-  var markDepleted = store2.markDepleted;
-  var markUnreachable = store2.markUnreachable;
-  var markUnusable = store2.markUnusable;
-  var markAreaDepleted = (range2) => {
-    const until = now() + RESPAWN_DELAY;
-    let parked = 0;
-    for (let dx = -range2; dx <= range2; dx++) {
-      for (let dy = -range2; dy <= range2; dy++) {
-        for (const tile of client.getTerrainList(player.x + dx, player.y + dy) ?? []) {
-          if (!isOre(tile.graphic, tile.isLand)) {
-            continue;
-          }
-          store2.block(
-            { x: tile.x, y: tile.y, z: tile.z, graphic: tile.graphic, isLand: tile.isLand },
-            until
-          );
-          parked++;
-        }
-      }
-    }
-    log(
-      `vein: nothing harvestable at ${player.x},${player.y}, parking ${parked} tile(s) within ${range2} for ${Math.max(1, Math.round(RESPAWN_DELAY / 6e4))}m`
-    );
-    return parked;
-  };
-  var markNotMineable = (tile) => {
-    const { notOre } = memory();
-    const key = artKey(tile.graphic, tile.isLand);
-    if (notOre.has(key)) {
-      return;
-    }
-    notOre.add(key);
-    log(`vein: ${hex(tile.graphic)} cannot be mined, skipping that art from here on`);
-  };
-  var scan = /* @__PURE__ */ createScan({
-    label: "scanForVein",
-    radius: SCAN_RADIUS,
-    blocked: () => memory().blocked,
-    matches: isOre,
-    // Land is not skipped the way lumberjacking skips it - a mountainside *is* land, and it is the
-    // ordinary case rather than the exception
-    describe: (vein) => `'${vein.isLand ? "land" : client.getStatic(vein.graphic)?.name ?? "?"}'`
-  });
-  var scanForVein = () => {
-    const { found, readyAt } = scan();
-    return { vein: found, respawnsAt: readyAt };
-  };
-
-  // src/mining/survey.ts
-  var surveyTerrain = (radius) => {
-    const seen = /* @__PURE__ */ new Map();
-    for (let dx = -radius; dx <= radius; dx++) {
-      for (let dy = -radius; dy <= radius; dy++) {
-        for (const tile of client.getTerrainList(player.x + dx, player.y + dy) ?? []) {
-          const key = `${tile.graphic}/${tile.isLand}`;
-          const already = seen.get(key);
-          if (already) {
-            already.tiles++;
-            continue;
-          }
-          seen.set(key, {
-            graphic: tile.graphic,
-            isLand: tile.isLand,
-            flags: tile.flags,
-            tiles: 1,
-            name: tile.isLand ? "" : client.getStatic(tile.graphic)?.name ?? "?",
-            matches: isOre(tile.graphic, tile.isLand)
-          });
-        }
-      }
-    }
-    return [...seen.values()].sort((a, b) => b.tiles - a.tiles);
-  };
-  var describeArt = (art) => {
-    const kind = art.isLand ? "land" : `static '${art.name}'`;
-    const mark = art.matches ? "MATCHES" : "-";
-    return `${art.graphic} (0x${art.graphic.toString(16)}) ${kind}, flags 0x${art.flags.toString(16)}, ${art.tiles} tiles, ${mark}`;
-  };
-  var reportTerrain = (radius, limit = Infinity) => {
-    const found = surveyTerrain(radius);
-    log(`survey: ${found.length} distinct arts within ${radius} tiles of ${player.x},${player.y}`);
-    for (const art of found.slice(0, limit)) {
-      log(`survey: ${describeArt(art)}`);
-    }
-    if (found.length > limit) {
-      log(`survey: ${found.length - limit} rarer arts not shown, run dist/mine-probe.js for all`);
-    }
-    return found;
-  };
-
-  // src/mining/index.ts
+  // src/mining/here.ts
   rememberPickaxe(player.equippedItems.oneHanded);
-  var idleUntil = createIdleWait({
-    prefix: "mining",
-    waitingFor: "everything in reach is worked out",
-    pollMs: IDLE_POLL,
-    logEveryMs: IDLE_LOG_EVERY,
-    stopReason,
-    onDone: resetBeat
-  });
   var tooHeavy = () => overweight();
-  var groupAndSmelt = () => {
-    groupOres();
-    smeltAll();
-  };
-  log(`mining: ${oreTotal()} ore in the pack to start, at ${player.x},${player.y}`);
+  var WORKED_OUT = "the spot is worked out";
+  log(`mine-here: ${oreTotal()} ore in the pack to start, at ${player.x},${player.y}`);
   var startingHand = player.equippedItems.oneHanded;
   log(
-    `mining: mounted ${player.equippedItems.mount ? "yes" : "no"}, hand ${startingHand ? `0x${startingHand.graphic.toString(16)} '${startingHand.name ?? ""}'` : "empty"}, weight ${player.weight}/${player.weightMax}`
+    `mine-here: mounted ${player.equippedItems.mount ? "yes" : "no"}, hand ${startingHand ? `0x${startingHand.graphic.toString(16)} '${startingHand.name ?? ""}'` : "empty"}, weight ${player.weight}/${player.weightMax}`
   );
   var mined = 0;
   var unknown = 0;
   var stop;
   var reported2 = 0;
   var throttled = 0;
-  var barren = 0;
-  var walkingTo;
-  var steps = 0;
   var stall = createStallWatch({
-    prefix: "mining",
+    prefix: "mine-here",
     without: "cycles without a swing landing",
     warnAt: STALL_WARN,
     stopAt: STALL_STOP,
@@ -1191,7 +870,7 @@
     if (tooHeavy()) {
       const oreBefore2 = oreTotal();
       groupOres();
-      smeltAll();
+      smeltHere();
       if (oreTotal() < oreBefore2) {
         endCycle("smelting", cycle);
         sleep(STEP_DELAY);
@@ -1202,34 +881,9 @@
         sleep(STEP_DELAY);
         continue;
       }
-      stop = `overweight (${player.weight}/${player.weightMax}) with ${oreTotal()} ore left, and smelting freed nothing`;
+      stop = `overweight (${player.weight}/${player.weightMax}) with ${oreTotal()} ore left, and smelting freed nothing - the beetle has to be standing next to you`;
       break;
     }
-    const { vein, respawnsAt } = scanForVein();
-    if (!vein) {
-      if (respawnsAt === void 0) {
-        log("mining: nothing matched, here is what is actually on the ground");
-        reportTerrain(SCAN_RADIUS, SURVEY_ARTS);
-        stop = "no ore in range";
-        break;
-      }
-      idleUntil(respawnsAt);
-      continue;
-    }
-    if (vein.distance > MINE_RANGE) {
-      const key = `${vein.x},${vein.y}`;
-      if (key !== walkingTo) {
-        walkingTo = key;
-        steps = 0;
-      }
-      if (!stepToward(vein) || ++steps > MAX_STEPS) {
-        markUnreachable(vein);
-        walkingTo = void 0;
-      }
-      endCycle("walking", cycle);
-      continue;
-    }
-    walkingTo = void 0;
     const oreBefore = oreTotal();
     const outcome = digOnce(pickaxeSerial());
     switch (outcome) {
@@ -1237,103 +891,83 @@
         mined++;
         unknown = 0;
         throttled = 0;
-        barren = 0;
         stall.progressed();
         waitForOre(oreBefore);
         groupOres();
         break;
-      // The vein is worked out, not dead: markDepleted times it out and the scan picks it up again
-      // in RESPAWN_DELAY. This is also the moment the ore it gave goes to the beetle - see
-      // groupAndSmelt.
+      // The two ways the shard says there is nothing left, and this script does not distinguish them.
+      // In dist/mining.js they differ by scope - one parks a tile, the other parks everything within
+      // reach - and the scope is what decides where to walk next. There is no next here and no tile
+      // being booked, so both mean the same thing: the spot is worked out and the run is over.
+      //
+      // Smelted first, and this is the moment the whole run has been carrying ore towards: the swings
+      // are finished, the character is standing exactly where it started, and the beetle that has been
+      // following it is either in range now or was never going to be.
       case "empty":
-        markDepleted(vein);
-        unknown = 0;
-        groupAndSmelt();
-        break;
-      // The shard answering about where you stand rather than about a tile, which is what a swing
-      // that names no tile mostly gets. Everything in reach goes on the respawn cooldown together,
-      // so the next scan has to look further out and the loop walks off. Parking only the vein it
-      // happened to pick would leave the character standing on the spot the shard just wrote off,
-      // swinging for the same sentence until the run ended - which is exactly how it did end before
-      // this had a bucket of its own.
       case "nothingNearby":
-        markAreaDepleted(MINE_RANGE);
-        unknown = 0;
-        if (++barren === NOTHING_NEARBY_HINT) {
-          log(
-            `mining: ${NOTHING_NEARBY_HINT} spots in a row had nothing to harvest - ORE_TILE_GRAPHICS is probably matching ground that carries no ore`
-          );
-          reportTerrain(MINE_RANGE, SURVEY_ARTS);
-        }
-        groupAndSmelt();
+        groupOres();
+        smeltHere();
+        stop = WORKED_OUT;
         break;
-      // The whole art is scenery, not just this tile - a wrong band in ORE_TILE_GRAPHICS is a whole
-      // stretch of mountain - so ban the graphic and stop walking to its copies one at a time
+      // "You can't mine that" about a swing that named no tile is the shard saying this spot is not
+      // mineable at all. dist/mining.js bans the art and walks to a different one; there is nothing to
+      // ban here and nowhere to walk, so it is an ending.
       case "notOre":
-        markNotMineable(vein);
-        markUnusable(vein, "cannot be mined");
-        unknown = 0;
+        stop = "nothing here can be mined";
         break;
-      // Already inside MINE_RANGE, so this is the shard disagreeing about the range rather than a
-      // walk that fell short. Treat the tile as unreachable instead of swinging at it again.
+      // Range and line of sight, for a swing aimed at where the character is standing. Neither can be
+      // answered by moving, because moving is the one thing this script does not do - so they are
+      // ended rather than retried, and named separately because they mean different things about the
+      // spot: one is a shard that wanted a tile after all, the other is something in the way.
       case "tooFar":
-        markUnusable(vein, `is out of reach at ${vein.distance} tiles`);
-        unknown = 0;
+        stop = "the shard says the ore is out of reach from where you are standing";
         break;
-      // Line of sight, so walking closer would not help and neither would waiting - something is
-      // simply in the way
       case "notSeen":
-        markUnusable(vein, "is not in line of sight");
-        unknown = 0;
+        stop = "the shard cannot see the ore from where you are standing";
         break;
       // The ore this swing produced was destroyed rather than dropped, so swinging again would only
-      // destroy more. The vein is untouched - it is the pack that has to give. Consolidating is the
-      // answer rather than smelting, because a full pack is a container at its item cap: forty piles
-      // of one become one pile of forty, and thirty-nine slots come back. If the weight is the real
-      // problem, the next cycle's tooHeavy() branch smelts; if it is not, this is the cheaper fix.
+      // destroy more. Consolidating is the answer rather than smelting, because a full pack is a
+      // container at its item cap: forty piles of one become one pile of forty, and thirty-nine slots
+      // come back. If weight is the real problem, the next cycle's tooHeavy() branch smelts.
       case "packFull":
-        log("mining: pack is full, consolidating before the next swing");
+        log("mine-here: pack is full, consolidating before the next swing");
         groupOres();
         unknown = 0;
         break;
       case "wornOut":
-        log("mining: pickaxe worn out, swapping");
+        log("mine-here: pickaxe worn out, swapping");
         unknown = 0;
         break;
-      // Nothing was learned about the vein and nothing went wrong: the shard was busy. The counters
-      // are reset rather than merely left alone, because whatever they had accumulated was measured
-      // against a server that was not answering.
-      // Sitting out a save is the script working, not the script stuck, so the stall watchdog is
-      // reset along with the rest: a shard that saves often would otherwise walk a run to STALL_STOP
-      // a save at a time, and the respawn wait is already excused on exactly this reasoning.
+      // Nothing was learned and nothing went wrong: the shard was busy writing its world file. The
+      // counters are reset rather than merely left alone, because whatever they had accumulated was
+      // measured against a server that was not answering - and the stall watchdog with them, since a
+      // shard that saves often would otherwise walk a run to STALL_STOP a save at a time.
       case "saving":
         waitOutSave();
         unknown = 0;
         throttled = 0;
         stall.progressed();
         break;
-      // A fixed retry shorter than the harvest delay re-arms the very timer it is waiting on, so
-      // back off further each time instead, and give up rather than spin
+      // A fixed retry shorter than the harvest delay re-arms the very timer it is waiting on, so back
+      // off further each time instead, and give up rather than spin
       case "throttled":
         throttled++;
         unknown = 0;
-        log(`mining: shard says wait (${throttled}/${MAX_THROTTLED}), backing off`);
+        log(`mine-here: shard says wait (${throttled}/${MAX_THROTTLED}), backing off`);
         sleep(backoffFor(throttled, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX));
         if (throttled >= MAX_THROTTLED) {
           stop = "the shard kept refusing the swing";
         }
         break;
       // A cursor that never opened, with a pickaxe demonstrably in hand, is the shard declining to
-      // start the swing rather than an empty hand - which on a live run turned out to be a third of
-      // them. Backed off like a throttle, but still counted: five in a row with nothing else
-      // happening is a stuck run whatever the cause.
+      // start the swing rather than an empty hand. Backed off like a throttle, but still counted.
       case "noCursor":
         unknown++;
         sleep(THROTTLE_BACKOFF);
         break;
       default:
         unknown++;
-        log(`mining: unreadable outcome (${unknown}/${MAX_UNKNOWN}), check OUTCOME_TEXT`);
+        log(`mine-here: unreadable outcome (${unknown}/${MAX_UNKNOWN}), check OUTCOME_TEXT`);
     }
     if (unknown >= MAX_UNKNOWN) {
       stop = `${MAX_UNKNOWN} unreadable outcomes in a row`;
@@ -1341,17 +975,20 @@
     }
     if (mined >= reported2 + LOG_EVERY) {
       reported2 = mined;
-      log(`mining: ${mined} swings, ${oreTotal()} ore, ${player.weight}/${player.weightMax}`);
+      log(`mine-here: ${mined} swings, ${oreTotal()} ore, ${player.weight}/${player.weightMax}`);
     }
     endCycle(outcome ?? "unknown", cycle);
     sleep(STEP_DELAY);
   }
   groupOres();
   if (tooHeavy()) {
-    smeltAll();
+    smeltHere();
+  }
+  if (stop === WORKED_OUT && mined === 0) {
+    log("mine-here: no swing ever landed - the character is probably not standing next to a vein");
   }
   var reason = stop ?? `hit the ${MAX_CYCLES} cycle backstop`;
-  log(`mining: ${mined} swings, ${oreTotal()} ore still in the pack`);
-  log(`mining: stopping - ${reason}`);
-  exit(`mining: ${reason}`);
+  log(`mine-here: ${mined} swings, ${oreTotal()} ore still in the pack`);
+  log(`mine-here: stopping - ${reason}`);
+  exit(`mine-here: ${reason}`);
 })();

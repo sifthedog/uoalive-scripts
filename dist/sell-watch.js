@@ -1,27 +1,5 @@
 "use strict";
 (() => {
-  // src/lib/die.ts
-  var die = (reason) => {
-    exit(reason);
-    throw new Error(reason);
-  };
-
-  // src/lib/timings.ts
-  var UNREACHABLE_DELAY = 5 * 60 * 1e3;
-
-  // src/selling/config.ts
-  var KEEP = 0;
-  var MAX_PASSES = 10;
-  var GUMP_TIMEOUT = 5e3;
-  var SELL_DELAY = 1500;
-  var SALE_TIMEOUT = 3e3;
-  var SALE_POLL = 200;
-  var OPL_TIMEOUT = 2e3;
-  var HOIST_FROM_BAGS = false;
-  var MOVE_DELAY = 600;
-  var OPEN_DELAY = 800;
-  var MAX_HOIST_PASSES = 5;
-
   // src/lib/entity.ts
   var hex = (value) => `0x${(value >>> 0).toString(16)}`;
 
@@ -88,6 +66,86 @@
     }
     return found;
   };
+
+  // src/lib/die.ts
+  var die = (reason2) => {
+    exit(reason2);
+    throw new Error(reason2);
+  };
+
+  // src/lib/guards.ts
+  var dead = () => player.isDead ? "you are dead" : void 0;
+  var firstReason = (...guards) => {
+    for (const guard of guards) {
+      const reason2 = guard();
+      if (reason2) {
+        return reason2;
+      }
+    }
+    return void 0;
+  };
+
+  // src/lib/clock.ts
+  var now = () => Date.now();
+
+  // src/lib/heartbeat.ts
+  var createHeartbeat = (options) => {
+    let lastBeat;
+    return {
+      beat: (phase, cycle, tally) => {
+        const time = now();
+        if (lastBeat === void 0) {
+          lastBeat = time;
+          return;
+        }
+        if (time - lastBeat < options.everyMs) {
+          return;
+        }
+        lastBeat = time;
+        log(
+          `${options.prefix}: still here - ${phase}, cycle ${cycle}, at ${player.x},${player.y}, ${player.weight}/${player.weightMax}, ${tally} ${options.noun}`
+        );
+      },
+      // For the paths that report on their own cadence, so the next beat is a full interval after they
+      // stop rather than immediately on top of their last line
+      resetBeat: () => {
+        lastBeat = now();
+      }
+    };
+  };
+
+  // src/lib/loop.ts
+  var backoffFor = (count, step, cap) => Math.min(step * count, cap);
+
+  // src/lib/pack.ts
+  var totalMatching = (matches, contents = packContents()) => (contents ?? []).reduce(
+    (total, item) => total + (matches(item) ? item.amount ?? 1 : 0) + totalMatching(matches, contentsOf(item) ?? []),
+    0
+  );
+
+  // src/lib/timings.ts
+  var UNREACHABLE_DELAY = 5 * 60 * 1e3;
+  var MAX_CYCLES = 5e3;
+  var HEARTBEAT_EVERY = 3e4;
+
+  // src/selling/config.ts
+  var KEEP = 0;
+  var MAX_PASSES = 10;
+  var GUMP_TIMEOUT = 5e3;
+  var SELL_DELAY = 1500;
+  var SALE_TIMEOUT = 3e3;
+  var SALE_POLL = 200;
+  var OPL_TIMEOUT = 2e3;
+  var HOIST_FROM_BAGS = false;
+  var MOVE_DELAY = 600;
+  var OPEN_DELAY = 800;
+  var MAX_HOIST_PASSES = 5;
+  var SELL_AT = 30;
+  var SELL_AT_SLOTS = 110;
+  var WATCH_POLL = 5e3;
+  var WATCH_BACKOFF = 1e4;
+  var WATCH_BACKOFF_MAX = 12e4;
+  var MAX_QUIET_SALES = 5;
 
   // src/selling/hoist.ts
   var names = /* @__PURE__ */ new Map();
@@ -296,12 +354,70 @@
     return sold2;
   };
 
-  // src/selling/index.ts
-  var picked = pickItem() ?? die("sell: nothing to sell");
-  log(`sell: selling '${picked.name}'`);
-  if (HOIST_FROM_BAGS) {
-    hoistToPack(picked.name);
+  // src/selling/trigger.ts
+  var reasonToSell = (held2, slots2) => {
+    if (held2 >= SELL_AT) {
+      return `${held2} held`;
+    }
+    if (slots2 >= SELL_AT_SLOTS && held2 > 0) {
+      return `${slots2} pack slots used`;
+    }
+    return void 0;
+  };
+
+  // src/selling/watch.ts
+  var picked = pickItem() ?? die("sell-watch: nothing to watch");
+  var isWatched = (item) => item.graphic === picked.graphic;
+  var held = () => totalMatching(isWatched);
+  var slots = () => (packContents() ?? []).length;
+  var heartbeat = createHeartbeat({
+    prefix: "sell-watch",
+    noun: "sold",
+    everyMs: HEARTBEAT_EVERY
+  });
+  var quiet = 0;
+  var sold = 0;
+  var stop;
+  log(
+    `sell-watch: watching for ${SELL_AT} x '${picked.name}' ${hex(picked.graphic)} (or ${SELL_AT_SLOTS} pack slots), ${held()} held`
+  );
+  for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
+    stop = firstReason(dead);
+    if (stop) {
+      break;
+    }
+    const inPack = held();
+    const due = reasonToSell(inPack, slots());
+    if (!due) {
+      heartbeat.beat("watching", cycle, sold);
+      sleep(WATCH_POLL);
+      continue;
+    }
+    log(`sell-watch: ${due} - selling '${picked.name}'`);
+    if (HOIST_FROM_BAGS) {
+      hoistToPack(picked.name);
+    }
+    const took = sellAll(picked.name);
+    sold += took;
+    if (took > 0) {
+      quiet = 0;
+      heartbeat.resetBeat();
+      log(`sell-watch: sold ${took}, ${held()} left, ${sold} sold in total`);
+      sleep(WATCH_POLL);
+      continue;
+    }
+    quiet++;
+    if (quiet >= MAX_QUIET_SALES) {
+      stop = `${MAX_QUIET_SALES} sales in a row took nothing, with ${inPack} x '${picked.name}' still in the pack`;
+      break;
+    }
+    const backoff = backoffFor(quiet, WATCH_BACKOFF, WATCH_BACKOFF_MAX);
+    log(`sell-watch: nothing sold (${quiet}/${MAX_QUIET_SALES}), waiting ${backoff / 1e3}s`);
+    heartbeat.resetBeat();
+    sleep(backoff);
   }
-  var sold = sellAll(picked.name);
-  log(`sell: ${sold} x '${picked.name}' sold`);
+  var reason = stop ?? `hit the ${MAX_CYCLES} cycle backstop`;
+  log(`sell-watch: ${sold} x '${picked.name}' sold, ${held()} still in the pack`);
+  log(`sell-watch: stopping - ${reason}`);
+  exit(`sell-watch: ${reason}`);
 })();

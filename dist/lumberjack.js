@@ -54,6 +54,30 @@
   // src/lib/weight.ts
   var overweight = (buffer = 0) => player.weightMax > 0 && player.weight > player.weightMax - buffer;
 
+  // src/lib/entity.ts
+  var hex = (value) => `0x${(value >>> 0).toString(16)}`;
+  var distanceTo = (spot) => Math.max(Math.abs(spot.x - player.x), Math.abs(spot.y - player.y));
+  var isMobile = (entity) => entity._tag === "Mobile";
+  var nameOf = (entity) => entity.name ?? hex(entity.serial);
+  var approach = (serial, options) => {
+    for (let taken = 0; taken < options.maxSteps; taken++) {
+      const found = client.findObject(serial);
+      if (!found || !isMobile(found)) {
+        log(`${options.label}: lost track of ${hex(serial)}`);
+        return void 0;
+      }
+      if (distanceTo(found) <= options.range) {
+        return found;
+      }
+      if (!options.step(found)) {
+        log(`${options.label}: cannot reach ${nameOf(found)}`);
+        return void 0;
+      }
+    }
+    log(`${options.label}: still not next to ${hex(serial)} after ${options.maxSteps} steps`);
+    return void 0;
+  };
+
   // src/lib/containers.ts
   var CONTAINER_GRAPHICS = /* @__PURE__ */ new Set([
     3701,
@@ -79,7 +103,31 @@
     3649
     // gold chest
   ]);
-  var isContainer = (item) => Array.isArray(item.contents) || CONTAINER_GRAPHICS.has(item.graphic);
+  var unreadable = /* @__PURE__ */ new Set();
+  var contentsOf = (item) => {
+    try {
+      return item?.contents;
+    } catch (error) {
+      const serial = item?.serial ?? 0;
+      if (!unreadable.has(serial)) {
+        unreadable.add(serial);
+        log(`contents: ${hex(serial)} would not answer - ${String(error)}`);
+      }
+      return void 0;
+    }
+  };
+  var packContents = () => {
+    try {
+      return contentsOf(player.backpack);
+    } catch (error) {
+      if (!unreadable.has(0)) {
+        unreadable.add(0);
+        log(`contents: the backpack would not answer - ${String(error)}`);
+      }
+      return void 0;
+    }
+  };
+  var isContainer = (item) => (contentsOf(item)?.length ?? 0) > 0 || CONTAINER_GRAPHICS.has(item.graphic);
   var openContainers = (preferredSerial) => {
     if (preferredSerial) {
       player.use(preferredSerial);
@@ -87,7 +135,7 @@
       return true;
     }
     let opened = false;
-    for (const item of player.backpack?.contents ?? []) {
+    for (const item of packContents() ?? []) {
       if (!isContainer(item)) {
         continue;
       }
@@ -102,8 +150,9 @@
       if (matches(item)) {
         return item;
       }
-      if (item.contents && item.contents.length > 0) {
-        const foundInSub = findIn(item.contents, matches);
+      const sub = contentsOf(item);
+      if (sub && sub.length > 0) {
+        const foundInSub = findIn(sub, matches);
         if (foundInSub) return foundInSub;
       }
     }
@@ -115,35 +164,12 @@
       if (matches(item)) {
         found.push(item);
       }
-      if (item.contents && item.contents.length > 0) {
-        found.push(...collectIn(item.contents, matches));
+      const sub = contentsOf(item);
+      if (sub && sub.length > 0) {
+        found.push(...collectIn(sub, matches));
       }
     }
     return found;
-  };
-
-  // src/lib/entity.ts
-  var hex = (value) => `0x${(value >>> 0).toString(16)}`;
-  var distanceTo = (spot) => Math.max(Math.abs(spot.x - player.x), Math.abs(spot.y - player.y));
-  var isMobile = (entity) => entity._tag === "Mobile";
-  var nameOf = (entity) => entity.name ?? hex(entity.serial);
-  var approach = (serial, options) => {
-    for (let taken = 0; taken < options.maxSteps; taken++) {
-      const found = client.findObject(serial);
-      if (!found || !isMobile(found)) {
-        log(`${options.label}: lost track of ${hex(serial)}`);
-        return void 0;
-      }
-      if (distanceTo(found) <= options.range) {
-        return found;
-      }
-      if (!options.step(found)) {
-        log(`${options.label}: cannot reach ${nameOf(found)}`);
-        return void 0;
-      }
-    }
-    log(`${options.label}: still not next to ${hex(serial)} after ${options.maxSteps} steps`);
-    return void 0;
   };
 
   // src/lib/retry.ts
@@ -163,9 +189,10 @@
   };
 
   // src/lib/tool.ts
-  var describeContents = (contents) => (contents ?? []).map(
-    (item) => item.contents?.length ? `${hex(item.graphic)}[${describeContents(item.contents)}]` : hex(item.graphic)
-  ).join(", ");
+  var describeContents = (contents) => (contents ?? []).map((item) => {
+    const sub = contentsOf(item);
+    return sub?.length ? `${hex(item.graphic)}[${describeContents(sub)}]` : hex(item.graphic);
+  }).join(", ");
   var createTool = (options) => {
     let learned;
     let spareBagSerial = options.spareBagSerial;
@@ -181,14 +208,14 @@
       if (reportedEmpty) {
         return;
       }
-      log(`${options.label}: none found. Pack holds: ${describeContents(player.backpack?.contents)}`);
+      log(`${options.label}: none found. Pack holds: ${describeContents(packContents())}`);
       log(`${options.label}: if the spares are in a bag inside a bag, pin it as SPARE_BAG_SERIAL`);
       reportedEmpty = true;
     };
     const find = () => {
-      let found = findIn(player.backpack?.contents, is);
+      let found = findIn(packContents(), is);
       if (!found && openContainers(spareBagSerial)) {
-        found = findIn(player.backpack?.contents, is);
+        found = findIn(packContents(), is);
       }
       if (!found) {
         reportEmptyPack();
@@ -329,13 +356,13 @@
   var equipAxe = axe.equip;
 
   // src/lib/pack.ts
-  var countsByGraphic = (contents = player.backpack?.contents) => {
+  var countsByGraphic = (contents = packContents()) => {
     const counts = /* @__PURE__ */ new Map();
     const walk = (items) => {
       for (const item of items ?? []) {
         const key = `0x${item.graphic.toString(16)}/${item.hue ?? 0}`;
         counts.set(key, (counts.get(key) ?? 0) + (item.amount ?? 1));
-        walk(item.contents);
+        walk(contentsOf(item));
       }
     };
     walk(contents);
@@ -356,8 +383,8 @@
     }
     return changes;
   };
-  var totalMatching = (matches, contents = player.backpack?.contents) => (contents ?? []).reduce(
-    (total, item) => total + (matches(item) ? item.amount ?? 1 : 0) + totalMatching(matches, item.contents ?? []),
+  var totalMatching = (matches, contents = packContents()) => (contents ?? []).reduce(
+    (total, item) => total + (matches(item) ? item.amount ?? 1 : 0) + totalMatching(matches, contentsOf(item) ?? []),
     0
   );
 
@@ -409,6 +436,10 @@
         learnOutput(changes);
         return;
       }
+      if (options.throttledText?.some((text) => journal.containsText(text))) {
+        log(`${options.label}: the shard says wait, not counting it against hue ${hue}`);
+        return;
+      }
       if (options.unskilledText.some((text) => journal.containsText(text))) {
         writtenOff.add(hue);
         log(`${options.label}: not skilled enough for hue ${hue}, ${options.leftAs}`);
@@ -431,6 +462,11 @@
               log(`${options.label}: ${skipped}`);
             }
             return true;
+          }
+          const blocked = options.notNow?.();
+          if (blocked) {
+            log(`${options.label}: ${blocked}, leaving it for now`);
+            return false;
           }
           convertOne(stack);
           sleep(options.delayMs);
@@ -507,7 +543,7 @@
   var dead = () => player.isDead ? "you are dead" : void 0;
   var heavy = (buffer) => () => overweight(buffer) ? `overweight (${player.weight}/${player.weightMax})` : void 0;
   var packFull = (limit) => () => {
-    const top = (player.backpack?.contents ?? []).length;
+    const top = (packContents() ?? []).length;
     return top >= limit ? `pack is full (${top} items at the top level)` : void 0;
   };
   var firstReason = (...guards) => {

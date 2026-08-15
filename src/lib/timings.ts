@@ -82,6 +82,20 @@ export const SAVE_DONE_TEXT = ['World save complete', 'Save complete', 'World sa
 // would otherwise read a frozen server as a resource that cannot be worked
 export const SAVING_TEXT = ['The world is saving', 'Saving world', 'World save started'];
 
+// The action throttle refusing a conversion, which is the opposite of UNSKILLED_TEXT below: nothing
+// at all has been learned about the material, and the only thing to do is come back. Named here
+// rather than left to mining's OUTCOME_TEXT because the conversions have no outcomes to read - to
+// them a refusal is silence, and silence is what gets a hue written off.
+//
+// Full wordings first, with the bare prefix last as a fallback: 'You must wait N seconds' is said by
+// systems that have nothing to do with harvesting, and reading one of those as a refusal here is
+// harmless (a pass is skipped) where missing a real one is not (a hue is written off).
+export const THROTTLED_TEXT = [
+  'You must wait to perform another action',
+  'You must wait a moment',
+  'You must wait',
+];
+
 // The shard saying outright that you cannot work this material, which is the one failure no amount
 // of retrying fixes. Guesses, like OUTCOME_TEXT; a folder with a wording of its own prepends it.
 export const UNSKILLED_TEXT = [

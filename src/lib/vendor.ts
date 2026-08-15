@@ -1,3 +1,5 @@
+import { collectIn, packContents } from './containers.js';
+
 // The client parses a vendor gump for you, so selling never touches gump buttons. What it does not
 // do is type the result: `VendorItem` is stubbed as `any` in types/classicuo.d.ts because its real
 // shape is not shipped, so this is the shape the scripts rely on.
@@ -47,11 +49,16 @@ export const withKeepBack = (matches: VendorEntry[], keep: number): SellRequestI
 export const totalOf = (entries: VendorEntry[]): number =>
   entries.reduce((sum, entry) => sum + (entry.amount ?? 1), 0);
 
-// Only the top level of the pack, because that is all the vendor was ever shown
-const looseTotal = (serials: Set<number>): number =>
-  (player.backpack?.contents ?? [])
-    .filter((item) => serials.has(item.serial))
-    .reduce((sum, item) => sum + (item.amount ?? 1), 0);
+// The whole pack, at any depth. This used to read the top level only, on the assumption that a
+// vendor is shown nothing below it - and a vendor that sells out of a bag turned that into a lie:
+// an item offered from inside one was never at the top level, so it read as gone the instant it was
+// offered and every refusal was reported as a sale. Counting where the goods actually are cannot
+// make that mistake, whichever way the shard behaves.
+const packTotal = (serials: Set<number>): number =>
+  collectIn(packContents(), (item) => serials.has(item.serial)).reduce(
+    (sum, item) => sum + (item.amount ?? 1),
+    0,
+  );
 
 // How many of the offered units actually left the pack, which is the only proof there is that a
 // vendor took them: `sendSellRequest` answers whether the packet went out, not whether the sale
@@ -73,7 +80,7 @@ export const waitForSale = (
 
   for (let waited = 0; waited < timeoutMs && remaining > 0; waited += pollMs) {
     sleep(pollMs);
-    remaining = looseTotal(serials);
+    remaining = packTotal(serials);
   }
 
   return total - remaining;

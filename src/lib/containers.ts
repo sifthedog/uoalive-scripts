@@ -1,3 +1,5 @@
+import { hex } from './entity.js';
+
 // Add your own container graphics here if a bag is ever missed
 export const CONTAINER_GRAPHICS = new Set([
   0x0e75, // backpack
@@ -15,10 +17,62 @@ export const CONTAINER_GRAPHICS = new Set([
 
 export type ItemPredicate = (item: Item) => boolean;
 
-// A known contents array proves it is a container; otherwise fall back to the graphic list.
+// Serials already complained about, so a bag that answers badly says so once instead of once per
+// scan - and the pack is scanned after every swing
+const unreadable = new Set<number>();
+
+// Reading `contents` is a question put to the client, and the client can fail the question rather
+// than answer it. A live run died on
+//
+//   Exception executing 'itemGetContents': Unexpected end of JSON input
+//
+// thrown out of a pack count in the middle of a smelt, which is the client holding no data for a
+// sub-bag and saying so with a truncated answer instead of an empty one. Every read goes through
+// here and a throw is treated as the `undefined` the same container reports before it has been
+// opened: a case every caller already handles, rather than a new one. The cost of being wrong is a
+// count that is low by whatever was in that bag, which is what these counts already promise; the
+// cost of not catching it is the whole run, because nothing above this has a try in it.
+export const contentsOf = (item: Item | undefined): Item[] | undefined => {
+  try {
+    return item?.contents;
+  } catch (error) {
+    const serial = item?.serial ?? 0;
+
+    if (!unreadable.has(serial)) {
+      unreadable.add(serial);
+      log(`contents: ${hex(serial)} would not answer - ${String(error)}`);
+    }
+
+    return undefined;
+  }
+};
+
+// The same read one level up. `player.backpack` is a getter too, so it is inside the try as well.
+export const packContents = (): Item[] | undefined => {
+  try {
+    return contentsOf(player.backpack);
+  } catch (error) {
+    if (!unreadable.has(0)) {
+      unreadable.add(0);
+      log(`contents: the backpack would not answer - ${String(error)}`);
+    }
+
+    return undefined;
+  }
+};
+
+// A *non-empty* contents array proves it is a container; otherwise fall back to the graphic list.
 // This matters because player.use() on a non-container *uses* it - potions get drunk.
+//
+// An empty array proves nothing, because this client answers `[]` for plain items rather than the
+// `undefined` the type says. Its own docs for `Item.contents` give it away: the example loops the
+// pack calling `item.contents.length` on everything without a guard, and treats `length > 0` as
+// what makes an item a sub-container. Trusting `Array.isArray` here made every item in the pack a
+// container, and a sell run double-clicked the lot - equipping the weapon it had been asked to
+// sell. The false negative left over costs nothing: an opened, empty container whose graphic is
+// not listed has nothing in it to find.
 export const isContainer = (item: Item): boolean =>
-  Array.isArray(item.contents) || CONTAINER_GRAPHICS.has(item.graphic);
+  (contentsOf(item)?.length ?? 0) > 0 || CONTAINER_GRAPHICS.has(item.graphic);
 
 // Contents stay undefined until a container has been opened, so open them before giving up
 export const openContainers = (preferredSerial?: number): boolean => {
@@ -30,7 +84,7 @@ export const openContainers = (preferredSerial?: number): boolean => {
 
   let opened = false;
 
-  for (const item of player.backpack?.contents ?? []) {
+  for (const item of packContents() ?? []) {
     if (!isContainer(item)) {
       continue;
     }
@@ -50,8 +104,9 @@ export const findIn = (contents: Item[] | undefined, matches: ItemPredicate): It
       return item;
     }
 
-    if (item.contents && item.contents.length > 0) {
-      const foundInSub = findIn(item.contents, matches);
+    const sub = contentsOf(item);
+    if (sub && sub.length > 0) {
+      const foundInSub = findIn(sub, matches);
       if (foundInSub) return foundInSub;
     }
   }
@@ -68,8 +123,9 @@ export const collectIn = (contents: Item[] | undefined, matches: ItemPredicate):
       found.push(item);
     }
 
-    if (item.contents && item.contents.length > 0) {
-      found.push(...collectIn(item.contents, matches));
+    const sub = contentsOf(item);
+    if (sub && sub.length > 0) {
+      found.push(...collectIn(sub, matches));
     }
   }
 

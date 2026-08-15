@@ -1,10 +1,11 @@
-import { findIn, openContainers } from './containers.js';
+import { contentsOf, findIn, openContainers, packContents } from './containers.js';
 import { hex } from './entity.js';
 import { untilLanded } from './retry.js';
 
-// Every script that swings, digs or crafts has to find its tool, know when it has broken, and get a
-// replacement onto the right hand layer. What differs between them is the name, which layer holds
-// it, and whether the tool is equipped at all - the tinker's tools are used out of the pack.
+// Every script that swings or digs has to find its tool, know when it has broken, and get a
+// replacement onto the right hand layer. What differs between them is the name and which layer
+// holds it - an axe is two-handed, a pickaxe one-handed - and whether the tool is equipped at all,
+// since a crafting tool is used out of the pack rather than worn.
 
 // Every graphic the search actually saw, one level down included. Listing only the top level read as
 // an empty pack when the spares were in a bag, which is exactly the case this message exists for -
@@ -12,11 +13,11 @@ import { untilLanded } from './retry.js';
 // reached and the pinned spare bag is the way out.
 const describeContents = (contents: Item[] | undefined): string =>
   (contents ?? [])
-    .map((item) =>
-      item.contents?.length
-        ? `${hex(item.graphic)}[${describeContents(item.contents)}]`
-        : hex(item.graphic),
-    )
+    .map((item) => {
+      const sub = contentsOf(item);
+
+      return sub?.length ? `${hex(item.graphic)}[${describeContents(sub)}]` : hex(item.graphic);
+    })
     .join(', ');
 
 export interface Tool {
@@ -69,16 +70,16 @@ export const createTool = (options: {
       return;
     }
 
-    log(`${options.label}: none found. Pack holds: ${describeContents(player.backpack?.contents)}`);
+    log(`${options.label}: none found. Pack holds: ${describeContents(packContents())}`);
     log(`${options.label}: if the spares are in a bag inside a bag, pin it as SPARE_BAG_SERIAL`);
     reportedEmpty = true;
   };
 
   const find = (): Item | undefined => {
-    let found = findIn(player.backpack?.contents, is);
+    let found = findIn(packContents(), is);
 
     if (!found && openContainers(spareBagSerial)) {
-      found = findIn(player.backpack?.contents, is);
+      found = findIn(packContents(), is);
     }
 
     if (!found) {

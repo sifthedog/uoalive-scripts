@@ -1,5 +1,13 @@
+import { packContents } from '../lib/containers.js';
 import { totalMatching } from '../lib/pack.js';
-import { COMBINE_DELAY, ORE_GRAPHICS, ORE_NAME, TARGET_TIMEOUT } from './config.js';
+import {
+  COMBINE_DELAY,
+  ORE_GRAPHICS,
+  ORE_NAME,
+  ORE_SETTLE_POLL,
+  ORE_SETTLE_TIMEOUT,
+  TARGET_TIMEOUT,
+} from './config.js';
 
 // Named for the item rather than the tile, because vein.ts already owns `isOre` for the ground.
 //
@@ -26,12 +34,33 @@ export const isOrePile = (item: Item): boolean => {
 // Hue-blind on purpose: every ore type counts toward the pack, whatever it smelts into
 export const oreTotal = (contents?: Item[]): number => totalMatching(isOrePile, contents);
 
+// The swing's ore turning up in the pack, which is what makes it worth grouping. Reads the total
+// rather than the number of piles so a shard that does merge the ore on arrival is satisfied
+// immediately instead of waiting out the timeout on every swing.
+//
+// False is not a failure worth acting on: the caller groups anyway, and a pile that arrived late is
+// picked up by the next swing's grouping.
+export const waitForOre = (before: number): boolean => {
+  for (let waited = 0; waited < ORE_SETTLE_TIMEOUT; waited += ORE_SETTLE_POLL) {
+    // Read before the first sleep, unlike convert.ts's waitForChange: that one has just issued a
+    // gesture the shard cannot possibly have answered yet, while this is reading a delivery that has
+    // usually already happened by the time the journal line announcing it is read.
+    if (oreTotal() > before) {
+      return true;
+    }
+
+    sleep(ORE_SETTLE_POLL);
+  }
+
+  return false;
+};
+
 // Top level only, unlike oreTotal: these are the piles the combine and the smelt actually work on,
 // and both act by serial on loose items in the pack.
 export const oresByHue = (): Map<number, Item[]> => {
   const groups = new Map<number, Item[]>();
 
-  for (const item of player.backpack?.contents ?? []) {
+  for (const item of packContents() ?? []) {
     if (!isOrePile(item)) {
       continue;
     }
