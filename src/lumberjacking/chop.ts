@@ -1,6 +1,13 @@
+import { describeItem } from '../lib/entity.js';
 import { outcomeVocabulary } from '../lib/outcomes.js';
 import { totalMatching } from '../lib/pack.js';
-import { CHOP_TIMEOUT, LOG_GRAPHICS, OUTCOME_TEXT, TARGET_TIMEOUT } from './config.js';
+import {
+  CHOP_TIMEOUT,
+  LOG_GRAPHICS,
+  NO_CURSOR_READ,
+  OUTCOME_TEXT,
+  TARGET_TIMEOUT,
+} from './config.js';
 import type { Tree } from './tree.js';
 
 // The outcomes the shard words itself, plus the two the world is read for when it stays silent
@@ -28,6 +35,45 @@ const silentOutcome = (serial: number | undefined, logsBefore: number): ChopOutc
   return 'unknown';
 };
 
+// No cursor opened, which is not the same as nothing having happened. The commonest reason a shard
+// declines to start a swing is that it refused the action outright and said so - "you must wait",
+// "the world is saving", "you have worn out your tool" - and the journal has been clear since
+// immediately before this swing, so whatever is in it now arrived because of it. Read that before
+// falling back on noCursor: throttled and saving both have branches that back off and cost the run
+// nothing, and reaching noCursor instead of them ended a live mining run in fifteen seconds with a
+// pickaxe plainly in hand. The same gap was here, waiting for the first shard to throttle a chop.
+//
+// silentOutcome after it for the same reason the ordinary path ends there - a tool that broke as it
+// swung, or a chop that landed without a word said about it, are both still true here.
+const refusedOutcome = (
+  serial: number | undefined,
+  logsBefore: number,
+  cursorCameLate: boolean,
+): ChopOutcome | undefined => {
+  const matched = journal.waitForTextAny(ALL_OUTCOME_TEXT, undefined, NO_CURSOR_READ);
+  if (matched) {
+    return outcomeFor(matched);
+  }
+
+  const silent = silentOutcome(serial, logsBefore);
+  if (silent !== 'unknown') {
+    return silent;
+  }
+
+  // The old wording guessed at an empty hand and was wrong about it on the mining run that found
+  // this. What is in the hand is one layer read away, and a cursor that turned up just too late is a
+  // different fault from one that never came - TARGET_TIMEOUT rather than the shard - which they
+  // look alike without. Two-handed first, the way rememberAxe reads the layers: an axe is usually
+  // two-handed here, and a hatchet is not.
+  log(
+    `chopOnce: no target cursor - hand ` +
+      `${describeItem(player.equippedItems.twoHanded ?? player.equippedItems.oneHanded)}, ` +
+      `cursor ${cursorCameLate ? 'came late' : 'never opened'}`,
+  );
+
+  return 'noCursor';
+};
+
 // outcomeFor cannot actually miss - waitForTextAny hands back one of the strings it was given - but
 // the caller's switch has always had a default for it, so the maybe is kept rather than asserted away
 export const chopOnce = (tree: Tree, serial: number | undefined): ChopOutcome | undefined => {
@@ -40,9 +86,12 @@ export const chopOnce = (tree: Tree, serial: number | undefined): ChopOutcome | 
   player.useItemInHand();
 
   if (!target.wait(TARGET_TIMEOUT)) {
+    // Read before the cancel closes it, or the answer is always 'no cursor' and says nothing
+    const cursorCameLate = target.open;
+
     target.cancel();
-    log('chopOnce: no target cursor, nothing usable in hand?');
-    return 'noCursor';
+
+    return refusedOutcome(serial, logsBefore, cursorCameLate);
   }
 
   // The graphic is not optional here: target.terrain without one targets the land tile under the

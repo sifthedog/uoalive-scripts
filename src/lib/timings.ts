@@ -60,6 +60,18 @@ export const THROTTLE_BACKOFF_MAX = 8000;
 // which is the point: better to stop and be told than to flail at a tile for an hour.
 export const MAX_UNKNOWN = 5;
 
+// Consecutive swings the shard never opened a cursor for, backed off the same way a refusal is.
+// Generous like MAX_THROTTLED rather than tight like MAX_UNKNOWN, because this is a shard declining
+// to start an action and not a script that cannot read one: a run once ended on five of these in
+// fifteen seconds with a pickaxe plainly in hand. The stall watchdog still bounds a run that only
+// ever gets refused, so this is a ceiling and not the only backstop.
+export const MAX_NO_CURSOR = 20;
+
+// How long to give the journal on the path where no cursor opened. The refusal that explains it has
+// usually arrived already - the journal was cleared immediately before the swing - so this is a
+// short window for the wording that lands a moment late rather than a wait for anything.
+export const NO_CURSOR_READ = 500;
+
 // Steps to spend walking to one tile before writing it off as unreachable
 export const MAX_STEPS = 20;
 

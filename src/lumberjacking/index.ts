@@ -11,6 +11,7 @@ import {
   IDLE_POLL,
   LOG_EVERY,
   MAX_CYCLES,
+  MAX_NO_CURSOR,
   MAX_STEPS,
   MAX_THROTTLED,
   MAX_UNKNOWN,
@@ -59,6 +60,11 @@ let reported = 0;
 // Consecutive refusals to swing. This used to count nothing, which is how a run could stand still
 // and silent for the whole cycle backstop.
 let throttled = 0;
+
+// Consecutive swings the shard never opened a cursor for. Counted apart from `unknown`, which it
+// used to share: a refusal is not an outcome the script failed to read, and spending the
+// unreadable-outcome budget on one ended a live mining run in fifteen seconds with a tool in hand.
+let noCursor = 0;
 
 // Latched off the first time a haul frees nothing, so a missing animal costs one search rather
 // than one per cycle for the rest of the run
@@ -228,17 +234,30 @@ for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
       break;
 
     // A cursor that never opened, with an axe demonstrably in hand, is the shard declining to start
-    // the swing rather than an empty hand - on a live mining run that was a third of them. Backed
-    // off like a throttle, but still counted: five in a row with nothing else happening is a stuck
-    // run whatever the cause.
+    // the swing rather than an empty hand - on a live mining run that was a third of them. chopOnce
+    // has already read the journal and the pack looking for a reason, so what is left here is a
+    // refusal with nothing said about it: treated like one, with the same growing backoff and a
+    // budget of its own, rather than spending the five the unreadable outcomes have.
     case 'noCursor':
-      unknown++;
-      sleep(THROTTLE_BACKOFF);
+      noCursor++;
+      log(`lumberjack: no target cursor (${noCursor}/${MAX_NO_CURSOR}), backing off`);
+      sleep(backoffFor(noCursor, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX));
+
+      if (noCursor >= MAX_NO_CURSOR) {
+        stop = 'the shard never opened a target cursor';
+      }
       break;
 
     default:
       unknown++;
       log(`lumberjack: unreadable outcome (${unknown}/${MAX_UNKNOWN}), check OUTCOME_TEXT`);
+  }
+
+  // Cleared by any outcome that is not another refusal, which is what "in a row" means above. Done
+  // here rather than inside each branch the way `unknown` is: every branch but one clears it, and
+  // one added later would have to remember to.
+  if (outcome !== 'noCursor') {
+    noCursor = 0;
   }
 
   if (unknown >= MAX_UNKNOWN) {

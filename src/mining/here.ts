@@ -9,11 +9,13 @@
 // The one promise this script makes beyond that is that it does not move at all, which is why the
 // smelt is smeltHere rather than smeltAll: a beetle that has wandered off is a pass skipped, not a
 // walk taken.
+import { describeItem } from '../lib/entity.js';
 import { backoffFor, createStallWatch } from '../lib/loop.js';
 import { overweight } from '../lib/weight.js';
 import {
   LOG_EVERY,
   MAX_CYCLES,
+  MAX_NO_CURSOR,
   MAX_THROTTLED,
   MAX_UNKNOWN,
   STALL_STOP,
@@ -46,10 +48,9 @@ log(`mine-here: ${oreTotal()} ore in the pack to start, at ${player.x},${player.
 // with and for the same reason: a run that stops on its first cycle otherwise looks exactly like a
 // script that never started. The position matters more here than it does there - where the
 // character is standing is the whole premise, and it is the one thing this script will not change.
-const startingHand = player.equippedItems.oneHanded;
 log(
   `mine-here: mounted ${player.equippedItems.mount ? 'yes' : 'no'}, ` +
-    `hand ${startingHand ? `0x${startingHand.graphic.toString(16)} '${startingHand.name ?? ''}'` : 'empty'}, ` +
+    `hand ${describeItem(player.equippedItems.oneHanded)}, ` +
     `weight ${player.weight}/${player.weightMax}`,
 );
 
@@ -64,6 +65,11 @@ let reported = 0;
 
 // Consecutive refusals to swing
 let throttled = 0;
+
+// Consecutive swings the shard never opened a cursor for. Counted apart from `unknown`, which it
+// used to share: a refusal is not an outcome the script failed to read, and spending the
+// unreadable-outcome budget on one ended a run in fifteen seconds with a pickaxe plainly in hand.
+let noCursor = 0;
 
 const stall = createStallWatch({
   prefix: 'mine-here',
@@ -232,15 +238,29 @@ for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
       break;
 
     // A cursor that never opened, with a pickaxe demonstrably in hand, is the shard declining to
-    // start the swing rather than an empty hand. Backed off like a throttle, but still counted.
+    // start the swing rather than an empty hand. digOnce has already read the journal and the pack
+    // looking for a reason, so what is left here is a refusal with nothing said about it: treated
+    // like one, with the same growing backoff and a budget of its own.
     case 'noCursor':
-      unknown++;
-      sleep(THROTTLE_BACKOFF);
+      noCursor++;
+      log(`mine-here: no target cursor (${noCursor}/${MAX_NO_CURSOR}), backing off`);
+      sleep(backoffFor(noCursor, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX));
+
+      if (noCursor >= MAX_NO_CURSOR) {
+        stop = 'the shard never opened a target cursor';
+      }
       break;
 
     default:
       unknown++;
       log(`mine-here: unreadable outcome (${unknown}/${MAX_UNKNOWN}), check OUTCOME_TEXT`);
+  }
+
+  // Cleared by any outcome that is not another refusal, which is what "in a row" means above. Done
+  // here rather than inside each branch the way `unknown` is: every branch but one clears it, and
+  // one added later would have to remember to.
+  if (outcome !== 'noCursor') {
+    noCursor = 0;
   }
 
   if (unknown >= MAX_UNKNOWN) {

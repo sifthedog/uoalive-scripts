@@ -1,5 +1,30 @@
 "use strict";
 (() => {
+  // src/lib/entity.ts
+  var hex = (value) => `0x${(value >>> 0).toString(16)}`;
+  var distanceTo = (spot) => Math.max(Math.abs(spot.x - player.x), Math.abs(spot.y - player.y));
+  var isMobile = (entity) => entity._tag === "Mobile";
+  var nameOf = (entity) => entity.name ?? hex(entity.serial);
+  var describeItem = (item) => item ? `${hex(item.graphic)} '${item.name ?? ""}'` : "empty";
+  var approach = (serial, options) => {
+    for (let taken = 0; taken < options.maxSteps; taken++) {
+      const found = client.findObject(serial);
+      if (!found || !isMobile(found)) {
+        log(`${options.label}: lost track of ${hex(serial)}`);
+        return void 0;
+      }
+      if (distanceTo(found) <= options.range) {
+        return found;
+      }
+      if (!options.step(found)) {
+        log(`${options.label}: cannot reach ${nameOf(found)}`);
+        return void 0;
+      }
+    }
+    log(`${options.label}: still not next to ${hex(serial)} after ${options.maxSteps} steps`);
+    return void 0;
+  };
+
   // src/lib/clock.ts
   var now = () => Date.now();
 
@@ -73,6 +98,8 @@
   var THROTTLE_BACKOFF = 1e3;
   var THROTTLE_BACKOFF_MAX = 8e3;
   var MAX_UNKNOWN = 5;
+  var MAX_NO_CURSOR = 20;
+  var NO_CURSOR_READ = 500;
   var MAX_STEPS = 20;
   var PACK_LIMIT = 120;
   var LOG_EVERY = 25;
@@ -179,30 +206,6 @@
     all: Object.values(text).flat(),
     outcomeFor: (matched) => Object.keys(text).find((name) => text[name].includes(matched))
   });
-
-  // src/lib/entity.ts
-  var hex = (value) => `0x${(value >>> 0).toString(16)}`;
-  var distanceTo = (spot) => Math.max(Math.abs(spot.x - player.x), Math.abs(spot.y - player.y));
-  var isMobile = (entity) => entity._tag === "Mobile";
-  var nameOf = (entity) => entity.name ?? hex(entity.serial);
-  var approach = (serial, options) => {
-    for (let taken = 0; taken < options.maxSteps; taken++) {
-      const found = client.findObject(serial);
-      if (!found || !isMobile(found)) {
-        log(`${options.label}: lost track of ${hex(serial)}`);
-        return void 0;
-      }
-      if (distanceTo(found) <= options.range) {
-        return found;
-      }
-      if (!options.step(found)) {
-        log(`${options.label}: cannot reach ${nameOf(found)}`);
-        return void 0;
-      }
-    }
-    log(`${options.label}: still not next to ${hex(serial)} after ${options.maxSteps} steps`);
-    return void 0;
-  };
 
   // src/lib/containers.ts
   var CONTAINER_GRAPHICS = /* @__PURE__ */ new Set([
@@ -414,15 +417,29 @@
     }
     return "unknown";
   };
+  var refusedOutcome = (serial, oreBefore, cursorCameLate) => {
+    const matched = journal.waitForTextAny(ALL_OUTCOME_TEXT, void 0, NO_CURSOR_READ);
+    if (matched) {
+      return outcomeFor(matched);
+    }
+    const silent = silentOutcome(serial, oreBefore);
+    if (silent !== "unknown") {
+      return silent;
+    }
+    log(
+      `digOnce: no target cursor - hand ${describeItem(player.equippedItems.oneHanded)}, cursor ${cursorCameLate ? "came late" : "never opened"}`
+    );
+    return "noCursor";
+  };
   var digOnce = (serial) => {
     target.cancel();
     const oreBefore = oreTotal();
     journal.clear();
     player.useItemInHand();
     if (!target.waitTargetSelf(TARGET_TIMEOUT)) {
+      const cursorCameLate = target.open;
       target.cancel();
-      log("digOnce: no target cursor, nothing usable in hand?");
-      return "noCursor";
+      return refusedOutcome(serial, oreBefore, cursorCameLate);
     }
     const matched = journal.waitForTextAny(ALL_OUTCOME_TEXT, void 0, DIG_TIMEOUT);
     return matched ? outcomeFor(matched) : silentOutcome(serial, oreBefore);
@@ -1152,15 +1169,15 @@
     smeltAll();
   };
   log(`mining: ${oreTotal()} ore in the pack to start, at ${player.x},${player.y}`);
-  var startingHand = player.equippedItems.oneHanded;
   log(
-    `mining: mounted ${player.equippedItems.mount ? "yes" : "no"}, hand ${startingHand ? `0x${startingHand.graphic.toString(16)} '${startingHand.name ?? ""}'` : "empty"}, weight ${player.weight}/${player.weightMax}`
+    `mining: mounted ${player.equippedItems.mount ? "yes" : "no"}, hand ${describeItem(player.equippedItems.oneHanded)}, weight ${player.weight}/${player.weightMax}`
   );
   var mined = 0;
   var unknown = 0;
   var stop;
   var reported2 = 0;
   var throttled = 0;
+  var noCursor = 0;
   var barren = 0;
   var walkingTo;
   var steps = 0;
@@ -1325,15 +1342,23 @@
         break;
       // A cursor that never opened, with a pickaxe demonstrably in hand, is the shard declining to
       // start the swing rather than an empty hand - which on a live run turned out to be a third of
-      // them. Backed off like a throttle, but still counted: five in a row with nothing else
-      // happening is a stuck run whatever the cause.
+      // them. digOnce has already read the journal and the pack looking for a reason, so what is left
+      // here is a refusal with nothing said about it: treated like one, with the same growing backoff
+      // and a budget of its own, rather than spending the five the unreadable outcomes have.
       case "noCursor":
-        unknown++;
-        sleep(THROTTLE_BACKOFF);
+        noCursor++;
+        log(`mining: no target cursor (${noCursor}/${MAX_NO_CURSOR}), backing off`);
+        sleep(backoffFor(noCursor, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX));
+        if (noCursor >= MAX_NO_CURSOR) {
+          stop = "the shard never opened a target cursor";
+        }
         break;
       default:
         unknown++;
         log(`mining: unreadable outcome (${unknown}/${MAX_UNKNOWN}), check OUTCOME_TEXT`);
+    }
+    if (outcome !== "noCursor") {
+      noCursor = 0;
     }
     if (unknown >= MAX_UNKNOWN) {
       stop = `${MAX_UNKNOWN} unreadable outcomes in a row`;

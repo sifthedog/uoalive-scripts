@@ -1,3 +1,4 @@
+import { describeItem } from '../lib/entity.js';
 import { backoffFor, createIdleWait, createStallWatch } from '../lib/loop.js';
 import { overweight } from '../lib/weight.js';
 import {
@@ -5,6 +6,7 @@ import {
   IDLE_POLL,
   LOG_EVERY,
   MAX_CYCLES,
+  MAX_NO_CURSOR,
   MAX_STEPS,
   MAX_THROTTLED,
   MAX_UNKNOWN,
@@ -74,10 +76,9 @@ log(`mining: ${oreTotal()} ore in the pack to start, at ${player.x},${player.y}`
 // The world as the script sees it before it touches anything. A run that stops on its first cycle
 // is the hardest kind to diagnose from the outside - it looks like a script that did not start at
 // all - so the three things that end one that early get said out loud first.
-const startingHand = player.equippedItems.oneHanded;
 log(
   `mining: mounted ${player.equippedItems.mount ? 'yes' : 'no'}, ` +
-    `hand ${startingHand ? `0x${startingHand.graphic.toString(16)} '${startingHand.name ?? ''}'` : 'empty'}, ` +
+    `hand ${describeItem(player.equippedItems.oneHanded)}, ` +
     `weight ${player.weight}/${player.weightMax}`,
 );
 
@@ -92,6 +93,11 @@ let reported = 0;
 
 // Consecutive refusals to swing
 let throttled = 0;
+
+// Consecutive swings the shard never opened a cursor for. Counted apart from `unknown`, which it
+// used to share: a refusal is not an outcome the script failed to read, and spending the
+// unreadable-outcome budget on one ended a run in fifteen seconds with a pickaxe plainly in hand.
+let noCursor = 0;
 
 // Spots in a row the shard said had nothing in them. A few is roaming; a lot in a row is the seeded
 // ORE_TILE_GRAPHICS matching ground that carries no ore, which looks identical from the outside.
@@ -349,16 +355,29 @@ for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
 
     // A cursor that never opened, with a pickaxe demonstrably in hand, is the shard declining to
     // start the swing rather than an empty hand - which on a live run turned out to be a third of
-    // them. Backed off like a throttle, but still counted: five in a row with nothing else
-    // happening is a stuck run whatever the cause.
+    // them. digOnce has already read the journal and the pack looking for a reason, so what is left
+    // here is a refusal with nothing said about it: treated like one, with the same growing backoff
+    // and a budget of its own, rather than spending the five the unreadable outcomes have.
     case 'noCursor':
-      unknown++;
-      sleep(THROTTLE_BACKOFF);
+      noCursor++;
+      log(`mining: no target cursor (${noCursor}/${MAX_NO_CURSOR}), backing off`);
+      sleep(backoffFor(noCursor, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX));
+
+      if (noCursor >= MAX_NO_CURSOR) {
+        stop = 'the shard never opened a target cursor';
+      }
       break;
 
     default:
       unknown++;
       log(`mining: unreadable outcome (${unknown}/${MAX_UNKNOWN}), check OUTCOME_TEXT`);
+  }
+
+  // Cleared by any outcome that is not another refusal, which is what "in a row" means above. Done
+  // here rather than inside each branch the way `unknown` is: every branch but one clears it, and
+  // one added later would have to remember to.
+  if (outcome !== 'noCursor') {
+    noCursor = 0;
   }
 
   if (unknown >= MAX_UNKNOWN) {

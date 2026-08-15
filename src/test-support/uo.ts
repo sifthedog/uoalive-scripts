@@ -70,6 +70,9 @@ export interface FakeClient {
 }
 
 export interface FakeTarget {
+  // Whether a cursor is up, which the harvest scripts read only to report it
+  open: boolean;
+
   cancel: ReturnType<typeof vi.fn>;
   wait: ReturnType<typeof vi.fn>;
   terrain: ReturnType<typeof vi.fn>;
@@ -136,6 +139,7 @@ const defaults = (): FakeWorld => ({
     closeAllGumps: vi.fn(),
   },
   target: {
+    open: false,
     cancel: vi.fn(),
     wait: vi.fn(() => true),
     terrain: vi.fn(),

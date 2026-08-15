@@ -11,6 +11,22 @@ let world: FakeWorld;
 
 const ore = (amount: number) => item({ serial: 50, graphic: ORE, hue: 0, amount });
 
+// A pack that gains an ore the moment the swing goes out, which is what a swing the shard said
+// nothing about looks like from the pack side
+const oreArrivesOnTheSwing = (): void => {
+  const packs = [[ore(3)], [ore(4)]];
+  let swung = 0;
+
+  Object.defineProperty(world.player, 'backpack', {
+    configurable: true,
+    get: () => ({ serial: 0x40000000, contents: packs[Math.min(swung, 1)] }),
+  });
+
+  world.player.useItemInHand.mockImplementation(() => {
+    swung = 1;
+  });
+};
+
 beforeEach(() => {
   world = installGlobals({
     client: { findObject: vi.fn(() => item({ serial: PICKAXE, graphic: 0x0e86 })) } as never,
@@ -59,25 +75,82 @@ describe('digOnce', () => {
     expect(digOnce(PICKAXE)).toBe('empty');
   });
 
-  it('reports a cursor that never opened', () => {
-    world.target.waitTargetSelf.mockReturnValue(false);
+  // A cursor that never opened is not the same as nothing having happened: the shard usually
+  // refused the swing and said why, and the journal has been clear since just before it. Reading
+  // that is what tells a throttle or a world save apart from a script that cannot read an outcome -
+  // and reaching noCursor instead of either ended a live run in fifteen seconds.
+  describe('when no cursor opens', () => {
+    beforeEach(() => {
+      world.target.waitTargetSelf.mockReturnValue(false);
+    });
 
-    expect(digOnce(PICKAXE)).toBe('noCursor');
+    it('reads the refusal the shard already worded', () => {
+      world.journal.waitForTextAny.mockReturnValue('You must wait');
+
+      expect(digOnce(PICKAXE)).toBe('throttled');
+    });
+
+    it('knows a world save for what it is here too', () => {
+      world.journal.waitForTextAny.mockReturnValue('The world is saving');
+
+      expect(digOnce(PICKAXE)).toBe('saving');
+    });
+
+    // The swing that breaks the pickaxe leaves the next one with an empty hand, and an empty hand
+    // is a swing no cursor opens for. Read as the broken tool it is, so the loop swaps rather than
+    // backing off against a hand that has nothing to back off with.
+    it('reads a pickaxe serial that stopped resolving as a worn out tool', () => {
+      world.client.findObject.mockReturnValue(undefined);
+
+      expect(digOnce(PICKAXE)).toBe('wornOut');
+    });
+
+    it('reads ore arriving in the pack as a swing that landed anyway', () => {
+      oreArrivesOnTheSwing();
+
+      expect(digOnce(PICKAXE)).toBe('dug');
+    });
+
+    it('reports a cursor that never opened when nothing explains it', () => {
+      expect(digOnce(PICKAXE)).toBe('noCursor');
+    });
+
+    // The old line guessed at an empty hand and was wrong about it on the run that found this
+    it('says what is in the hand rather than guessing at it', () => {
+      world.player.equippedItems.oneHanded = item({
+        serial: PICKAXE,
+        graphic: 0x0e86,
+        name: 'pickaxe',
+      });
+
+      digOnce(PICKAXE);
+
+      expect(world.log).toHaveBeenCalledWith(expect.stringContaining("0xe86 'pickaxe'"));
+    });
+
+    // A cursor that turned up a moment after the wait gave up on it is TARGET_TIMEOUT being short,
+    // not the shard refusing - and the cancel on this path closes it, so the read has to come first
+    // or the line reports 'never opened' every time and settles nothing.
+    it('tells a cursor that came late from one that never came', () => {
+      world.target.open = true;
+
+      digOnce(PICKAXE);
+
+      expect(world.log).toHaveBeenCalledWith(expect.stringContaining('came late'));
+    });
+
+    it('says so when no cursor turned up at all', () => {
+      digOnce(PICKAXE);
+
+      expect(world.log).toHaveBeenCalledWith(expect.stringContaining('never opened'));
+    });
   });
 
   describe('when the journal says nothing', () => {
     // A shard that words its messages differently leaves the journal silent, so read the world:
     // ore landing in the pack is the only proof of a swing that does not depend on wording
     it('reads ore arriving in the pack as a swing that landed', () => {
-      const packs = [[ore(3)], [ore(4)]];
-      let swung = 0;
-      Object.defineProperty(world.player, 'backpack', {
-        configurable: true,
-        get: () => ({ serial: 0x40000000, contents: packs[Math.min(swung, 1)] }),
-      });
-      world.player.useItemInHand.mockImplementation(() => {
-        swung = 1;
-      });
+      oreArrivesOnTheSwing();
 
       expect(digOnce(PICKAXE)).toBe('dug');
     });
@@ -94,15 +167,7 @@ describe('digOnce', () => {
     // reading that as an ordinary success would send the next cycle out with an empty hand
     it('prefers the worn out tool over the ore it also produced', () => {
       world.client.findObject.mockReturnValue(undefined);
-      const packs = [[ore(3)], [ore(4)]];
-      let swung = 0;
-      Object.defineProperty(world.player, 'backpack', {
-        configurable: true,
-        get: () => ({ serial: 0x40000000, contents: packs[Math.min(swung, 1)] }),
-      });
-      world.player.useItemInHand.mockImplementation(() => {
-        swung = 1;
-      });
+      oreArrivesOnTheSwing();
 
       expect(digOnce(PICKAXE)).toBe('wornOut');
     });

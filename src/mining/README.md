@@ -59,7 +59,7 @@ The outcome branches:
 | `wornOut` | The pickaxe broke; the next cycle equips a spare |
 | `saving` | The shard is writing its world file. Sit it out; nothing is learned and no counter is held against it |
 | `throttled` | Back off further each time (1s, 2s, 3s… capped), and give up after `MAX_THROTTLED` |
-| `noCursor` | The shard declined to start the swing. Backed off like a throttle, but counted |
+| `noCursor` | No cursor, and the journal explained nothing. Backed off like a throttle, and stops after `MAX_NO_CURSOR` |
 | anything else | Unreadable. `MAX_UNKNOWN` in a row ends the run — check `OUTCOME_TEXT` |
 
 **When it smelts:** on a spot running dry, not on a schedule and not at the end. The swings that
@@ -125,7 +125,7 @@ then a swing.
 | `wornOut` | The pickaxe broke; the next cycle equips a spare |
 | `saving` | Sit out the world save; nothing is learned and no counter is held against it |
 | `throttled` | Back off further each time, and give up after `MAX_THROTTLED` |
-| `noCursor` | The shard declined to start the swing. Backed off like a throttle, but counted |
+| `noCursor` | No cursor, and the journal explained nothing. Backed off like a throttle, and stops after `MAX_NO_CURSOR` |
 | anything else | Unreadable. `MAX_UNKNOWN` in a row ends the run — check `OUTCOME_TEXT` |
 
 **It does not move.** Not to a better tile, and not to the beetle: it smelts through `smeltHere`,
@@ -216,6 +216,7 @@ they decide whether the character parks a tile or walks away.
 | `MAX_CYCLES` | | The backstop on the whole run |
 | `MAX_UNKNOWN` | | Unreadable outcomes in a row before stopping |
 | `MAX_THROTTLED` | | Refusals in a row before stopping |
+| `MAX_NO_CURSOR` | 20 | Swings the shard opened no cursor for, in a row, before stopping |
 | `STALL_WARN` / `STALL_STOP` | | Cycles without a swing landing before it warns, then stops |
 | `PACK_LIMIT` | 120 | The item-cap guard. There is deliberately **no** weight guard — see below |
 | `NOTHING_NEARBY_HINT` | 5 | Empty spots in a row before it says `ORE_TILE_GRAPHICS` is probably wrong and lists what is underfoot |
@@ -233,6 +234,13 @@ and lists the arts underfoot.
 
 **`unreadable outcome, check OUTCOME_TEXT`.** The shard words its harvest messages differently.
 Read the journal after a swing and correct `OUTCOME_TEXT`.
+
+**`no target cursor (n/20), backing off`.** The shard declined to start the swing and said nothing
+about why — `digOnce` has already checked the journal and the pack before it comes to this. A few of
+these is ordinary; a run of them with a pickaxe in hand means the shard is refusing in a wording
+`THROTTLED_TEXT` does not have, and the line that precedes them names what is actually in the hand
+and whether a cursor was up. Add the wording and it becomes a throttle, which costs the run nothing.
+Until then `MAX_NO_CURSOR` is the patience.
 
 **`overweight … and smelting freed nothing`.** No beetle in range, a beetle that is not yours, or
 every hue written off. The run clears the write-offs and tries once more before giving up.

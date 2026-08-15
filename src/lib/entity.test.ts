@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { installGlobals, item, mobile, type FakeWorld } from '../test-support/uo.js';
-import { approach, distanceTo, hex, isMobile, nameOf } from './entity.js';
+import { approach, describeItem, distanceTo, hex, isMobile, nameOf } from './entity.js';
 
 let world: FakeWorld;
 
@@ -44,6 +44,24 @@ describe('nameOf', () => {
   // Names are empty until the client has tooltip data for the entity
   it('falls back to the serial', () => {
     expect(nameOf({ serial: 0x40000001 })).toBe('0x40000001');
+  });
+});
+
+describe('describeItem', () => {
+  it('leads with the graphic, which is the half that is always there', () => {
+    expect(describeItem(item({ serial: 1, graphic: 0x0e86, name: 'pickaxe' }))).toBe(
+      "0xe86 'pickaxe'",
+    );
+  });
+
+  // The name arrives with the tooltip and may never turn up, so it is the half allowed to be blank
+  it('still names the graphic when the client has no tooltip yet', () => {
+    expect(describeItem(item({ serial: 1, graphic: 0x0e86 }))).toBe("0xe86 ''");
+  });
+
+  // What an empty hand looks like, which is the case these lines are usually reporting on
+  it('says so when there is nothing there', () => {
+    expect(describeItem(undefined)).toBe('empty');
   });
 });
 

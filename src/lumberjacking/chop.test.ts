@@ -1,11 +1,17 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { installGlobals, item } from '../test-support/uo.js';
-import { ALL_OUTCOME_TEXT, isLog, logTotal, outcomeFor } from './chop.js';
+import { installGlobals, item, type FakeWorld } from '../test-support/uo.js';
+import { ALL_OUTCOME_TEXT, chopOnce, isLog, logTotal, outcomeFor } from './chop.js';
 import { LOG_GRAPHICS, OUTCOME_TEXT } from './config.js';
+import type { Tree } from './tree.js';
+
+const AXE = 1;
+const TREE: Tree = { x: 100, y: 101, z: 0, graphic: 0x0ce0, distance: 1 };
+
+let world: FakeWorld;
 
 beforeEach(() => {
-  installGlobals();
+  world = installGlobals();
 });
 
 describe('outcomeFor', () => {
@@ -45,6 +51,77 @@ describe('ALL_OUTCOME_TEXT', () => {
 
   it('holds no duplicates, so a match is never ambiguous', () => {
     expect(new Set(ALL_OUTCOME_TEXT).size).toBe(ALL_OUTCOME_TEXT.length);
+  });
+});
+
+// A cursor that never opened is not the same as nothing having happened: the shard usually refused
+// the swing and said why, and the journal has been clear since just before it. Reading that is what
+// tells a throttle or a world save apart from a script that cannot read an outcome - and reaching
+// noCursor instead of either ended a live mining run in fifteen seconds with a tool in hand.
+describe('chopOnce, when no cursor opens', () => {
+  beforeEach(() => {
+    world.target.wait.mockReturnValue(false);
+
+    // An axe that still resolves, so the silent read below is about the chop rather than the tool
+    world.client.findObject.mockReturnValue(item({ serial: AXE, graphic: 0x0f43 }));
+  });
+
+  it('reads the refusal the shard already worded', () => {
+    world.journal.waitForTextAny.mockReturnValue('You must wait');
+
+    expect(chopOnce(TREE, AXE)).toBe('throttled');
+  });
+
+  it('knows a world save for what it is here too', () => {
+    world.journal.waitForTextAny.mockReturnValue('The world is saving');
+
+    expect(chopOnce(TREE, AXE)).toBe('saving');
+  });
+
+  // The swing that breaks the axe leaves the next one with an empty hand, and an empty hand is a
+  // swing no cursor opens for. Read as the broken tool it is, so the loop swaps rather than backing
+  // off against a hand that has nothing to back off with.
+  it('reads an axe serial that stopped resolving as a worn out tool', () => {
+    world.client.findObject.mockReturnValue(undefined);
+
+    expect(chopOnce(TREE, AXE)).toBe('wornOut');
+  });
+
+  it('reads logs arriving in the pack as a chop that landed anyway', () => {
+    const logs = (amount: number) => item({ serial: 50, graphic: 0x1bdd, amount });
+    const packs = [[logs(3)], [logs(4)]];
+    let swung = 0;
+
+    Object.defineProperty(world.player, 'backpack', {
+      configurable: true,
+      get: () => ({ serial: 0x40000000, contents: packs[Math.min(swung, 1)] }),
+    });
+
+    world.player.useItemInHand.mockImplementation(() => {
+      swung = 1;
+    });
+
+    expect(chopOnce(TREE, AXE)).toBe('chopped');
+  });
+
+  it('reports a cursor that never opened when nothing explains it', () => {
+    expect(chopOnce(TREE, AXE)).toBe('noCursor');
+  });
+
+  // The old line guessed at an empty hand and was wrong about it on the run that found this
+  it('says what is in the hand rather than guessing at it', () => {
+    world.player.equippedItems.twoHanded = item({ serial: AXE, graphic: 0x0f43, name: 'axe' });
+
+    chopOnce(TREE, AXE);
+
+    expect(world.log).toHaveBeenCalledWith(expect.stringContaining("0xf43 'axe'"));
+  });
+
+  // Nothing was aimed at, so nothing should have been: the tile is named only once a cursor is up
+  it('never names the tree', () => {
+    chopOnce(TREE, AXE);
+
+    expect(world.target.terrain).not.toHaveBeenCalled();
   });
 });
 

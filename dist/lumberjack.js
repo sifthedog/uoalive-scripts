@@ -59,6 +59,7 @@
   var distanceTo = (spot) => Math.max(Math.abs(spot.x - player.x), Math.abs(spot.y - player.y));
   var isMobile = (entity) => entity._tag === "Mobile";
   var nameOf = (entity) => entity.name ?? hex(entity.serial);
+  var describeItem = (item) => item ? `${hex(item.graphic)} '${item.name ?? ""}'` : "empty";
   var approach = (serial, options) => {
     for (let taken = 0; taken < options.maxSteps; taken++) {
       const found = client.findObject(serial);
@@ -278,6 +279,8 @@
   var THROTTLE_BACKOFF = 1e3;
   var THROTTLE_BACKOFF_MAX = 8e3;
   var MAX_UNKNOWN = 5;
+  var MAX_NO_CURSOR = 20;
+  var NO_CURSOR_READ = 500;
   var MAX_STEPS = 20;
   var PACK_LIMIT = 120;
   var LOG_EVERY = 25;
@@ -505,15 +508,29 @@
     }
     return "unknown";
   };
+  var refusedOutcome = (serial, logsBefore, cursorCameLate) => {
+    const matched = journal.waitForTextAny(ALL_OUTCOME_TEXT, void 0, NO_CURSOR_READ);
+    if (matched) {
+      return outcomeFor(matched);
+    }
+    const silent = silentOutcome(serial, logsBefore);
+    if (silent !== "unknown") {
+      return silent;
+    }
+    log(
+      `chopOnce: no target cursor - hand ${describeItem(player.equippedItems.twoHanded ?? player.equippedItems.oneHanded)}, cursor ${cursorCameLate ? "came late" : "never opened"}`
+    );
+    return "noCursor";
+  };
   var chopOnce = (tree, serial) => {
     target.cancel();
     const logsBefore = logTotal();
     journal.clear();
     player.useItemInHand();
     if (!target.wait(TARGET_TIMEOUT)) {
+      const cursorCameLate = target.open;
       target.cancel();
-      log("chopOnce: no target cursor, nothing usable in hand?");
-      return "noCursor";
+      return refusedOutcome(serial, logsBefore, cursorCameLate);
     }
     target.terrain(tree.x, tree.y, tree.z, tree.graphic);
     const matched = journal.waitForTextAny(ALL_OUTCOME_TEXT, void 0, CHOP_TIMEOUT);
@@ -998,6 +1015,7 @@
   var stop;
   var reported2 = 0;
   var throttled = 0;
+  var noCursor = 0;
   var hauling = true;
   var walkingTo;
   var steps = 0;
@@ -1120,16 +1138,24 @@
         }
         break;
       // A cursor that never opened, with an axe demonstrably in hand, is the shard declining to start
-      // the swing rather than an empty hand - on a live mining run that was a third of them. Backed
-      // off like a throttle, but still counted: five in a row with nothing else happening is a stuck
-      // run whatever the cause.
+      // the swing rather than an empty hand - on a live mining run that was a third of them. chopOnce
+      // has already read the journal and the pack looking for a reason, so what is left here is a
+      // refusal with nothing said about it: treated like one, with the same growing backoff and a
+      // budget of its own, rather than spending the five the unreadable outcomes have.
       case "noCursor":
-        unknown++;
-        sleep(THROTTLE_BACKOFF);
+        noCursor++;
+        log(`lumberjack: no target cursor (${noCursor}/${MAX_NO_CURSOR}), backing off`);
+        sleep(backoffFor(noCursor, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX));
+        if (noCursor >= MAX_NO_CURSOR) {
+          stop = "the shard never opened a target cursor";
+        }
         break;
       default:
         unknown++;
         log(`lumberjack: unreadable outcome (${unknown}/${MAX_UNKNOWN}), check OUTCOME_TEXT`);
+    }
+    if (outcome !== "noCursor") {
+      noCursor = 0;
     }
     if (unknown >= MAX_UNKNOWN) {
       stop = `${MAX_UNKNOWN} unreadable outcomes in a row`;

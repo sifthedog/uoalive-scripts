@@ -47,7 +47,7 @@ The outcome branches:
 | `wornOut` | The axe broke; the next cycle equips a spare |
 | `saving` | The shard is writing its world file. Sit it out; nothing is learned and no counter is held against it |
 | `throttled` | Back off further each time (1s, 2s, 3s… capped), and give up after `MAX_THROTTLED` |
-| `noCursor` | The shard declined to start the swing. Backed off like a throttle, but counted |
+| `noCursor` | No cursor, and the journal explained nothing. Backed off like a throttle, and stops after `MAX_NO_CURSOR` |
 | anything else | Unreadable. `MAX_UNKNOWN` in a row ends the run — check `OUTCOME_TEXT` |
 
 When nothing in reach is choppable but something is regrowing, the loop **idles until the soonest
@@ -140,6 +140,7 @@ conversion, which has no outcomes of its own.
 | `MAX_CYCLES` | | The backstop on the whole run |
 | `MAX_UNKNOWN` | | Unreadable outcomes in a row before stopping |
 | `MAX_THROTTLED` | | Refusals in a row before stopping |
+| `MAX_NO_CURSOR` | 20 | Swings the shard opened no cursor for, in a row, before stopping |
 | `MAX_STEPS` | | Steps spent walking to one tree before writing it off |
 | `STALL_WARN` / `STALL_STOP` | | Cycles without a chop before it warns, then stops |
 | `WEIGHT_BUFFER`, `PACK_LIMIT` | 40 / 120 | The overweight and item-cap guards |
@@ -155,6 +156,13 @@ Put a graphic into `TREE_GRAPHICS`.
 
 **`unreadable outcome, check OUTCOME_TEXT`.** The expected case on a first run, since the phrasings
 are guesses. Read the journal after a chop and correct them.
+
+**`no target cursor (n/20), backing off`.** The shard declined to start the swing and said nothing
+about why — `chopOnce` has already checked the journal and the pack before it comes to this. A few
+of these is ordinary; a run of them with an axe in hand means the shard is refusing in a wording
+`THROTTLED_TEXT` does not have, and the line that precedes them names what is actually in the hand
+and whether a cursor was up. Add the wording and it becomes a throttle, which costs the run nothing.
+Until then `MAX_NO_CURSOR` is the patience.
 
 **`hauling freed nothing, carrying on until overweight`.** No animal found, or the one found will
 take no more. Latched off after one failure so a missing animal costs one search rather than one per

@@ -13,6 +13,12 @@ export const isMobile = (entity: Item | Mobile): entity is Mobile => entity._tag
 export const nameOf = (entity: { name?: string; serial: number }): string =>
   entity.name ?? hex(entity.serial);
 
+// What a hand or a layer is holding, for the lines that report the world rather than act on it. The
+// graphic comes first because it is the half that is always there: a name arrives with the tooltip
+// and may still be empty, and the graphic is what a config is corrected with.
+export const describeItem = (item?: { graphic: number; name?: string }): string =>
+  item ? `${hex(item.graphic)} '${item.name ?? ''}'` : 'empty';
+
 // Walk to a mobile, re-resolving it every step rather than walking at where it was when this
 // started: a pet follows you, so its coordinates go stale within a cycle. It is never double-clicked
 // on the way - a pack beetle is rideable, so a double-click mounts you.
