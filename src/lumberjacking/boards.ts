@@ -30,8 +30,7 @@ const converter = /* @__PURE__ */ createConverter({
   nextStack: (writtenOff) =>
     collectIn(player.backpack?.contents, isLog).find((item) => !writtenOff.has(item.hue ?? 0)),
 
-  // Boards are the tool used and the resource targeted - the inverse of smelting, where the ore is
-  // double-clicked and the forge is the target
+  // The tool is used and the resource targeted - the inverse of smelting
   perform: (stack) => {
     target.cancel();
     journal.clear();
@@ -51,12 +50,11 @@ const converter = /* @__PURE__ */ createConverter({
   learned: 'board graphic',
 });
 
-// Hues this run has given up on. Exported because these are the only logs the haul is allowed to
-// put on the animal: everything else is a log that should still become a board.
+// The only logs the haul is allowed to put on the animal: everything else should still become a board.
 export const unconvertible = converter.writtenOff;
 
 export const makeBoards = converter.run;
 
-// Not called from the main loop the way mining's is - a wood written off here still gets hauled
-// rather than ending the run - but the haul asks before it carries logs across as logs.
+// Asked by the haul before it carries logs across as logs, not by the main loop: a wood written off
+// here still gets hauled rather than ending the run.
 export const retryUnconvertible = converter.retry;

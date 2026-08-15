@@ -9,9 +9,8 @@ export const inBounds = (x: number, y: number): boolean =>
 const clamp = (value: number, low: number, high: number): number =>
   Math.min(Math.max(value, low), high);
 
-// Whether a tile can be worked from somewhere the character is allowed to stand. Clamping the
-// tile into the box gives the closest legal standing spot, so this asks the same Chebyshev
-// question the shard asks about range - just from there rather than from where the character is.
+// Clamping the tile into the box gives the closest legal standing spot, so this asks the shard's own
+// Chebyshev range question from there rather than from where the character is.
 export const reachableFromBounds = (x: number, y: number, range: number): boolean => {
   if (!BOUNDS) {
     return true;
@@ -23,8 +22,7 @@ export const reachableFromBounds = (x: number, y: number, range: number): boolea
   return Math.max(Math.abs(x - standX), Math.abs(y - standY)) <= range;
 };
 
-// The step to actually take toward a tile, or undefined if every option leaves the box. A
-// diagonal that would leave it often has a cardinal half that stays inside, and taking that
+// A diagonal that would leave the box often has a cardinal half that stays inside, and taking that
 // slides along the edge rather than giving up - which matters, because a box has a lot of edge.
 export const allowedStep = (dx: number, dy: number): [number, number] | undefined => {
   const options: [number, number][] = [

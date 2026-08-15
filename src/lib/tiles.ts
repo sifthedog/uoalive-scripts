@@ -1,14 +1,13 @@
 import { now } from './clock.js';
 import { distanceTo, hex } from './entity.js';
 
-// Both harvest scripts have to find a specific tile, walk to it, and remember what the shard said
-// about it - which of those tiles are worth returning to, which are worth returning to later, and
-// which never again. What they do not share is how a tile is recognised as harvestable at all:
-// lumberjacking asks the tiledata for a name, mining reads a table of land graphics.
+// Finding a tile, walking to it, and remembering what the shard said about it. What the harvest
+// scripts do not share is how a tile is recognised as harvestable: lumberjacking asks the tiledata
+// for a name, mining reads a table of land graphics.
 
 // What it takes to name a tile in the block map, and no more. Mining extends this with `isLand`,
 // because the two tiledata tables are numbered separately and its targeting depends on which one an
-// art came from; lumberjacking never needs to know, because a tree is always a static.
+// art came from.
 export interface Tile {
   x: number;
   y: number;
@@ -30,8 +29,6 @@ const tileKey = (tile: Tile) => `${tile.x},${tile.y},${tile.z},${tile.graphic}`;
 
 const minutes = (ms: number) => Math.max(1, Math.round(ms / 60_000));
 
-// Generic over the folder's own tile, which may carry more than the block key needs - mining's
-// carries isLand - so callers can hand one straight over without stripping it first.
 export interface TileStore<T extends Tile> {
   block: (tile: T, until: number) => void;
   markDepleted: (tile: T) => void;
@@ -39,11 +36,10 @@ export interface TileStore<T extends Tile> {
   markUnusable: (tile: T, reason: string) => void;
 }
 
-// What the three failures mean is three different things, not one. Out of resource -> back after
-// depletedFor. A walk that never closed -> back after unreachableFor, because what blocked the path
-// is usually a player or a pet rather than the tile. Out of sight, out of shard-range, or an art
-// that cannot be worked -> never again. A cooldown and a permanent ban being the same lookup is
-// what keeps the scan's filter to one line.
+// Three failures, three meanings. Out of resource comes back after depletedFor; a walk that never
+// closed after unreachableFor, because what blocked the path is usually a player or a pet rather
+// than the tile; out of sight or an art that cannot be worked, never. A cooldown and a permanent ban
+// being the same lookup is what keeps the scan's filter to one line.
 export const createTileStore = <T extends Tile>(options: {
   label: string;
   blocked: () => Map<string, number>;
@@ -124,8 +120,8 @@ export const createScan = <T extends Tile>(options: {
           }
 
           // The tile carries its own coordinates; trust those over the ones we scanned with.
-          // `isLand` is copied across whether or not T declares it: mining reads it to decide how to
-          // target, and for lumberjacking it is an unread extra rather than a wrong one.
+          // `isLand` is copied across whether or not T declares it - for lumberjacking it is an
+          // unread extra rather than a wrong one.
           const candidate = {
             x: tile.x,
             y: tile.y,

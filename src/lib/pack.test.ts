@@ -31,9 +31,8 @@ describe('countsByGraphic', () => {
     expect(result.get('0xf3f/0')).toBe(1);
   });
 
-  // Unpadded, because toString(16) drops the leading zero. boards.ts reads the graphic back out of
-  // this key with Number(), which parses '0xf3f' fine - but a padded key would not round-trip
-  // through a naive parseInt, so the shape is worth pinning.
+  // Unpadded, because toString(16) drops the leading zero, and boards.ts reads the graphic back out
+  // of this key with Number()
   it('writes the graphic as unpadded hex', () => {
     const result = countsByGraphic([item({ serial: 1, graphic: 0x0e76 })]);
 

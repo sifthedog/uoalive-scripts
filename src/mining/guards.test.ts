@@ -39,8 +39,7 @@ describe('stopReason', () => {
   });
 
   // Being over the limit is what triggers the smelt, so a guard at a buffer below it would fire
-  // first, every time, and the smelt would never happen at all. What ends an overweight run is a
-  // smelt that freed nothing - decided in the loop, not here.
+  // first every time. What ends an overweight run is a smelt that freed nothing.
   it('leaves an overweight character to the smelt', async () => {
     installGlobals({ player: { weight: 999, weightMax: 400 } });
     const { stopReason } = await loadGuards();

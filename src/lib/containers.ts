@@ -21,17 +21,10 @@ export type ItemPredicate = (item: Item) => boolean;
 // scan - and the pack is scanned after every swing
 const unreadable = new Set<number>();
 
-// Reading `contents` is a question put to the client, and the client can fail the question rather
-// than answer it. A live run died on
-//
-//   Exception executing 'itemGetContents': Unexpected end of JSON input
-//
-// thrown out of a pack count in the middle of a smelt, which is the client holding no data for a
-// sub-bag and saying so with a truncated answer instead of an empty one. Every read goes through
-// here and a throw is treated as the `undefined` the same container reports before it has been
-// opened: a case every caller already handles, rather than a new one. The cost of being wrong is a
-// count that is low by whatever was in that bag, which is what these counts already promise; the
-// cost of not catching it is the whole run, because nothing above this has a try in it.
+// Reading `contents` can throw rather than answer: a live run died on "Exception executing
+// 'itemGetContents': Unexpected end of JSON input" mid-smelt, the client holding no data for a
+// sub-bag. A throw is treated as the `undefined` the same container reports before it has been
+// opened - a case every caller already handles - because nothing above this has a try in it.
 export const contentsOf = (item: Item | undefined): Item[] | undefined => {
   try {
     return item?.contents;
@@ -61,16 +54,10 @@ export const packContents = (): Item[] | undefined => {
   }
 };
 
-// A *non-empty* contents array proves it is a container; otherwise fall back to the graphic list.
-// This matters because player.use() on a non-container *uses* it - potions get drunk.
-//
-// An empty array proves nothing, because this client answers `[]` for plain items rather than the
-// `undefined` the type says. Its own docs for `Item.contents` give it away: the example loops the
-// pack calling `item.contents.length` on everything without a guard, and treats `length > 0` as
-// what makes an item a sub-container. Trusting `Array.isArray` here made every item in the pack a
-// container, and a sell run double-clicked the lot - equipping the weapon it had been asked to
-// sell. The false negative left over costs nothing: an opened, empty container whose graphic is
-// not listed has nothing in it to find.
+// A *non-empty* contents array proves it is a container, because this client answers `[]` for plain
+// items rather than the `undefined` the type says. Trusting `Array.isArray` here made every item in
+// the pack a container, and a sell run double-clicked the lot - equipping the weapon it had been
+// asked to sell. It matters because player.use() on a non-container *uses* it: potions get drunk.
 export const isContainer = (item: Item): boolean =>
   (contentsOf(item)?.length ?? 0) > 0 || CONTAINER_GRAPHICS.has(item.graphic);
 

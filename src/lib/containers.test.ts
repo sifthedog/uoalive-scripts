@@ -153,12 +153,9 @@ describe('openContainers', () => {
   });
 });
 
-// `contents` is a question put to the client, and a live run died on the client failing the question
-// rather than answering it:
-//
-//   Exception executing 'itemGetContents': Unexpected end of JSON input
-//
-// Nothing above these functions has a try in it, so an unreadable bag took the whole run with it.
+// A live run died on "Exception executing 'itemGetContents': Unexpected end of JSON input" - the
+// client failing the question rather than answering it. Nothing above these functions has a try in
+// it, so an unreadable bag took the whole run with it.
 describe('contentsOf', () => {
   // A bag whose contents getter throws on every read
   const unreadableBag = (serial: number): Item => {

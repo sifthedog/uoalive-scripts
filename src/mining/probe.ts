@@ -1,11 +1,6 @@
-// Read-only calibration for ORE_TILE_GRAPHICS in src/mining/config.js. It never swings, never
-// targets and never moves - it only asks the client what is on the ground around you.
-//
-// It exists because a mountainside is a *land* tile, and land tiles have no name in this API:
-// getStatic reads the static tiledata, and getTile answers with flags and nothing else. So unlike
-// lumberjacking, which can ask the client whether a static is called a tree, mining has to be told
-// which graphics are ore-bearing. Stand on the face you intend to work and run this: the bands it
-// prints are what belongs in the config, instead of the stock RunUO guess that ships there.
+// Read-only calibration for ORE_TILE_GRAPHICS: it never swings, targets or moves. It exists because
+// a mountainside is a *land* tile and land tiles have no name in this API, so mining has to be told
+// which graphics are ore-bearing. Stand on the face you mean to work and run this.
 import { ORE_TILE_GRAPHICS, PROBE_RADIUS } from './config.js';
 import { reportTerrain } from './survey.js';
 

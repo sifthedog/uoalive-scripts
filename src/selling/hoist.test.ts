@@ -248,10 +248,9 @@ describe('hoistToPack', () => {
     expect(world.log).toHaveBeenCalledWith(expect.stringContaining('no backpack'));
   });
 
-  // The bug this file exists to keep out. The live client answers `contents` with `[]` for plain
-  // items rather than the `undefined` the type promises, so treating any array as proof of a
-  // container made every item in the pack one - and player.use() went down the whole list, which
-  // equips a weapon and drinks a potion. Only the bag may be opened here.
+  // The live client answers `contents` with `[]` for plain items rather than the `undefined` the
+  // type promises, so treating any array as proof of a container made every item in the pack one -
+  // and player.use() went down the whole list, equipping a weapon and drinking a potion.
   it('opens nothing but the bag when every item reports empty contents', async () => {
     const world = packOf(
       item({ serial: 0x11, graphic: SCIMITAR, name: 'Scimitar', contents: [] }),

@@ -11,11 +11,9 @@ import {
 
 // Named for the item rather than the tile, because vein.ts already owns `isOre` for the ground.
 //
-// Graphic first and name second, the way isPickaxe does it: names are empty until the client has
-// tooltip data for an item, so the graphic is what carries the match most of the time. The name is
-// what covers a shard whose ore wears an art the seeded set has never heard of - and since the
-// stack-size table those graphics come from is already known to be wrong here, that is not a remote
-// possibility. An art learned this way joins the set, so it costs one tooltip and no more.
+// Graphic first, name second: names are empty until the client has tooltip data. The name covers a
+// shard whose ore wears an art the seeded set has never heard of, and an art learned that way joins
+// the set - so it costs one tooltip and no more.
 export const isOrePile = (item: Item): boolean => {
   if (ORE_GRAPHICS.has(item.graphic)) {
     return true;
@@ -34,17 +32,13 @@ export const isOrePile = (item: Item): boolean => {
 // Hue-blind on purpose: every ore type counts toward the pack, whatever it smelts into
 export const oreTotal = (contents?: Item[]): number => totalMatching(isOrePile, contents);
 
-// The swing's ore turning up in the pack, which is what makes it worth grouping. Reads the total
-// rather than the number of piles so a shard that does merge the ore on arrival is satisfied
-// immediately instead of waiting out the timeout on every swing.
-//
-// False is not a failure worth acting on: the caller groups anyway, and a pile that arrived late is
-// picked up by the next swing's grouping.
+// Reads the total rather than the number of piles, so a shard that does merge ore on arrival is
+// satisfied immediately instead of waiting out the timeout on every swing. False is not a failure
+// worth acting on: a pile that arrived late is picked up by the next swing's grouping.
 export const waitForOre = (before: number): boolean => {
   for (let waited = 0; waited < ORE_SETTLE_TIMEOUT; waited += ORE_SETTLE_POLL) {
-    // Read before the first sleep, unlike convert.ts's waitForChange: that one has just issued a
-    // gesture the shard cannot possibly have answered yet, while this is reading a delivery that has
-    // usually already happened by the time the journal line announcing it is read.
+    // Read before the first sleep, unlike convert.ts's waitForChange: the delivery has usually
+    // already happened by the time the journal line announcing it is read.
     if (oreTotal() > before) {
       return true;
     }
@@ -55,8 +49,7 @@ export const waitForOre = (before: number): boolean => {
   return false;
 };
 
-// Top level only, unlike oreTotal: these are the piles the combine and the smelt actually work on,
-// and both act by serial on loose items in the pack.
+// Top level only, unlike oreTotal: the combine and the smelt both act by serial on loose items.
 export const oresByHue = (): Map<number, Item[]> => {
   const groups = new Map<number, Item[]>();
 

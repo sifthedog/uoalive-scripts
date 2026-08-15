@@ -55,9 +55,8 @@ describe('isBoard', () => {
 });
 
 describe('makeBoards', () => {
-  // A frozen shard answers a conversion exactly the way an unworkable wood does - with nothing at
-  // all - so without this a world save costs CONVERT_ATTEMPTS and writes the hue off for the rest
-  // of the run, and every later haul carries logs across instead of boards
+  // A frozen shard answers a conversion exactly the way an unworkable wood does, so without this a
+  // world save costs CONVERT_ATTEMPTS and writes the hue off for the rest of the run
   it('leaves the logs alone while the world is saving', async () => {
     world.player.backpack = { serial: 0x40000000, contents: [item({ serial: 1, graphic: LOG, amount: 20 })] };
     world.journal.containsText.mockImplementation((text: string) => text.includes('world is saving'));
@@ -136,9 +135,8 @@ describe('makeBoards', () => {
   });
 
   describe('giving up on a hue', () => {
-    // The regression this guards: one silent attempt proves nothing, because the action throttle
-    // and a stale serial both look exactly like a wood that cannot be worked. Giving up there and
-    // then put ordinary logs on the pack animal, since hue 0 is *every* normal log.
+    // One silent attempt proves nothing - the action throttle and a stale serial look exactly like
+    // a wood that cannot be worked - and giving up there put ordinary logs on the pack animal.
     it('retries a silent hue rather than writing it off on the first miss', async () => {
       pack(item({ serial: 5, graphic: LOG, amount: 10, hue: 0 }));
       const { makeBoards } = await loadBoards();
@@ -159,10 +157,8 @@ describe('makeBoards', () => {
       expect(world.log).toHaveBeenCalledWith(expect.stringContaining('hue 0 failed 3 times'));
     });
 
-    // The regression this guards: a cursor that never came used to return before the miss was
-    // counted, so the hue was never given up on and the candidate stack was identical next pass.
-    // Every pass then spent TARGET_TIMEOUT waiting on a cursor that was never coming - the whole
-    // backstop's worth, with an empty hand or a just-broken axe as the only cause.
+    // A cursor that never came used to return before the miss was counted, so the candidate stack
+    // was identical next pass and every pass spent TARGET_TIMEOUT on a cursor never coming.
     it('counts a missing target cursor against the hue like any other failure', async () => {
       pack(item({ serial: 5, graphic: LOG, amount: 10, hue: 0 }));
       world.target.waitTargetEntity.mockReturnValue(false);

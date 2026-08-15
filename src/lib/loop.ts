@@ -6,18 +6,14 @@ export const minutes = (ms: number): number => Math.max(1, Math.round(ms / 60_00
 export const minutesLeft = (until: number): number => minutes(until - now());
 
 // A fixed retry shorter than the shard's own timer re-arms the very throttle it is waiting out, so
-// back off further each time - which both out-waits a real harvest delay within a couple of swings
-// and self-tunes to the shard's pacing, since an action that lands resets the count.
+// back off further each time - which also self-tunes, since an action that lands resets the count.
 export const backoffFor = (count: number, step: number, cap: number): number =>
   Math.min(step * count, cap);
 
-// Nothing in reach right now, but something is coming back: wait for it rather than ending a run
-// that only has to sit still to have a forest again.
-//
-// Sliced rather than slept through in one go, so the client stays responsive and the guards still
-// get a look in - a quarter of an hour is long enough to be killed standing there, and one long
-// sleep would carry on regardless. Bounded by the wait it was asked for as well as by the clock: a
-// clock that does not advance would otherwise turn this into a spin.
+// Nothing in reach right now, but something is coming back. Sliced rather than slept through, so the
+// client stays responsive and the guards get a look in - a quarter of an hour is long enough to be
+// killed standing there. Bounded by the wait it was asked for as well as by the clock, so a clock
+// that does not advance cannot turn this into a spin.
 export const createIdleWait = (options: {
   prefix: string;
 
@@ -55,24 +51,20 @@ export const createIdleWait = (options: {
       }
     }
 
-    // This path reports on its own cadence, so start the next beat's interval from here rather than
-    // letting one land on top of the line above
+    // This path reports on its own cadence, so start the next beat's interval from here
     options.onDone();
   };
 };
 
 export interface StallWatch {
-  // Closes every cycle that was meant to make progress: says the run is alive whatever branch it
-  // took, and counts the cycle against the watchdog. An idle wait is the one path that does not come
-  // through here - it reports on its own cadence, and waiting for a resource to come back is the
-  // script working, not the script stuck.
+  // Closes every cycle that was meant to make progress. An idle wait is the one path that does not
+  // come through here - waiting for a resource to come back is the script working, not stuck.
   endCycle: (phase: string, cycle: number, tally: number) => void;
 
-  // Called by the branches that did make progress, and by the ones that were never the script's
-  // fault - a world save is a pause, and counting it would walk a run to its stop a save at a time
+  // Called by the branches that made progress, and by the ones that were never the script's fault -
+  // a world save is a pause, and counting it would walk a run to its stop a save at a time
   progressed: () => void;
 
-  // Set once the watchdog has seen enough, and read by the loop as its stop reason
   reason: () => string | undefined;
 }
 

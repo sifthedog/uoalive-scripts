@@ -257,9 +257,8 @@ describe('scanForVein', () => {
       expect(scanForVein().vein?.x).toBe(106);
     });
 
-    // The requirement this whole map exists for: a vein comes back, and a face worked out by
-    // lunchtime is worth mining again by the afternoon. Written off permanently, the run runs out
-    // of mountain instead.
+    // What this whole map exists for: a face worked out by lunchtime is worth mining again by the
+    // afternoon, and written off permanently the run runs out of mountain instead.
     it('offers the tile again once it has respawned', async () => {
       world.client.getTerrainList = terrainFrom([land({ x: 102, y: 100 })]);
       const { markDepleted, scanForVein } = await loadVein();
@@ -341,9 +340,8 @@ describe('scanForVein', () => {
     });
   });
 
-  // The shard says 'no harvestable resources nearby' about where you stand, not about a tile, and
-  // the swing names no tile to disagree with. Parking one vein would leave the character on a spot
-  // the shard has just written off, swinging for the same sentence until the run gave up.
+  // Said about where you stand, not about a tile. Parking one vein would leave the character on a
+  // spot the shard has just written off, swinging for the same sentence until the run gave up.
   describe('an area the shard says is empty', () => {
     it('parks every vein within reach, not just the nearest', async () => {
       world.client.getTerrainList = terrainFrom([land({ x: 101, y: 100 }), land({ x: 102, y: 100 })]);

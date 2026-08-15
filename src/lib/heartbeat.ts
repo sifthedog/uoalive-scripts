@@ -1,8 +1,7 @@
 import { now } from './clock.js';
 
-// Proof of life for a loop that can otherwise go quiet. Most branches of a main loop say what they
-// did, but the quiet ones - a swing that lands, a refusal that is only waited out - say nothing, and
-// a script standing still in silence looks exactly like a hung one.
+// Proof of life for a loop that can otherwise go quiet: a script standing still in silence looks
+// exactly like a hung one.
 
 export interface Heartbeat {
   beat: (phase: string, cycle: number, tally: number) => void;

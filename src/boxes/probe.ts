@@ -3,11 +3,10 @@ import { die } from '../lib/die.js';
 import { hex, isKey } from './boxes.js';
 import { PROBE_DELAY } from './config.js';
 
-// Nothing about putting an item on the floor is settled: `moveItemOnGroundOffset` is the only call
-// named for it and three ways of using it changed nothing on a live run. Rather than guess a
-// fourth, this tries every plausible shape on ONE key and reports what each did: the calls return
-// an undocumented number and a refused move is silent, so the only honest signal is whether the
-// item actually went.
+// `moveItemOnGroundOffset` is the only call named for putting an item on the floor, and three ways
+// of using it changed nothing on a live run. This tries every plausible shape on ONE key and reports
+// what each did: the calls return an undocumented number and a refused move is silent, so whether
+// the item actually went is the only honest signal.
 
 // The container serial the UO drop packet uses to mean "the ground"
 const GROUND = 0xffffffff;
@@ -33,9 +32,9 @@ const startedIn = key.container;
 log(`key-probe: testing with ${hex(serial)} (graphic ${hex(graphic)})`);
 log(`key-probe: you are at ${player.x}, ${player.y}, ${player.z}`);
 
-// The heart of it. An item's x/y are documented as world coordinates, but for something sitting in
-// a container they are the slot it occupies in that container's window - which is why an "offset
-// from where it is" lands nowhere. Printed so the two coordinate spaces can be compared by eye.
+// An item's x/y are documented as world coordinates, but for something in a container they are the
+// slot it occupies in that container's window - which is why an "offset from where it is" lands
+// nowhere. Printed so the two coordinate spaces can be compared by eye.
 log(`key-probe: the key reports x ${key.x}, y ${key.y}, z ${key.z}, container ${hex(startedIn)}`);
 
 interface Variant {
@@ -105,8 +104,8 @@ for (const variant of VARIANTS) {
 
   const after = resolve(serial);
 
-  // Gone from the client's world entirely is a drop on a shard that stops tracking it; a container
-  // that is no longer the pack or the box it came from is a drop on one that keeps tracking it
+  // Gone from the client's world entirely is a drop on a shard that stops tracking it; a different
+  // container is a drop on one that keeps tracking it
   if (!after) {
     log(`key-probe:   the key no longer resolves - it is off you. ${variant.name} WORKS.`);
     winner = variant.name;

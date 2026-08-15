@@ -11,16 +11,11 @@ const START = Date.parse('2026-08-14T12:00:00Z');
 
 let world: FakeWorld;
 
-// tree.ts memoizes every graphic it has resolved, so each test needs its own copy of the module
-// rather than the previous test's leftovers.
+// tree.ts memoizes every graphic it has resolved, so each test needs its own copy of the module.
 //
-// The blocked tiles and the banned arts live on globalThis, which vi.resetModules() does NOT clear
-// - that is the whole point of memory.ts, and it makes every test inherit the last one's forest
-// unless forget() is called here, before tree.ts has a chance to load the store.
-//
-// BOUNDS defaults to undefined here: the checked-in box is a specific spot on the shard, and the
-// scan filters everything outside it, so the real one would hide every fixture. The box is
-// bounds.ts's business and is tested there.
+// The blocked tiles and the banned arts live on globalThis, which vi.resetModules() does NOT clear,
+// so forget() has to be called here before tree.ts loads the store or every test inherits the last
+// one's forest. BOUNDS defaults to undefined, because the checked-in box would hide every fixture.
 const loadTree = async (config: Record<string, unknown> = {}) => {
   vi.doMock('./config.js', async () => ({
     ...(await vi.importActual<object>('./config.js')),

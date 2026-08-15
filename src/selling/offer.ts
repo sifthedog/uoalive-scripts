@@ -7,9 +7,8 @@ import { KEEP } from './config.js';
 
 export type { SellRequestItem, VendorEntry };
 
-// KEEP is per item - 'leave this many behind' means ten of each, not ten between them - so a sale
-// carrying several names has to be grouped before it is trimmed. Order follows the gump, so the
-// request lists entries in the order the vendor did.
+// KEEP is per item - ten of each, not ten between them - so a sale carrying several names has to be
+// grouped before it is trimmed. Order follows the gump.
 export const withKeepBack = (matches: VendorEntry[]): SellRequestItem[] => {
   const byName = new Map<string, VendorEntry[]>();
 

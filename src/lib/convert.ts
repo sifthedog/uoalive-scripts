@@ -1,27 +1,22 @@
 import { hex } from './entity.js';
 import { countsByGraphic, diffCounts, type Change, type Counts } from './pack.js';
 
-// Turning one resource into another - logs into boards, ore into ingots - is the same job twice.
-// Stock RunUO answers with a sound and no message either way, so the pack diff is the only evidence
-// a conversion landed, and that same diff names the output's art whatever this shard numbers it.
-//
-// What differs is only the gesture: boards are the tool used and the resource targeted, smelting is
-// the ore double-clicked and the beetle targeted. That is `perform`.
+// Turning one resource into another - logs into boards, ore into ingots. Stock RunUO answers with a
+// sound and no message either way, so the pack diff is the only evidence a conversion landed, and
+// that same diff names the output's art whatever this shard numbers it.
 
 export interface Converter {
-  // Hues this run has given up on. Lumberjacking's haul reads it to decide which logs travel as
-  // logs; nothing outside mining reads its equivalent.
+  // Hues this run has given up on. Lumberjacking's haul reads it to decide which logs travel as logs.
   writtenOff: Set<number>;
 
-  // Returns whether the pack is clear of everything convertible. False means it stopped early -
-  // a save, or the pass backstop - and the caller decides whether to come back.
+  // Returns whether the pack is clear of everything convertible. False means it stopped early - a
+  // save, or the pass backstop - and the caller decides whether to come back.
   run: () => boolean;
 
-  // Written off is not the same as impossible. A few silent passes is a thin basis for carrying a
-  // hue home: a target that stepped out of range, a run of throttled attempts and a stack that was
-  // briefly too small all look exactly like a resource that cannot be worked. When the alternative
-  // is ending the run overweight, this clears the verdicts for one more go - and returns false once
-  // there is nothing left to reconsider, which is what keeps it from looping.
+  // Written off is not the same as impossible: a target that stepped out of range, a run of throttled
+  // attempts and a stack that was briefly too small all look alike. When the alternative is ending the
+  // run overweight, this clears the verdicts for one more go, and returns false once there is nothing
+  // left to reconsider.
   retry: () => boolean;
 }
 
@@ -39,30 +34,27 @@ export const createConverter = (options: {
   maxPasses: number;
   unskilledText: string[];
 
-  // The shard refusing the gesture because it is busy. Silent in the pack diff and therefore
-  // indistinguishable from a material that cannot be worked, so without this a run of busy moments
-  // writes off a perfectly good hue - which on a live mining run cost 86 ore of a single colour.
+  // Silent in the pack diff and therefore indistinguishable from a material that cannot be worked, so
+  // without this a run of busy moments writes off a good hue - which on a live mining run cost 86 ore
+  // of a single colour.
   throttledText?: string[];
 
   isSaving: () => boolean;
 
   // Anything else that makes this pass hopeless without saying anything about the material: a fire
-  // beetle that has wandered out of range, a forge left behind. Returns the reason, which ends the
-  // pass the way a world save does - uncounted, for the caller to come back to. Asked only once a
-  // stack has been chosen, so a pack with nothing to convert never needs the target to exist.
+  // beetle that has wandered off, a forge left behind. Asked only once a stack has been chosen, so a
+  // pack with nothing to convert never needs the target to exist.
   notNow?: () => string | undefined;
 
-  // The next stack worth attempting, or undefined when there is nothing left. Rescanned every pass
-  // rather than planned up front: a conversion consumes the stack and creates a new item, so every
-  // other serial in a snapshot goes stale the moment the first one converts.
+  // Rescanned every pass rather than planned up front: a conversion consumes the stack and creates a
+  // new item, so every other serial in a snapshot goes stale the moment the first one converts.
   nextStack: (writtenOff: Set<number>) => Item | undefined;
 
   // Says why nothing was eligible when the pack still holds some. 'smelting freed nothing' over a
   // pack with ore in it is an accusation without evidence.
   describeSkipped?: (writtenOff: Set<number>) => string | undefined;
 
-  // The gesture. Returns false only for a cursor that never opened - everything else is judged by
-  // the pack diff, not by this.
+  // Returns false only for a cursor that never opened - everything else is judged by the pack diff.
   perform: (stack: Item) => boolean;
 
   // Graphics already accounted for, so the diff does not "learn" the input as an output
@@ -77,9 +69,9 @@ export const createConverter = (options: {
   // Silent misses per hue, cleared by a success, so only a hue that fails repeatedly is given up on
   const misses = new Map<number, number>();
 
-  // Counts one failure against a hue and gives up on it once they add up. Every failing path has to
-  // come through here: one that returned without counting leaves the candidate set unchanged, so the
-  // next pass picks the same stack and the loop runs to its backstop instead of shrinking.
+  // Every failing path has to come through here: one that returned without counting leaves the
+  // candidate set unchanged, so the next pass picks the same stack and the loop runs to its backstop
+  // instead of shrinking.
   const missed = (hue: number): void => {
     const count = (misses.get(hue) ?? 0) + 1;
     misses.set(hue, count);
@@ -106,9 +98,9 @@ export const createConverter = (options: {
     }
   };
 
-  // Watch the pack rather than sleeping a fixed amount and reading once. The action throttle can
-  // hold a conversion well past any pause worth taking, and reading too early is indistinguishable
-  // from a resource that cannot be worked - which is how ordinary logs ended up on the pack animal.
+  // The action throttle can hold a conversion well past any pause worth taking, and reading too early
+  // is indistinguishable from a resource that cannot be worked - which is how ordinary logs ended up
+  // on the pack animal.
   const waitForChange = (before: Counts): Change[] => {
     for (let waited = 0; waited < options.timeoutMs; waited += options.pollMs) {
       sleep(options.pollMs);
@@ -128,7 +120,7 @@ export const createConverter = (options: {
 
     if (!options.perform(stack)) {
       // Counted like any other failure. Without this an empty hand - dead tool, just broken,
-      // mid-swap - spends every pass of the loop waiting on a cursor that is never going to come.
+      // mid-swap - spends every pass waiting on a cursor that is never going to come.
       missed(hue);
       return;
     }
@@ -140,16 +132,14 @@ export const createConverter = (options: {
       return;
     }
 
-    // A refusal is not a verdict on the material - nothing was attempted for it to be one - so it is
-    // left uncounted the way a world save is. Checked before the unskilled wordings only because it
-    // is the commoner of the two; they cannot both be in a journal this attempt just cleared.
+    // Nothing was attempted, so this is not a verdict on the material: left uncounted the way a world
+    // save is. Checked before the unskilled wordings only because it is the commoner of the two.
     if (options.throttledText?.some((text) => journal.containsText(text))) {
       log(`${options.label}: the shard says wait, not counting it against hue ${hue}`);
       return;
     }
 
-    // The shard saying it outright is worth acting on immediately; a material that needs a skill you
-    // do not have is not something retrying supplies.
+    // A material that needs a skill you do not have is not something retrying supplies.
     if (options.unskilledText.some((text) => journal.containsText(text))) {
       writtenOff.add(hue);
       log(`${options.label}: not skilled enough for hue ${hue}, ${options.leftAs}`);
@@ -165,9 +155,9 @@ export const createConverter = (options: {
 
     run: () => {
       for (let pass = 0; pass < options.maxPasses; pass++) {
-        // A frozen shard answers a conversion the same way an unworkable material does - with
-        // nothing at all - so without this a world save costs `attempts` and the hue is written off
-        // for the rest of the run. Left for the caller: the pack is still heavy, so it comes back.
+        // A frozen shard answers a conversion the same way an unworkable material does - with nothing
+        // at all - so without this a world save costs `attempts` and writes the hue off for the rest
+        // of the run. Left for the caller: the pack is still heavy, so it comes back.
         if (options.isSaving()) {
           log(`${options.label}: the world is saving, leaving it for now`);
           return false;
@@ -183,9 +173,8 @@ export const createConverter = (options: {
           return true;
         }
 
-        // Asked only once there is something that needs it. A pack with nothing to convert in it is
-        // finished rather than blocked, and it reports that without a forge, a beetle or a walk -
-        // which is the whole reason smeltAll can afford to be called every time a vein runs dry.
+        // Asked only once there is something that needs it: a pack with nothing to convert is
+        // finished rather than blocked, which is why smeltAll can be called every time a vein dries.
         const blocked = options.notNow?.();
         if (blocked) {
           log(`${options.label}: ${blocked}, leaving it for now`);
@@ -197,7 +186,7 @@ export const createConverter = (options: {
       }
 
       // Termination does not rest on this: a hue either converts or is given up on after `attempts`,
-      // so the candidate set always shrinks. This is the backstop.
+      // so the candidate set always shrinks.
       log(`${options.label}: hit the ${options.maxPasses} pass backstop`);
       return false;
     },

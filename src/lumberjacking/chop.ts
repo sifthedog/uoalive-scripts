@@ -35,16 +35,10 @@ const silentOutcome = (serial: number | undefined, logsBefore: number): ChopOutc
   return 'unknown';
 };
 
-// No cursor opened, which is not the same as nothing having happened. The commonest reason a shard
-// declines to start a swing is that it refused the action outright and said so - "you must wait",
-// "the world is saving", "you have worn out your tool" - and the journal has been clear since
-// immediately before this swing, so whatever is in it now arrived because of it. Read that before
-// falling back on noCursor: throttled and saving both have branches that back off and cost the run
-// nothing, and reaching noCursor instead of them ended a live mining run in fifteen seconds with a
-// pickaxe plainly in hand. The same gap was here, waiting for the first shard to throttle a chop.
-//
-// silentOutcome after it for the same reason the ordinary path ends there - a tool that broke as it
-// swung, or a chop that landed without a word said about it, are both still true here.
+// No cursor is not the same as nothing having happened: the commonest reason a shard declines a
+// swing is that it refused the action outright and said so, and the journal has been clear since
+// immediately before this swing. Reaching noCursor instead of the throttled or saving branch is what
+// ended a live mining run in fifteen seconds with a pickaxe plainly in hand.
 const refusedOutcome = (
   serial: number | undefined,
   logsBefore: number,
@@ -60,11 +54,8 @@ const refusedOutcome = (
     return silent;
   }
 
-  // The old wording guessed at an empty hand and was wrong about it on the mining run that found
-  // this. What is in the hand is one layer read away, and a cursor that turned up just too late is a
-  // different fault from one that never came - TARGET_TIMEOUT rather than the shard - which they
-  // look alike without. Two-handed first, the way rememberAxe reads the layers: an axe is usually
-  // two-handed here, and a hatchet is not.
+  // A cursor that turned up just too late is a different fault from one that never came -
+  // TARGET_TIMEOUT rather than the shard. Two-handed first, the way rememberAxe reads the layers.
   log(
     `chopOnce: no target cursor - hand ` +
       `${describeItem(player.equippedItems.twoHanded ?? player.equippedItems.oneHanded)}, ` +

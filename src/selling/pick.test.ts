@@ -86,9 +86,8 @@ describe('pickItems', () => {
     expect(world.log).toHaveBeenCalledWith(expect.stringContaining('already on the list'));
   });
 
-  // Every other targeting site in the repo brackets itself this way. A cursor left open by whatever
-  // ran last would swallow the query, and what follows a selection is double-clicks and gumps - a
-  // live cursor would spend those as target clicks instead.
+  // A cursor left open by whatever ran last would swallow the query, and a live one would spend the
+  // double-clicks and gumps that follow a selection as target clicks instead.
   it('clears any leftover cursor before opening its own', () => {
     world.target.query = clicks({ serial: 0x4011, graphic: 0x13b6 });
     world.client.queryItemOPL = named({ 0x4011: 'Scimitar' });

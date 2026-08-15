@@ -78,12 +78,9 @@ const walkToBeetle = (serial: number): Mobile | undefined =>
     step: stepToward,
   });
 
-// The stationary counterpart, for the run that has promised not to take a step: a beetle that is not
-// already next to you is not a forge this run can use, and the ore travels unsmelted instead.
-//
-// The serial is re-resolved rather than the findBeetle result trusted, for the reason forgeGone
-// exists - the beetle is a pet, so its coordinates go stale within a cycle, and the one thing this
-// function is for is the distance.
+// The stationary counterpart: a beetle not already next to you is not a forge this run can use. The
+// serial is re-resolved rather than the findBeetle result trusted, because a pet's coordinates go
+// stale within a cycle and distance is the one thing this asks about.
 const beetleInRange = (serial: number): Mobile | undefined => {
   const found = client.findObject(serial);
 
@@ -102,23 +99,18 @@ const beetleInRange = (serial: number): Mobile | undefined => {
   return found;
 };
 
-// Whether a pile has two ore in it. The amount is the only thing that answers that: the art does
-// not, whatever the stack-size table says - a pile of 33 on this shard is drawn with the same
-// graphic as a pile of one, so a size read off the graphic skips a full stack outright.
-//
-// The amount has its own trap. It is 0 for anything the client has no data for, not 1 and not
-// absent, and reading a 0 as a pile of zero skips every stack in the pack - a run that halts
-// overweight beside a working beetle with ore it could have smelted. So an unknown size is worth
-// one attempt, and only a size the client has actually reported as one is skipped.
+// The amount is the only thing that answers this - a pile of 33 on this shard wears the same graphic
+// as a pile of one. It has its own trap: it reads 0 for anything the client has no data for, and
+// reading that as a pile of zero skips every stack in the pack. So an unknown size is worth one
+// attempt, and only a size the client has actually reported as one is skipped.
 const bigEnough = (item: Item): boolean => {
   const amount = item.amount ?? 0;
 
   return amount === 0 || amount >= MIN_SMELT_AMOUNT;
 };
 
-// Why a pile was passed over, for the one log line that has to explain itself: 'smelting freed
-// nothing' said over a pack with ore in it is an accusation without evidence, and every reason a
-// stack is skipped is invisible from outside this file.
+// 'smelting freed nothing' said over a pack with ore in it is an accusation without evidence, and
+// every reason a stack is skipped is invisible from outside this file.
 const describePile = (item: Item, writtenOff: Set<number>): string => {
   const amount = item.amount ?? 0;
   const hue = item.hue ?? 0;
@@ -134,27 +126,21 @@ const describePile = (item: Item, writtenOff: Set<number>): string => {
   return `${amount} hue ${hue}`;
 };
 
-// Two conditions, and they expire differently. A written-off hue is done for the run - the shard
-// has said so, or three silent passes have. A stack too small is only too small right now: one more
-// swing on that vein makes it big enough, so nothing is remembered about it.
+// Two conditions that expire differently: a written-off hue is done for the run, while a stack too
+// small is only too small right now - one more swing makes it big enough, so nothing is remembered.
 const nextOre = (writtenOff: Set<number>): Item | undefined =>
   collectIn(packContents(), isOrePile).find(
     (item) => !writtenOff.has(item.hue ?? 0) && bigEnough(item),
   );
 
-// Found and walked to once per smeltAll, then targeted by every pass. Held here rather than passed
-// through the shared engine, which has no business knowing that this conversion needs a forge.
+// Held here rather than passed through the shared engine, which has no business knowing that this
+// conversion needs a forge.
 let forge: Mobile | undefined;
 
-// The beetle is a pet - it follows, and it wanders. A smelt aimed at one that has drifted out of
-// range fails the same way an ore that cannot be worked does: silently, with nothing in the pack
-// diff and nothing in the journal. Three of those write the hue off for the rest of the run, and on
-// a live one that took 86 ore of a single colour out of circulation while the beetle was standing
-// two tiles further away than it had been.
-//
-// So the position is re-read rather than trusted. walkToBeetle proves it is in range once per
-// smeltAll; this is what notices when that stops being true, and it ends the pass instead of
-// blaming the ore. smeltAll walks to it again next time it is called.
+// A smelt aimed at a beetle that has drifted out of range fails exactly the way an ore that cannot
+// be worked does: silently. Three of those write the hue off for the run, which on a live one took
+// 86 ore of a single colour out of circulation while the beetle stood two tiles further off than it
+// had been. So this ends the pass instead of blaming the ore; smeltAll walks to it again next call.
 const forgeGone = (): string | undefined => {
   if (!forge) {
     return 'no beetle to smelt against';
@@ -195,8 +181,8 @@ const converter = /* @__PURE__ */ createConverter({
       : undefined;
   },
 
-  // The inverse of lumberjacking's makeBoards, which uses the tool and targets the resource: here
-  // the ore is double-clicked and the beetle is the target, the same as walking up to a forge
+  // The inverse of lumberjacking's makeBoards: here the ore is double-clicked and the beetle is the
+  // target, the same as walking up to a forge
   perform: (stack) => {
     if (!forge) {
       return false;
@@ -223,12 +209,10 @@ const converter = /* @__PURE__ */ createConverter({
 export const unsmeltable = converter.writtenOff;
 export const retryUnsmeltable = converter.retry;
 
-// How the beetle is reached is the only thing the two smelts disagree about, so it is the only thing
-// that is passed in. Everything else - when to bother looking, what a missing one costs, how the
-// conversion itself is judged - is the same question whether or not the run is allowed to walk.
+// How the beetle is reached is the only thing the two smelts disagree about.
 const smeltAgainst = (reach: (serial: number) => Mobile | undefined): boolean => {
-  // Asked before the beetle is looked for, so a pack with nothing eligible in it costs neither a
-  // search nor a walk. run() reports what it is holding and why none of it counts.
+  // Asked before the beetle is looked for, so a pack with nothing eligible costs neither a search
+  // nor a walk
   if (!nextOre(converter.writtenOff)) {
     return converter.run();
   }
@@ -236,8 +220,7 @@ const smeltAgainst = (reach: (serial: number) => Mobile | undefined): boolean =>
   const found = findBeetle();
 
   if (!found) {
-    // Said once rather than every pass: a missing beetle is not fatal, the ore simply travels
-    // unsmelted, and a line per cycle would bury everything else the run has to say.
+    // Said once rather than every pass: a missing beetle is not fatal, the ore travels unsmelted
     if (!reportedMissing) {
       log('smelt: no fire beetle nearby, keeping the ore as it is');
       reportedMissing = true;
@@ -254,11 +237,10 @@ const smeltAgainst = (reach: (serial: number) => Mobile | undefined): boolean =>
   return converter.run();
 };
 
-// Walks to the beetle if it has drifted, which is what dist/mining.js wants: it is about to walk
-// somewhere else anyway, and the ore is why it is walking at all.
+// Walks to the beetle if it has drifted, which is what dist/mining.js wants - it is about to walk
+// somewhere else anyway.
 export const smeltAll = (): boolean => smeltAgainst(walkToBeetle);
 
-// Smelts only against a beetle already in range, which is what dist/mine-here.js wants: that run
-// stands still, and a smelt is not worth breaking that for. It costs a pass rather than the ore -
-// the pack keeps it, and the next call tries again.
+// Only against a beetle already in range, for the run that stands still. Costs a pass rather than
+// the ore: the pack keeps it and the next call tries again.
 export const smeltHere = (): boolean => smeltAgainst(beetleInRange);

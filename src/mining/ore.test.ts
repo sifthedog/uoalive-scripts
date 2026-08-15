@@ -71,13 +71,10 @@ describe('oresByHue', () => {
   });
 });
 
-// The seeded graphics come from a stack-size table this shard has already been caught disagreeing
-// with, so an art the set has never heard of is not a remote possibility. The tooltip name is the
-// way back from that, and one is enough: the art joins the set.
-//
-// Which is why every test here gets its own copy of the module. A learned art lands in the config's
-// own Set - deliberately, the way boards.ts learns a board graphic - so one test teaching it 0x1234
-// would otherwise have the next test's 'not ore' fixture come back as ore.
+// The seeded graphics come from a stack-size table this shard has been caught disagreeing with, so
+// the tooltip name is the way back - and one is enough, because the art joins the set. Which is why
+// every test here gets its own module: a learned art lands in the config's own Set, so one test
+// teaching it 0x1234 would have the next test's 'not ore' fixture come back as ore.
 describe('isOrePile', () => {
   const loadOre = async () => import('./ore.js');
 
@@ -235,9 +232,8 @@ describe('groupOres', () => {
   });
 });
 
-// The wait the loop takes before grouping, so a swing's ore is in the pack by the time the piles are
-// counted. A pack that arrives late is the reason it exists; a pack that never changes is the reason
-// it is bounded.
+// The wait the loop takes before grouping. A pack that arrives late is the reason it exists; one
+// that never changes is the reason it is bounded.
 describe('waitForOre', () => {
   // The common case, and the one worth keeping cheap: the ore is usually already there by the time
   // the journal line announcing it has been read, so this must not cost a poll interval per swing.

@@ -63,11 +63,8 @@ export const markDepleted = store.markDepleted;
 export const markUnreachable = store.markUnreachable;
 export const markUnusable = store.markUnusable;
 
-// "You can't use an axe on that" is about the graphic, not the tile: the tiledata calls a whole
-// family of statics a tree, and only the trunk is harvestable. Banning the graphic drops every
-// other tile of that art in one go, instead of learning the same thing tile by tile across the
-// forest. Contrast markDepleted, which is per tile because a stump regrows and a neighbour of the
-// same art may still have wood.
+// About the graphic, not the tile: the tiledata calls a whole family of statics a tree, and only the
+// trunk is harvestable. Banning the graphic drops every other tile of that art in one go.
 export const markNotHarvestable = (graphic: number): void => {
   const { notTree } = memory();
 
@@ -88,9 +85,8 @@ const scan = /* @__PURE__ */ createScan<Tile>({
   skipLand: true,
   matches: (graphic) => isTree(graphic),
 
-  // Trees outside the box are still fair game when a legal standing tile is within CHOP_RANGE of
-  // them; ones no legal tile can reach are filtered out here rather than picked, walked at, refused,
-  // and only written off MAX_STEPS later.
+  // Trees outside the box are still fair game when a legal standing tile is within CHOP_RANGE;
+  // filtered here rather than picked, walked at, refused and written off MAX_STEPS later.
   reachable: (x, y) => reachableFromBounds(x, y, CHOP_RANGE),
 
   describe: (tree) => `'${client.getStatic(tree.graphic)?.name ?? '?'}'`,

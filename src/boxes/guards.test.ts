@@ -23,9 +23,8 @@ describe('stopReason', () => {
     expect(stopReason()).toBe('you are dead');
   });
 
-  // The bug behind "15 wooden boxes, emptied 0": these checks come from the crafting scripts, where
-  // every cycle adds to the pack. Emptying a box onto the floor only ever frees weight and slots,
-  // so an overloaded character is precisely who the run should be working for, not stopping on.
+  // The bug behind "15 wooden boxes, emptied 0": emptying a box onto the floor frees weight and
+  // slots, so an overloaded character is who the run should be working for, not stopping on.
   it('ignores weight while the keys are going on the floor', async () => {
     installGlobals({ player: { weight: 400, weightMax: 400 } });
 

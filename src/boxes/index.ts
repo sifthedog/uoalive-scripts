@@ -7,9 +7,8 @@ import { sellBoxes } from './sale.js';
 
 const backpack = player.backpack ?? die('boxes: no backpack');
 
-// Boxes proved empty, and boxes that would not empty. Both carry across rounds: a box emptied in
-// one round is still in the pack until it sells, and a box that would not open must not be tried
-// again every round.
+// Both carry across rounds: a box emptied in one round is still in the pack until it sells, and a
+// box that would not open must not be tried again every round.
 const emptied = new Set<number>();
 const refused = new Set<number>();
 
@@ -23,8 +22,7 @@ const graphicsSeen = new Set<number>();
 const initial = findBoxes();
 log(`boxes: ${initial.length} wooden boxes in the pack`);
 
-// A pack that plainly has boxes in it and reports none means the graphic is wrong for this shard,
-// so say what is actually in there rather than stopping with nothing to go on
+// A pack that plainly has boxes and reports none means the graphic is wrong for this shard
 if (initial.length === 0) {
   dumpPack();
   die('boxes: nothing matched - pick your box out of the dump above and put its graphic in BOX_GRAPHICS');
@@ -43,11 +41,9 @@ for (let round = 0; round < MAX_ROUNDS && !stop; round++) {
       break;
     }
 
-    // The shard's own tooltip says how much is in a box, which costs a query rather than a
-    // double-click and an 800ms wait. "Contents: 0" is the server stating the box is empty, which
-    // is a better answer than the client-side contents array the opening path has to rely on, so
-    // it counts as confirmed and the box is safe to sell. Anything else, or no tooltip at all,
-    // falls through to opening it.
+    // "Contents: 0" is the server stating the box is empty, which is a better answer than the
+    // client-side contents array the opening path relies on, and costs a query rather than a
+    // double-click and an 800ms wait. Anything else falls through to opening it.
     const inside = peekContents(box.serial);
 
     if (inside === 0) {
@@ -92,9 +88,8 @@ for (let round = 0; round < MAX_ROUNDS && !stop; round++) {
   const refusedNote = refused.size ? `, ${refused.size} would not open` : '';
   log(`boxes: round ${round + 1}, emptied ${openedThisRound}${skippedNote}${refusedNote}`);
 
-  // Said out loud rather than kept for the stop message. A guard that fires before the first box
-  // leaves a round that did nothing and explained nothing, which is how "emptied 0" arrived with
-  // no reason attached.
+  // Said out loud rather than kept for the stop message: a guard that fires before the first box
+  // leaves a round that did nothing and explained nothing.
   if (guard) {
     log(`boxes: stopped going through the boxes - ${guard}`);
   }

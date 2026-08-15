@@ -19,15 +19,13 @@ export interface SellGump {
   items: VendorEntry[];
 }
 
-// Equality rather than a substring test - selling 'iron ingots' when asked for 'iron ingot' would
-// be a different item, and a substring match would also hit 'dull copper iron ingot'
+// Equality rather than a substring test, which would also hit 'dull copper iron ingot'
 export const namedExactly =
   (name: string) =>
   (entry: VendorEntry): boolean =>
     (entry.name ?? '').toLowerCase() === name.toLowerCase();
 
-// The same test against a list, so a sale for several items can be settled from the one gump the
-// vendor already has open rather than saying 'vendor sell' once per name
+// The same against a list, so a sale for several names is settled from one gump
 export const namedAnyOf = (names: string[]) => {
   const wanted = new Set(names.map((name) => name.toLowerCase()));
 
@@ -57,15 +55,9 @@ export const withKeepBack = (matches: VendorEntry[], keep: number): SellRequestI
 export const totalOf = (entries: VendorEntry[]): number =>
   entries.reduce((sum, entry) => sum + (entry.amount ?? 1), 0);
 
-// What is left of each offered stack, keyed by serial: a stack the vendor took entirely is gone
-// from the pack and so absent from the map, while one it took part of keeps its serial and comes
-// back smaller.
-//
-// The whole pack, at any depth. This used to read the top level only, on the assumption that a
-// vendor is shown nothing below it - and a vendor that sells out of a bag turned that into a lie:
-// an item offered from inside one was never at the top level, so it read as gone the instant it was
-// offered and every refusal was reported as a sale. Counting where the goods actually are cannot
-// make that mistake, whichever way the shard behaves.
+// What is left of each offered stack, keyed by serial. The whole pack, at any depth: reading the top
+// level only meant an item offered from inside a bag read as gone the instant it was offered, so
+// every refusal was reported as a sale.
 const packLeft = (serials: Set<number>): Map<number, number> => {
   const left = new Map<number, number>();
 
@@ -76,18 +68,11 @@ const packLeft = (serials: Set<number>): Map<number, number> => {
   return left;
 };
 
-// How many of the offered units actually left the pack, per offered stack. That the goods went is
-// the only proof there is that a vendor took them: `sendSellRequest` answers whether the packet
-// went out, not whether the sale landed, and a vendor that refuses does so in silence.
+// That the goods went is the only proof a vendor took them: `sendSellRequest` answers whether the
+// packet went out, not whether the sale landed, and a vendor that refuses does so in silence.
 //
-// Per stack rather than one total, because a single request may carry two names and 'the vendor
-// took 25' does not say whose 25 they were.
-//
-// Matched by serial rather than by name, so nothing here needs tooltip data: a sold stack leaves
-// the pack entirely and a partly sold one keeps its serial and drops its `amount`.
-//
-// Polled rather than slept through, the lesson boxes/drop.ts paid for. Reading the pack back too
-// early only ever says the goods are still there, which costs a pass; it can never invent a sale.
+// Per stack rather than one total, because a single request may carry two names. Matched by serial
+// rather than by name, so nothing here needs tooltip data.
 export const waitForSaleBySerial = (
   offered: SellRequestItem[],
   timeoutMs: number,
@@ -120,7 +105,6 @@ export const waitForSale = (
     0,
   );
 
-// `prefix` keeps each script's log lines namespaced to itself
 export const openSellGump = (prefix: string, timeoutMs: number): SellGump | undefined => {
   player.say('vendor sell');
   const data = Gump.waitForVendorGumpData(timeoutMs);

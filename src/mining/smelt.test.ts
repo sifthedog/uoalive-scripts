@@ -183,9 +183,8 @@ describe('smeltAll', () => {
     expect(world.player.use).toHaveBeenCalledTimes(1);
   });
 
-  // Silence is also what a throttled or stale attempt looks like, so one is not enough to conclude
-  // anything - but a hue that never lands has to leave the candidate set, or the loop runs to its
-  // backstop instead of shrinking
+  // Silence is also what a throttled or stale attempt looks like, but a hue that never lands has to
+  // leave the candidate set or the loop runs to its backstop instead of shrinking
   it('gives up on a hue only after it has stayed silent SMELT_ATTEMPTS times', async () => {
     world = installGlobals({ player: { x: 100, y: 100 }, backpack: [ore(1, IRON)] });
     beetleNearby();
@@ -294,9 +293,8 @@ describe('smeltAll', () => {
     expect(world.player.use).toHaveBeenCalledWith(1);
   });
 
-  // Two ore make an ingot, so the shard refuses a lone one - silently, in a way the pack diff
-  // cannot tell from a throttled attempt. Offered anyway it would burn three attempts and then
-  // write off the whole hue, taking every future stack of iron with it.
+  // Two ore make an ingot, so the shard refuses a lone one - silently. Offered anyway it burns three
+  // attempts and writes off the whole hue, taking every future stack of iron with it.
   it('leaves a lone ore alone rather than failing three times over it', async () => {
     world = installGlobals({ player: { x: 100, y: 100 }, backpack: [ore(1, IRON, 1, ONE)] });
     beetleNearby();
@@ -323,9 +321,8 @@ describe('smeltAll', () => {
     expect(world.player.use).not.toHaveBeenCalledWith(1);
   });
 
-  // Three silent passes is a thin basis for carrying a hue home: a beetle that wandered out of
-  // range for a moment looks exactly the same. The loop asks for this rather than ending a run
-  // overweight beside a working beetle and a pack full of ore.
+  // Three silent passes is a thin basis for carrying a hue home: a beetle briefly out of range looks
+  // exactly the same.
   it('takes a hue back off the written-off list when asked', async () => {
     world = installGlobals({ player: { x: 100, y: 100 }, backpack: [ore(1, IRON)] });
     beetleNearby();
@@ -367,8 +364,7 @@ describe('smeltAll', () => {
   });
 
   // item.amount is 0 for anything the client has no data for, and reading that as a pile of zero
-  // skips every stack in the pack - a run that halts overweight beside a working beetle with ore it
-  // could have smelted. An unknown size is worth one attempt; only a known one is skipped.
+  // skips every stack in the pack. An unknown size is worth one attempt; only a known one is skipped.
   it('tries a stack whose size the client has not told us', async () => {
     world = installGlobals({
       player: { x: 100, y: 100 },
@@ -490,9 +486,8 @@ describe('smeltHere', () => {
     expect(world.client.findAllMobilesOfType).not.toHaveBeenCalled();
   });
 
-  // A pet that has walked out of sight altogether, rather than merely out of range. Distinguished
-  // because the two say different things about what to do: one is a beetle to call back, the other
-  // is a serial that is not going to resolve again.
+  // Out of sight altogether rather than merely out of range: one is a beetle to call back, the other
+  // a serial that is not going to resolve again.
   it('says so when the beetle cannot be resolved at all', async () => {
     world = installGlobals({ player: { x: 100, y: 100 }, backpack: [ore(1, IRON)] });
     world.client.findAllMobilesOfType.mockReturnValue([beetle()]);

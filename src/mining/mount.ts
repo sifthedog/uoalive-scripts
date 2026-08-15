@@ -1,11 +1,10 @@
 import { untilLanded } from '../lib/retry.js';
 import { DISMOUNT_ATTEMPTS, DISMOUNT_POLL, DISMOUNT_TIMEOUT } from './config.js';
 
-// Riding breaks both halves of this script at once: most shards refuse the swing outright to a
-// mounted character, and the fire beetle you are sitting on is not a beetle you can target as a
-// forge. Since the beetle is both the ride there and the smelter once you arrive, getting off it
-// is a step, not a precondition - so the loop asks every cycle rather than once at the start, and
-// a remount mid-run costs one cycle instead of the rest of the session.
+// Riding breaks both halves of this script: most shards refuse the swing to a mounted character,
+// and the fire beetle you are sitting on is not one you can target as a forge. Since the beetle is
+// both the ride and the smelter, getting off is a step rather than a precondition - which is why the
+// loop asks every cycle.
 
 let reported = false;
 

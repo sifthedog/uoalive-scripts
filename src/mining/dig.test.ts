@@ -53,9 +53,8 @@ describe('outcomeFor', () => {
 });
 
 describe('digOnce', () => {
-  // Where this parts company with lumberjacking's chop: the swing is answered with yourself, so the
-  // shard picks the ore, and no tile is ever named. Which means nothing here has to be right about
-  // land versus static, or about which of the arts on a tile is the one carrying ore.
+  // Where this parts company with lumberjacking's chop: the shard picks the ore and no tile is
+  // named, so nothing here has to be right about land versus static.
   it('answers the cursor with yourself rather than a tile', () => {
     digOnce(PICKAXE);
 
@@ -75,10 +74,8 @@ describe('digOnce', () => {
     expect(digOnce(PICKAXE)).toBe('empty');
   });
 
-  // A cursor that never opened is not the same as nothing having happened: the shard usually
-  // refused the swing and said why, and the journal has been clear since just before it. Reading
-  // that is what tells a throttle or a world save apart from a script that cannot read an outcome -
-  // and reaching noCursor instead of either ended a live run in fifteen seconds.
+  // Not the same as nothing having happened: the shard usually refused the swing and said why.
+  // Reaching noCursor instead of the throttle or the save ended a live run in fifteen seconds.
   describe('when no cursor opens', () => {
     beforeEach(() => {
       world.target.waitTargetSelf.mockReturnValue(false);
@@ -96,9 +93,8 @@ describe('digOnce', () => {
       expect(digOnce(PICKAXE)).toBe('saving');
     });
 
-    // The swing that breaks the pickaxe leaves the next one with an empty hand, and an empty hand
-    // is a swing no cursor opens for. Read as the broken tool it is, so the loop swaps rather than
-    // backing off against a hand that has nothing to back off with.
+    // The swing that breaks the pickaxe leaves the next one with an empty hand, which is a swing no
+    // cursor opens for - so the loop swaps rather than backing off against an empty hand.
     it('reads a pickaxe serial that stopped resolving as a worn out tool', () => {
       world.client.findObject.mockReturnValue(undefined);
 
@@ -128,9 +124,8 @@ describe('digOnce', () => {
       expect(world.log).toHaveBeenCalledWith(expect.stringContaining("0xe86 'pickaxe'"));
     });
 
-    // A cursor that turned up a moment after the wait gave up on it is TARGET_TIMEOUT being short,
-    // not the shard refusing - and the cancel on this path closes it, so the read has to come first
-    // or the line reports 'never opened' every time and settles nothing.
+    // A late cursor is TARGET_TIMEOUT being short, not the shard refusing - and the cancel on this
+    // path closes it, so the read has to come first.
     it('tells a cursor that came late from one that never came', () => {
       world.target.open = true;
 

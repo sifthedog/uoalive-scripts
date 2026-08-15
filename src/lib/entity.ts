@@ -1,8 +1,7 @@
 // Serials come back as signed 32-bit ints, so an unshifted one prints as 0x-3266af2f
 export const hex = (value: number): string => `0x${(value >>> 0).toString(16)}`;
 
-// Chebyshev, because a diagonal step covers a tile of x and a tile of y at once - so a tile two
-// away diagonally is two steps, the same as two away in a straight line.
+// Chebyshev, because a diagonal step covers a tile of x and a tile of y at once
 export const distanceTo = (spot: { x: number; y: number }): number =>
   Math.max(Math.abs(spot.x - player.x), Math.abs(spot.y - player.y));
 
@@ -13,15 +12,14 @@ export const isMobile = (entity: Item | Mobile): entity is Mobile => entity._tag
 export const nameOf = (entity: { name?: string; serial: number }): string =>
   entity.name ?? hex(entity.serial);
 
-// What a hand or a layer is holding, for the lines that report the world rather than act on it. The
-// graphic comes first because it is the half that is always there: a name arrives with the tooltip
-// and may still be empty, and the graphic is what a config is corrected with.
+// The graphic comes first because it is the half that is always there, and the half a config is
+// corrected with.
 export const describeItem = (item?: { graphic: number; name?: string }): string =>
   item ? `${hex(item.graphic)} '${item.name ?? ''}'` : 'empty';
 
-// Walk to a mobile, re-resolving it every step rather than walking at where it was when this
-// started: a pet follows you, so its coordinates go stale within a cycle. It is never double-clicked
-// on the way - a pack beetle is rideable, so a double-click mounts you.
+// Re-resolved every step rather than walked at where it was: a pet follows you, so its coordinates
+// go stale within a cycle. Never double-clicked on the way - a pack beetle is rideable, so a
+// double-click mounts you.
 export const approach = (
   serial: number,
   options: {

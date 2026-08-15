@@ -45,8 +45,7 @@ describe('dropToGround', () => {
   });
 
   // The bug that put keys in the main backpack: the drop had landed, the container was read back
-  // before the client caught up, and the recovery picked the key off the floor again. Polling is
-  // what fixes it, so a container that only changes on a later look still counts as a drop.
+  // before the client caught up, and the recovery picked the key off the floor again.
   it('waits for a drop that takes a moment to land', async () => {
     let looks = 0;
     world.client.findObject = vi.fn(() =>

@@ -1,11 +1,8 @@
 import { OPL_TIMEOUT, PEEK_CONTENTS } from './config.js';
 
 // A container's tooltip carries what is in it - RunUO renders it as "Contents: 3/125, 4 stones" -
-// so the count can be had without the double-click, the 800ms wait and the window. On a pile that
-// is mostly already empty that is the difference between opening a hundred boxes and opening two.
-//
-// What it gives is a *count*, not a list: there is no way to know a box holds an iron key
-// specifically without opening it. Zero is the useful answer, and zero is most of them.
+// so the count can be had without the double-click, the 800ms wait and the window. It is a *count*,
+// not a list; zero is the useful answer, and zero is most of them.
 
 let oplReportsContents = true;
 
@@ -32,8 +29,8 @@ export const peekContents = (serial: number): number | undefined => {
     }
   }
 
-  // The shard does not send it. Asked once and then left alone, the way tool.ts stops asking for
-  // "uses remaining" - otherwise every box pays the OPL timeout for an answer that never comes.
+  // Asked once and then left alone: otherwise every box pays the OPL timeout for an answer the
+  // shard never sends.
   oplReportsContents = false;
   log('boxes: no "contents" line in the tooltips here, so every box has to be opened to be checked');
 

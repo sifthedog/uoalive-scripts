@@ -27,9 +27,8 @@ describe('overweight', () => {
     expect(overweight()).toBe(false);
   });
 
-  // The whole reason this is a function rather than an expression at each call site. The client
-  // refreshes weight and weightMax independently and reports a max of 0 in between, against which
-  // every weight in the game is over the limit - and with a buffer, so is a weight of zero.
+  // The client refreshes weight and weightMax independently and reports a max of 0 in between,
+  // against which every weight in the game is over the limit - with a buffer, so is a weight of 0.
   it('is false while the client is reporting a max of zero', () => {
     installGlobals({ player: { weight: 436, weightMax: 0 } });
 

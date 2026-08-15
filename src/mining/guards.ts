@@ -1,12 +1,10 @@
 import { dead, firstReason, packFull } from '../lib/guards.js';
 import { PACK_LIMIT } from './config.js';
 
-// Anything here ends the run cleanly; the loop asks before every swing. There is no box check:
-// mining roams, and the one this folder started with was lumberjacking's forest, which stopped
-// every run on cycle zero before it had scanned, equipped or swung at anything.
+// No box check: mining roams, and the one this folder started with was lumberjacking's forest, which
+// stopped every run on cycle zero.
 //
-// There is no weight check either, and that is not an oversight. Being over the limit is what
-// triggers the smelt, so a guard that stopped the run at a buffer below it would fire first, every
-// time, and the smelt would never happen at all. The loop stops on weight itself - but only after
-// smelting has had its turn and failed to free anything.
+// No weight check either: being over the limit is what triggers the smelt, so a guard at a buffer
+// below it would fire first every time and the smelt would never happen. The loop stops on weight
+// itself, after smelting has had its turn and freed nothing.
 export const stopReason = (): string | undefined => firstReason(dead, packFull(PACK_LIMIT));

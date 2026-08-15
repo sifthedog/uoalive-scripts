@@ -2,15 +2,10 @@ import { contentsOf, findIn, openContainers, packContents } from './containers.j
 import { hex } from './entity.js';
 import { untilLanded } from './retry.js';
 
-// Every script that swings or digs has to find its tool, know when it has broken, and get a
-// replacement onto the right hand layer. What differs between them is the name and which layer
-// holds it - an axe is two-handed, a pickaxe one-handed - and whether the tool is equipped at all,
-// since a crafting tool is used out of the pack rather than worn.
+// Finding a tool, knowing when it has broken, and getting a replacement onto the right hand layer.
 
-// Every graphic the search actually saw, one level down included. Listing only the top level read as
-// an empty pack when the spares were in a bag, which is exactly the case this message exists for -
-// openContainers opens the top level of the pack and no deeper, so a bag inside a bag is never
-// reached and the pinned spare bag is the way out.
+// One level down included: listing only the top level read as an empty pack when the spares were in
+// a bag, which is exactly the case this message exists for.
 const describeContents = (contents: Item[] | undefined): string =>
   (contents ?? [])
     .map((item) => {
@@ -28,7 +23,7 @@ export interface Tool {
   serial: () => number | undefined;
 
   // Searches the pack, opening containers if the first pass misses, and returns what it found
-  // without equipping it. For a tool that is used rather than worn.
+  // without equipping it - for a tool that is used rather than worn.
   find: () => Item | undefined;
 
   equip: () => boolean;

@@ -64,9 +64,8 @@ describe('dismount', () => {
     expect(world.log).toHaveBeenCalledWith(expect.stringContaining('gave up'));
   });
 
-  // Once per spell of being mounted, not once per cycle. A mount the shard will not let go of is
-  // asked about every cycle until the stall watchdog fires, and one line each would bury the rest
-  // of the run's output under hundreds of copies of the same sentence.
+  // Once per spell of being mounted, not once per cycle: a mount the shard will not let go of is
+  // asked about every cycle until the stall watchdog fires.
   it('says it is getting off once however many cycles stay stuck', async () => {
     world.player.equippedItems.mount = item({ serial: 2, graphic: 0x3ebb });
     const { dismount } = await loadMount();

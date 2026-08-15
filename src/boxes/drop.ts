@@ -13,12 +13,9 @@ const nextTile = (): Offset =>
   DROP_SPREAD[spread++ % DROP_SPREAD.length] ?? { x: 0, y: 0, z: 0 };
 
 // `moveItemOnGroundOffset` at 0/0/0 is the answer on UOAlive, proven by dist/key-probe.js: the key
-// went from container 0x4128e8bf at slot x 79, y 79 to container 0xffffffff at 3443, 2638, 32 -
-// the tile the character was standing on. So the offset is from *you*, not from the item, which is
-// what the container-relative x/y of a packed item had made doubtful.
-//
-// The other candidates are kept because the run should not need re-probing on a different shard:
-// DROP_METHOD = 'auto' tries each and keeps whichever demonstrably moves the item.
+// landed on the tile the character was standing on, so the offset is from *you* and not from the
+// item. The others are kept so a different shard needs no re-probing - DROP_METHOD = 'auto' tries
+// each and keeps whichever demonstrably moves the item.
 export type DropMethod = 'groundOffset' | 'groundOffsetStep' | 'worldSerial';
 
 // The container serial the UO drop packet uses to mean "the ground"
@@ -48,13 +45,12 @@ const containerOf = (serial: number): number | undefined => {
   return found && found._tag !== 'Mobile' ? found.container : undefined;
 };
 
-// The item leaving the container it was in is the only proof a drop landed - the calls all return
-// a number the client does not document, and a refused drop is silent.
+// The item leaving the container is the only proof a drop landed: the calls return a number the
+// client does not document, and a refused drop is silent.
 //
-// Polled rather than slept through, and this is the expensive lesson of the whole file: read the
-// container back too early and a drop that worked looks like one that did not, whereupon the
-// recovery path moves the key "into the pack" - which, since it is by then lying on the floor,
-// picks it back up. Keys arriving in the main backpack was a *successful* drop being undone.
+// Polled rather than slept through, the expensive lesson of this file: read the container back too
+// early and a drop that worked looks like one that did not, whereupon the recovery path moves the
+// key "into the pack" - picking it back up off the floor.
 const left = (serial: number, from: number): boolean => {
   for (let waited = 0; waited < DROP_TIMEOUT; waited += DROP_POLL) {
     sleep(DROP_POLL);

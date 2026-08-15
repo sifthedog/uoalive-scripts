@@ -64,10 +64,8 @@ describe('stopReason', () => {
     expect(stopReason()).toBeUndefined();
   });
 
-  // The client refreshes weight and weightMax independently and reports a max of 0 in between,
-  // against which `weight > weightMax - 40` is true for every character in the game. This stopped
-  // a live mining run on its first cycle, at a weight comfortably inside the limit it claimed to
-  // have exceeded; lumberjacking carried the same unguarded expression.
+  // A max of 0 makes `weight > weightMax - 40` true for every character in the game. It stopped a
+  // live mining run on cycle one, at a weight comfortably inside the limit it claimed to exceed.
   it('does not read a stat refresh as an overloaded character', async () => {
     installGlobals({ player: { x: 50, y: 50, weight: 436, weightMax: 0 } });
     const { stopReason } = await loadGuards({ WEIGHT_BUFFER: 40 });

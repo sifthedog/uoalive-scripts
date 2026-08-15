@@ -38,15 +38,13 @@ const known = new Map<number, boolean>();
 // a static. Everything that keys on an art therefore keys on the kind as well.
 const artKey = (graphic: number, isLand: boolean) => `${isLand ? 'land' : 'static'}:${graphic}`;
 
-// A mountainside is a land tile and a cave floor is a static, and the two are identified in
-// different ways because the client only names one of them: getStatic reads the static tiledata,
-// and getTile - the land one - answers with flags and no name at all. So land tiles go through the
-// table in config and statics go through their name, the way lumberjacking finds trees.
+// A mountainside is land and a cave floor is a static, and only the static can be named: getTile
+// answers with flags and no name at all. So land goes through the table in config and statics go
+// through their name, the way lumberjacking finds trees.
 export const isOre = (graphic: number, isLand: boolean): boolean => {
-  // Refusals first, seeds second. ORE_TILE_GRAPHICS is a guess copied out of RunUO; a ban is either
-  // the shard's own answer, learned at the cost of a walk and a swing, or a hand-written correction
-  // to that guess. Asked the other way round - as lumberjacking can afford to, since its seed sets
-  // are empty - the seed outranks both and markNotMineable silently does nothing at all.
+  // Refusals first, seeds second: ORE_TILE_GRAPHICS is a guess copied out of RunUO, and a ban is the
+  // shard's own answer. Asked the other way round the seed outranks both and markNotMineable
+  // silently does nothing.
   if (NOT_ORE_GRAPHICS.has(graphic) || memory().notOre.has(artKey(graphic, isLand))) {
     return false;
   }
@@ -80,11 +78,9 @@ export const markDepleted = store.markDepleted;
 export const markUnreachable = store.markUnreachable;
 export const markUnusable = store.markUnusable;
 
-// The area version, for the shard answering about where you stand rather than about a tile - which
-// is the only kind of answer a swing that names no tile can get. Parks everything in reach on the
-// same cooldown, so the next scan has to look further afield and the loop walks somewhere else.
-// Marking a single tile instead leaves the character standing exactly where the shard has just said
-// there is nothing, swinging again for the same sentence until the run gives up on it.
+// For the shard answering about where you stand rather than about a tile. Parks everything in reach
+// on one cooldown so the loop walks off; marking a single tile leaves the character swinging at the
+// spot the shard has just written off, for the same sentence, until the run gives up.
 export const markAreaDepleted = (range: number): number => {
   const until = now() + RESPAWN_DELAY;
   let parked = 0;
@@ -113,11 +109,9 @@ export const markAreaDepleted = (range: number): number => {
   return parked;
 };
 
-// "You can't mine that" is about the art, not the tile: a wrong entry in ORE_TILE_GRAPHICS is a
-// whole band of the mountain, and learning it one tile at a time would cost a walk each. Contrast
-// markDepleted, which is per tile because a vein comes back and its neighbour may still be full.
-// Takes the whole tile rather than its graphic because the ban has to name which tiledata table
-// the number came from - see artKey.
+// About the art, not the tile: a wrong entry in ORE_TILE_GRAPHICS is a whole band of the mountain,
+// and learning it one tile at a time would cost a walk each. Takes the whole tile because the ban
+// has to name which tiledata table the number came from - see artKey.
 export const markNotMineable = (tile: Tile): void => {
   const { notOre } = memory();
   const key = artKey(tile.graphic, tile.isLand);

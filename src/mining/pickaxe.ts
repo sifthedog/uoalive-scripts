@@ -18,8 +18,8 @@ const pickaxe = /* @__PURE__ */ createTool({
 export const isPickaxe = pickaxe.is;
 export const rememberPickaxe = pickaxe.remember;
 
-// What dig.ts watches to spot a tool that wore out mid-swing: a RunUO tool tracks UsesRemaining
-// rather than hits, and item.hits is 0 for anything the client knows nothing about, so a serial
-// that stops resolving is the only reliable evidence.
+// What dig.ts watches for a tool that wore out mid-swing: a RunUO tool tracks UsesRemaining rather
+// than hits, and item.hits is 0 for anything the client knows nothing about, so a serial that stops
+// resolving is the only reliable evidence.
 export const pickaxeSerial = pickaxe.serial;
 export const equipPickaxe = pickaxe.equip;

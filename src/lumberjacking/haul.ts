@@ -140,18 +140,15 @@ export const unload = (): boolean => {
 
   const moved = unloadTo(animals, isCargo);
 
-  // Only asked once every animal has had a turn at the boards - a full first animal is no
-  // evidence the conversion fell behind. Ending the run overweight would be worse than carrying
-  // logs across, but say so: boards are what belongs on an animal.
+  // Only asked once every animal has had a turn at the boards - a full first animal is no evidence
+  // the conversion fell behind.
   if (overweight(HAUL_BUFFER)) {
     const logs = collectIn(player.backpack?.contents, isLog);
 
     if (logs.length > 0) {
-      // A hue written off after three silent passes is a thin basis for carrying wood home as wood:
-      // a throttled run of attempts and an axe that broke mid-conversion look exactly like a wood
-      // that cannot be worked. Reopened here, where the alternative is loading logs onto an animal
-      // that could have carried twice as many boards - mining reopens its own on the same reasoning,
-      // and returns false once there is nothing left to reconsider, so this cannot loop.
+      // Three silent passes is a thin basis for carrying wood home as wood: a throttled run of
+      // attempts and an axe that broke mid-conversion look exactly like a wood that cannot be
+      // worked. Returns false once there is nothing left to reconsider, so this cannot loop.
       if (retryUnconvertible() && makeBoards()) {
         const left = collectIn(player.backpack?.contents, isLog);
         if (left.length === 0) {
