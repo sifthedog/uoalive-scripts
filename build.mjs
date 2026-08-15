@@ -11,6 +11,7 @@ const ENTRIES = [
   { in: 'src/mining/probe.ts', out: 'mine-probe' },
   { in: 'src/selling/index.ts', out: 'sell' },
   { in: 'src/selling/watch.ts', out: 'sell-watch' },
+  { in: 'src/training/index.ts', out: 'train' },
 ];
 
 // iife matters: the QuickJS context persists between runs, so top-level declarations

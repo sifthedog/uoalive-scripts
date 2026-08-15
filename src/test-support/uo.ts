@@ -37,6 +37,52 @@ export const Directions = {
 
 export const Layers = { Invalid: 0, OneHanded: 1, TwoHanded: 2, Backpack: 21 } as const;
 
+// The client's Skills/Spells/BuffDebuffs are real TypeScript enums, so they carry the reverse mapping
+// and plan.ts leans on it to make a spell name itself in a log line. The stand-ins do the same, or a
+// test would pass on a script that logs 'spell 402' at every stage change.
+const enumOf = (members: Record<string, number>): Record<string, number | string> => {
+  const table: Record<string, number | string> = { ...members };
+
+  for (const [name, value] of Object.entries(members)) {
+    table[value] = name;
+  }
+
+  return table;
+};
+
+// Real values, copied from types/classicuo.d.ts, and only the members the scripts name
+export const Skills = enumOf({ Meditation: 46, Bushido: 52 });
+
+export const Spells = enumOf({
+  HonorableExecution: 401,
+  Confidence: 402,
+  Evasion: 403,
+  CounterAttack: 404,
+  LightningStrike: 405,
+  MomentumStrike: 406,
+});
+
+export const BuffDebuffs = enumOf({
+  ActiveMeditation: 1013,
+  HonorableExecution: 1092,
+  Confidence: 1093,
+  Evasion: 1094,
+  CounterAttack: 1095,
+  LightningStrike: 1096,
+  MomentumStrike: 1097,
+});
+
+// What getSkill answers with. Tenths, like the client: 74.6 is 746.
+export const skill = (fields: { value: number; name?: string; cap?: number }) => ({
+  index: 52,
+  name: 'Bushido',
+  lock: 0,
+  base: fields.value,
+  cap: 1200,
+  canBeUsable: true,
+  ...fields,
+});
+
 export interface FakePlayer {
   // The character's own serial, which mount.ts double-clicks to get off a mount
   serial: number;
@@ -46,6 +92,8 @@ export interface FakePlayer {
   weight: number;
   weightMax: number;
   isDead: boolean;
+  mana: number;
+  maxMana: number;
   backpack?: { serial: number; contents?: Item[] };
   equippedItems: { oneHanded?: Item; twoHanded?: Item; mount?: Item };
   use: ReturnType<typeof vi.fn>;
@@ -55,6 +103,11 @@ export interface FakePlayer {
   run: ReturnType<typeof vi.fn>;
   say: ReturnType<typeof vi.fn>;
   useItemInHand: ReturnType<typeof vi.fn>;
+  cast: ReturnType<typeof vi.fn>;
+  useSkill: ReturnType<typeof vi.fn>;
+  getSkill: ReturnType<typeof vi.fn>;
+  hasBuffDebuff: ReturnType<typeof vi.fn>;
+  waitForBuffDebuff: ReturnType<typeof vi.fn>;
 }
 
 export interface FakeClient {
@@ -117,6 +170,13 @@ const defaults = (): FakeWorld => ({
     weight: 0,
     weightMax: 400,
     isDead: false,
+
+    // Rested and unhurt, which is this fixture's version of inert: a character with nothing to wait
+    // for. Deliberately not 0/0 - that is the stat-refresh fault src/lib/vitals.ts exists for, and
+    // making it the default would quietly put every test on that path.
+    mana: 50,
+    maxMana: 50,
+
     backpack: { serial: 0x40000000, contents: [] },
     equippedItems: {},
     use: vi.fn(),
@@ -126,6 +186,15 @@ const defaults = (): FakeWorld => ({
     run: vi.fn(),
     say: vi.fn(),
     useItemInHand: vi.fn(),
+    cast: vi.fn(),
+    useSkill: vi.fn(),
+
+    // Inert on the 'nothing is found' side rather than the 'every wait succeeds' side: a skill the
+    // client has not been told about, and a buff nobody put up. A trainer test has to supply both,
+    // which is the point - the fixture must never quietly answer the question under test.
+    getSkill: vi.fn(() => undefined),
+    hasBuffDebuff: vi.fn(() => false),
+    waitForBuffDebuff: vi.fn(() => null),
   },
   client: {
     findObject: vi.fn(() => undefined),
@@ -189,6 +258,9 @@ export const installGlobals = (overrides: WorldOverrides = {}): FakeWorld => {
   scope.Gump = world.gump;
   scope.Directions = Directions;
   scope.Layers = Layers;
+  scope.Skills = Skills;
+  scope.Spells = Spells;
+  scope.BuffDebuffs = BuffDebuffs;
   scope.log = world.log;
   scope.sleep = world.sleep;
   scope.exit = world.exit;

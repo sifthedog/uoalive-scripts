@@ -19,6 +19,7 @@ one, and what to set. Start there.
 | `dist/key-probe.js` | Works out which client call actually puts an item on the ground here | [src/boxes](src/boxes/README.md) |
 | `dist/sell.js` | Target an item, sell every stack of it | [src/selling](src/selling/README.md) |
 | `dist/sell-watch.js` | Target an item, then sell it in batches as the pack fills | [src/selling](src/selling/README.md) |
+| `dist/train.js` | Trains a skill by casting through a table of stages, meditating between them — Bushido out of the box | [src/training](src/training/README.md) |
 
 ## Why a build step
 
@@ -29,7 +30,7 @@ only way to split code across files.
 
 ```bash
 npm install
-npm run build      # typecheck, then src/ -> the nine files in dist/
+npm run build      # typecheck, then src/ -> the ten files in dist/
 npm run watch      # rebuild on save
 npm run typecheck  # tsc against the client's own typings, then again over the tests
 npm test           # vitest, no client and no shard needed
@@ -50,6 +51,7 @@ src/boxes/         empty the crafted wooden boxes, keys on the floor (+ a key du
 src/lumberjacking/ chop the nearest tree, make boards, load the pack animals
 src/mining/        mine the nearest vein, smelt the ore on a fire beetle (+ a stand-still variant and an ore tile probe)
 src/selling/       sell-to-vendor: target an item, sell every stack of it
+src/training/      train a skill by casting the ability that still gains at the level it is at
 types/             the client's TypeScript definitions (see below)
 scripts/           type retrieval and patching
 dist/              build output - this is what you paste
@@ -77,11 +79,13 @@ outcomes    a journal phrase table and the reverse lookup off it
 pack        counting and diffing what the backpack holds
 retry       issue, poll for the proof, reissue
 save        sitting out a world save
+stages      the skill-stage table, and which band a value falls in
 store       state parked on globalThis so it outlives the run
 tiles       the tile cooldown map and the terrain scan
 timings     the constants both harvest scripts agreed on
 tool        find it, learn its graphic, equip it, notice it break
 vendor      sell gumps
+vitals      the one place player.maxMana is read
 walk        one naive step, optionally inside a box
 weight      the one place player.weightMax is read
 ```
@@ -175,7 +179,10 @@ ones that bit more than one of them.
   overloaded character. A live run ended at *overweight (436/453)* on exactly that: the branch
   opened on a max of 0, the figure had recovered by the time anything read it again, and the stop
   printed a weight comfortably inside the limit it claimed to have exceeded. Every read of the limit
-  goes through `src/lib/weight.ts`.
+  goes through `src/lib/weight.ts`. **`player.maxMana` has the same fault** — the typings say so in as
+  many words for `maxHits` — and it is worse where something waits on it: a mana ceiling of 0 makes
+  "wait until the pool is full" true the instant it is asked, so a trainer meditates for no time at
+  all and then casts with no mana, forever. That read goes through `src/lib/vitals.ts`.
 - **Reading `contents` can throw, not just come back undefined.** A live run died on
   `Exception executing 'itemGetContents': Unexpected end of JSON input`, raised out of a pack count
   in the middle of a smelt — the client holding no data for a sub-bag and saying so with a truncated
