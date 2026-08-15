@@ -19,6 +19,19 @@ export interface Stage {
   // 'self' is player.castTo(spell, player). Absent is the ordinary case: a weapon ability, a
   // self-transformation and an area attack are all cast at nobody.
   target?: 'self';
+
+  // Both default to the folder's figure, and both are here for the same reason: a table whose rows
+  // are seconds apart in cast time cannot be paced by one number without the fast rows paying the
+  // slow row's bill. A folder whose rows are all alike sets neither.
+  //
+  // How long to wait after a cast that has already been read. Not cover for the incantation -
+  // castTimeout has stood through that by the time this is slept.
+  castDelay?: number;
+
+  // How long the shard is given to say something about this row's cast. Doubles as how long a cast
+  // the shard says nothing about has to show the mana leaving the pool, which is the only proof a
+  // row with no buff has - so below this row's cast time every success reads as unreadable.
+  castTimeout?: number;
 }
 
 // The client's enums are real TypeScript enums, so they carry the reverse mapping. The fallback is

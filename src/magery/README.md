@@ -36,12 +36,12 @@ slower one — an 8th-circle cast still rolls the skill when it fizzles.
    last band.
 1. **Casts the stage's spell**, and reads whether it landed from the mana that left the pool and the
    buff that went up, falling back on the journal for *why* when it did not.
-1. **Pauses `CAST_DELAY`** and goes round again, until 120.0 is passed.
+1. **Pauses the row's `castDelay`** and goes round again, until 120.0 is passed.
 
 | Outcome | What the loop does |
 | --- | --- |
 | `cast` | Tallies it and clears the fault counters |
-| `alreadyCasting` | Backs off, growing. **Never** counted towards a stop — the last cast simply has not finished |
+| `alreadyCasting` | Waits `CASTING_WAIT`, flat. **Never** counted towards a stop — the last cast simply has not finished |
 | `fizzled` | Counted, not tallied. Ordinary, and commoner the further a circle is above the skill |
 | `noReagents` | **Stops.** Nothing waited for refills a pouch |
 | `noMana` | Says the stage's `mana` is understated, then gathers mana |
@@ -50,7 +50,7 @@ slower one — an 8th-circle cast still rolls the skill when it fizzles.
 | `unskilled` | Stops — the table is aimed at a skill this character cannot use |
 | `saving` | Sits out the world save and resets the counters |
 | `throttled` | Backs off, growing, up to `MAX_THROTTLED` in a row |
-| anything else | Counts against `MAX_UNKNOWN`; five in a row ends the run |
+| anything else | Unreadable — logged once per stretch and carried on with. It ends nothing on its own: only `MAX_STALE` cycles with no cast *and* no movement in the skill does |
 
 ### Before you paste it
 
@@ -89,16 +89,18 @@ Everything is in `config.ts`.
 | `STAGES[].upTo` | In the client's tenths — 74.6 is `746`, so 120.0 is `1200`. Exclusive |
 | `STAGES[].buff` | Optional. Earthquake has none — it puts nothing up, and trains on the mana proof |
 | `STAGES[].target` | `'self'` casts through `castTo` at your own character. Every row but Earthquake |
-| `CAST_DELAY` | **The one worth tuning.** An 8th-circle cast is seconds long; too short and the shard spends the band saying *you are already casting* |
-| `CAST_TIMEOUT` | How long the shard may take to say something about a cast |
-| `COOLDOWN_BACKOFF` / `_MAX` | The growing wait after a cast that came in too early. This is what finds the real pace |
+| `STAGES[].castTimeout` | **The one worth tuning.** How long the shard is given to say something about *this row's* cast — and, since a success says nothing, how long the loop waits for the mana that proves it. Below the row's real cast time every success reads as unreadable; above it, the margin is spent on every cast. Set per row because a 3rd circle and an 8th are seconds apart |
+| `STAGES[].castDelay` | Pacing *after* `castTimeout` has already stood through the incantation, so it is idle time, not cover for the cast. Too short and the shard says *you are already casting*, which costs one flat `CASTING_WAIT` |
+| `CAST_TIMEOUT` / `CAST_DELAY` | The fallback for a row that names neither. Every shipped row names both, so these bite only on a row you add |
+| `COOLDOWN_BACKOFF` / `_MAX` | Unreachable here, and kept only because the shared loop takes it: no spell in `STAGES` has a cooldown and `OUTCOME_TEXT` has no `cooldown` phrases, so nothing ever produces the outcome that reads it. A cast that came in too early is `alreadyCasting`, above |
 | `SKIP_WHEN_BUFFED` | **Off**: gating on the buff would cap the run at one cast per buff duration |
 | `DISABLED_IS_PROGRESS` | **On**: a toggle is still a cast the shard charged for |
 | `MEDITATE_TO_FULL` | Fill the pool, or stop as soon as the next cast is affordable. **On**, and it matters most here |
 | `STRIP_LAYERS` | Every layer that comes off for a trance, in the order it comes off — which is also the order it goes back on. Hands first. Jewellery is deliberately absent, and so is `Layers.Necklace`, because that layer carries gorgets too |
 | `STRIP_MOVE_DELAY` | Pause between the individual moves inside one strip, to stay under the shard's action throttle |
 | `STRIP_AT_ONCE` | On strips the armour from the first trance instead of waiting to be refused once |
-| `MEDITATE_*` / `MANA_*` / `MAX_HUNGRY` | The mana wait — see `src/training/README.md` |
+| `MEDITATE_*` / `MANA_*` | The mana wait — see `src/training/README.md` |
+| `MAX_STALE` | Cycles with no cast *and* no movement in the skill before the run gives up. The only ending left for a run that is getting nowhere; a dry mana stretch is charged what it cost in cycles |
 | `MAX_BLIND_READS` | Cycles the client may answer nothing for the skill before the run stops |
 | `OUTCOME_TEXT` / `MEDITATE_OUTCOME_TEXT` | What the shard says. Mostly guesses — see *Known unverified* |
 
@@ -108,10 +110,20 @@ only thing that can take its health is something that wandered up.
 
 ## When it goes wrong
 
-- **`unreadable outcome (n/5), check OUTCOME_TEXT`** — the phrase tables do not match this shard.
-  Read the journal, copy the real wording into the right bucket. Expected on the first run.
-- **The log fills with the backoff and almost nothing lands.** `CAST_DELAY` is shorter than this
-  shard's cast time for the band you are on. Raise it; the backoff is a converger, not a cure.
+- **`outcome unreadable - carrying on`** — the phrase tables do not match this shard.
+  Read the journal, copy the real wording into the right bucket. The run no longer
+  ends over it — the closing lines say how many went unread, and the commonest cause is a cast that worked: a stage whose buff was already
+  standing has no transition to show, so only the mana can prove it, and a client that has not
+  refreshed that figure yet leaves the loop nothing to read. If it is *every* cast on one band and no
+  other, suspect that row's `castTimeout` rather than the phrase tables: a window that closes before
+  the incantation ends looks exactly like this, because the mana has not left the pool yet.
+- **`N cycles without a cast or a change in the skill`** — the only ending left for a run that is
+  getting nowhere. It replaces the old unreadable-outcome and mana-never-came-back endings, and it
+  cannot fire while the skill is still moving, however unreadable the outcomes are.
+- **The log fills with *you are already casting* and almost nothing lands.** The `castDelay` on the
+  row you are on is shorter than this shard's cast time for it. One or two of these a band is the
+  pacing working — it is how the loop finds the shard's real cast time without being told it — but a
+  run that is mostly this should raise that row's figure. The flat wait is a converger, not a cure.
 - **`out of reagents for ...`** — refill, or get the LRC suit.
 - **`refused for mana at N`** — the stage's `mana` is lower than the shard actually charges. Raise it.
 - **Casts land but the skill does not move.** The circle has stopped gaining at this level; that is
@@ -122,9 +134,17 @@ only thing that can take its health is something that wandered up.
 
 Everything in `src/training/README.md` under *Notes on the shard* applies here too. What is specific:
 
-- **A spell is not an ability, and the pacing is the difference.** An 8th-circle spell has an
-  incantation seconds long, and a loop that comes back in half a second issues the next cast into the
-  middle of it. That is what `alreadyCasting` is, and why `CAST_DELAY` starts at 3000 rather than 500.
+- **A spell is not an ability, and the pacing is the difference** — but the incantation is
+  `castTimeout`'s to cover, not `castDelay`'s. `castOnce` blocks on the journal for the whole window
+  before the loop ever reaches its sleep, and on a cast the shard says nothing about — which is every
+  successful one — it blocks for all of it. The two are added, not overlapped. The pacing was one
+  figure of 3000 on the reasoning that it had the incantation to sit out; it does not, and one figure
+  for four circles had Bless paying Earthquake's bill on every cast. What catches a cast issued too
+  early is `alreadyCasting` and its flat `CASTING_WAIT`, one cheap retry rather than a band-long stall.
+- **Which is why both are per row.** The two figures are the only ones in the table that are really
+  properties of the *spell* rather than of the shard, and a row is where a property of the spell
+  belongs. A shard with faster casting can have every timeout down; one without has to have the
+  eighth circle's up, and neither move should drag the other three rows with it.
 - **A failed cast still trains.** The skill check is what fizzles, so a fizzle is a roll that
   happened — which is why the tally is reported beside the casts.
 - **Earthquake is the only row with nothing to prove itself by.** No buff, so the mana leaving the
@@ -141,4 +161,8 @@ Everything in `src/training/README.md` under *Notes on the shard* applies here t
   before its `upTo`, move the bound down; that is what the table is for.
 - **Whether Arch Protection opens a cursor here.** It is marked `target: 'self'`, which is right where
   it does; where it does not, the queued answer is harmless because the next row wants the same thing.
-- **`CAST_DELAY` at 3000.** A first guess at the slowest row, not a measurement.
+- **The per-row `castTimeout` and `castDelay` figures.** Each timeout is that circle's cast time with
+  a margin, and each delay is short enough that the row converges on `alreadyCasting` rather than
+  idling. Still guesses, not measurements, and the two fail in opposite directions: a timeout set too
+  low turns every success into *outcome unreadable*, a delay set too low fills the log with *you are
+  already casting*. Both name the row they came from, so tune the band you are actually on.

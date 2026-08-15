@@ -18,14 +18,15 @@ const STAGES: Stage[] = [
 
 const TIMINGS: TrainerTimings = {
   castDelay: 1,
+  castTimeout: 1,
   buffWait: 1,
   castingWait: 7,
   stepDelay: 1,
   maxCycles: 20,
   maxBlindReads: 5,
-  maxHungry: 3,
+  regenTimeout: 4,
   maxThrottled: 4,
-  maxUnknown: 5,
+  maxStale: 8,
   logEvery: 25,
   cooldownBackoff: 1,
   cooldownBackoffMax: 1,
@@ -137,12 +138,53 @@ describe('runTrainer', () => {
     expect(regainMana).toHaveBeenCalledWith(10);
   });
 
+  // No ending of its own any more: a dry stretch is charged what it cost in casting cycles and spends
+  // the same budget an unreadable outcome does, because from in here both are the run getting nowhere
   it('gives up when the mana never comes back', () => {
     world.player.mana = 0;
 
     run({ regainMana: () => false });
 
-    expect(ending()).toContain('the mana never came back');
+    expect(ending()).toContain('without a cast or a change in the skill');
+  });
+
+  // Weighted rather than counted one-for-one: a stretch that spent the whole regenTimeout standing
+  // still must not cost the same as a cycle that spent one cast
+  it('charges a dry mana stretch for what it cost, not one cycle', () => {
+    world.player.mana = 0;
+
+    const regainMana = vi.fn(() => false);
+
+    run({ regainMana });
+
+    // regenTimeout / (castTimeout + castDelay) = 2 idle per stretch, against a ceiling of 8
+    expect(regainMana).toHaveBeenCalledTimes(4);
+  });
+
+  // Priced on castDelay alone the denominator left out the window castOnce stands in - which a
+  // successful cast spends all of - so a folder that shortened its pacing found one dry stretch
+  // charged most of the ceiling and two of them ending the run.
+  it('prices a dry stretch against the whole cast cycle, not the pause after it', () => {
+    world.player.mana = 0;
+
+    const regainMana = vi.fn(() => false);
+
+    run({ regainMana, timings: { ...TIMINGS, castTimeout: 3 } });
+
+    // regenTimeout / (3 + 1) = 1 idle per stretch, so the ceiling of 8 takes eight of them
+    expect(regainMana).toHaveBeenCalledTimes(8);
+  });
+
+  // A row's own figures price its cycle, so the slow band is not charged the fast band's rate
+  it('prices the dry stretch on the row s own figures where it has them', () => {
+    world.player.mana = 0;
+
+    const regainMana = vi.fn(() => false);
+    const slow: Stage[] = [{ ...STAGES[0]!, castTimeout: 3, castDelay: 1 }];
+
+    run({ regainMana, stages: slow });
+
+    expect(regainMana).toHaveBeenCalledTimes(8);
   });
 
   // The bug the extraction found: every `stop` the switch set was overwritten by the line asking the
@@ -160,6 +202,41 @@ describe('runTrainer', () => {
 
     expect(castOnce).toHaveBeenCalledTimes(TIMINGS.maxThrottled);
     expect(ending()).toContain('kept refusing the cast');
+  });
+
+  // The count is consecutive - the backoff grows with it and the ceiling reads it as "twenty in a
+  // row" - but only some branches cleared it, so on a run whose successes were unreadable it climbed
+  // monotonically and twenty throttles spread over hours ended a run nothing was refusing.
+  it('forgets the throttles either side of a cycle that was not one', () => {
+    const outcomes: CastOutcome[] = [];
+
+    for (let pair = 0; pair < TIMINGS.maxThrottled; pair++) {
+      outcomes.push('throttled', 'fizzled');
+    }
+
+    const castOnce = vi.fn((): CastOutcome => outcomes.shift() ?? 'fizzled');
+
+    run({ castOnce });
+
+    expect(ending()).not.toContain('kept refusing the cast');
+    expect(ending()).toContain('cycle backstop');
+  });
+
+  // An unread outcome is the one that mattered: it is what a successful cast looks like on a shard
+  // whose wordings the table has not got, and it is not evidence of anything being refused
+  it('forgets the throttles either side of an outcome it could not read', () => {
+    const outcomes: CastOutcome[] = [];
+
+    for (let pair = 0; pair < TIMINGS.maxThrottled; pair++) {
+      outcomes.push('throttled');
+      outcomes.push(undefined as unknown as CastOutcome);
+    }
+
+    const castOnce = vi.fn((): CastOutcome => outcomes.shift() as CastOutcome);
+
+    run({ castOnce });
+
+    expect(ending()).not.toContain('kept refusing the cast');
   });
 
   // Nothing waited for fixes an empty pouch, and a run that carried on would spend the rest of its
@@ -185,7 +262,7 @@ describe('runTrainer', () => {
 
     expect(castOnce).toHaveBeenCalledTimes(TIMINGS.maxCycles);
     expect(ending()).toContain('cycle backstop');
-    expect(said('unreadable outcome')).toBe(false);
+    expect(said('unreadable')).toBe(false);
   });
 
   it('ends the run when the shard will not cast in the form the character is in', () => {
@@ -215,10 +292,62 @@ describe('runTrainer', () => {
     expect(ending()).toContain('none could be drawn');
   });
 
-  it('gives up after enough unreadable outcomes to mean the phrase table is wrong', () => {
+  // Only because nothing else was happening either. An unreadable outcome is never the reason on its
+  // own - see the two tests below.
+  it('gives up on unreadable outcomes only once the skill has stopped moving too', () => {
     run({ castOnce: () => undefined });
 
-    expect(ending()).toContain('unreadable outcomes in a row');
+    expect(ending()).toContain('without a cast or a change in the skill');
+  });
+
+  // The fault this was written for: a stage whose buff was already up has no transition to show, so a
+  // client that has not refreshed the mana figure leaves the loop nothing to read - while the skill
+  // climbs perfectly well. The run must not die of that.
+  it('never stops while the skill is still moving, however unreadable the outcomes are', () => {
+    const skill = reader(500);
+    const castOnce = vi.fn((): CastOutcome | undefined => {
+      skill.at = (skill.at ?? 0) + 1;
+
+      return undefined;
+    });
+
+    run({ skill, castOnce });
+
+    expect(castOnce).toHaveBeenCalledTimes(TIMINGS.maxCycles);
+    expect(ending()).toContain('cycle backstop');
+  });
+
+  // Movement is the proof, so the casts it could not read were casts after all
+  it('credits the casts it could not read once the skill moves', () => {
+    const skill = reader(500);
+    let cast = 0;
+    const castOnce = (): CastOutcome | undefined => {
+      cast++;
+
+      if (cast === 3) {
+        skill.at = (skill.at ?? 0) + 1;
+      }
+
+      return undefined;
+    };
+
+    run({ skill, castOnce });
+
+    expect(said('3 casts')).toBe(true);
+  });
+
+  it('says so once per stretch rather than once per cast', () => {
+    run({ castOnce: () => undefined });
+
+    const lines = world.log.mock.calls.flat().filter((line) => String(line).includes('unreadable'));
+
+    expect(lines).toHaveLength(1);
+  });
+
+  it('owns up to what it could not read in the closing lines', () => {
+    run({ castOnce: () => undefined });
+
+    expect(said('outcome(s) went unread')).toBe(true);
   });
 
   // A fizzle is read, not missed: it clears the unknown budget, and it is counted apart from the
@@ -226,7 +355,7 @@ describe('runTrainer', () => {
   it('counts a fizzle without ever calling it unreadable', () => {
     run({ castOnce: () => 'fizzled' });
 
-    expect(said('unreadable outcome')).toBe(false);
+    expect(said('unreadable')).toBe(false);
     expect(said(`0 casts, ${TIMINGS.maxCycles} fizzles`)).toBe(true);
   });
 
@@ -237,7 +366,7 @@ describe('runTrainer', () => {
 
     run({ castOnce });
 
-    expect(said('unreadable outcome')).toBe(false);
+    expect(said('unreadable')).toBe(false);
     expect(castOnce).toHaveBeenCalledTimes(TIMINGS.maxCycles);
     expect(ending()).toContain('cycle backstop');
   });
@@ -253,6 +382,23 @@ describe('runTrainer', () => {
 
     expect(waits).toHaveLength(TIMINGS.maxCycles);
     expect(new Set(waits)).toEqual(new Set([TIMINGS.castingWait]));
+  });
+
+  // A table whose rows are seconds apart in cast time cannot be paced by one number: at the slow
+  // row's figure every fast row idles for a cast it has already finished.
+  it('paces on the row s own delay where it has one', () => {
+    const paced: Stage[] = [{ ...STAGES[0]!, castDelay: 9 }];
+
+    run({ stages: paced, skill: reader(500) });
+
+    expect(world.sleep.mock.calls.map((call) => Number(call[0]))).toContain(9);
+    expect(world.sleep).not.toHaveBeenCalledWith(TIMINGS.castDelay);
+  });
+
+  it('paces on the folder s delay for a row with none', () => {
+    run();
+
+    expect(world.sleep.mock.calls.map((call) => Number(call[0]))).toContain(TIMINGS.castDelay);
   });
 
   // On a table of transformations the toggle-off is how the character leaves the form: the shard

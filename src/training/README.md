@@ -49,7 +49,7 @@ and `src/lib/stages.test.ts` checks the bounds.
 | `saving` | Sits out the world save and resets the counters |
 | `cooldown` | Backs off, growing. **Never** counted towards a stop — the ability is working as designed |
 | `throttled` | Backs off, growing, up to `MAX_THROTTLED` in a row |
-| anything else | Counts against `MAX_UNKNOWN`; five in a row ends the run |
+| anything else | Unreadable — logged once per stretch and carried on with. It ends nothing on its own: only `MAX_STALE` cycles with no cast *and* no movement in the skill does |
 
 ### Before you paste it
 
@@ -106,7 +106,7 @@ order they will be worked.
 | `MEDITATE_TIMEOUT` / `MEDITATE_ATTEMPTS` | How long one trance is given, and how many are tried before the stretch is called a failure |
 | `MANA_POLL` / `MANA_LOG_EVERY` | How often the pool is read, and how often the wait says how it is coming along |
 | `REGEN_TIMEOUT` | How long to wait on natural regeneration when meditation is off or refused |
-| `MAX_HUNGRY` | Failed mana stretches in a row before the run gives up |
+| `MAX_STALE` | Cycles with no cast *and* no movement in the skill before the run gives up. The only ending left for a run that is getting nowhere; a dry mana stretch is charged what it cost in cycles |
 
 `MEDITATE_TO_FULL` is **on**, and the reason is the kit rather than the mana: every stretch of
 meditation costs a stow and a draw, paid per stretch — and on a shard that also refuses a trance with
@@ -131,9 +131,14 @@ well. The heartbeat stays, because the trances are the longest silences in the r
 
 ## When it goes wrong
 
-- **`unreadable outcome (n/5), check OUTCOME_TEXT`** — the phrase tables do not match this shard.
-  Read the journal, copy the real wording into the right bucket. This is the expected first-run
-  failure, and it is loud on purpose.
+- **`outcome unreadable - carrying on`** — the phrase tables do not match this shard.
+  Read the journal, copy the real wording into the right bucket. The run no longer
+  ends over it — the closing lines say how many went unread, and the commonest cause is a cast that worked: a stage whose buff was already
+  standing has no transition to show, so only the mana can prove it, and a client that has not
+  refreshed that figure yet leaves the loop nothing to read.
+- **`N cycles without a cast or a change in the skill`** — the only ending left for a run that is
+  getting nowhere. It replaces the old unreadable-outcome and mana-never-came-back endings, and it
+  cannot fire while the skill is still moving, however unreadable the outcomes are.
 - **The run trains fine at Confidence and stalls once it reaches CounterAttack.** The draw is not
   landing: Confidence does not need a weapon on most shards and CounterAttack does. Check
   `WEAPON_NAME`, and check the weapon is not in a bag inside a bag (`SPARE_BAG_SERIAL`).

@@ -56,7 +56,7 @@ does that a samurai does not.
 | `unskilled` | Stops — including the karma refusals, which mean the same thing |
 | `saving` | Sits out the world save and resets the counters |
 | `throttled` | Backs off, growing, up to `MAX_THROTTLED` in a row |
-| anything else | Counts against `MAX_UNKNOWN`; five in a row ends the run |
+| anything else | Unreadable — logged once per stretch and carried on with. It ends nothing on its own: only `MAX_STALE` cycles with no cast *and* no movement in the skill does |
 
 ### Before you paste it
 
@@ -102,13 +102,20 @@ Everything is in `config.ts`.
 | `DISABLED_IS_PROGRESS` | **On**: Enemy of One toggling off is a cast |
 | `SKIP_WHEN_BUFFED` | **Off**: gating on the buff would cap the run at one cast per buff duration |
 | `CAST_DELAY` / `CAST_TIMEOUT` | The pacing between casts, and how long the shard may take to answer |
-| `MEDITATE_*` / `MANA_*` / `MAX_HUNGRY` | The mana wait — see `src/training/README.md` |
+| `MEDITATE_*` / `MANA_*` | The mana wait — see `src/training/README.md` |
+| `MAX_STALE` | Cycles with no cast *and* no movement in the skill before the run gives up. The only ending left for a run that is getting nowhere; a dry mana stretch is charged what it cost in cycles |
 | `OUTCOME_TEXT` / `MEDITATE_OUTCOME_TEXT` / `HEAL_OUTCOME_TEXT` | What the shard says. Mostly guesses |
 
 ## When it goes wrong
 
-- **`unreadable outcome (n/5), check OUTCOME_TEXT`** — the phrase tables do not match this shard. Read
-  the journal and copy the real wording into the right bucket. This is the expected first-run failure.
+- **`outcome unreadable - carrying on`** — the phrase tables do not match this shard. Read
+  the journal and copy the real wording into the right bucket. The run no longer
+  ends over it — the closing lines say how many went unread, and the commonest cause is a cast that worked: a stage whose buff was already
+  standing has no transition to show, so only the mana can prove it, and a client that has not
+  refreshed that figure yet leaves the loop nothing to read.
+- **`N cycles without a cast or a change in the skill`** — the only ending left for a run that is
+  getting nowhere. It replaces the old unreadable-outcome and mana-never-came-back endings, and it
+  cannot fire while the skill is still moving, however unreadable the outcomes are.
 - **`out of tithing points for ...`** — go to a shrine, tithe gold, paste it again.
 - **`the shard says this character cannot use Enemy of One`** — usually karma rather than skill.
 - **`could not get the weapon back in hand`** — the run stops rather than carrying on, because a

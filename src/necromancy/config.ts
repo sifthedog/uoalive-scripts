@@ -7,7 +7,6 @@ export {
   LOG_EVERY,
   MAX_CYCLES,
   MAX_THROTTLED,
-  MAX_UNKNOWN,
   SAVE_DONE_TEXT,
   SAVE_POLL,
   SAVE_WAIT,
@@ -142,6 +141,12 @@ export const MANA_LOG_EVERY = 10_000;
 // For a run with MEDITATE off, or one the shard refused
 export const REGEN_TIMEOUT = 120_000;
 
+// Casting cycles that produced neither a readable cast nor any movement in the skill before the run
+// gives up - the only thing left that ends a run for getting nowhere. Generous on purpose: an outcome
+// this loop cannot read is a log problem, not a reason to stop, and the skill moving clears it. A dry
+// mana stretch is charged what it cost in cycles, so this ceiling covers that case too.
+export const MAX_STALE = 200;
+
 // In the order it comes off, which is also the order it goes back on. Hands first: they are the only
 // layers whose absence ends a run. Jewellery is left on - it blocks meditation on no shard this was
 // written against, and every layer here is two more item moves on every trance. Add Layers.Necklace
@@ -168,9 +173,13 @@ export const STRIP_LAYERS: Layer[] = [
 // throttle wording in the journal and a strip that needs its reissue.
 export const STRIP_MOVE_DELAY = 500;
 
-// Off, so the run learns from the shard's own refusal whether armour blocks a trance. Turn it on for
-// a shard already known to block, to save one refused trance.
-export const STRIP_AT_ONCE = false;
+// On. The escalation this used to default to only fires when the shard answers one of the wordings in
+// MEDITATE_OUTCOME_TEXT.blocked, and those are RunUO-family guesses - a shard that refuses the trance
+// in words this table has not got, or that quietly slows the regeneration instead of refusing
+// anything, leaves the armour on for ever and the run never finds out. Stripping up front does not
+// depend on reading the shard's mind. Set it back to false to save the item moves on a shard where
+// the hands alone turn out to be enough.
+export const STRIP_AT_ONCE = true;
 
 // Deliberately not the EQUIP_ trio, though they hold the same numbers today: an equip and a stow are
 // independent facts about the shard.
@@ -178,9 +187,7 @@ export const DISARM_TIMEOUT = 2000;
 export const DISARM_POLL = 200;
 export const DISARM_ATTEMPTS = 3;
 
-
 // More than one, because a fight, a world save and a discarded trance all look the same from here.
-export const MAX_HUNGRY = 5;
 
 // Guesses - correct them against the real journal after the first run. A phrase that never matches
 // shows up as an unknown outcome, not as a silent wrong turn.

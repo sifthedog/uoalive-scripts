@@ -126,6 +126,24 @@ describe('castOnce', () => {
     expect(caster().castOnce(withoutBuff)).toBe('cast');
   });
 
+  // A successful cast says nothing this table knows, so it spends the whole window every time. One
+  // figure for a table of 3rd- and 8th-circle rows means the fast rows buy the slow row's incantation.
+  it('gives a row its own listening window where it names one', () => {
+    caster().castOnce({ ...withBuff, castTimeout: 3200 });
+
+    expect(world.journal.waitForTextAny).toHaveBeenCalledWith(
+      expect.anything(),
+      undefined,
+      3200,
+    );
+  });
+
+  it('falls back on the folder s window for a row that names none', () => {
+    caster().castOnce(withBuff);
+
+    expect(world.journal.waitForTextAny).toHaveBeenCalledWith(expect.anything(), undefined, 500);
+  });
+
   // The setting is there for a shard where these are SpecialMoves and a second cast disables the
   // first, and for a transformation that stands until it is re-cast
   it('leaves a standing buff alone when skipWhenBuffed is on', () => {
@@ -158,7 +176,7 @@ describe('castOnce', () => {
     expect(world.player.castTo).not.toHaveBeenCalled();
   });
 
-  // Nothing said, nothing spent and nothing standing: the loop counts this against maxUnknown rather
+  // Nothing said, nothing spent and nothing standing: the loop logs this and carries on rather
   // than booking it as a cast that happened
   it('answers with nothing when the world did not move either', () => {
     expect(caster().castOnce(withBuff)).toBeUndefined();

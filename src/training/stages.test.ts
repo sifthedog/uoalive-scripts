@@ -62,7 +62,7 @@ describe('stageNow', () => {
 
     expect(stageNow(500)?.spell).toBe(Spells.Confidence);
     expect(stageNow(700)?.spell).toBe(Spells.CounterAttack);
-    expect(stageNow(800)?.spell).toBe(Spells.Evasion);
+    expect(stageNow(800)?.spell).toBe(Spells.MomentumStrike);
   });
 
   it('is finished at 105.0, which the original loop had no way of noticing', () => {

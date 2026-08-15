@@ -40,7 +40,7 @@
         target.cancel();
         journal.clear();
         issue(stage);
-        const matched = journal.waitForTextAny(all, void 0, timeoutMs);
+        const matched = journal.waitForTextAny(all, void 0, stage.castTimeout ?? timeoutMs);
         if (matched) {
           return outcomeFor(matched);
         }
@@ -254,13 +254,18 @@
       );
     }
     const lostSomething = () => manaBlocked?.();
+    const cycleCost = (stage) => Math.max(1, (stage.castTimeout ?? timings.castTimeout) + (stage.castDelay ?? timings.castDelay));
+    const stalled = (idle, ceiling) => idle >= ceiling ? `${ceiling} cycles without a cast or a change in the skill` : void 0;
     let casts = 0;
     let fizzled = 0;
-    let unknown = 0;
     let throttled = 0;
     let cooling = 0;
-    let hungry = 0;
     let blind = 0;
+    let unread = 0;
+    let unreadPending = 0;
+    let unreadSaid = false;
+    let sinceProgress = 0;
+    let lastValue = start;
     let reported = 0;
     let casting;
     let stop = plan.stageNow(start) ? void 0 : `${skill2.name()} is already at ${tenths(start)}`;
@@ -282,6 +287,13 @@
         continue;
       }
       blind = 0;
+      if (value !== lastValue) {
+        lastValue = value;
+        sinceProgress = 0;
+        casts += unreadPending;
+        unreadPending = 0;
+        unreadSaid = false;
+      }
       const stage = plan.stageNow(value);
       if (!stage) {
         stop = TRAINED;
@@ -292,17 +304,11 @@
         log(`${prefix}: ${tenths(value)} - ${spellName(stage.spell)} until ${tenths(stage.upTo)}`);
       }
       if (player.mana < stage.mana) {
-        if (regainMana(stage.mana)) {
-          hungry = 0;
-        } else {
-          hungry++;
-          log(`${prefix}: mana did not come back (${hungry}/${timings.maxHungry})`);
-          if (hungry >= timings.maxHungry) {
-            stop = "the mana never came back";
-            break;
-          }
+        if (!regainMana(stage.mana)) {
+          sinceProgress += Math.max(1, Math.round(timings.regenTimeout / cycleCost(stage)));
+          log(`${prefix}: mana did not come back (${sinceProgress}/${timings.maxStale} idle)`);
         }
-        stop = lostSomething();
+        stop = lostSomething() ?? stalled(sinceProgress, timings.maxStale);
         if (stop) {
           break;
         }
@@ -311,53 +317,59 @@
         continue;
       }
       const outcome = castOnce2(stage);
+      if (outcome !== "throttled") {
+        throttled = 0;
+      }
+      if (outcome !== "cooldown") {
+        cooling = 0;
+      }
       switch (outcome) {
         case "cast":
           casts++;
-          unknown = 0;
-          throttled = 0;
-          cooling = 0;
+          sinceProgress = 0;
+          unreadSaid = false;
           break;
         // Never counted towards a stop: Evasion spends most of its life on cooldown, and a run that
         // gave up after twenty of these would never finish the band that casts it.
         case "cooldown":
           cooling++;
-          unknown = 0;
-          throttled = 0;
+          sinceProgress = 0;
+          unreadSaid = false;
           sleep(backoffFor(cooling, timings.cooldownBackoff, timings.cooldownBackoffMax));
           break;
         // Counted rather than tallied - the shard charged nothing for it - but it clears the unknown
         // budget, because a fizzle is an outcome that was read and not one that was missed.
         case "fizzled":
           fizzled++;
-          unknown = 0;
-          throttled = 0;
-          cooling = 0;
+          sinceProgress = 0;
+          unreadSaid = false;
           break;
         case "alreadyUp":
-          unknown = 0;
+          sinceProgress = 0;
+          unreadSaid = false;
           sleep(timings.buffWait);
           break;
         // Waited out flat rather than backed off: a growing wait is for a shard that has to be
         // out-waited, and this is a spell that finishes on its own. Sharing the cooldown's backoff is
         // what made an eighth-circle band idle twenty seconds between casts.
         case "alreadyCasting":
-          unknown = 0;
+          sinceProgress = 0;
+          unreadSaid = false;
           sleep(timings.castingWait);
           break;
         case "disabled":
-          unknown = 0;
+          sinceProgress = 0;
+          unreadSaid = false;
           if (disabledIsProgress) {
             casts++;
-            throttled = 0;
-            cooling = 0;
             break;
           }
           log(`${prefix}: the shard toggled ${spellName(stage.spell)} off - check its buff in STAGES`);
           break;
         // The loop gathered mana before casting, so the stage's mana figure understates what it costs
         case "noMana":
-          unknown = 0;
+          sinceProgress = 0;
+          unreadSaid = false;
           log(
             `${prefix}: refused for mana at ${player.mana} - raise ${spellName(stage.spell)}'s mana in STAGES`
           );
@@ -374,7 +386,8 @@
           break;
         // Most likely a draw that silently did not land after the last trance, which is recoverable
         case "noWeapon":
-          unknown = 0;
+          sinceProgress = 0;
+          unreadSaid = false;
           if (!rearm2?.()) {
             stop = "the shard wants a weapon in hand and none could be drawn";
           }
@@ -387,31 +400,41 @@
           stop = `the shard says this character cannot use ${spellName(stage.spell)}`;
           break;
         // Every counter is reset, because whatever they had accumulated was measured against a server
-        // that was not answering
+        // that was not answering. The throttle and cooldown counts are cleared above with the rest.
         case "saving":
           waitOutSave2();
-          unknown = 0;
-          throttled = 0;
+          sinceProgress = 0;
+          unreadSaid = false;
           break;
         case "throttled":
           throttled++;
-          unknown = 0;
+          sinceProgress = 0;
+          unreadSaid = false;
           log(`${prefix}: shard says wait (${throttled}/${timings.maxThrottled}), backing off`);
           sleep(backoffFor(throttled, timings.throttleBackoff, timings.throttleBackoffMax));
           if (throttled >= timings.maxThrottled) {
             stop = "the shard kept refusing the cast";
           }
           break;
+        // Not an ending, and not even a fault on its own. The commonest cause is a cast that worked
+        // perfectly: a stage whose buff was already standing has no transition to show, so only the
+        // mana can prove it, and a client that has not refreshed the figure yet leaves this loop with
+        // nothing to read. The skill moving is what settles it, above.
         default:
-          unknown++;
-          log(`${prefix}: unreadable outcome (${unknown}/${timings.maxUnknown}), check OUTCOME_TEXT`);
+          unread++;
+          unreadPending++;
+          sinceProgress++;
+          if (!unreadSaid) {
+            unreadSaid = true;
+            log(`${prefix}: outcome unreadable - carrying on; check OUTCOME_TEXT if this run stalls`);
+          }
       }
       stop = stop ?? lostSomething();
       if (stop) {
         break;
       }
-      if (unknown >= timings.maxUnknown) {
-        stop = `${timings.maxUnknown} unreadable outcomes in a row`;
+      stop = stalled(sinceProgress, timings.maxStale);
+      if (stop) {
         break;
       }
       if (casts >= reported + timings.logEvery) {
@@ -421,13 +444,16 @@
         );
       }
       beat2(outcome ?? "unknown", cycle, casts);
-      sleep(timings.castDelay);
+      sleep(stage.castDelay ?? timings.castDelay);
     }
     const reason = stop ?? `hit the ${timings.maxCycles} cycle backstop`;
     const ended = skill2.value();
     log(
       `${prefix}: ${casts} casts, ${fizzled} fizzles, ${skill2.name()} ${tenths(start)} -> ${ended === void 0 ? "unknown" : tenths(ended)}`
     );
+    if (unread > 0) {
+      log(`${prefix}: ${unread} outcome(s) went unread - add the shard's wording to OUTCOME_TEXT`);
+    }
     log(`${prefix}: stopping - ${reason}`);
     exit(`${prefix}: ${reason}`);
   };
@@ -444,7 +470,6 @@
   var MAX_THROTTLED = 20;
   var THROTTLE_BACKOFF = 1e3;
   var THROTTLE_BACKOFF_MAX = 8e3;
-  var MAX_UNKNOWN = 5;
   var LOG_EVERY = 25;
   var SAVE_WAIT = 6e4;
   var SAVE_POLL = 1e3;
@@ -518,6 +543,7 @@
   var MANA_POLL = 500;
   var MANA_LOG_EVERY = 1e4;
   var REGEN_TIMEOUT = 12e4;
+  var MAX_STALE = 200;
   var STRIP_LAYERS = [
     Layers.OneHanded,
     Layers.TwoHanded,
@@ -536,8 +562,7 @@
     Layers.Shoes
   ];
   var STRIP_MOVE_DELAY = 500;
-  var STRIP_AT_ONCE = false;
-  var MAX_HUNGRY = 5;
+  var STRIP_AT_ONCE = true;
   var OUTCOME_TEXT = {
     // Not depended on: the mana leaving the pool and the buff arriving are the proof
     cast: ["You are now", "Your weapon is consecrated", "You are filled with divine fury"],
@@ -1197,14 +1222,15 @@
     },
     timings: {
       castDelay: CAST_DELAY,
+      castTimeout: CAST_TIMEOUT,
       buffWait: BUFF_WAIT,
       castingWait: CASTING_WAIT,
       stepDelay: STEP_DELAY,
       maxCycles: MAX_CYCLES,
       maxBlindReads: MAX_BLIND_READS,
-      maxHungry: MAX_HUNGRY,
+      regenTimeout: REGEN_TIMEOUT,
       maxThrottled: MAX_THROTTLED,
-      maxUnknown: MAX_UNKNOWN,
+      maxStale: MAX_STALE,
       logEvery: LOG_EVERY,
       cooldownBackoff: COOLDOWN_BACKOFF,
       cooldownBackoffMax: COOLDOWN_BACKOFF_MAX,

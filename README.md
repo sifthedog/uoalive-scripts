@@ -184,8 +184,15 @@ ones that bit more than one of them.
 - **Item names are empty until the client has tooltip data**, so matching prefers graphics and falls
   back to names. An art learned through the name route is remembered.
 - **A world save is a pause, not a fault, and it used to end the run.** The shard stops answering for
-  several seconds, and every cycle of it reads as an unreadable outcome — five in a row is the stop
-  condition. It has its own `OUTCOME_TEXT` bucket now, and the loop sits it out (`save.ts`).
+  several seconds, and every cycle of it reads as an unreadable outcome — which used to be a stop
+  condition after five. It has its own `OUTCOME_TEXT` bucket now, and the loop sits it out
+  (`save.ts`).
+- **An outcome the loop cannot read is a log problem, not an ending.** Every other proof a cast landed
+  is circumstantial — a wording the table may have wrong, a buff that was already up before the cast,
+  a mana figure the client had not refreshed — and a run can be training perfectly well while all
+  three stay silent. The skill moving is the one signal that cannot be argued with, so the trainers
+  watch it between cycles and end a run only when *nothing* has happened for `MAX_STALE` cycles
+  (`trainer.ts`).
 - **What a save costs is not one wasted cycle, it is a wrong thing remembered.** Every silent
   operation concludes something from silence, and a frozen server is silent in exactly the way a real
   refusal is: the smelt writes a hue off as unworkable, `makeBoards` does the same to a wood, and the

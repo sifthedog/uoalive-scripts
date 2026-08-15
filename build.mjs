@@ -7,6 +7,7 @@ const ENTRIES = [
   { in: 'src/chivalry/index.ts', out: 'chivalry' },
   { in: 'src/lumberjacking/index.ts', out: 'lumberjack' },
   { in: 'src/magery/index.ts', out: 'magery' },
+  { in: 'src/magery/probe.ts', out: 'gear-probe' },
   { in: 'src/mining/here.ts', out: 'mine-here' },
   { in: 'src/mining/index.ts', out: 'mining' },
   { in: 'src/mining/probe.ts', out: 'mine-probe' },

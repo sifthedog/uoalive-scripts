@@ -56,6 +56,7 @@ export type OutcomeText = Partial<Record<CastOutcome, string[]>>;
 export interface CasterOptions {
   outcomeText: OutcomeText;
 
+  // The default for a row that does not carry its own castTimeout
   timeoutMs: number;
 
   // Only right where the shard treats these as toggles; where it does not, gating on the buff caps
@@ -133,7 +134,7 @@ export const createCaster = ({ outcomeText, timeoutMs, skipWhenBuffed }: CasterO
 
       // author is left undefined on purpose: a shard may route spell text as object text rather than
       // as System, and a wrong author turns every wait into a timeout.
-      const matched = journal.waitForTextAny(all, undefined, timeoutMs);
+      const matched = journal.waitForTextAny(all, undefined, stage.castTimeout ?? timeoutMs);
 
       if (matched) {
         return outcomeFor(matched);
