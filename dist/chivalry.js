@@ -55,6 +55,7 @@
 
   // src/lib/vitals.ts
   var manaCeiling = () => player.maxMana > 0 ? player.maxMana : void 0;
+  var hitsCeiling = () => player.maxHits > 0 ? player.maxHits : void 0;
 
   // src/lib/meditate.ts
   var createManaWait = ({
@@ -434,6 +435,7 @@
   // src/lib/timings.ts
   var UNREACHABLE_DELAY = 5 * 60 * 1e3;
   var STEP_DELAY = 300;
+  var TARGET_TIMEOUT = 2e3;
   var EQUIP_TIMEOUT = 2e3;
   var EQUIP_POLL = 200;
   var EQUIP_ATTEMPTS = 3;
@@ -459,29 +461,55 @@
     "You do not have enough skill"
   ];
 
-  // src/training/config.ts
-  var SKILL = Skills.Bushido;
-  var SKILL_LABEL = "Bushido";
+  // src/chivalry/config.ts
+  var SKILL = Skills.Chivalry;
+  var SKILL_LABEL = "Chivalry";
   var STAGES = [
-    { upTo: 600, spell: Spells.Confidence, mana: 10, buff: BuffDebuffs.Confidence },
-    { upTo: 750, spell: Spells.CounterAttack, mana: 5, buff: BuffDebuffs.CounterAttack },
-    { upTo: 1050, spell: Spells.Evasion, mana: 10, buff: BuffDebuffs.Evasion }
+    // The one row that wants a weapon in hand - it enchants the weapon. index.ts stows and draws around
+    // every trance when the run starts armed.
+    { upTo: 450, spell: Spells.ConsecrateWeapon, mana: 10, buff: BuffDebuffs.ConsecrateWeapon },
+    { upTo: 600, spell: Spells.DivineFury, mana: 15, buff: BuffDebuffs.DivineFury },
+    { upTo: 700, spell: Spells.EnemyOfOne, mana: 20, buff: BuffDebuffs.EnemyOfOne },
+    // No buff because the client publishes none. It damages every non-blue within a few tiles, so
+    // stand somewhere empty.
+    { upTo: 900, spell: Spells.HolyLight, mana: 10 },
+    // No buff either, and where it finds anything to heal it sets the caster's hit points, mana and
+    // stamina to 1. Alone it finds nothing and costs only the mana and the tithing.
+    { upTo: 1200, spell: Spells.NobleSacrifice, mana: 20 }
   ];
-  var WEAPON_NAME = "double axe";
+  var WEAPON_NAME = "sword";
   var SPARE_BAG_SERIAL = void 0;
   var DISARM_TIMEOUT = 2e3;
   var DISARM_POLL = 200;
   var DISARM_ATTEMPTS = 3;
+  var HURT_FLOOR = 0.5;
+  var BANDAGE = true;
+  var BANDAGE_GRAPHIC = 3617;
+  var BANDAGE_ATTEMPTS = 4;
+  var BANDAGE_TIMEOUT = 8e3;
+  var HEAL_OUTCOME_TEXT = {
+    healed: ["You finish applying the bandages", "You heal", "You apply the bandages"],
+    noBandages: [
+      "You do not have a bandage",
+      "You must have bandages",
+      "You do not have any bandages"
+    ],
+    busy: ["You are already applying bandages"],
+    interrupted: ["You have been interrupted"],
+    saving: SAVING_TEXT,
+    throttled: THROTTLED_TEXT
+  };
   var SKILL_TIMEOUT = 1e3;
   var SKILL_POLL = 500;
   var MAX_BLIND_READS = 5;
   var CAST_TIMEOUT = 500;
   var CAST_DELAY = 500;
   var SKIP_WHEN_BUFFED = false;
+  var DISABLED_IS_PROGRESS = true;
   var BUFF_WAIT = 2e3;
   var CASTING_WAIT = 750;
-  var COOLDOWN_BACKOFF = 2e3;
-  var COOLDOWN_BACKOFF_MAX = 2e4;
+  var COOLDOWN_BACKOFF = 1e3;
+  var COOLDOWN_BACKOFF_MAX = 8e3;
   var MEDITATE = true;
   var MEDITATE_TO_FULL = true;
   var MEDITATE_TIMEOUT = 2e4;
@@ -512,26 +540,32 @@
   var MAX_HUNGRY = 5;
   var OUTCOME_TEXT = {
     // Not depended on: the mana leaving the pool and the buff arriving are the proof
-    cast: ["You have enabled", "You are infused with", "You gain confidence"],
-    // The commonest outcome at a low skill. The shard charges nothing for it, which is why it reads as
-    // silence to silentOutcome and has to be read from the words instead.
-    fizzled: ["The spell fizzles"],
-    noMana: [
-      "You do not have enough mana to perform that attack",
-      "You lack sufficient mana",
-      "Insufficient mana"
+    cast: ["You are now", "Your weapon is consecrated", "You are filled with divine fury"],
+    fizzled: ["You fail to cast the spell", "The spell fizzles"],
+    // The one this script is likeliest to end on. Nothing to do about it but go and tithe more gold.
+    noTithing: [
+      "You do not have enough tithing points",
+      "You must have at least",
+      "You need to make an offering"
     ],
+    noMana: ["You do not have enough mana", "Insufficient mana"],
     alreadyUp: ["You are already under the effect"],
-    disabled: ["You have disabled"],
-    // An empty hand is what a draw that did not land leaves behind, which is why the loop answers this
-    // by drawing again rather than by stopping.
-    noWeapon: ["You must have a weapon", "You cannot perform this ability"],
-    unskilled: UNSKILLED_TEXT,
+    // Enemy of One coming off. DISABLED_IS_PROGRESS is what tells the loop to count it rather than
+    // complain about it.
+    disabled: ["You are no longer", "You lose your focus"],
+    // Karma lives in this bucket rather than one of its own: Enemy of One and Noble Sacrifice want it
+    // positive, and a character without it cannot cast them at all - which is what unskilled means and
+    // what stopping is the right answer to.
+    unskilled: [
+      "You are not pious enough",
+      "Your karma is not high enough",
+      "You must have proper karma",
+      ...UNSKILLED_TEXT
+    ],
     saving: SAVING_TEXT,
-    // Must come before throttled: waitForTextAny hands back whichever string it found, and
-    // THROTTLED_TEXT ends in a bare 'You must wait' that this sentence contains. Bucketed together,
-    // Evasion's ordinary cooldown would end every run that reaches its band.
-    cooldown: ["You must wait before trying again"],
+    // Before throttled: waitForTextAny hands back whichever string it found, and THROTTLED_TEXT ends
+    // in a bare 'You must wait' that a longer sentence can contain.
+    alreadyCasting: ["You are already casting a spell", "You are already casting"],
     throttled: THROTTLED_TEXT
   };
   var MEDITATE_OUTCOME_TEXT = {
@@ -540,14 +574,13 @@
     // Before unfocused, whose trailing full stop is deliberate: without it 'You cannot focus your
     // concentration' would also match the equipped-weapon sentence.
     //
-    // The run stows the weapon before meditating, so reaching this means something else is refusing
-    // the trance and nothing retried fixes it: meditation latches off and regeneration takes over.
+    // The run stows the weapon before meditating, so reaching this means something else is refusing the
+    // trance: a shield, an off-hand item, or a shard that gates meditation another way.
     blocked: [
       "You cannot focus your concentration with an equipped weapon",
       "You cannot focus your concentration with an equipped shield",
       "You are preoccupied with thoughts of battle"
     ],
-    // A failed roll or a trance broken by a hit - both fixed by using the skill again in a moment
     unfocused: ["You cannot focus your concentration.", "You lose your concentration"],
     unskilled: UNSKILLED_TEXT,
     saving: SAVING_TEXT,
@@ -637,6 +670,13 @@
 
   // src/lib/guards.ts
   var dead = () => player.isDead ? "you are dead" : void 0;
+  var hurt = (fraction) => () => {
+    const ceiling = hitsCeiling();
+    if (ceiling === void 0) {
+      return void 0;
+    }
+    return player.hits < ceiling * fraction ? `hurt (${player.hits}/${ceiling})` : void 0;
+  };
   var firstReason = (...guards) => {
     for (const guard of guards) {
       const reason = guard();
@@ -647,8 +687,160 @@
     return void 0;
   };
 
-  // src/training/guards.ts
-  var stopReason = () => firstReason(dead);
+  // src/chivalry/guards.ts
+  var floor = /* @__PURE__ */ hurt(HURT_FLOOR);
+  var belowFloor = () => floor() !== void 0;
+  var stopReason = () => firstReason(dead, floor);
+
+  // src/lib/heal.ts
+  var createBandager = ({
+    prefix,
+    graphic,
+    outcomeText,
+    timeoutMs,
+    cursorTimeoutMs,
+    attempts,
+    recovered,
+    waitOutSave: waitOutSave2
+  }) => {
+    const { all, outcomeFor } = outcomeVocabulary(outcomeText);
+    let ranOut;
+    const inPack = () => client.findType(graphic, void 0, player.backpack?.serial);
+    const applyOnce = () => {
+      const bandages = inPack();
+      if (!bandages) {
+        ranOut = "no bandages left in the pack";
+        return false;
+      }
+      target.cancel();
+      journal.clear();
+      player.use(bandages.serial);
+      if (!target.waitTargetSelf(cursorTimeoutMs)) {
+        log(`${prefix}: no target cursor for the bandage`);
+        return false;
+      }
+      const before = player.hits;
+      const matched = journal.waitForTextAny(all, void 0, timeoutMs);
+      const outcome = matched ? outcomeFor(matched) : void 0;
+      if (outcome === "noBandages") {
+        ranOut = "the shard says there are no bandages";
+        return false;
+      }
+      if (outcome === "saving") {
+        waitOutSave2();
+      }
+      return player.hits > before || outcome === "healed";
+    };
+    return {
+      empty: () => ranOut,
+      mend: () => {
+        if (recovered()) {
+          return true;
+        }
+        if (ranOut) {
+          return false;
+        }
+        log(`${prefix}: ${player.hits}/${player.maxHits} hits, bandaging`);
+        for (let attempt = 1; attempt <= attempts && !ranOut; attempt++) {
+          applyOnce();
+          if (recovered()) {
+            log(`${prefix}: healed to ${player.hits}/${player.maxHits}`);
+            return true;
+          }
+          if (player.isDead) {
+            break;
+          }
+        }
+        if (ranOut) {
+          log(`${prefix}: ${ranOut}`);
+        }
+        return false;
+      }
+    };
+  };
+
+  // src/lib/save.ts
+  var createSaveWatch = (options) => ({
+    isSaving: () => options.savingText.some((text) => journal.containsText(text)),
+    waitOutSave: () => {
+      log("save: the world is saving, waiting it out");
+      journal.clear();
+      for (let waited = 0; waited < options.waitMs; waited += options.pollMs) {
+        sleep(options.pollMs);
+        if (options.doneText.some((text) => journal.containsText(text))) {
+          break;
+        }
+        if (options.stopReason()) {
+          break;
+        }
+      }
+      options.onDone();
+    }
+  });
+
+  // src/lib/heartbeat.ts
+  var createHeartbeat = (options) => {
+    let lastBeat;
+    return {
+      beat: (phase, cycle, tally) => {
+        const time = now();
+        if (lastBeat === void 0) {
+          lastBeat = time;
+          return;
+        }
+        if (time - lastBeat < options.everyMs) {
+          return;
+        }
+        lastBeat = time;
+        log(
+          `${options.prefix}: still here - ${phase}, cycle ${cycle}, at ${player.x},${player.y}, ${player.weight}/${player.weightMax}, ${tally} ${options.noun}`
+        );
+      },
+      // For the paths that report on their own cadence, so the next beat is a full interval after they
+      // stop rather than immediately on top of their last line
+      resetBeat: () => {
+        lastBeat = now();
+      }
+    };
+  };
+
+  // src/chivalry/heartbeat.ts
+  var heartbeat = /* @__PURE__ */ createHeartbeat({
+    prefix: "chiv",
+    noun: "casts",
+    everyMs: HEARTBEAT_EVERY
+  });
+  var { beat, resetBeat } = heartbeat;
+
+  // src/chivalry/save.ts
+  var { isSaving, waitOutSave } = /* @__PURE__ */ createSaveWatch({
+    savingText: SAVING_TEXT,
+    doneText: SAVE_DONE_TEXT,
+    waitMs: SAVE_WAIT,
+    pollMs: SAVE_POLL,
+    stopReason,
+    // This path reports on its own cadence, so the next beat starts a full interval from here
+    onDone: resetBeat
+  });
+
+  // src/chivalry/heal.ts
+  var bandager = /* @__PURE__ */ createBandager({
+    prefix: "chiv",
+    graphic: BANDAGE_GRAPHIC,
+    outcomeText: HEAL_OUTCOME_TEXT,
+    timeoutMs: BANDAGE_TIMEOUT,
+    cursorTimeoutMs: TARGET_TIMEOUT,
+    attempts: BANDAGE_ATTEMPTS,
+    recovered: () => !belowFloor(),
+    waitOutSave
+  });
+  var mend = () => {
+    if (!BANDAGE) {
+      return;
+    }
+    bandager.mend();
+  };
+  var outOfBandages = bandager.empty;
 
   // src/lib/retry.ts
   var untilLanded = (options) => {
@@ -917,9 +1109,9 @@
     };
   };
 
-  // src/training/weapon.ts
+  // src/chivalry/weapon.ts
   var weapon = /* @__PURE__ */ createWeapon({
-    prefix: "train",
+    prefix: "chiv",
     name: WEAPON_NAME,
     spareBagSerial: SPARE_BAG_SERIAL,
     equip: { attempts: EQUIP_ATTEMPTS, timeoutMs: EQUIP_TIMEOUT, pollMs: EQUIP_POLL },
@@ -927,9 +1119,9 @@
   });
   var { held, is: isWeapon, remember: rememberWeapon, rearm } = weapon;
 
-  // src/training/gear.ts
+  // src/chivalry/gear.ts
   var gear = /* @__PURE__ */ createGear({
-    prefix: "train",
+    prefix: "chiv",
     layers: STRIP_LAYERS,
     moveDelayMs: STRIP_MOVE_DELAY,
     equip: { attempts: EQUIP_ATTEMPTS, timeoutMs: EQUIP_TIMEOUT, pollMs: EQUIP_POLL },
@@ -939,72 +1131,10 @@
   });
   var { stow, stripMore, restore, survey } = gear;
 
-  // src/lib/heartbeat.ts
-  var createHeartbeat = (options) => {
-    let lastBeat;
-    return {
-      beat: (phase, cycle, tally) => {
-        const time = now();
-        if (lastBeat === void 0) {
-          lastBeat = time;
-          return;
-        }
-        if (time - lastBeat < options.everyMs) {
-          return;
-        }
-        lastBeat = time;
-        log(
-          `${options.prefix}: still here - ${phase}, cycle ${cycle}, at ${player.x},${player.y}, ${player.weight}/${player.weightMax}, ${tally} ${options.noun}`
-        );
-      },
-      // For the paths that report on their own cadence, so the next beat is a full interval after they
-      // stop rather than immediately on top of their last line
-      resetBeat: () => {
-        lastBeat = now();
-      }
-    };
-  };
-
-  // src/training/heartbeat.ts
-  var heartbeat = /* @__PURE__ */ createHeartbeat({
-    prefix: "train",
-    noun: "casts",
-    everyMs: HEARTBEAT_EVERY
-  });
-  var { beat, resetBeat } = heartbeat;
-
-  // src/lib/save.ts
-  var createSaveWatch = (options) => ({
-    isSaving: () => options.savingText.some((text) => journal.containsText(text)),
-    waitOutSave: () => {
-      log("save: the world is saving, waiting it out");
-      journal.clear();
-      for (let waited = 0; waited < options.waitMs; waited += options.pollMs) {
-        sleep(options.pollMs);
-        if (options.doneText.some((text) => journal.containsText(text))) {
-          break;
-        }
-        if (options.stopReason()) {
-          break;
-        }
-      }
-      options.onDone();
-    }
-  });
-
-  // src/training/save.ts
-  var { isSaving, waitOutSave } = /* @__PURE__ */ createSaveWatch({
-    savingText: SAVING_TEXT,
-    doneText: SAVE_DONE_TEXT,
-    waitMs: SAVE_WAIT,
-    pollMs: SAVE_POLL,
-    stopReason,
-    // This path reports on its own cadence, so the next beat starts a full interval from here
-    onDone: resetBeat
-  });
-
-  // src/training/index.ts
-  var PREFIX = "train";
+  // src/chivalry/index.ts
+  var PREFIX = "chiv";
+  var weapon2 = held();
+  var armed = weapon2 !== void 0;
   var skill = createSkillReader({
     skill: SKILL,
     label: SKILL_LABEL,
@@ -1027,9 +1157,10 @@
     pollMs: MANA_POLL,
     logEveryMs: MANA_LOG_EVERY,
     regenTimeoutMs: REGEN_TIMEOUT,
-    // ./gear.ts and no longer ./weapon.ts. The weapon still comes off for every trance, but it goes
-    // back on by the serial that came off rather than by graphic - so a weapon with properties on it
-    // returns as itself - and the shield or armour this shard may also refuse comes off with it.
+    // Unconditional where the weapon half below is not: gear only ever puts back what it took, so an
+    // empty-handed paladin has nothing in hand to restore and never attempts the draw that `armed`
+    // exists to prevent. It also means an unarmed but armoured character is undressed for the trance,
+    // which the weapon-only version could not do.
     stow,
     restore,
     stripMore,
@@ -1044,18 +1175,25 @@
     castOnce,
     regainMana: mana.regainMana,
     manaBlocked: mana.blocked,
-    rearm,
+    rearm: armed ? rearm : void 0,
+    disabledIsProgress: DISABLED_IS_PROGRESS,
     stopReason,
+    recover: mend,
     beat,
     waitOutSave,
     preflight: () => {
-      const weapon2 = held();
       rememberWeapon(weapon2);
-      log(`${PREFIX}: hand ${describeItem(weapon2)}, ${player.mana}/${player.maxMana} mana`);
-      if (!weapon2) {
-        log(`${PREFIX}: nothing in hand - these are weapon abilities, so the first cast may be refused`);
+      log(
+        `${PREFIX}: hand ${describeItem(weapon2)}, ${player.hits}/${player.maxHits} hits, ${player.mana}/${player.maxMana} mana`
+      );
+      if (!armed) {
+        log(`${PREFIX}: nothing in hand - Consecrate Weapon will be refused, the other bands will not`);
       }
       log(`${PREFIX}: ${survey()}`);
+      if (BANDAGE && !client.findType(BANDAGE_GRAPHIC, void 0, player.backpack?.serial)) {
+        log(`${PREFIX}: no bandages in the pack - the health floor will stop the run instead`);
+      }
+      log(`${PREFIX}: every cast spends tithing points; tithe gold at a shrine before a long run`);
     },
     timings: {
       castDelay: CAST_DELAY,

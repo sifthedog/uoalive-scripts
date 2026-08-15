@@ -49,12 +49,9 @@
     };
   };
 
-  // src/lib/entity.ts
-  var hex = (value) => `0x${(value >>> 0).toString(16)}`;
-  var describeItem = (item) => item ? `${hex(item.graphic)} '${item.name ?? ""}'` : "empty";
-
   // src/lib/vitals.ts
   var manaCeiling = () => player.maxMana > 0 ? player.maxMana : void 0;
+  var hitsCeiling = () => player.maxHits > 0 ? player.maxHits : void 0;
 
   // src/lib/meditate.ts
   var createManaWait = ({
@@ -228,7 +225,7 @@
     castOnce: castOnce2,
     regainMana,
     manaBlocked,
-    rearm: rearm2,
+    rearm,
     disabledIsProgress = false,
     stopReason: stopReason2,
     recover,
@@ -374,7 +371,7 @@
         // Most likely a draw that silently did not land after the last trance, which is recoverable
         case "noWeapon":
           unknown = 0;
-          if (!rearm2?.()) {
+          if (!rearm?.()) {
             stop = "the shard wants a weapon in hand and none could be drawn";
           }
           break;
@@ -434,6 +431,7 @@
   // src/lib/timings.ts
   var UNREACHABLE_DELAY = 5 * 60 * 1e3;
   var STEP_DELAY = 300;
+  var TARGET_TIMEOUT = 2e3;
   var EQUIP_TIMEOUT = 2e3;
   var EQUIP_POLL = 200;
   var EQUIP_ATTEMPTS = 3;
@@ -459,25 +457,46 @@
     "You do not have enough skill"
   ];
 
-  // src/training/config.ts
-  var SKILL = Skills.Bushido;
-  var SKILL_LABEL = "Bushido";
+  // src/necromancy/config.ts
+  var SKILL = Skills.Necromancy;
+  var SKILL_LABEL = "Necromancy";
   var STAGES = [
-    { upTo: 600, spell: Spells.Confidence, mana: 10, buff: BuffDebuffs.Confidence },
-    { upTo: 750, spell: Spells.CounterAttack, mana: 5, buff: BuffDebuffs.CounterAttack },
-    { upTo: 1050, spell: Spells.Evasion, mana: 10, buff: BuffDebuffs.Evasion }
+    // Cast at the character rather than at a creature, which would be a punchbag to find, keep alive
+    // and keep in range. It costs health instead, which is what HURT_FLOOR is for.
+    { upTo: 500, spell: Spells.PainSpike, mana: 5, buff: BuffDebuffs.PainSpike, target: "self" },
+    { upTo: 700, spell: Spells.HorrificBeast, mana: 11, buff: BuffDebuffs.HorrificBeast },
+    // No buff because the client publishes none for it - the mana leaving the pool is the proof. It is
+    // also the one band that hits everything standing nearby.
+    { upTo: 900, spell: Spells.Wither, mana: 23 },
+    { upTo: 1e3, spell: Spells.LichForm, mana: 23, buff: BuffDebuffs.LichForm },
+    { upTo: 1200, spell: Spells.VampiricEmbrace, mana: 23, buff: BuffDebuffs.VampiricEmbrace }
   ];
-  var WEAPON_NAME = "double axe";
-  var SPARE_BAG_SERIAL = void 0;
-  var DISARM_TIMEOUT = 2e3;
-  var DISARM_POLL = 200;
-  var DISARM_ATTEMPTS = 3;
+  var HURT_FLOOR = 0.5;
+  var BANDAGE = true;
+  var BANDAGE_GRAPHIC = 3617;
+  var BANDAGE_ATTEMPTS = 4;
+  var BANDAGE_TIMEOUT = 8e3;
+  var HEAL_OUTCOME_TEXT = {
+    healed: ["You finish applying the bandages", "You heal", "You apply the bandages"],
+    // The pack search notices this first on most shards, so reaching it means bandages that vanished
+    // between the search and the use.
+    noBandages: [
+      "You do not have a bandage",
+      "You must have bandages",
+      "You do not have any bandages"
+    ],
+    busy: ["You are already applying bandages"],
+    interrupted: ["You have been interrupted"],
+    saving: SAVING_TEXT,
+    throttled: THROTTLED_TEXT
+  };
   var SKILL_TIMEOUT = 1e3;
   var SKILL_POLL = 500;
   var MAX_BLIND_READS = 5;
   var CAST_TIMEOUT = 500;
   var CAST_DELAY = 500;
   var SKIP_WHEN_BUFFED = false;
+  var DISABLED_IS_PROGRESS = true;
   var BUFF_WAIT = 2e3;
   var CASTING_WAIT = 750;
   var COOLDOWN_BACKOFF = 2e3;
@@ -509,29 +528,37 @@
   ];
   var STRIP_MOVE_DELAY = 500;
   var STRIP_AT_ONCE = false;
+  var DISARM_TIMEOUT = 2e3;
+  var DISARM_POLL = 200;
+  var DISARM_ATTEMPTS = 3;
   var MAX_HUNGRY = 5;
   var OUTCOME_TEXT = {
     // Not depended on: the mana leaving the pool and the buff arriving are the proof
-    cast: ["You have enabled", "You are infused with", "You gain confidence"],
+    cast: ["You are surrounded by a red aura", "You feel a sudden surge of power"],
     // The commonest outcome at a low skill. The shard charges nothing for it, which is why it reads as
     // silence to silentOutcome and has to be read from the words instead.
-    fizzled: ["The spell fizzles"],
-    noMana: [
-      "You do not have enough mana to perform that attack",
-      "You lack sufficient mana",
-      "Insufficient mana"
+    fizzled: ["The spell fizzles", "You have failed to cast the spell"],
+    noMana: ["You do not have enough mana", "Insufficient mana"],
+    // The one refusal here that nothing waited for fixes
+    noReagents: [
+      "You do not have enough reagents",
+      "More reagents are needed",
+      "You lack the required reagents"
     ],
     alreadyUp: ["You are already under the effect"],
-    disabled: ["You have disabled"],
-    // An empty hand is what a draw that did not land leaves behind, which is why the loop answers this
-    // by drawing again rather than by stopping.
-    noWeapon: ["You must have a weapon", "You cannot perform this ability"],
+    // The transformation coming off, which is how the character leaves a form and half of what a form
+    // band does. DISABLED_IS_PROGRESS is what tells the loop to count it rather than complain.
+    disabled: ["You are no longer", "You return to your normal form", "You have disabled"],
+    alreadyCasting: ["You are already casting a spell", "You are already casting"],
+    // Horrific Beast is the one that does this on an OSI-faithful shard, and if the form spell itself
+    // is refused then that band cannot train at all - worth being told once.
+    formLocked: [
+      "You cannot cast that spell in this form",
+      "You can not cast this spell while polymorphed",
+      "You cannot use that ability in this form"
+    ],
     unskilled: UNSKILLED_TEXT,
     saving: SAVING_TEXT,
-    // Must come before throttled: waitForTextAny hands back whichever string it found, and
-    // THROTTLED_TEXT ends in a bare 'You must wait' that this sentence contains. Bucketed together,
-    // Evasion's ordinary cooldown would end every run that reaches its band.
-    cooldown: ["You must wait before trying again"],
     throttled: THROTTLED_TEXT
   };
   var MEDITATE_OUTCOME_TEXT = {
@@ -540,8 +567,8 @@
     // Before unfocused, whose trailing full stop is deliberate: without it 'You cannot focus your
     // concentration' would also match the equipped-weapon sentence.
     //
-    // The run stows the weapon before meditating, so reaching this means something else is refusing
-    // the trance and nothing retried fixes it: meditation latches off and regeneration takes over.
+    // This run stows nothing, so reaching this latches meditation off for the rest of the run and
+    // falls back on natural regeneration. Start with empty hands.
     blocked: [
       "You cannot focus your concentration with an equipped weapon",
       "You cannot focus your concentration with an equipped shield",
@@ -554,101 +581,9 @@
     throttled: ["You must wait a few moments to use another skill", ...THROTTLED_TEXT]
   };
 
-  // src/lib/containers.ts
-  var CONTAINER_GRAPHICS = /* @__PURE__ */ new Set([
-    3701,
-    // backpack
-    3702,
-    // bag
-    3705,
-    // pouch
-    3709,
-    // wooden box
-    3651,
-    // wooden chest
-    2472,
-    // metal box
-    2475,
-    // metal chest
-    3644,
-    // crate
-    3645,
-    // crate
-    3648,
-    // gold chest
-    3649
-    // gold chest
-  ]);
-  var unreadable = /* @__PURE__ */ new Set();
-  var contentsOf = (item) => {
-    try {
-      return item?.contents;
-    } catch (error) {
-      const serial = item?.serial ?? 0;
-      if (!unreadable.has(serial)) {
-        unreadable.add(serial);
-        log(`contents: ${hex(serial)} would not answer - ${String(error)}`);
-      }
-      return void 0;
-    }
-  };
-  var packContents = () => {
-    try {
-      return contentsOf(player.backpack);
-    } catch (error) {
-      if (!unreadable.has(0)) {
-        unreadable.add(0);
-        log(`contents: the backpack would not answer - ${String(error)}`);
-      }
-      return void 0;
-    }
-  };
-  var isContainer = (item) => (contentsOf(item)?.length ?? 0) > 0 || CONTAINER_GRAPHICS.has(item.graphic);
-  var openContainers = (preferredSerial) => {
-    if (preferredSerial) {
-      player.use(preferredSerial);
-      sleep(800);
-      return true;
-    }
-    let opened = false;
-    for (const item of packContents() ?? []) {
-      if (!isContainer(item)) {
-        continue;
-      }
-      player.use(item.serial);
-      sleep(800);
-      opened = true;
-    }
-    return opened;
-  };
-  var findIn = (contents, matches) => {
-    for (const item of contents ?? []) {
-      if (matches(item)) {
-        return item;
-      }
-      const sub = contentsOf(item);
-      if (sub && sub.length > 0) {
-        const foundInSub = findIn(sub, matches);
-        if (foundInSub) return foundInSub;
-      }
-    }
-    return null;
-  };
-
-  // src/lib/guards.ts
-  var dead = () => player.isDead ? "you are dead" : void 0;
-  var firstReason = (...guards) => {
-    for (const guard of guards) {
-      const reason = guard();
-      if (reason) {
-        return reason;
-      }
-    }
-    return void 0;
-  };
-
-  // src/training/guards.ts
-  var stopReason = () => firstReason(dead);
+  // src/lib/entity.ts
+  var hex = (value) => `0x${(value >>> 0).toString(16)}`;
+  var describeItem = (item) => item ? `${hex(item.graphic)} '${item.name ?? ""}'` : "empty";
 
   // src/lib/retry.ts
   var untilLanded = (options) => {
@@ -680,7 +615,7 @@
     const on = (piece) => wornOn(piece.layer)?.serial === piece.serial;
     const gone = (piece) => client.findObject(piece.serial) === void 0;
     const remember = (piece) => {
-      if (!stowed.some((held2) => held2.serial === piece.serial)) {
+      if (!stowed.some((held) => held.serial === piece.serial)) {
         stowed.push(piece);
       }
     };
@@ -804,140 +739,126 @@
     };
   };
 
-  // src/lib/tool.ts
-  var describeContents = (contents) => (contents ?? []).map((item) => {
-    const sub = contentsOf(item);
-    return sub?.length ? `${hex(item.graphic)}[${describeContents(sub)}]` : hex(item.graphic);
-  }).join(", ");
-  var createTool = (options) => {
-    let learned;
-    let spareBagSerial = options.spareBagSerial;
-    let reportedEmpty = false;
-    const is = (item) => learned !== void 0 && item.graphic === learned || (options.graphics?.has(item.graphic) ?? false) || (item.name ?? "").toLowerCase().includes(options.name);
-    const remember = (item) => {
-      if (item && learned === void 0) {
-        learned = item.graphic;
-        log(`${options.label}: graphic is ${hex(item.graphic)}`);
-      }
-    };
-    const reportEmptyPack = () => {
-      if (reportedEmpty) {
-        return;
-      }
-      log(`${options.label}: none found. Pack holds: ${describeContents(packContents())}`);
-      log(`${options.label}: if the spares are in a bag inside a bag, pin it as SPARE_BAG_SERIAL`);
-      reportedEmpty = true;
-    };
-    const find = () => {
-      let found = findIn(packContents(), is);
-      if (!found && openContainers(spareBagSerial)) {
-        found = findIn(packContents(), is);
-      }
-      if (!found) {
-        reportEmptyPack();
-        return void 0;
-      }
-      reportedEmpty = false;
-      remember(found);
-      if (found.container && found.container !== player.backpack?.serial) {
-        spareBagSerial = found.container;
-      }
-      return found;
-    };
-    const stillHolding = () => {
-      const item = options.held();
-      return !!item && is(item) && client.findObject(item.serial) !== void 0;
-    };
-    return {
-      is,
-      remember,
-      find,
-      serial: () => options.held()?.serial,
-      equip: () => {
-        if (stillHolding()) {
-          return true;
-        }
-        const found = find();
-        if (!found) {
-          client.headMsg(`No ${options.name}!`, player, 33);
-          return false;
-        }
-        target.cancel();
-        return untilLanded({
-          label: `equip ${options.name}`,
-          attempts: options.equip.attempts,
-          timeoutMs: options.equip.timeoutMs,
-          pollMs: options.equip.pollMs,
-          act: () => player.equip(found.serial),
-          landed: () => options.held()?.serial === found.serial
-        });
-      }
-    };
-  };
-
-  // src/lib/weapon.ts
-  var createWeapon = ({
-    prefix,
-    name,
-    spareBagSerial,
-    equip,
-    disarm
-  }) => {
-    const held2 = () => player.equippedItems.twoHanded ?? player.equippedItems.oneHanded;
-    const tool = createTool({ label: "weapon", name, spareBagSerial, held: held2, equip });
-    return {
-      held: held2,
-      is: tool.is,
-      remember: tool.remember,
-      rearm: tool.equip,
-      // Polled for proof rather than slept on: a move the server threw away is indistinguishable from
-      // one still in flight.
-      disarm: () => {
-        const item = held2();
-        if (!item) {
-          return true;
-        }
-        tool.remember(item);
-        const pack = player.backpack?.serial;
-        if (pack === void 0) {
-          log(`${prefix}: nowhere to stow ${describeItem(item)} - the client reports no backpack`);
-          return false;
-        }
-        return untilLanded({
-          label: "stow the weapon",
-          attempts: disarm.attempts,
-          timeoutMs: disarm.timeoutMs,
-          pollMs: disarm.pollMs,
-          act: () => {
-            player.moveItem(item.serial, pack);
-          },
-          landed: () => held2() === void 0
-        });
-      }
-    };
-  };
-
-  // src/training/weapon.ts
-  var weapon = /* @__PURE__ */ createWeapon({
-    prefix: "train",
-    name: WEAPON_NAME,
-    spareBagSerial: SPARE_BAG_SERIAL,
-    equip: { attempts: EQUIP_ATTEMPTS, timeoutMs: EQUIP_TIMEOUT, pollMs: EQUIP_POLL },
-    disarm: { attempts: DISARM_ATTEMPTS, timeoutMs: DISARM_TIMEOUT, pollMs: DISARM_POLL }
-  });
-  var { held, is: isWeapon, remember: rememberWeapon, rearm } = weapon;
-
-  // src/training/gear.ts
+  // src/necromancy/gear.ts
   var gear = /* @__PURE__ */ createGear({
-    prefix: "train",
+    prefix: "necro",
     layers: STRIP_LAYERS,
     moveDelayMs: STRIP_MOVE_DELAY,
     equip: { attempts: EQUIP_ATTEMPTS, timeoutMs: EQUIP_TIMEOUT, pollMs: EQUIP_POLL },
     disarm: { attempts: DISARM_ATTEMPTS, timeoutMs: DISARM_TIMEOUT, pollMs: DISARM_POLL },
-    stripAtOnce: STRIP_AT_ONCE,
-    rearm
+    stripAtOnce: STRIP_AT_ONCE
   });
   var { stow, stripMore, restore, survey } = gear;
+
+  // src/lib/guards.ts
+  var dead = () => player.isDead ? "you are dead" : void 0;
+  var hurt = (fraction) => () => {
+    const ceiling = hitsCeiling();
+    if (ceiling === void 0) {
+      return void 0;
+    }
+    return player.hits < ceiling * fraction ? `hurt (${player.hits}/${ceiling})` : void 0;
+  };
+  var firstReason = (...guards) => {
+    for (const guard of guards) {
+      const reason = guard();
+      if (reason) {
+        return reason;
+      }
+    }
+    return void 0;
+  };
+
+  // src/necromancy/guards.ts
+  var floor = /* @__PURE__ */ hurt(HURT_FLOOR);
+  var belowFloor = () => floor() !== void 0;
+  var stopReason = () => firstReason(dead, floor);
+
+  // src/lib/heal.ts
+  var createBandager = ({
+    prefix,
+    graphic,
+    outcomeText,
+    timeoutMs,
+    cursorTimeoutMs,
+    attempts,
+    recovered,
+    waitOutSave: waitOutSave2
+  }) => {
+    const { all, outcomeFor } = outcomeVocabulary(outcomeText);
+    let ranOut;
+    const inPack = () => client.findType(graphic, void 0, player.backpack?.serial);
+    const applyOnce = () => {
+      const bandages = inPack();
+      if (!bandages) {
+        ranOut = "no bandages left in the pack";
+        return false;
+      }
+      target.cancel();
+      journal.clear();
+      player.use(bandages.serial);
+      if (!target.waitTargetSelf(cursorTimeoutMs)) {
+        log(`${prefix}: no target cursor for the bandage`);
+        return false;
+      }
+      const before = player.hits;
+      const matched = journal.waitForTextAny(all, void 0, timeoutMs);
+      const outcome = matched ? outcomeFor(matched) : void 0;
+      if (outcome === "noBandages") {
+        ranOut = "the shard says there are no bandages";
+        return false;
+      }
+      if (outcome === "saving") {
+        waitOutSave2();
+      }
+      return player.hits > before || outcome === "healed";
+    };
+    return {
+      empty: () => ranOut,
+      mend: () => {
+        if (recovered()) {
+          return true;
+        }
+        if (ranOut) {
+          return false;
+        }
+        log(`${prefix}: ${player.hits}/${player.maxHits} hits, bandaging`);
+        for (let attempt = 1; attempt <= attempts && !ranOut; attempt++) {
+          applyOnce();
+          if (recovered()) {
+            log(`${prefix}: healed to ${player.hits}/${player.maxHits}`);
+            return true;
+          }
+          if (player.isDead) {
+            break;
+          }
+        }
+        if (ranOut) {
+          log(`${prefix}: ${ranOut}`);
+        }
+        return false;
+      }
+    };
+  };
+
+  // src/lib/save.ts
+  var createSaveWatch = (options) => ({
+    isSaving: () => options.savingText.some((text) => journal.containsText(text)),
+    waitOutSave: () => {
+      log("save: the world is saving, waiting it out");
+      journal.clear();
+      for (let waited = 0; waited < options.waitMs; waited += options.pollMs) {
+        sleep(options.pollMs);
+        if (options.doneText.some((text) => journal.containsText(text))) {
+          break;
+        }
+        if (options.stopReason()) {
+          break;
+        }
+      }
+      options.onDone();
+    }
+  });
 
   // src/lib/heartbeat.ts
   var createHeartbeat = (options) => {
@@ -965,34 +886,15 @@
     };
   };
 
-  // src/training/heartbeat.ts
+  // src/necromancy/heartbeat.ts
   var heartbeat = /* @__PURE__ */ createHeartbeat({
-    prefix: "train",
+    prefix: "necro",
     noun: "casts",
     everyMs: HEARTBEAT_EVERY
   });
   var { beat, resetBeat } = heartbeat;
 
-  // src/lib/save.ts
-  var createSaveWatch = (options) => ({
-    isSaving: () => options.savingText.some((text) => journal.containsText(text)),
-    waitOutSave: () => {
-      log("save: the world is saving, waiting it out");
-      journal.clear();
-      for (let waited = 0; waited < options.waitMs; waited += options.pollMs) {
-        sleep(options.pollMs);
-        if (options.doneText.some((text) => journal.containsText(text))) {
-          break;
-        }
-        if (options.stopReason()) {
-          break;
-        }
-      }
-      options.onDone();
-    }
-  });
-
-  // src/training/save.ts
+  // src/necromancy/save.ts
   var { isSaving, waitOutSave } = /* @__PURE__ */ createSaveWatch({
     savingText: SAVING_TEXT,
     doneText: SAVE_DONE_TEXT,
@@ -1003,8 +905,27 @@
     onDone: resetBeat
   });
 
-  // src/training/index.ts
-  var PREFIX = "train";
+  // src/necromancy/heal.ts
+  var bandager = /* @__PURE__ */ createBandager({
+    prefix: "necro",
+    graphic: BANDAGE_GRAPHIC,
+    outcomeText: HEAL_OUTCOME_TEXT,
+    timeoutMs: BANDAGE_TIMEOUT,
+    cursorTimeoutMs: TARGET_TIMEOUT,
+    attempts: BANDAGE_ATTEMPTS,
+    recovered: () => !belowFloor(),
+    waitOutSave
+  });
+  var mend = () => {
+    if (!BANDAGE) {
+      return;
+    }
+    bandager.mend();
+  };
+  var outOfBandages = bandager.empty;
+
+  // src/necromancy/index.ts
+  var PREFIX = "necro";
   var skill = createSkillReader({
     skill: SKILL,
     label: SKILL_LABEL,
@@ -1027,9 +948,6 @@
     pollMs: MANA_POLL,
     logEveryMs: MANA_LOG_EVERY,
     regenTimeoutMs: REGEN_TIMEOUT,
-    // ./gear.ts and no longer ./weapon.ts. The weapon still comes off for every trance, but it goes
-    // back on by the serial that came off rather than by graphic - so a weapon with properties on it
-    // returns as itself - and the shield or armour this shard may also refuse comes off with it.
     stow,
     restore,
     stripMore,
@@ -1043,19 +961,19 @@
     skill,
     castOnce,
     regainMana: mana.regainMana,
-    manaBlocked: mana.blocked,
-    rearm,
+    disabledIsProgress: DISABLED_IS_PROGRESS,
     stopReason,
+    recover: mend,
     beat,
     waitOutSave,
     preflight: () => {
-      const weapon2 = held();
-      rememberWeapon(weapon2);
-      log(`${PREFIX}: hand ${describeItem(weapon2)}, ${player.mana}/${player.maxMana} mana`);
-      if (!weapon2) {
-        log(`${PREFIX}: nothing in hand - these are weapon abilities, so the first cast may be refused`);
-      }
+      log(
+        `${PREFIX}: ${player.hits}/${player.maxHits} hits, ${player.mana}/${player.maxMana} mana`
+      );
       log(`${PREFIX}: ${survey()}`);
+      if (BANDAGE && !client.findType(BANDAGE_GRAPHIC, void 0, player.backpack?.serial)) {
+        log(`${PREFIX}: no bandages in the pack - the health floor will stop the run instead`);
+      }
     },
     timings: {
       castDelay: CAST_DELAY,

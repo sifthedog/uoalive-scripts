@@ -49,10 +49,6 @@
     };
   };
 
-  // src/lib/entity.ts
-  var hex = (value) => `0x${(value >>> 0).toString(16)}`;
-  var describeItem = (item) => item ? `${hex(item.graphic)} '${item.name ?? ""}'` : "empty";
-
   // src/lib/vitals.ts
   var manaCeiling = () => player.maxMana > 0 ? player.maxMana : void 0;
 
@@ -228,7 +224,7 @@
     castOnce: castOnce2,
     regainMana,
     manaBlocked,
-    rearm: rearm2,
+    rearm,
     disabledIsProgress = false,
     stopReason: stopReason2,
     recover,
@@ -374,7 +370,7 @@
         // Most likely a draw that silently did not land after the last trance, which is recoverable
         case "noWeapon":
           unknown = 0;
-          if (!rearm2?.()) {
+          if (!rearm?.()) {
             stop = "the shard wants a weapon in hand and none could be drawn";
           }
           break;
@@ -459,25 +455,33 @@
     "You do not have enough skill"
   ];
 
-  // src/training/config.ts
-  var SKILL = Skills.Bushido;
-  var SKILL_LABEL = "Bushido";
+  // src/magery/config.ts
+  var SKILL = Skills.Magery;
+  var SKILL_LABEL = "Magery";
   var STAGES = [
-    { upTo: 600, spell: Spells.Confidence, mana: 10, buff: BuffDebuffs.Confidence },
-    { upTo: 750, spell: Spells.CounterAttack, mana: 5, buff: BuffDebuffs.CounterAttack },
-    { upTo: 1050, spell: Spells.Evasion, mana: 10, buff: BuffDebuffs.Evasion }
+    // 3rd circle. Below about 30 the sensible thing is to buy the skill from an NPC trainer.
+    { upTo: 500, spell: Spells.Bless, mana: 9, buff: BuffDebuffs.Bless, target: "self" },
+    // 4th circle
+    {
+      upTo: 650,
+      spell: Spells.ArchProtection,
+      mana: 11,
+      buff: BuffDebuffs.ArchProtection,
+      target: "self"
+    },
+    // 6th. The 5th and 7th circles are skipped because their spells want a cursor over ground or a
+    // gump answered, and neither is something this loop can do.
+    { upTo: 850, spell: Spells.Invisibility, mana: 20, buff: BuffDebuffs.Invisibility, target: "self" },
+    // 8th. An area attack that hits everything nearby, so this band belongs somewhere empty.
+    { upTo: 1200, spell: Spells.Earthquake, mana: 50 }
   ];
-  var WEAPON_NAME = "double axe";
-  var SPARE_BAG_SERIAL = void 0;
-  var DISARM_TIMEOUT = 2e3;
-  var DISARM_POLL = 200;
-  var DISARM_ATTEMPTS = 3;
   var SKILL_TIMEOUT = 1e3;
   var SKILL_POLL = 500;
   var MAX_BLIND_READS = 5;
-  var CAST_TIMEOUT = 500;
-  var CAST_DELAY = 500;
+  var CAST_TIMEOUT = 2e3;
+  var CAST_DELAY = 3e3;
   var SKIP_WHEN_BUFFED = false;
+  var DISABLED_IS_PROGRESS = true;
   var BUFF_WAIT = 2e3;
   var CASTING_WAIT = 750;
   var COOLDOWN_BACKOFF = 2e3;
@@ -509,29 +513,27 @@
   ];
   var STRIP_MOVE_DELAY = 500;
   var STRIP_AT_ONCE = false;
+  var DISARM_TIMEOUT = 2e3;
+  var DISARM_POLL = 200;
+  var DISARM_ATTEMPTS = 3;
   var MAX_HUNGRY = 5;
   var OUTCOME_TEXT = {
     // Not depended on: the mana leaving the pool and the buff arriving are the proof
-    cast: ["You have enabled", "You are infused with", "You gain confidence"],
-    // The commonest outcome at a low skill. The shard charges nothing for it, which is why it reads as
-    // silence to silentOutcome and has to be read from the words instead.
-    fizzled: ["The spell fizzles"],
-    noMana: [
-      "You do not have enough mana to perform that attack",
-      "You lack sufficient mana",
-      "Insufficient mana"
+    cast: ["You feel a surge of magic", "You are now protected"],
+    fizzled: ["The spell fizzles", "You have failed to cast the spell"],
+    noReagents: [
+      "You do not have enough reagents",
+      "More reagents are needed",
+      "You lack the required reagents"
     ],
+    noMana: ["You do not have enough mana", "Insufficient mana"],
     alreadyUp: ["You are already under the effect"],
-    disabled: ["You have disabled"],
-    // An empty hand is what a draw that did not land leaves behind, which is why the loop answers this
-    // by drawing again rather than by stopping.
-    noWeapon: ["You must have a weapon", "You cannot perform this ability"],
+    disabled: ["You are no longer", "You have dispelled"],
     unskilled: UNSKILLED_TEXT,
     saving: SAVING_TEXT,
-    // Must come before throttled: waitForTextAny hands back whichever string it found, and
-    // THROTTLED_TEXT ends in a bare 'You must wait' that this sentence contains. Bucketed together,
-    // Evasion's ordinary cooldown would end every run that reaches its band.
-    cooldown: ["You must wait before trying again"],
+    // Before throttled: waitForTextAny hands back whichever string it found, and THROTTLED_TEXT ends
+    // in a bare 'You must wait' that a longer sentence can contain.
+    alreadyCasting: ["You are already casting a spell", "You are already casting"],
     throttled: THROTTLED_TEXT
   };
   var MEDITATE_OUTCOME_TEXT = {
@@ -539,116 +541,20 @@
     full: ["You are at peace"],
     // Before unfocused, whose trailing full stop is deliberate: without it 'You cannot focus your
     // concentration' would also match the equipped-weapon sentence.
-    //
-    // The run stows the weapon before meditating, so reaching this means something else is refusing
-    // the trance and nothing retried fixes it: meditation latches off and regeneration takes over.
     blocked: [
       "You cannot focus your concentration with an equipped weapon",
       "You cannot focus your concentration with an equipped shield",
       "You are preoccupied with thoughts of battle"
     ],
-    // A failed roll or a trance broken by a hit - both fixed by using the skill again in a moment
     unfocused: ["You cannot focus your concentration.", "You lose your concentration"],
     unskilled: UNSKILLED_TEXT,
     saving: SAVING_TEXT,
     throttled: ["You must wait a few moments to use another skill", ...THROTTLED_TEXT]
   };
 
-  // src/lib/containers.ts
-  var CONTAINER_GRAPHICS = /* @__PURE__ */ new Set([
-    3701,
-    // backpack
-    3702,
-    // bag
-    3705,
-    // pouch
-    3709,
-    // wooden box
-    3651,
-    // wooden chest
-    2472,
-    // metal box
-    2475,
-    // metal chest
-    3644,
-    // crate
-    3645,
-    // crate
-    3648,
-    // gold chest
-    3649
-    // gold chest
-  ]);
-  var unreadable = /* @__PURE__ */ new Set();
-  var contentsOf = (item) => {
-    try {
-      return item?.contents;
-    } catch (error) {
-      const serial = item?.serial ?? 0;
-      if (!unreadable.has(serial)) {
-        unreadable.add(serial);
-        log(`contents: ${hex(serial)} would not answer - ${String(error)}`);
-      }
-      return void 0;
-    }
-  };
-  var packContents = () => {
-    try {
-      return contentsOf(player.backpack);
-    } catch (error) {
-      if (!unreadable.has(0)) {
-        unreadable.add(0);
-        log(`contents: the backpack would not answer - ${String(error)}`);
-      }
-      return void 0;
-    }
-  };
-  var isContainer = (item) => (contentsOf(item)?.length ?? 0) > 0 || CONTAINER_GRAPHICS.has(item.graphic);
-  var openContainers = (preferredSerial) => {
-    if (preferredSerial) {
-      player.use(preferredSerial);
-      sleep(800);
-      return true;
-    }
-    let opened = false;
-    for (const item of packContents() ?? []) {
-      if (!isContainer(item)) {
-        continue;
-      }
-      player.use(item.serial);
-      sleep(800);
-      opened = true;
-    }
-    return opened;
-  };
-  var findIn = (contents, matches) => {
-    for (const item of contents ?? []) {
-      if (matches(item)) {
-        return item;
-      }
-      const sub = contentsOf(item);
-      if (sub && sub.length > 0) {
-        const foundInSub = findIn(sub, matches);
-        if (foundInSub) return foundInSub;
-      }
-    }
-    return null;
-  };
-
-  // src/lib/guards.ts
-  var dead = () => player.isDead ? "you are dead" : void 0;
-  var firstReason = (...guards) => {
-    for (const guard of guards) {
-      const reason = guard();
-      if (reason) {
-        return reason;
-      }
-    }
-    return void 0;
-  };
-
-  // src/training/guards.ts
-  var stopReason = () => firstReason(dead);
+  // src/lib/entity.ts
+  var hex = (value) => `0x${(value >>> 0).toString(16)}`;
+  var describeItem = (item) => item ? `${hex(item.graphic)} '${item.name ?? ""}'` : "empty";
 
   // src/lib/retry.ts
   var untilLanded = (options) => {
@@ -680,7 +586,7 @@
     const on = (piece) => wornOn(piece.layer)?.serial === piece.serial;
     const gone = (piece) => client.findObject(piece.serial) === void 0;
     const remember = (piece) => {
-      if (!stowed.some((held2) => held2.serial === piece.serial)) {
+      if (!stowed.some((held) => held.serial === piece.serial)) {
         stowed.push(piece);
       }
     };
@@ -804,140 +710,31 @@
     };
   };
 
-  // src/lib/tool.ts
-  var describeContents = (contents) => (contents ?? []).map((item) => {
-    const sub = contentsOf(item);
-    return sub?.length ? `${hex(item.graphic)}[${describeContents(sub)}]` : hex(item.graphic);
-  }).join(", ");
-  var createTool = (options) => {
-    let learned;
-    let spareBagSerial = options.spareBagSerial;
-    let reportedEmpty = false;
-    const is = (item) => learned !== void 0 && item.graphic === learned || (options.graphics?.has(item.graphic) ?? false) || (item.name ?? "").toLowerCase().includes(options.name);
-    const remember = (item) => {
-      if (item && learned === void 0) {
-        learned = item.graphic;
-        log(`${options.label}: graphic is ${hex(item.graphic)}`);
-      }
-    };
-    const reportEmptyPack = () => {
-      if (reportedEmpty) {
-        return;
-      }
-      log(`${options.label}: none found. Pack holds: ${describeContents(packContents())}`);
-      log(`${options.label}: if the spares are in a bag inside a bag, pin it as SPARE_BAG_SERIAL`);
-      reportedEmpty = true;
-    };
-    const find = () => {
-      let found = findIn(packContents(), is);
-      if (!found && openContainers(spareBagSerial)) {
-        found = findIn(packContents(), is);
-      }
-      if (!found) {
-        reportEmptyPack();
-        return void 0;
-      }
-      reportedEmpty = false;
-      remember(found);
-      if (found.container && found.container !== player.backpack?.serial) {
-        spareBagSerial = found.container;
-      }
-      return found;
-    };
-    const stillHolding = () => {
-      const item = options.held();
-      return !!item && is(item) && client.findObject(item.serial) !== void 0;
-    };
-    return {
-      is,
-      remember,
-      find,
-      serial: () => options.held()?.serial,
-      equip: () => {
-        if (stillHolding()) {
-          return true;
-        }
-        const found = find();
-        if (!found) {
-          client.headMsg(`No ${options.name}!`, player, 33);
-          return false;
-        }
-        target.cancel();
-        return untilLanded({
-          label: `equip ${options.name}`,
-          attempts: options.equip.attempts,
-          timeoutMs: options.equip.timeoutMs,
-          pollMs: options.equip.pollMs,
-          act: () => player.equip(found.serial),
-          landed: () => options.held()?.serial === found.serial
-        });
-      }
-    };
-  };
-
-  // src/lib/weapon.ts
-  var createWeapon = ({
-    prefix,
-    name,
-    spareBagSerial,
-    equip,
-    disarm
-  }) => {
-    const held2 = () => player.equippedItems.twoHanded ?? player.equippedItems.oneHanded;
-    const tool = createTool({ label: "weapon", name, spareBagSerial, held: held2, equip });
-    return {
-      held: held2,
-      is: tool.is,
-      remember: tool.remember,
-      rearm: tool.equip,
-      // Polled for proof rather than slept on: a move the server threw away is indistinguishable from
-      // one still in flight.
-      disarm: () => {
-        const item = held2();
-        if (!item) {
-          return true;
-        }
-        tool.remember(item);
-        const pack = player.backpack?.serial;
-        if (pack === void 0) {
-          log(`${prefix}: nowhere to stow ${describeItem(item)} - the client reports no backpack`);
-          return false;
-        }
-        return untilLanded({
-          label: "stow the weapon",
-          attempts: disarm.attempts,
-          timeoutMs: disarm.timeoutMs,
-          pollMs: disarm.pollMs,
-          act: () => {
-            player.moveItem(item.serial, pack);
-          },
-          landed: () => held2() === void 0
-        });
-      }
-    };
-  };
-
-  // src/training/weapon.ts
-  var weapon = /* @__PURE__ */ createWeapon({
-    prefix: "train",
-    name: WEAPON_NAME,
-    spareBagSerial: SPARE_BAG_SERIAL,
-    equip: { attempts: EQUIP_ATTEMPTS, timeoutMs: EQUIP_TIMEOUT, pollMs: EQUIP_POLL },
-    disarm: { attempts: DISARM_ATTEMPTS, timeoutMs: DISARM_TIMEOUT, pollMs: DISARM_POLL }
-  });
-  var { held, is: isWeapon, remember: rememberWeapon, rearm } = weapon;
-
-  // src/training/gear.ts
+  // src/magery/gear.ts
   var gear = /* @__PURE__ */ createGear({
-    prefix: "train",
+    prefix: "mage",
     layers: STRIP_LAYERS,
     moveDelayMs: STRIP_MOVE_DELAY,
     equip: { attempts: EQUIP_ATTEMPTS, timeoutMs: EQUIP_TIMEOUT, pollMs: EQUIP_POLL },
     disarm: { attempts: DISARM_ATTEMPTS, timeoutMs: DISARM_TIMEOUT, pollMs: DISARM_POLL },
-    stripAtOnce: STRIP_AT_ONCE,
-    rearm
+    stripAtOnce: STRIP_AT_ONCE
   });
   var { stow, stripMore, restore, survey } = gear;
+
+  // src/lib/guards.ts
+  var dead = () => player.isDead ? "you are dead" : void 0;
+  var firstReason = (...guards) => {
+    for (const guard of guards) {
+      const reason = guard();
+      if (reason) {
+        return reason;
+      }
+    }
+    return void 0;
+  };
+
+  // src/magery/guards.ts
+  var stopReason = () => firstReason(dead);
 
   // src/lib/heartbeat.ts
   var createHeartbeat = (options) => {
@@ -965,9 +762,9 @@
     };
   };
 
-  // src/training/heartbeat.ts
+  // src/magery/heartbeat.ts
   var heartbeat = /* @__PURE__ */ createHeartbeat({
-    prefix: "train",
+    prefix: "mage",
     noun: "casts",
     everyMs: HEARTBEAT_EVERY
   });
@@ -992,7 +789,7 @@
     }
   });
 
-  // src/training/save.ts
+  // src/magery/save.ts
   var { isSaving, waitOutSave } = /* @__PURE__ */ createSaveWatch({
     savingText: SAVING_TEXT,
     doneText: SAVE_DONE_TEXT,
@@ -1003,8 +800,8 @@
     onDone: resetBeat
   });
 
-  // src/training/index.ts
-  var PREFIX = "train";
+  // src/magery/index.ts
+  var PREFIX = "mage";
   var skill = createSkillReader({
     skill: SKILL,
     label: SKILL_LABEL,
@@ -1027,9 +824,6 @@
     pollMs: MANA_POLL,
     logEveryMs: MANA_LOG_EVERY,
     regenTimeoutMs: REGEN_TIMEOUT,
-    // ./gear.ts and no longer ./weapon.ts. The weapon still comes off for every trance, but it goes
-    // back on by the serial that came off rather than by graphic - so a weapon with properties on it
-    // returns as itself - and the shield or armour this shard may also refuse comes off with it.
     stow,
     restore,
     stripMore,
@@ -1043,18 +837,12 @@
     skill,
     castOnce,
     regainMana: mana.regainMana,
-    manaBlocked: mana.blocked,
-    rearm,
+    disabledIsProgress: DISABLED_IS_PROGRESS,
     stopReason,
     beat,
     waitOutSave,
     preflight: () => {
-      const weapon2 = held();
-      rememberWeapon(weapon2);
-      log(`${PREFIX}: hand ${describeItem(weapon2)}, ${player.mana}/${player.maxMana} mana`);
-      if (!weapon2) {
-        log(`${PREFIX}: nothing in hand - these are weapon abilities, so the first cast may be refused`);
-      }
+      log(`${PREFIX}: ${player.mana}/${player.maxMana} mana`);
       log(`${PREFIX}: ${survey()}`);
     },
     timings: {

@@ -319,8 +319,8 @@
   var OUTCOME_TEXT = {
     chopped: ["You put", "You hack at the tree", "You chop some"],
     empty: ["There's not enough wood here to harvest", "There are no logs left"],
-    // "You can't use an axe on that" is UOAlive's wording, seen on a live run against an
-    // 'o'hii tree' static (0xc9e) - the tiledata calls it a tree, the shard will not harvest it
+    // "You can't use an axe on that" is UOAlive's wording, seen on a live run against an 'o'hii tree'
+    // static (0xc9e) - the tiledata calls it a tree, the shard will not harvest it
     notTree: [
       "You can't use an axe on that",
       "You can't chop that",
@@ -328,19 +328,16 @@
       "You cannot chop"
     ],
     tooFar: ["That is too far away", "You cannot reach that"],
-    // Confirmed from a live run. Line of sight, not range - the tile is inside CHOP_RANGE and the
-    // shard still will not have it, so no amount of walking closer or waiting fixes it.
+    // Confirmed from a live run. Line of sight, not range: the tile is inside CHOP_RANGE and no amount
+    // of walking closer or waiting fixes it.
     notSeen: ["Target cannot be seen"],
     wornOut: ["You have worn out your tool"],
-    // The shard freezing to write its world file. Nothing works while it does: the swing is refused,
-    // the journal answers with none of the wordings above, and every cycle of it reads as an
-    // unreadable outcome - five in a row and the run is over. It is not a failure of anything and
-    // nothing about the tree is learned from it; it is a pause. Found on a live mining run.
+    // Without a bucket of its own a world save reads as five unreadable outcomes in a row, which ended
+    // a live mining run.
     saving: SAVING_TEXT,
     // Full wordings first: the bare prefix also catches "You must wait N seconds" from systems that
-    // have nothing to do with harvesting, and reading one of those as a chop throttle is how a swing
-    // that was never refused ends up being retried forever. Kept last as a fallback all the same -
-    // a phrase this list misses reads as an unreadable outcome, which is worse.
+    // have nothing to do with harvesting. Kept last as a fallback all the same - a phrase this list
+    // misses reads as an unreadable outcome, which is worse.
     throttled: ["You must wait to perform another action", "You must wait a moment", "You must wait"]
   };
 
@@ -491,8 +488,8 @@
 
   // src/lib/outcomes.ts
   var outcomeVocabulary = (text) => ({
-    all: Object.values(text).flat(),
-    outcomeFor: (matched) => Object.keys(text).find((name) => text[name].includes(matched))
+    all: Object.values(text).flat().filter((phrase) => phrase !== void 0),
+    outcomeFor: (matched) => Object.keys(text).find((name) => text[name]?.includes(matched))
   });
 
   // src/lumberjacking/chop.ts
@@ -664,8 +661,7 @@
     unskilledText: UNSKILLED_TEXT,
     isSaving,
     nextStack: (writtenOff) => collectIn(player.backpack?.contents, isLog).find((item) => !writtenOff.has(item.hue ?? 0)),
-    // Boards are the tool used and the resource targeted - the inverse of smelting, where the ore is
-    // double-clicked and the forge is the target
+    // The tool is used and the resource targeted - the inverse of smelting
     perform: (stack) => {
       target.cancel();
       journal.clear();
@@ -924,8 +920,8 @@
       // forget: a module-scope `const memory = load()` would give every importer a reference that
       // outlives it.
       read: () => held ?? (held = load()),
-      // Tests only. The suite's vi.resetModules() gives each test a fresh module registry but leaves
-      // globalThis alone, which is precisely what this store is designed to survive.
+      // Tests only. vi.resetModules() gives each test a fresh module registry but leaves globalThis
+      // alone, which is precisely what this store is designed to survive.
       forget: () => {
         delete scope[options.key];
         held = void 0;
@@ -988,9 +984,8 @@
     // A tree is a static, so land is skipped outright rather than asked about
     skipLand: true,
     matches: (graphic) => isTree(graphic),
-    // Trees outside the box are still fair game when a legal standing tile is within CHOP_RANGE of
-    // them; ones no legal tile can reach are filtered out here rather than picked, walked at, refused,
-    // and only written off MAX_STEPS later.
+    // Trees outside the box are still fair game when a legal standing tile is within CHOP_RANGE;
+    // filtered here rather than picked, walked at, refused and written off MAX_STEPS later.
     reachable: (x, y) => reachableFromBounds(x, y, CHOP_RANGE),
     describe: (tree) => `'${client.getStatic(tree.graphic)?.name ?? "?"}'`
   });
@@ -1089,22 +1084,21 @@
         markDepleted(tree);
         unknown = 0;
         break;
-      // The whole art is scenery, not just this tile, so ban the graphic and the rest of the
-      // forest's copies of it stop being walked to one at a time
+      // The whole art is scenery, not just this tile, so ban the graphic rather than walking to the
+      // forest's copies of it one at a time
       case "notTree":
         markNotHarvestable(tree.graphic);
         markUnusable(tree, "is not harvestable");
         unknown = 0;
         break;
-      // Already inside CHOP_RANGE, so this is the shard disagreeing about the range rather than a
-      // walk that fell short. Treat the tile as unreachable instead of swinging at it again.
+      // Already inside CHOP_RANGE, so the shard disagrees about the range rather than the walk having
+      // fallen short
       case "tooFar":
         markUnusable(tree, `is out of reach at ${tree.distance} tiles`);
         unknown = 0;
         break;
-      // Line of sight, so walking closer would not help and neither would waiting - something is
-      // simply in the way. Without this the tile reads as an unreadable outcome, is picked again by
-      // the very next scan, and five of them in a row end the run.
+      // Line of sight: walking closer would not help and neither would waiting. Without this the tile
+      // reads as an unreadable outcome, is picked again by the next scan, and five end the run.
       case "notSeen":
         markUnusable(tree, "is not in line of sight");
         unknown = 0;
@@ -1113,21 +1107,15 @@
         log("lumberjack: axe worn out, swapping");
         unknown = 0;
         break;
-      // Nothing was learned about the tree and nothing went wrong: the shard was busy. Every counter
-      // is reset rather than merely left alone, because whatever they had accumulated was measured
-      // against a server that was not answering - the stall watchdog included, or a shard that saves
-      // often walks a run to STALL_STOP a save at a time. The regrow wait is excused for the same
-      // reason, by not coming through endCycle at all.
+      // The counters are reset rather than left alone, because whatever they had accumulated was
+      // measured against a server that was not answering. The stall watchdog goes with them: a shard
+      // that saves often would otherwise walk a run to STALL_STOP a save at a time.
       case "saving":
         waitOutSave();
         unknown = 0;
         throttled = 0;
         stall.progressed();
         break;
-      // The one branch that used to say nothing and count nothing. A fixed 600ms retry is shorter
-      // than the harvest delay on most shards, so the swing that was refused re-armed the very timer
-      // it was waiting on - silently, standing still, for as long as the cycle backstop allowed.
-      // Back off further each time instead, and give up rather than spin.
       case "throttled":
         throttled++;
         unknown = 0;
@@ -1137,11 +1125,9 @@
           stop = "the shard kept refusing the swing";
         }
         break;
-      // A cursor that never opened, with an axe demonstrably in hand, is the shard declining to start
-      // the swing rather than an empty hand - on a live mining run that was a third of them. chopOnce
-      // has already read the journal and the pack looking for a reason, so what is left here is a
-      // refusal with nothing said about it: treated like one, with the same growing backoff and a
-      // budget of its own, rather than spending the five the unreadable outcomes have.
+      // With an axe demonstrably in hand this is the shard declining to start the swing, which on a
+      // live mining run was a third of them. chopOnce has already looked for a reason, so this is a
+      // refusal with nothing said about it - backed off like one, on a budget of its own.
       case "noCursor":
         noCursor++;
         log(`lumberjack: no target cursor (${noCursor}/${MAX_NO_CURSOR}), backing off`);

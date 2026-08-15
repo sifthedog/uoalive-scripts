@@ -76,8 +76,8 @@
       // forget: a module-scope `const memory = load()` would give every importer a reference that
       // outlives it.
       read: () => held ?? (held = load()),
-      // Tests only. The suite's vi.resetModules() gives each test a fresh module registry but leaves
-      // globalThis alone, which is precisely what this store is designed to survive.
+      // Tests only. vi.resetModules() gives each test a fresh module registry but leaves globalThis
+      // alone, which is precisely what this store is designed to survive.
       forget: () => {
         delete scope[options.key];
         held = void 0;

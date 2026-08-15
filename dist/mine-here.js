@@ -109,48 +109,41 @@
   var DISMOUNT_ATTEMPTS = 3;
   var OUTCOME_TEXT = {
     dug: ["You dig some", "You put", "You loosen some rocks"],
-    // What parks a vein for RESPAWN_DELAY. Both wordings are in the wild: RunUO says metal, some
-    // shards say ore, and reading either one as unknown would stop the run on a worked-out vein.
+    // Both wordings are in the wild: RunUO says metal, some shards say ore.
     empty: [
       "There is no metal here to mine",
       "There is no ore here to mine",
       "You cannot mine there"
     ],
-    // Confirmed from a live run on this shard. Distinct from `empty` because of that last word: this
-    // one is the shard answering about everything within reach of where you are standing, which is
-    // the only kind of answer a swing that names no tile can really get. It parks the whole area
-    // rather than a tile, and that is what makes the character walk away - reading it as `empty`
-    // would park one tile, swing again from the same spot, and get the same sentence back.
+    // Confirmed from a live run. Distinct from `empty` because of that last word: this is the shard
+    // answering about everything within reach, so it parks the whole area and walks the character
+    // away. Read as `empty` it would park one tile and get the same sentence back from the same spot.
     nothingNearby: [
       "There are no harvestable resources nearby",
       "There is nothing here to harvest"
     ],
-    // About the art rather than the tile, so the whole graphic is banned - the same lesson
-    // lumberjacking learned when the tiledata called a whole family of statics a tree
+    // About the art rather than the tile, so the whole graphic is banned
     notOre: ["You can't mine that", "Try mining in rock", "You can only mine"],
     tooFar: ["That is too far away", "You cannot reach that"],
-    // Line of sight, not range - the tile is inside MINE_RANGE and the shard still will not have it,
-    // so no amount of walking closer or waiting fixes it
+    // Line of sight, not range: the tile is inside MINE_RANGE and no amount of walking closer or
+    // waiting fixes it
     notSeen: ["Target cannot be seen"],
     // The ore is destroyed when this fires, not dropped, so it has to trigger a smelt rather than
-    // another swing. Lumberjacking has no equivalent: it stops on weight long before the item cap.
+    // another swing.
     packFull: ["Your backpack is full", "That container cannot hold more"],
     wornOut: ["You have worn out your tool"],
-    // The shard freezing to write its world file. Nothing works while it does: the swing is refused,
-    // the journal answers with none of the wordings above, and every cycle of it reads as an
-    // unreadable outcome - five in a row and the run is over, which is what a save did to a live one.
-    // It is not a failure of anything and nothing about the vein is learned from it; it is a pause.
+    // Without a bucket of its own a world save reads as five unreadable outcomes in a row, which ended
+    // a live run.
     saving: SAVING_TEXT,
-    // Shared with the smelt, which reads the same refusal with no outcomes to read it as: to the
-    // conversion a throttle is silence, and silence is what writes a hue off. One list, so a wording
-    // corrected against this shard's journal fixes both.
+    // Shared with the smelt, which has no outcomes to read a refusal as: to the conversion a throttle
+    // is silence, and silence is what writes a hue off. One list, so a correction fixes both.
     throttled: THROTTLED_TEXT
   };
 
   // src/lib/outcomes.ts
   var outcomeVocabulary = (text) => ({
-    all: Object.values(text).flat(),
-    outcomeFor: (matched) => Object.keys(text).find((name) => text[name].includes(matched))
+    all: Object.values(text).flat().filter((phrase) => phrase !== void 0),
+    outcomeFor: (matched) => Object.keys(text).find((name) => text[name]?.includes(matched))
   });
 
   // src/lib/containers.ts
@@ -803,8 +796,8 @@
       const piles = collectIn(packContents(), isOrePile);
       return piles.length > 0 ? `nothing to smelt in ${piles.length} pile(s) - ` + piles.map((pile) => describePile(pile, writtenOff)).join(", ") : void 0;
     },
-    // The inverse of lumberjacking's makeBoards, which uses the tool and targets the resource: here
-    // the ore is double-clicked and the beetle is the target, the same as walking up to a forge
+    // The inverse of lumberjacking's makeBoards: here the ore is double-clicked and the beetle is the
+    // target, the same as walking up to a forge
     perform: (stack) => {
       if (!forge) {
         return false;
@@ -912,40 +905,31 @@
         waitForOre(oreBefore);
         groupOres();
         break;
-      // The two ways the shard says there is nothing left, and this script does not distinguish them.
-      // In dist/mining.js they differ by scope - one parks a tile, the other parks everything within
-      // reach - and the scope is what decides where to walk next. There is no next here and no tile
-      // being booked, so both mean the same thing: the spot is worked out and the run is over.
-      //
-      // Smelted first, and this is the moment the whole run has been carrying ore towards: the swings
-      // are finished, the character is standing exactly where it started, and the beetle that has been
-      // following it is either in range now or was never going to be.
+      // The two ways the shard says there is nothing left. In dist/mining.js they differ by scope,
+      // which is what decides where to walk next; there is no next here, so both mean the same thing.
       case "empty":
       case "nothingNearby":
         groupOres();
         smeltHere();
         stop = WORKED_OUT;
         break;
-      // "You can't mine that" about a swing that named no tile is the shard saying this spot is not
-      // mineable at all. dist/mining.js bans the art and walks to a different one; there is nothing to
-      // ban here and nowhere to walk, so it is an ending.
+      // About a swing that named no tile, so the shard is saying this spot is not mineable at all.
+      // Nothing to ban and nowhere to walk, so it is an ending.
       case "notOre":
         stop = "nothing here can be mined";
         break;
-      // Range and line of sight, for a swing aimed at where the character is standing. Neither can be
-      // answered by moving, because moving is the one thing this script does not do - so they are
-      // ended rather than retried, and named separately because they mean different things about the
-      // spot: one is a shard that wanted a tile after all, the other is something in the way.
+      // Range and line of sight, neither of which can be answered by moving - the one thing this
+      // script does not do. Named separately because one is a shard that wanted a tile after all and
+      // the other is something in the way.
       case "tooFar":
         stop = "the shard says the ore is out of reach from where you are standing";
         break;
       case "notSeen":
         stop = "the shard cannot see the ore from where you are standing";
         break;
-      // The ore this swing produced was destroyed rather than dropped, so swinging again would only
-      // destroy more. Consolidating is the answer rather than smelting, because a full pack is a
-      // container at its item cap: forty piles of one become one pile of forty, and thirty-nine slots
-      // come back. If weight is the real problem, the next cycle's tooHeavy() branch smelts.
+      // The ore this swing produced was destroyed rather than dropped, so swinging again destroys
+      // more. A full pack is a container at its item cap, so consolidating is the fix: forty piles of
+      // one become one pile of forty. If weight is the real problem, the next cycle smelts.
       case "packFull":
         log("mine-here: pack is full, consolidating before the next swing");
         groupOres();
@@ -955,18 +939,15 @@
         log("mine-here: pickaxe worn out, swapping");
         unknown = 0;
         break;
-      // Nothing was learned and nothing went wrong: the shard was busy writing its world file. The
-      // counters are reset rather than merely left alone, because whatever they had accumulated was
-      // measured against a server that was not answering - and the stall watchdog with them, since a
-      // shard that saves often would otherwise walk a run to STALL_STOP a save at a time.
+      // The counters are reset rather than left alone, because whatever they had accumulated was
+      // measured against a server that was not answering. The stall watchdog goes with them: a shard
+      // that saves often would otherwise walk a run to STALL_STOP a save at a time.
       case "saving":
         waitOutSave();
         unknown = 0;
         throttled = 0;
         stall.progressed();
         break;
-      // A fixed retry shorter than the harvest delay re-arms the very timer it is waiting on, so back
-      // off further each time instead, and give up rather than spin
       case "throttled":
         throttled++;
         unknown = 0;
@@ -976,10 +957,8 @@
           stop = "the shard kept refusing the swing";
         }
         break;
-      // A cursor that never opened, with a pickaxe demonstrably in hand, is the shard declining to
-      // start the swing rather than an empty hand. digOnce has already read the journal and the pack
-      // looking for a reason, so what is left here is a refusal with nothing said about it: treated
-      // like one, with the same growing backoff and a budget of its own.
+      // With a pickaxe demonstrably in hand this is the shard declining to start the swing. digOnce
+      // has already looked for a reason, so this is a refusal with nothing said about it.
       case "noCursor":
         noCursor++;
         log(`mine-here: no target cursor (${noCursor}/${MAX_NO_CURSOR}), backing off`);
