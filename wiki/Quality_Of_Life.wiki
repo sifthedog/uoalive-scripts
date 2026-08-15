@@ -1,0 +1,449 @@
+{{Under Construction}}
+{{ToC|right}}
+{{Hatnote|Brand new to the shard? Start at [[NewPlayers]], then come back here.}}
+
+== Heavily under construction ==
+'''''We need someone who is good at organization to really help us categorize this better. But for now here is a massive dump of QoL improvements on UOAlive give or take.'''''
+
+Things on this list may change or be modified and will be updated accordingly. As well more will be added to the list as they come to mind or we add them.
+
+== Why UOAlive feels different ==
+
+Ultima Online is twenty-odd years old, and it shows. It shows in the good ways. The world is enormous, the systems are deep, and nobody has ever built anything quite like it since. It also shows in a thousand small cruelties: corpses lost to a server restart, an hour of walking undone by someone standing in a doorway, a skill that takes a month to move.
+
+'''UOAlive keeps the depth and files the sharp edges off.''' This page is the tour. It is written for someone who has just logged in for the first time, but veterans returning after a decade away will find most of what changed here too. Where a system is big enough to deserve its own page, this one gives you the short version and a link.
+
+{{Nutshell|PvE only, all expansions, all facets, free.|Your loot is instanced, your gold is account-wide, and your corpse gets emptied into your backpack if the server restarts.|You choose how fast you level: '''Modern''', '''Legacy''', or '''Perilous'''.}}
+
+== Your first hour ==
+
+[[File:1675802030969.png|thumb|right|The New Player Dungeon in New Haven.]]
+[[File:1673455578876.png|thumb|right|The NPCs in New Haven give real directions now.]]
+
+If you do nothing else on this page, do these eight things in order.
+
+# '''Get in.''' Grab a client from [https://uoalive.com/playnow.html Play Now]. ClassicUO, Orion, Razor Enhanced, UOSteam and the Enhanced Client all work. Play in whichever one you already like.
+# '''Pick your skill gain path.''' This is a per-character choice and it is the most important decision you will make at creation. '''Modern''' is the standard UOAlive experience and the right answer for almost every new player. See [[Skill Gain]] before you commit.
+# '''Type <code>[MyCommands</code>.''' It lists every command available to you. UOAlive has a lot of them and this is how you find them. See [[Commands]].
+# '''Do New Haven properly.''' The [[New Player Dungeon]] was purpose-built for this. It has wings, progression, and an actual difficulty curve instead of the old "here is a mine, good luck". Run [[New Player Quests]], grab the [[Quest:New Player Armor|New Player Initiation Armor]], and pick up your [[New Player Token]]. The roaming NPCs give real directions now; even Scotty finally says something useful.
+# '''Find your money.''' Gold is account-wide, so every character shares one balance. Type <code>[wallet</code> to see it from anywhere, and say <code>withdraw &lt;amount&gt;</code> at any bank teller to pull coins out. See [[Currencies]].
+# '''Get an Alacrity picker, and ''don't'' use it yet.''' The [[Scroll of Alacrity Picker]] is free from the New Player Vendor in New Haven. It lasts 15 minutes. Do not burn it while you are still travelling, shopping, or hunting for something to train on. Spend it standing exactly where you intend to work.
+# '''Insure your gear.''' Most non-cursed items can be insured, which means they come back with you instead of staying on your corpse. See [[Corpse Summoning - Resurrection - Insurance]].
+# '''Visit Magincia.''' Any public moongate has a '''Special Locations''' tab. Take it to the [[Magincia Magical Stone Exchange]] and have a look at what is on offer. A lot of this page's contents can be bought there.
+
+== Things you'll notice on day one ==
+
+=== You are not going to lose your stuff ===
+
+[[File:1675801572903.png|thumb|right|The corpse collector in Britain.]]
+
+This is the cluster of features UOAlive is proudest of, and it is the one that most changes how the game feels.
+
+* '''Loot is instanced for every player.''' Nobody snipes your drop. Champion spawns use group loot and tiered rewards.
+* '''<u>If the server restarts or crashes, items on player corpses are automatically moved into their owner's backpack.</u>''' You cannot lose a corpse to maintenance. This is a signature UOAlive feature.
+* '''Insurance''' covers most items that aren't cursed, so they follow you through death rather than sitting on your body.
+* '''If you can't reach your corpse in time''', a corpse collector in Britain will fetch it for a fee. You get one minute to loot it before his minion eats it, literally.
+* '''Buying or selling while overweight won't drop things on the floor.''' Purchases you can't carry go to your bank; sale proceeds go straight to your account. If there's genuinely nowhere to put something you get a red-font warning and the item flags itself at your feet. You will not miss it.
+* '''Vendors no longer drop gold or items to the ground.''' And on the rare occasion something does, you will be told.
+
+=== The world gets out of your way ===
+
+[[File:1673455776674.png|thumb|right|NPCs across the world react to who you are.]]
+
+* '''Body blocking is gone from recall and gate travel.''' Nobody can park themselves on the rune library tile and ruin your evening.
+* '''No stamina loss for shoving past players or NPCs in town''', including Heartwood, birdies and all.
+* '''Your health is 25% above OSI standard.''' 100 strength gives you 125 hit points. This exists to blunt one-shot deaths in PvE without breaking balance.
+* '''Every facet is worth gathering in.''' Resource rates are equal across all of them, so there is no reason to prefer Felucca over Trammel.
+* '''Recall, mark and gate work in Ilshenar.'''
+* '''Moongate confirmation gumps for Felucca are removed''', because this is a PvE server and the warning was meaningless.
+* '''Certain areas reject AFK players''' via a special tile type, so things like [[Clean Up Britannia Points Exchange|CUB]] bins and event gates don't get blocked by someone's overnight macro. You get system messages when you're standing in one.
+* '''[[Blessed Areas]]''' are community-recognised safe zones where you can neither take nor deal damage.
+* '''Potions stack.''' Yes, really.
+* '''Vendors stock more reagents''', and the gold vendor sells trapped pouches with 30 charges.
+* '''The guild system is the enhanced one.''' Old guildstones are still available from the gold sink vendor in Zento if you want one.
+* '''NPCs across the world have things to say''', and some react differently depending on your karma.
+* '''You don't have to be Young to finish the Haven quests.''' If you aged out before you got round to them, they're still there.
+
+=== Commands worth knowing ===
+
+[[File:1706298258034.png|thumb|right|<code>[Played</code> breaks your play time down by character.]]
+
+The full list lives at [[Commands]], and <code>[MyCommands</code> shows you what your character can currently use. The ones worth memorising early:
+
+{| class="wikitable"
+! Command !! What it does
+|-
+| <code>[MyCommands</code> || Lists every command available to you
+|-
+| <code>[wallet</code> || Your gold and sovereign balance, from anywhere
+|-
+| <code>[mystats</code> || Your stats
+|-
+| <code>[organizeme</code> || Organises you. Well, it does.
+|-
+| <code>[bondinfo</code> || How long until a pet bonds, shrunken pets included
+|-
+| <code>[myachievements</code> || Your achievement progress. <code>[achievements</code> shows other players'.
+|-
+| <code>[Played</code> || Total play time per character, broken down by year and month
+|-
+| <code>[Hunger</code> || Your hunger meter. See [[Hunger]]
+|-
+| <code>[ReDeed</code> || Turns house deco back into a deed without needing an axe
+|-
+| <code>[VeteranRewards</code> || Opens the veteran rewards gump
+|-
+| <code>[ClearFollowers</code> || Fixes a follower count with no followers actually in the world
+|-
+| <code>[GuildLootOff</code> / <code>[GuildLootOn</code> || Toggles whether guildmates may loot your corpse
+|-
+| <code>[idoceffects</code> || Toggles IDOC visual effects. See the accessibility note below
+|-
+| <code>[password</code> || Change your password yourself, without a support ticket
+|}
+
+You can also '''use any skill by typing its name''': <code>[animallore</code>, <code>[lore</code>, <code>[hiding</code>. A few shortenings collide with other commands, so <code>[hide</code> won't work, for instance.
+
+'''Accessibility:''' if you are sensitive to flashing effects, or you're on a low-spec machine, <code>[idoceffects</code> turns IDOC visuals off individually.
+
+'''Why <code>[password</code> exists:''' some launchers, including the ClassicUO Launcher, cap logins at 12 characters. If your password is longer than that and a launcher won't take it, change it yourself rather than opening a ticket.
+
+=== Client and interface ===
+
+[[File:jDr03_tXhNlrNlxKP6cY66ATyjs28eS-F8F0DP-qHHJtN1s6FwUCbSjJuiMd-Gygx5wbJuLOTnIQGf327fTSweww3a7K0WjAw98GiI-ka1sW_86kwf6uez18aWc1il39ItaKes8465flPfs9obiJt5c.png|thumb|right|Message boards recolour when there is something new.]]
+[[File:1675803647775.png|thumb|right|Global chat, mirrored into Discord.]]
+[[File:T96TZ5f.png|thumb|right|Runebook and atlas visual updates.]]
+
+* '''Runebooks got a real pass.''' Cooldown is 1 second instead of 7. Books and atlases now show which entry is the default, let you move runes up and down, and have a '''replace''' button that swaps a stored rune for a marked one in your pack.
+* '''The [[Recall Rune Tome]]''' lets you buy up to 480 recall runes every 10 minutes at 25gp each and cast Mark directly from the tome. Mark, incidentally, is a free spell here, so mark scrolls need no magic ability at all.
+* '''Message boards change colour''' when there's something new: green for the last 48 hours, orange for the last week, normal hue beyond that.
+* '''The Buff Box works.''' So does Enhanced Client support for the Scriber's Tome.
+* '''Your paperdoll skill title also shows on hover.''' Left-click your character to control titles.
+* '''Global chat is mirrored into Discord''', so you can keep half an eye on the shard from your phone.
+
+== Skills and progression ==
+
+=== Choose your path ===
+
+[[File:SkillGainPaths.png|thumb|right|The three skill gain paths.]]
+[[File:PerilousPathInGameGump.png|thumb|right|The Perilous Path gump.]]
+
+This is the system most likely to surprise a returning player, and the QoL feature with the furthest reach. Skill gain is chosen '''per character''', not per account, and all three paths share the same world, economy and content.
+
+* '''Modern''': the standard UOAlive experience. Faster than OSI while keeping a real sense of progression. This era of UO is heavily gear-driven, so hitting GM is the ''start'' of your character, not the end of it. Pick this if you're unsure.
+* '''Legacy''': the long road, supported properly. For players who want the old grind to actually mean something instead of self-policing with skill locks. Power scrolls must be eaten in order: 105 → 110 → 115 → 120.
+* '''Perilous''': a roguelike. Perilous characters are [[Pariah|Pariahs]], get three lives, and on the third death are permanently dead. Not recommended for new players, and not the standard experience. It's for people who know exactly what they're signing up for.
+
+Read [[Skill Gain]] in full before you pick. It is long, but it is the single most useful page on this wiki.
+
+=== Free and secondary skills ===
+
+[[File:SV97ixz.png|thumb|right|The secondary skills gump.]]
+[[File:Free Skills.png|thumb|right|The free skills, which don't count against your 720.]]
+
+* '''[[Secondary Skills]] do not count against your 720 skill cap.''' Each has its own cap and can go to 120 with the right power scroll. There are eighteen of them.
+* Because Lumberjacking is free here, it does '''not''' carry the OSI damage bonus.
+* '''Skill caps still apply.''' If a skill stops dead at 100.0, you probably need a [[Power Scrolls|power scroll]] rather than a different training method.
+
+=== Training tools ===
+
+[[File:1698343305280.png|thumb|right|The Zento training dummy pits.]]
+[[File:TAAGSPOSTER.jpg|thumb|right|TAAGS, the pet training bonus system.]]
+[[File:Alacritypicker.gif|thumb|right|The Alacrity Scroll Picker.]]
+
+* '''Dungeon bonus (Modern path):''' eligible skill gain is boosted while you're in a dungeon. Going out and playing is meant to be the efficient option.
+* '''[[TAAGS]]''': the Tamed Animal Accelerated Gain System. Use Animal Lore on your own pet to roll a training target; fighting that target with your pet gives it a gain bonus. The gump shows target, type, bonus, and cooldown.
+* '''[[Scroll of Alacrity Picker]]''': choose the exact skill instead of rolling for it. 15 minutes, and it '''persists across logout''', which is a UOAlive exclusive. Available from the New Player Vendor, [[New Haven]], the [[Magincia Magical Stone Exchange]], as a [[Clean Up Britannia Points Exchange|CUB]] reward, and from champion bosses.
+* '''[[Zento Training Pit]]''': training dummies that take any melee skill to 90, same as a new player token. The pit also has test dummies with fixed resistances (100% physical, 100% fire, and so on) so you can measure your own damage. Only you see your numbers.
+* '''[[Blessed Britain Forge]]''': bonus skill gain for '''all''' crafting skills on the Modern path, plus a hidden chance at reduced material costs.
+
+== Getting around ==
+
+[[File:hJVQh6w.png|thumb|right|The custom Portal System.]]
+[[File:1675801905505.png|thumb|right|Player-run taverns and libraries on the Special Locations tab.]]
+[[File:1675804063908.png|thumb|right|The Community Rune Library.]]
+
+* '''The custom Portal System''' moves you between points of interest quickly.
+* '''Public moongates have a Special Locations tab''' listing player-run taverns, rune libraries and other establishments, plus the [[Magincia Magical Stone Exchange]] and House Tour Island.
+* '''The Community Rune Library''' covers most of where you'd want to go.
+* '''Moonstones drop free at the Magincia Stone Exchange'''. Pick them off the ground and use them to cross between Felucca and Trammel without magic.
+* '''Getting to the Abyss''' is handled by the Manacle and the Three Stone Tavern. There's also a signpost in Ter Mur pointing at the Abyss quest giver, and a vendor down there selling full kegs of heal, cure and refresh potions plus bandages in bulk.
+* '''[[Surveyor Johns Portable Campsite]]''' gives you a base wherever you are, which is a genuine alternative to owning a house.
+* '''Paragons spawn in every facet''', Malas and Ter Mur included.
+
+=== Places worth going ===
+
+[[File:R3HjWxo.png|thumb|right|Zento, the central hub.]]
+[[File:kgs9SWf.png|thumb|right|Britain Bank.]]
+[[File:1675804147407.png|thumb|right|Reaching the Abyss.]]
+
+* '''Zento''' is the central hub: blessed, full of player vendors, and home to the [[Zento Training Pit]]. It drops double Kudos while you are in the area, and the Blessed Three Stone Tavern is next door.
+* '''Britain Bank''' got the same beautification treatment, if you prefer the nostalgia. It also drops double Britcoin (BTC).
+* '''New Magincia''' holds the [[Magincia Magical Stone Exchange]], the [[Magincia Bazaar]] and the Champion Finder.
+* '''Heartwood''' has an increased mushroom spawn rate. The birdies are back, too.
+* '''House Tour Island''' lets you walk through every custom house design before you buy one.
+* '''The Britain Golden Horse Casino''' has slots and card tables, if you'd rather lose your gold than spend it.
+
+== Money and the economy ==
+
+=== Gold, sovereigns and Britcoin ===
+
+[[File:wbr5t2c.png|thumb|right|Type an amount into a trade window to trade gold.]]
+[[File:cX26ojF.png|thumb|right|Achievements pay sovereigns.]]
+[[File:1675915134898.png|thumb|right|UOAlive's currencies explained.]]
+[[File:Wallet.png|thumb|right|<code>[wallet</code> shows gold and sovereigns from anywhere.]]
+[[File:Sov exchange.png|thumb|right|The sovereign exchange.]]
+
+There are three currencies. [[Currencies]] covers all of them properly; the short version:
+
+* '''[[Gold]]''' is account-wide. Drop coins in your bank box to add to the balance; say <code>withdraw &lt;amount&gt;</code> at a teller to take it out. To trade gold, just type the amount into a trade window anywhere in the world.
+* '''[[Sovereigns]]''' buy things from the in-game store and the Magincia stones. You earn them from achievements, events and tasks, you can trade Britcoin for them, and you can buy them for gold from the stone exchange or from other players. '''There are no donation stones. Every item on this server is obtainable in-game.'''
+* '''Britcoin (BTC)''' accrues quietly while you're logged in, weighted towards actually doing things. It is deliberately unpredictable so it can't be farmed on a spreadsheet, it can't be traded between players, and it converts to sovereigns at a stone in Magincia.
+
+Achievements are worth chasing (<code>[myachievements</code>) because completing them pays sovereigns.
+
+=== Buying and selling ===
+
+[[File:VendorSerarch.png|thumb|right|Vendor Search.]]
+[[File:paytch.png|thumb|right|Sales history (min, median and max) on the buy screen.]]
+[[File:Cubalacrity.png|thumb|right|CUB points buy Alacrity pickers, among much else.]]
+
+* '''[[Global Vendor Market and Vendor Search]]''' is the shard's marketplace, usable from your own house or anywhere inside a guarded town. It searches commodities, crafted goods, BODs, recipes, pets, spellbooks, plants, and '''bundles''': bags with contents, so a complete LRC suit shows up as one listing. It also shows price-per-unit on stackables and sales history with min/median/max on the buy screen, so you can price your own things sensibly. You can reprice and delist through the interface for a 7% fee.
+* '''Friends and co-owners can place vendors in your house''', which is what makes [[UOAlive Player Vendor Malls]] possible. Your own vendors are manageable from any character on the account, and the game will refuse to let you demolish, resize or change a house until you've removed the vendors from it.
+* '''[[Magincia Bazaar]]''' is a public marketplace next to the stone exchange where anyone may place a vendor.
+* '''[[Fulfillment Order System]]''' lets you post bulk resource requests for other players to fill. Good for crafters, and good for new players who want a reliable buyer for raw materials.
+* '''Special trash barrels near Brit West Bank''', CUB bins around New Haven, and the Sacrificial Altar all feed the [[Clean Up Britannia Points Exchange]], which is how you turn a decade of hoarding into Alacrity pickers, the Conjurer's Grimoire, Garb and Trinket, and more. Careful with the altar: it destroys what you put in immediately, unlike a house trash barrel.
+
+=== The Magincia Magical Stone Exchange ===
+
+[[File:SBhB4xm.png|thumb|right|The Magincia Magical Stone Exchange.]]
+[[File:1675915080725.png|thumb|right|The stones themselves.]]
+[[File:Stone Exchange Moongate.jpg|thumb|right|Reaching the exchange via the moongate's Special Locations tab.]]
+
+Reachable from any moongate's Special Locations tab, this is where most of UOAlive's custom conveniences are sold. Among them:
+
+* '''[[Stable Sphere]]''': a blessed container that stores pets at 50% reduced weight.
+* '''[[Tag Box]]''': a home container anyone can drop into but only the house owner can open, with per-guild and per-player drop permissions.
+* '''[[Transmogrification (The Magical Dress Form)|The Dress Form Transmogrifier]]''': wear the gear you like the look of while using the gear with the stats.
+* '''[[Pet Cosmetics]]''': cosmetic transmogs for pets that keep your pet's hue.
+* '''[[Recall Rune Tome]]''', soulstone resets, and the Exclusive Essentials stone generally.
+
+A soulstone reset costs 100 sovs and rebinds any stone to your account. If you already own the stone, it's free.
+
+== Combat and builds ==
+
+[[File:5gA3FLR.png|thumb|right|The arcane circle outside Brit Bank.]]
+[[File:crusader2.jpg|thumb|right|The Crusade Milestone reworked paladin and melee healing.]]
+[[File:Monty-Python-pic-3.png|thumb|right|The Monty Python questline rewards a custom bard set.]]
+[[File:1683229305176.png|thumb|right|The pure bard adjustment.]]
+[[File:1675802984292.png|thumb|right|PvP is consensual, everywhere.]]
+
+[[Skills and Builds]] is the hub for templates. UOAlive has rebuilt several archetypes that OSI left behind:
+
+* '''Mages, mystics and summoners''' got a substantial buff so that pure caster builds are viable endgame without going sampire or tamer. See [[The Summoner]] and the [[Summoner General Use Guide]]. Spellweaving bonuses no longer require other players: any arcane circle works solo, and there's one right outside Brit Bank. Gift of Renewal now has a chance to cure poison, roughly midway between Cure and Arch Cure, improved by an arcane circle.
+* '''Paladins and melee''' got the same treatment through healing changes. See [[The Crusade Milestone (Healing/Paladin Update)]].
+* '''[[The Bard|Bards]]''' get custom items from the Monty Python questline (the Sash of the Calm Soul, Cloak of Chaos and Boots of Enfeeblement, all needing 100 Musicianship), mastery switching reduced to 3 minutes, songs that no longer eat durability out of combat, and [[Universal Barding Deed|universal barding deeds]].
+* '''Custom classes''' worth knowing exist: [[The Ninja]], [[Necroweaver]], [[Hemomancer]], [[Undead Commander]] and [[Tinctures]].
+
+'''Healing.''' Self-healing now uses the heal-other formula: 2 seconds at max speed instead of 4, and you only need 80 dexterity to get there rather than ~140.
+
+'''Hiding.''' You can hide up to 6 tiles from a target at 120. Because hiding goes past 100 with a power scroll, you can now fail at 100:
+
+{| class="wikitable"
+! Skill !! Success !! Failure
+|-
+| 100 || 83.33% || 16.67%
+|-
+| 105 || 87.50% || 12.50%
+|-
+| 110 || 91.67% || 8.33%
+|-
+| 115 || 95.83% || 4.17%
+|-
+| 120 || 100% || 0%
+|}
+
+Stealth is checked and re-checked automatically as you walk while hidden.
+
+'''PvP is consensual, everywhere.''' You can fight guild wars and arena battles, but you cannot kill or loot an unsuspecting player, and looting is restricted even inside guild wars. It's for fun and roleplay, not for profit. You can still earn the Virtue for killing "reds" by hunting the roaming NPC murderers in Ocllo and Buccaneer's Den.
+
+== Taming ==
+
+[[File:Screenshot 2023-05-15 202755.png|thumb|right|The rebuilt Animal Lore and Training gumps.]]
+[[File:1675803215740.png|thumb|right|Custom tameables.]]
+
+Taming is one of UOAlive's deepest custom systems. There are over sixty custom tameables, and they all live in [[:Category:Custom Tamables]]. What's worth knowing before you dive in:
+
+* '''[[Pet Spellcasting Revised]]''' changed how creatures use magic. Necromages summon vengeful spirits, magery pets actually cast fireball, buffs and curses get used, and casters read debuffs on their target before choosing a spell, so a necromage will favour fire against something with corpse skin. '''UO-CAH is no longer accurate for pet spellcasting here.'''
+* '''All bard-able creatures have identical stats.''' Pick the one you like the look of.
+* '''Pets gain skills without needing to be discorded''' past any particular level.
+* '''[[The Magical Carrot]]''' resets a pet's training to its original state when you've made a mess of a build. It comes from [[The Shady Dealer]].
+* '''[[TAAGS]]''' accelerates pet training when your pet fights its assigned target and you're nearby.
+* '''Mount restrictions are lifted''': male characters can ride unicorns, female characters can ride kirin.
+* '''The Animal Lore and Training gumps were rebuilt''' and work in every client, localised.
+* '''The claim list is far more useful''': hover a pet's name for bond info, minimum taming requirement, control slots and loyalty.
+* '''[[Stable Sphere]]''' carries pets at half weight and blessed.
+
+Some highlights from the custom roster: [[Legendary:Rideable Polar Bears|rideable bears]] (polar, grizzly, and the murder bear, which reportedly likes caves) with rage, bleed and crushing blow; [[Tsuki Wolf|Tsuki wolves]], three-headed werewolves out of Tokuno; the [[Legendary:Phoenix|Phoenix]] variants aligned to Mysticism, Magery and Spellweaving; the [[Legendary:Undead Ossein Ram|Undead Ossein Ram]]; the [[Exotic:Rideable Triceratops|rideable triceratops]] in Ter Mur, because who hasn't wanted to ride a dinosaur; and the [[Unique:Battle Ostard|Battle Ostard]]. Swamp dragons are so 2008, and unlike them the ostard is bardable. [[Exotic:Mythical Black Unicorn|Black unicorns]], [[Fire Steed|fire steeds]] with rare and legendary variants, and [[CuSidhe]] in expanded hues round it out.
+<gallery mode="packed" heights="150">
+File:1712353310408.png|Mythical black unicorn
+File:1687901701998.png|Tsuki wolves, out of Tokuno
+File:1688004914196.png|Phoenix variants
+File:1689277073531.png|The Battle Ostard
+File:1708721243374.png|Reworked bane dragons and wildfire ostards
+File:1674154756380.png|The rideable pack mule
+</gallery>
+
+[[Exotic:Wildfire Ostard|Wildfire ostards]] and [[Bane Dragon|bane dragons]] were rebuilt to work like OSI, only better, and the stew they need to recharge is much cheaper now. You need to tame fresh ones to get the new behaviour. Pads of Cu Sidhe stop cu sidhe aggroing on you and let you cross the Twisted Weald's quicksand. But attack one while wearing them and they'll go straight into your pack and hurt you a great deal on the way.
+
+== Crafting and gathering ==
+
+=== The Blessed Britain Forge ===
+
+[[File:1675801664593.png|thumb|right|The Blessed Britain Forge.]]
+
+The crafting hub, and one of the most useful locations on the shard. It gives you:
+
+* Bonus skill gain for '''every''' crafting skill on the Modern path.
+* A hidden chance of '''reduced material costs''' on any craft, on any path.
+* A '''sawmill''' that turns logs into boards on the spot.
+* The '''Royal Forge''', which provides the Stygian bonus without going to Ter Mur.
+* Britcoin while you work.
+
+=== Gathering ===
+
+'''[[Smart Harvesting]]''' means you target ''yourself'' with a pickaxe or axe and the nearest valid resource gets harvested automatically. It tells you when there's nothing in range. Sand is included once you have 100 Mining and have learned sand mining from the book.
+
+'''[[Hunger]]''' actually matters here: staying fed gives 100 Luck and affects stamina recovery. Nothing bad happens if you ignore it, but there's no reason to.
+
+=== Crafting changes ===
+
+[[File:bags.png|thumb|right|Tailored bags in any cloth colour.]]
+[[File:exYx0GB.png|thumb|right|The custom plant and tree system.]]
+
+* Scribes can make spellbooks, necromancy spellbooks, mysticism books, and necromancy scrolls with modifiers.
+* Tailors can craft bags in any cloth colour, and tailors and weavers randomly stock rare cloth colours, and what you see in the menu is what lands in your pack.
+* Salvage bags are sold by provisioners.
+* '''Runic reforging now behaves like OSI.''' Picking two affixes draws modifiers from the combined properties of both, so you get what you were aiming for. Runic mod amounts were corrected to OSI values across tailoring (spined/horned/barbed), blacksmithing (dull copper through valorite) and carpentry/bowcrafting (oak, ash, yew, heartwood), and the low and high ends were rebalanced.
+* A full custom plant and tree system with cross-breeding. See [[gardening]]. Dungeon plants and trees drop from certain mobs.
+* Tiered and normal cakes take dye, slices keep the colour, and both can be engraved.
+* A quest giver in Eodon trades tiger pelt armour recipes for 25 leather and 5 tiger pelts; higher tailoring improves your odds.
+* Whip recipes (spiked, bladed, barbed) come from tinker BOD rewards.
+
+=== BODs ===
+
+* '''Bank a large BOD for 50% of its points, a small for 5%''', up from 1% for both.
+* The '''[[Bod Deed Box]]''', from the gold sink vendor, auto-fills a large BOD with the smalls it needs. You still have to fill them with items; it just removes the hunt for rare smalls.
+
+=== Dye tubs and cosmetics ===
+
+[[File:U1V3z1J.gif|thumb|right|Left-click a dye tub to reset a hue.]]
+
+Left-click any dye tub to '''reset''' a hue back to natural, so you don't need a fresh tub to undo a colour. Beyond the standard set, UOAlive has added: a jewellery metallic tub; special, charged, ice white, charcoal and black backpack tubs; a leather tub that works on orc masks; a pet tub (renamed from mount) that dyes all creatures; a metallic tub that dyes paragon chests; and furniture dye that covers decorative guild stones plus a long list of items. Dye the deed before you place it. Monthly hues are available in New Haven.
+
+For cosmetics beyond dye, see [[Transmogrification (The Magical Dress Form)]] and [[Pet Cosmetics]].
+
+== Adventure and endgame ==
+
+=== Dungeons and loot ===
+
+[[File:2018-10-25 21 49 12-Photo Collage Maker photo-collage-net.png|thumb|right|The loot rarity ladder.]]
+[[File:RCULpO8.png|thumb|right|Statues drop from any mob. There are hundreds.]]
+
+* '''Every weapon and piece of armour shows its rarity''' under the name. Best to worst: Legendary Artifact (red), Major Artifact (orange), Greater Artifact (yellow), Lesser Artifact (purple), Major Magic Item (blue), Greater Magic Item (light blue), Lesser Magic Item (green), Minor Magic Item (grey). Reforged items mirror the same ladder.
+* '''Rarity drives vendor value''': a rare longsword sells for more than a common one.
+* '''Dungeon chests drop rares''', drop more, and are far less likely to be empty. If you find one, it probably has something.
+* '''Any mob can drop a statue of itself.''' There are hundreds. Collect them all, or don't, but they exist.
+* '''An equipped skinning knife auto-cuts and loots hides''' straight into your pack. It must be '''equipped''' for this to work.
+* '''Mysticism scrolls drop in Ter Mur''' at 50% from fire daemons, high plains boura, kepetch and kepetch ambushers, lifestealers, raptors, T-rex, the gorilla boss and toxic slith, and at 100% from the Minion of Scelestus.
+* Humans can wear elvish items. Undead slayer weapons are all called "Silver" now. Orcish kin masks survive attacking orcs (you'll still take the extra damage). There's a container renaming tool that changes a container's actual name, not just its engraving.
+
+See [[Drops]] for the wider loot picture.
+
+=== Champion spawns ===
+
+[[File:TGRLUDYTvOvm_SUc4JYtuvBiypU90Qd9SIfiOpbITV4x4UV-qHY8By3jv1Af6Ai-gur4g3XXhJpYUmSdKwcYe0J2y3W-HNI-QHCKhUO71sNchf6er-j3XE2NY-33J74ZiXUDkN0n8UaIW-AOmRLyYls.png|thumb|right|The Champion Finder.]]
+
+<youtube>https://youtu.be/BYgxO44qf7o</youtube>
+
+Full detail at [[Champion Spawns]].
+
+* Spawns stay up for '''2 hours''' and reset if you can't finish. Cooldown is 90 minutes.
+* '''The Champion Finder''' tells you which spawns are active and which have bonuses, instead of making you ride to each one. It's in New Magincia on the Felucca side, or buyable for your house from the Magincia Essential Vendor.
+* <code>[ShowChampionTier</code> turns on the tier popup for the area you're in; <code>[ToggleChampionTierPopup</code> controls whether it appears automatically.
+* Terathan Keep's spawn radius was widened and Hopper's Bog moved south to a better spot.
+
+=== Treasure hunting ===
+
+See [[Treasure Maps / Chests]].
+
+* Maps use era-accurate positioning but drop the '''enhanced loot from a later publish'''.
+* '''Trust "Chest Location", not Razor's "Location"''': the real coordinates are on the map now, so no more relogging to find the dig spot.
+* Cache-tier chests and above can drop crafting recipes and runic tools (Artisan maps only), delivered in a Treasure Bag. Scrolls of Transcendence and alacrity scrolls drop in cache chests too, so you're much less likely to open one and find nothing but power scrolls. Gold was reduced to make room.
+* Chests despawn after 1 hour instead of 3. A map that lands under a house or somewhere unreachable resets within 24 hours of decoding.
+* The '''Animated Cartography Table''' works as an alternative to Davy's Locker.
+
+=== Rares and stealables ===
+
+There are over 500 things to steal, pick up, or grab on a server restart, from daily rares to custom pieces. The list lives at [[UOAlive Rares and Stealables]].
+
+<gallery mode="packed" heights="90">
+File:Closed_barrel.png|Closed barrel
+File:Broken_chair.png|Broken chair
+File:Hay.png|Hay
+File:Full_jars.png|Full jars
+File:Tall_candle.png|Tall candle
+File:Rocks.png|Rocks
+File:Rock.png|Rock
+File:Fruit_basket.png|Fruit basket
+</gallery>
+
+=== Events and encounters ===
+
+[[File:1686072268988.png|thumb|right|The Harmony of Heroes milestone.]]
+
+* '''[[IDOC Encounters]]''': OSI's IDOCs got their tension from the threat of a player killer. This is a PvE shard, so UOAlive rebuilt the encounter rather than leaving you with nothing but waiting and vacuuming. The House Hunter shows active IDOCs in their own colours.
+* '''[[Invasions]]''': large public events that overrun a town, dungeon, cemetery or island in fixed waves, from short weekly hunts to seasonal and story-length campaigns.
+* '''[[Milestone:Harmony of Heroes]]''' and [[MileStone:Encounters]] collect the larger content pushes.
+* '''[[UOAlive Quests]]''' is the quest hub, including the Monty Python questline.
+
+== Housing and storage ==
+
+[[File:1682453503982.png|thumb|right|You are warned when items are not locked down.]]
+[[File:1676946604816.png|thumb|right|House Tour Island, via the moongates.]]
+
+Full detail at [[Player Housing]].
+
+* '''Decay is dynamic between 50 and 70 days''' without a refresh.
+* '''Monsters and players can enter every house.''' You can still restrict doors, gates and teleporters to friends, but nobody gets kicked off your steps any more, which used to make fighting in town miserable and made houses an exploit-proof monster shelter.
+* '''Say "Release", "Lockdown" or "Secure"''' instead of the old "I wish to..." phrasing.
+* '''You get a warning on entering and leaving''' if items aren't locked down or secured.
+* '''Retrieve and Relocate now ask for confirmation.''' This is mandatory and cannot be turned off. It was causing real item loss and a stream of help tickets.
+* '''[[City Rentals]]''' let you lease a house in a major city for gold, with no permanent deed. Good if you want a Britain address without committing.
+* '''Try before you buy''' at House Tour Island, via the moongates' Special Locations.
+* There's a featured section for community-oriented homes worth visiting.
+
+=== Storage ===
+
+[[File:ouh_ZYRcSwF_S-uvqCWfnBqD1VQNUi11LQDSYMQVXvHgtofjD0_UUwPiE6ADUlvcxUHgKDfRGA1PlzpoRSiTp8mGR3llyBz5IvQdyohbR1hlEf0wj8X9RQ68tA4EpVj8JFCaq9ox2Pc8qw_mnwxSNA0.png|thumb|right|Storage boxes keep their contents when moved between houses.]]
+
+'''[[Storage Boxes]]''' are a genuine quality-of-life leap, particularly for crafters and imbuers. There are over twelve, sorted by resource type or by expansion, and '''all of them keep their contents when retrieved from a lockdown, moved to another house, and re-secured.''' The jewellery box opens as a bag as well, so clients that support sorting can sort it.
+
+The [[Tag Box]] handles drop-offs: anyone (or your guild, or a named list) can put things in, only you can take things out.
+
+[[File:jewelrybox.gif|thumb|right|The jewellery box opens as a bag, so clients that support sorting can sort it.]]
+
+== See also ==
+
+* [[NewPlayers]]: start here if you haven't played yet
+* [[New Player FAQ]] and [[Helpful Links/Resources]]
+* [[Skill Gain]]: Modern, Legacy and Perilous explained
+* [[Commands]]: the full command list
+* [[Currencies]]: gold, sovereigns and Britcoin
+* [[Skills and Builds]]: templates and archetypes
+* [[Magincia Magical Stone Exchange]]: where most custom items are sold
+* [[:Category:Custom Content]]: everything unique to UOAlive
+* [[Patch Notes]]: what changed and when
+
+[[Category:Custom Content]]
+[[Category:Quality of Life]]

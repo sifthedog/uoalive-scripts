@@ -1,0 +1,450 @@
+{{Under Construction}}
+== Heavily under construction ==
+'''''We need someone who is good at organization to really help us categorize this better. But for now here is a massive dump of QoL improvements on UOAlive give or take.'''''
+
+Things on this list may change or be modified and will be updated accordingly. As well more will be added to the list as they come to mind or we add them.
+
+== General enhancements ==
+
+=== Server quality of life ===
+* INSTANCED LOOT for ALL PLAYERS
+* Group Loot and Tiered Champion Spawns
+* <u>'''Items on player corpses are automatically looted to their respective players backpack during any server restart or crash, preventing any potential loss during server maintenance. One of our signature QoL features.'''</u>
+* Resource gathering in all facets is equal. There is no reason to not gather in Felucca or Trammel.
+* Your Health is always 25% more than OSI standards. So if you have 100 str normally you would have 100 health. But on UOAlive you have 125. This benefits PvE to reduce one hits and allow you to last longer in battles while maintaining balance.
+* Enhanced guild system is implemented. Old guildstones still available from gold sink vendor in Zento.
+* Potions stacks.
+* Increased amount of reagents that vendors stock.
+* Gold Vendor sells Trapped Pouches with 30 charges.
+* There will no longer be stamina loss in towns for shoving through other players/npcs. This includes HEARTWOOD With all the little birdies!
+* Added a new type of tile used to keep certain areas of the world free of AFK players to make sure things like CUB bins can be used and do not get blocked. While also respecting player space. You will get system messages when you are in these areas. (Think CUB bins or EVENT Gate locations)
+* Global chat can be viewed in Discord for ease of access!
+[[File:1675803647775.png|none|thumb]] [[File:1675803794919.png|none|thumb]]
+* The Harmony Of Heroes Milestone brought a ton of new QoL features!
+** [https://uoalive.com/forum/threads/harmony-of-heroes-milestone.1537/ Harmony of Heroes Milestone]
+[[File:1686072268988.png|none|thumb]]
+
+=== Commands ===
+To see all available [[Commands]] in-game:
+* <code>[MyCommands</code> to see all commands available to you
+* <code>[organizeme</code> will, well, organize you
+* <code>[bondinfo</code> to check when a pet will be bonded with you
+* <code>[wallet</code> to see your account balance
+* <code>[mystats</code> to see your stats
+* <code>[myachievements</code> to see your own achievements, or <code>[achievements</code> to see others
+* <code>[ReDeed</code> will put any house deco item that needs an axe to make it a deed again a deed again without needing an ax!
+* <code>[password</code> will allow you change a password without admin support if you have one over 12 characters and are having trouble getting into a different launcher like Classic UO Launcher. They limit their login to 12 characters or less.
+* <code>[Played</code> to see your total play time, per character, broken down into years, months, days, etc.
+[[File:1706298258034.png|none|thumb]]
+* <code>[VeteranRewards</code> to pull up the choices gump
+* <code>[ClearFollowers</code> if you have a follower count but no follows in the world
+* <code>[ShowChampionTier</code> turns on the Champion Tier Popup in the Champion Area you are in
+* <code>[ToggleChampionTierPopup</code> disables and enables the Automatic Champion Tier Popup
+* <code>[GuildLootOff</code> to disallow looting of your corpse while in a guild
+* <code>[GuildLootOn</code> to toggle it back on if you need help with a corpse run
+* You can now use ANY skill by typing <code>[SKILLNAME</code> i.e. <code>[animallore</code> <code>[lore</code> <code>[hiding</code> some iterations of the word like <code>[hide</code> will not work as it is used for other commands.
+* (THOSE WHO MAY SUFFER FROM SEIZURES, MIGRAINES, AND OR HAVE COMPUTERS WITH LOW SPECS):
+** IDOC Effects are now individually toggleable. Use <code>[idoceffects</code> to toggle effects on or off.
+
+=== Client and UI ===
+* The enhanced client works for updated graphics as well as ClassicUO, Orion, Razor Enhanced, and UOSteam.
+* The Buff Box works.
+* Enhanced Client Support for the Scribers Tome has been added.
+* The skill title shown on your paperdoll will also be shown on hover of your character. Left click character to control titles.
+* Runebook use cooldown reduced to 1 second from 7.
+* Runebook QOL update (for regular books and atlases):
+** added indicator of default entry on index
+** added up/down buttons to relocate runes within the book
+** added "replace" button to replace a rune at a specific entry with a marked rune from your backpack (swap runes)
+* Visual enhancements for Runebooks and Atlases!
+[[File:T96TZ5f.png|none|thumb]]
+* Removed Moongate confirmation gump to Felucca since we are a PVE only server.
+* Message Boards will now change colors to let you know of any new messages on them.
+** Green = New message in the last 48 hours.
+** Orange = New messages in the last week.
+** Normal Hue = no new messages for 1 week +
+[[File:jDr03_tXhNlrNlxKP6cY66ATyjs28eS-F8F0DP-qHHJtN1s6FwUCbSjJuiMd-Gygx5wbJuLOTnIQGf327fTSweww3a7K0WjAw98GiI-ka1sW_86kwf6uez18aWc1il39ItaKes8465flPfs9obiJt5c.png|none|thumb]]
+
+== Skills and combat ==
+
+=== Skill gain and secondary skills ===
+* Skill gain is quick so you get more time to adventure in the world and less time macroing a skill up for a more organic experience. Don't worry, quick skill gain will not deter your new player experience as this ERA is very item dependent so at 100 skill you will still need good gear to survive!
+* Secondary skills are skills that do not count towards your 720 skill point cap. Each of these skills have their own skill cap and can be raised to 120 (as long as you have the correct power scroll).
+** Please note that due to Lumberjacking being a free skill here at UOAlive, the associated damage bonus it conveyed on OSI does not exist here.
+** LEARN ABOUT IT HERE: [[Secondary Skills]]
+[[File:SV97ixz.png|none|thumb]]
+* Mark Scrolls require NO magic ability to use! So get some scrolls and enjoy marking your way around the world for free!
+* Training Dummies in Zento will help you train any melee combat skill up to 90, same as a new player token! (It also fits the theme more!)
+* Additionally, we have added Training Dummy Pits.
+** This is for personal Testing Only.
+** You will find different types of dummies such as 100% physical resist or 100% fire. Etc.
+** Only YOU can see your statistics provided by the dummies.
+[[File:1698343305280.png|none|thumb]]
+
+=== Bards ===
+* Bards have new items available via the Monty Python Questline on UOAlive to help enhance their experience and give them a boost in power they needed.
+** [https://uoalive.com/forum/threads/uoalive-quest-chain-monty-pythons-holy-grail.1035/ Monty Python's "Holy Grail"]
+[[File:Monty-Python-pic-3.png|none|thumb]]
+* Custom Bard Items have been added "Sash of the Calm Soul, Cloak of Chaos, and Boots of Enfeeblement", you can get this set from the Monty Python Quest Stone as a new option for quest rewards! (You will need 100 Musicianship to equip these items)
+* The PURE Bard adjustment (a great suggestion from @jc473 allowed us to give you all a better support role):
+** Mastery Switching is now reduced to 3 minutes for Bards. This means if you have the following skills: Musicianship, Discordance, Peacemaking, and Provocation.
+[[File:1683229305176.png|none|thumb]] [[File:1683231268842.png|none|thumb]]
+* Bard songs will no longer drain your durability when not in combat.
+* Normalized the chance of item decay for spells / songs with upkeep.
+* Added Universal Barding Deeds.
+
+=== Mages, Mystics, and Summoners ===
+* A major change was done to Mages/Mystics to give pure mage builds a major buff since OSI kind of forgot about them. There are SO many options available to you now to not have to be a "sampire" or "tamer" for end game. Check out the patch notes here:
+** [https://uoalive.com/forum/threads/the-summoner-breakdown.1330/ The Summoner Breakdown]
+* You can gain Spellweaving bonuses without needing other players at any arcane circle! Gone are the days of having to wait for other Spellweavers! There is a convenient arcane circle located right in front of Brit Bank as well!!
+[[File:5gA3FLR.png|none|thumb]] [[File:NV5kwBo.png|none|thumb]]
+* Gift of Renewal now has a chance to cure poisons. (roughly halfway between Cure/Arch Cure; arcane circle improves chances)
+
+=== Paladins and melee ===
+* A major change was done to healing to give melee and paladin chiv builds a major buff since OSI kinda forgot about them. There are SO many options available to you now to not have to be a "sampire" or "tamer" for end game. Check out the patch notes here:
+** [https://uoalive.com/forum/threads/the-paladin-melee-milestones-unique-to-uoalive.1289/ The Paladin & Melee Milestones, Unique to UOAlive]
+[[File:crusader2.jpg|none|thumb]]
+
+=== Hiding ===
+* Here at UOAlive we have made some changes to the Hiding skill. You can now hide up to 6 tiles from the target with 120 in the skill. Also now that you can take the Hiding skill up to 120 with a power scroll (which now have the ability to drop from champion spawns and as event power scrolls) you do have the chance to fail at 100.
+** At 100 skill:
+*** Chance of success: 83.33% Chance of failure: 16.67%
+** At 105 skill:
+*** Chance of success: 87.50% Chance of failure: 12.50%
+** At 110 skill:
+*** Chance of success: 91.67% Chance of failure: 8.33%
+** At 115 skill:
+*** Chance of success: 95.83% Chance of failure: 4.17%
+** At 120 skill:
+*** Chance of success: 100% Chance of failure: 0%
+* Stealth is automatically checked and re-checked when walking while hidden.
+
+=== Healing ===
+* Bandage Healing
+** Prior max speed for self healing was 4 seconds with around 140ish dex.
+** Self healing formula has been changed to that of the healing other players formula (max speed of 2 seconds).
+** Formula for dex required to reach this max of 2 seconds has been changed as well ( 80 DEX to reach max speed ).
+
+=== Taming ===
+Learn all about UOAlive's Custom Taming Systems / Custom Spawns / Rare Pets here: [[:Category:Custom Tamables]]
+
+[[File:1675803215740.png|none|thumb]]
+* Mess up your pet build? Well have no fear The Magical Carrot is here! Have your pet munch on this delectable carrot and its training will reset to it's original state! [https://wiki.uoalive.com/en/Tamables/PetTrainingReset Pet Training Reset]
+* All pets will now gain skills without needing to be discorded past X level.
+* All Bard-able creatures are now IDENTICAL in stats. So pick the one you like the look of, not the stats!
+** Here at UOAlive mystical forces have changed how monsters and pets use magic! Necromages will actually try and summon vengeful spirits, magery pets actually cast fireball now, and buffs and curses are actually used! Magically inclined monsters and pets also will take into consideration any debuffs on its target, for example a necromage may choose to cast a fire based spell on something affected with corpse skin.
+** With this change UO-CAH is no longer accurate in describing pet spellcasting capabilities
+* Male characters can ride unicorns too.
+* Female Characters can ride Kirin.
+* Unicorns are fearsome beasts that strike fear in all who behold them. Tame one of these today and strike fear in all those who oppose you!
+** Information available here: [[Exotic:Mythical Black Unicorn]]
+[[File:1712353310408.png|none|thumb]]
+* Want a more snuggly (well at least they look snuggly) type of companion? We now have a wide selection of bears to suit your needs. We have the Polar (doesn't come with a bottle of Coke sorry), Grizzly, and the ferocious Murder Bear! These bears all have special abilities that become more powerful as you get up to the [[Legendary:Rideable Polar Bears]]! Rage, Bleed Attack, Crushing Blow and much more are available. All this raw power and they are ridable! Its been said that the Murder Bears like caves....
+* Are doggies more your type? [[CuSidhe]] spawn in even more hues and colored ones will spawn more.
+* Pad of Cusidhe now have new functionality:
+** Pads of Cusidhe Make it so the Cusidhe do not aggro on you.
+** Attacking a Cusidhe with the Pads on will but them in your pack and cause a lot of damage to you as a player make you aggro-able again.
+** Pads of the Cusidhe allow you to walk without any Quick Sand effect through the Twisted Weald Area.
+* That beetle getting a little long in the tooth? Swap up to the Rideable Pack Mule and give that little bugger some rest!
+[[File:1674154756380.png|none|thumb]]
+* Ride onto the battlefield with an undead flair! A [[Legendary:Undead Ossein Ram]] will be sure to turn heads. These new creatures can be found in, well the place where you find undead!
+** There are 6 Exquisite Color Hues
+** There are 3 Rare types
+** And there is ONE Legendary
+** More info available here: [http://uoalive.com/forum/threads/undead-ossein-ram.1956/ Undead Ossein Ram]
+* Ride-able [[Exotic:Rideable Triceratops]] now roams TerMur! This is a mixture of a Triceratops as you know it and a Cusidhe! And come-on who hasn't ever dreamed of riding a DINOSAUR!
+* Added Rare and Legendary Variants of the [[Fire Steed]].
+* [[Bane Dragon]] and [[Exotic:Wildfire Ostard]] have been completely re-worked and now function like they do on OSI(except better). This should actually make these pets much more fun to utilize! You will need to tame new versions of these for them to have the new systems added!
+** The stew they need to recharge has also been reduced GREATLY.
+[[File:1708721243374.png|none|thumb]]
+* Tsuki Wolves, a mesmerizing breed of three-headed werewolves with extraordinary speed and impressive abilities have been spotted in Tokuno. The rare versions sport colors that pay homage to their habitat in the island's cold region while the legendary version exhibit demonic traits with darker coloring.
+[[File:1687901701998.png|none|thumb]] [[File:1687901998498.png|none|thumb]] [[File:1687902126925.png|none|thumb]]
+* The Phoenix Introducing the Rare Phoenix variants, each aligned with a master of positive karmic magic: Mysticism, Magery, and Spellweaving. These majestic creatures possess unique attributes and over capped amplifiers, expanding the realm of new build possibilities within each mastery.
+[[File:1688004914196.png|none|thumb]]
+* Swamp Dragons are so 2008! Ride into battle with style with The Battle Ostard! These Ostards aren't bothered with heavy objects meaning they are Bardable! They like to roam around in Termur!
+[[File:1689277073531.png|none|thumb]]
+* Bond info has been enhanced with its information making it a lot easier to see just how long till the bonding is done.
+[[File:Screenshot 2023-04-26 002238.png|none|thumb]] [[File:Screenshot 2023-04-26 002300.png|none|thumb]] [[File:Screenshot 2023-04-26 002413.png|none|thumb]] [[File:Screenshot 2023-04-26 002325.png|none|thumb]]
+* "Claim List" just got a whole lot more useful!
+** Drag over their name to see their Bond info, min taming req, control slots, and loyalty.
+[[File:1681502718546.png|none|thumb]] [[File:6E6JYYgmGuHxHZ2vNddG_3ZK3tBwDK_f5wn59v0Z9BR-HBIRWXVM2b0jHM7PuD6QHrxG0TRG9nbMpmIgJsjL3nBe0bGDwxRP16_htIVFu-4kEXYU74nSbV3SOjRi0HbWxab-lEITb8nWMKqYHAkPhJI.png|none|thumb]]
+* The entire Animal Lore and Training gumps have been overhauled to meet the 20th century!
+** Not only that, but it works in EVERY client, enhanced, normal, and classic UO, and it is localized!!!
+[[File:Screenshot 2023-05-15 202755.png|none|thumb]]
+* Adjustments to the taming lore gump to try to help avoid canceling training even more:
+[[File:image.png|none|thumb]]
+
+=== PvP ===
+* All worlds are CONSENSUAL PVP ONLY. This means you can participate in guild wars and arena battles but cannot loot or kill unsuspecting players. Even in Guild Wars looting of other players is restricted. It is for the fun of it or RP purposes. Not for loot.
+* You can still get the Virtue for killing "reds" by visiting Ocllo and Bucs den, for roaming NPC(non player character) Murderers.
+
+[[File:1675802984292.png|none|thumb]]
+
+== World and exploration ==
+
+=== Worlds and expansions ===
+* We are 100% OSI accurate with all expansions and worlds enabled free of charge!
+* You can recall, mark, and gate to and from Ilshenar!
+* Are you tired of being body blocked on Recall and Gate Travel? Is someone intentionally or unintentionally blocking the rune library? NO MORE! Body Blocking has been removed from recalling and gate travel.
+* Moonstones drop at the Magincia Stone Exchange to easily traverse from Felucca to Trammel without magic. Just pick them up off the ground!
+* Paragons will spawn in all facets including Malas and Termur.
+* Achievements!!! (type <code>[myachievements</code> in game to see your own progress and be rewarded for completion or <code>[achievements</code> to see others)
+* You gain sovereigns from completing achievements
+
+[[File:cX26ojF.png|none|thumb]]
+
+=== New player experience ===
+* A new New Player Dungeon was created in New Haven (we really want to hammer home the new player experience and make it as educational and accessible as possible!), this will be an ongoing creation after the patch. No more "mines" as a dungeon. This has wings, progression, and a much more distinct feel to get players used to what they are going to go up against!
+[[File:1675802030969.png|none|thumb]]
+* Added more helpful NPCs to roam New Haven that give actual useful information. (Again trying to make that "New Player" experience more immersive, less Google) Scotty finally says helpful stuff!
+[[File:1673455578876.png|none|thumb]] [[File:1673455708258.png|none|thumb]]
+* Added NPCs around the world to give it more of the "living breathing world" feel that we always intended but got a little distracted on. Some will even react differently depending on your Karma and other factors. More to come, but good start here.
+[[File:1673455776674.png|none|thumb]]
+* Non-young players can still finish quests in Haven.
+
+=== Points of interest ===
+* There are multiple player run establishments that can be found on the Special locations tab of the public moongates, such as taverns, public rune libraries, etc.
+[[File:1675801905505.png|none|thumb]]
+* Use our custom Portal System to get to points of interest faster!
+[[File:hJVQh6w.png|none|thumb]] [[File:xj7alKflWkb9wz0yZ1ey0WtM5d39ts6GZnSjHdbaVMW8d175eG7nFiAYDGtg6R4E2rGuwhc89ztOb1g4tOFi-1jeimqOz3vSuqjAw_EGsSH0M3f-0Hwq4wdJ4jbFXFnTxASEqJuJhGZydFIZpd4x2Bo.png|none|thumb]]
+* Hang out in our upgraded beautiful central hub of Zento with player vendors and relaxing atmosphere! it is blessed and will drop double the Kudo's when in this area preparing for your next mission! We felt Zento needed a breadth of fresh air! A new reason to visit this amazing blessed city and when you finish head on over to the Blessed Three Stone Tavern for a drink and to trade tales!
+[[File:R3HjWxo.png|none|thumb]]
+* Or need some relaxation at the nostalgia of the Britain Bank beautified! (also double drop BRITCOIN(BTC))
+[[File:kgs9SWf.png|none|thumb]]
+* Need to travel? The Community Rune Library has your back!
+[[File:1675804063908.png|none|thumb]]
+* Need to get to the Abyss? The Manacle and Three Stone Tavern have you covered!
+[[File:1675804147407.png|none|thumb]]
+* There is a vendor that sells full kegs of Heal, Cure, and Refresh pots as well as bandages in BULK in the Abyss!?!
+* Added a sign to TerMur's City to point players in the direction of the quest giver for the Abyss.
+* Introducing the Britain Golden Horse Casino! Fancy trying your hand at some slots? Or perhaps after a long day of killing demons, you and your companions can sit at the table and play some cards!
+* Increased spawn percentage of Heartwood mushrooms.
+* Brought back the Heartwood Birdies!
+
+=== Dungeons ===
+* Dungeon chests now drop RARES!
+* We reduced the amount of empty Dungeon chests! So if ya see one, it prolly has goodies!
+* Dungeon Chests drops are increased!
+[[File:1675801664593.png|none|thumb|Brit Crafting Area]]
+
+=== Champion spawns ===
+Learn about UOAlive's champ spawns here: [https://uoalive.com/forum/threads/uoalives-champion-spawns-and-power-scrolls-explained.1283/ Champion Spawns Explained]
+
+<youtube>https://youtu.be/BYgxO44qf7o</youtube>
+* Champ Spawns Reworked! They will stay up for 2 hours. If you cannot complete it in that time, it will reset. This will add a new challenge and urgency to the spawn as well as reducing timer and mobile checks. The cooldowns on all champs are now 90 minutes. We have made some adjustments to the spawn radius of Terrathan Keep as it was a little small and we have moved Hopper Bog south so it is in a better location.
+* Tired of having to bounce around to each champion spawn to see which are active or ready to start? Well you are in luck! We at UOAlive know how frustrating it can be and have added a nifty feature in the form of: the Champion Finder!
+** Located in New Magincia on the Felucca Side(or for purchase in your home on the Magincia Essential Vendor), this powerful tool provides instant access to information about active spawns and which spawns have bonuses enabled, enabling you to strategize and plan your adventures more efficiently.
+[[File:TGRLUDYTvOvm_SUc4JYtuvBiypU90Qd9SIfiOpbITV4x4UV-qHY8By3jv1Af6Ai-gur4g3XXhJpYUmSdKwcYe0J2y3W-HNI-QHCKhUO71sNchf6er-j3XE2NY-33J74ZiXUDkN0n8UaIW-AOmRLyYls.png|none|thumb]]
+
+=== Treasure hunting ===
+* Treasure maps currently use the era-accurate positioning system, but drop the enhanced loot introduced in a later publish.
+* Enhancements were made to drops and loot tables.
+* Added chest location to treasure map coordinates (Players can trust "Chest Location", not Razor's "Location") No more relogging!
+* Treasure Chests by @Hammerhand:
+** Added crafting recipes to Cache & above t-map chests on a very random drop (all facets). None of the rare or Doom recipe drops are included.
+** Added runic tools to Cache & above t-map chests on a very random drop (all facets).
+** 1 runic or recipe will be dropped in a treasure bag (a 2nd gem bag simply renamed as Treasure Bag).
+** The Runics & Recipes only drop with the Artisan maps.
+** Scrolls of Transcendence & alacrity scrolls now drop in Cache t-map chests (all facets) which reduces the odds of getting nothing but power scrolls.
+** Each t-map chest Cache & above will all have a chance of dropping a combination of SOT's, Alacrity, Power Scrolls and the occasional t-map, Trove being the exception on the T-map dropping.
+** Overall gold has been decreased to make room for these higher end items.
+* Treasure Chests will now despawn after 1 hour instead of 3 and any map that is under a home or inaccessible should reset within 24 hours after decoding.
+* Added a new Animated Cartography Table.
+** That acts like an alternative to Davie's Locker.
+
+== Economy and items ==
+
+=== Gold and banking ===
+* [[Gold]] is account-wide.
+* Dropping gold coins in your bank box adds them to your account's balance. To pull out gold, use the "withdraw <amount>" command at a bankteller.
+* To trade gold you can just type the amount anywhere in the world in a trade window:
+[[File:wbr5t2c.png|none|thumb]]
+* Buying and selling when overweight will cause gold or items to be placed directly in your bank instead of falling to your feet.
+** When buying items, if you can't hold them in your backpack, it tries to send them to the bank. If there's no space in the bank, it sends them to your feet and uses RED font to tell you about it, plus the item by your feet shows a message. (Don't want them to miss it!)
+** When selling items, the funds get deposited straight to the bank. They see a message that the gold was deposited to their account.
+* Vendors no longer drop gold or items to the ground. And if they do YOU WILL KNOW!
+* There are special trash barrels and bags available near Brit West Bank. These generate special currency used for certain rewards.
+* Added a few more CUB bins at New Haven and changed their hue to be more easily seen.
+* Sacrificial Altar will now give you CUB points (it will delete items immediately placed in it unlike a normal house trash barrel so be careful!).
+* Conjurer's Grimoire, Garb, and Trinket have been added to the CUB points system. We will be utilizing this system to add more items in the future as well. It is a fantastic way to reward your play time while benefiting the server as a whole..(hoarders)...
+
+=== Insurance ===
+* You can insure most important items that are not cursed so if you die they do not fall to your corpse and will be with you upon resurrection.
+* If you do lose a body and cannot get to it in time, you can use a corpse collector for a fee in Britain to have it brought to you. You have 1 minute to loot your corpse before his minion literally eats it.
+
+[[File:1675801572903.png|none|thumb]]
+
+=== Loot and rarity ===
+* All weapons and armor should show a rarity underneath the name. From most powerful to least powerful:
+** Legendary Artifact (displayed in red)
+** Major Artifact (orange)
+** Greater Artifact (yellow)
+** Lesser Artifact (purple)
+** Major Magic Item (blue)
+** Greater Magic Item (light blue)
+** Lesser Magic Item (green)
+** Minor Magic Item (grey)
+* For the reforged versions (which mirror the regular items but are simply marked as "Reforged"), the order would be similar: Reforged Legendary, Reforged Major, Reforged Greater, Reforged Lesser, Reforged Minor.
+[[File:2018-10-25 21 49 12-Photo Collage Maker photo-collage-net.png|none|thumb|453x453px]]
+* Loot's sell value to vendors scales with the rarity; a [Rare] Longsword will sell for more than a [Common] one.
+* There is a chance to get a statue from any mob you kill, COLLECT THEM ALL! There are hundreds of these available for EVERY creature you kill!
+[[File:RCULpO8.png|none|thumb]]
+* Using an equipped Skinning Knife on a corpse will automatically cut and loot any hides the corpse may drop, straight into your bag — more time slaughtering, less dragging '''(Skinning Knife must be equipped for items to drop into pack automatically)'''
+* Removed all restrictions for humans to wear Elvish items.
+* All Undead Slayer weapons have had their name changed to "Silver".
+* Orcish Kin Masks no longer disappear on Aggressive action toward Orcs. Still will receive Extra Damage.
+* Added Container Renaming Tool (can rename the main name of any container, not just engraving).
+* Mysticism Scrolls now drop in TerMur from the following mobs(50% chance):
+** Fire Daemon
+** High Plains Boura
+** Kepetch
+** Kepetch Ambusher
+** Lifestealer
+** Raptors
+** Trex
+** Gorilla Boss
+** Toxic Slith
+** Minion of Scelestus 100% Chance
+
+=== Rares and stealables ===
+* There are rares and stealables all over the server. Nearly 500+ to steal, pickup, or grab on a server restart. Daily rares to custom, there is something for everyone!
+** LEARN ABOUT IT HERE: [https://uoalive.com/forum/threads/a-list-of-stealable-artifacts-daily-rares-work-in-progress.1288/ A List of Stealable Artifacts & Daily Rares]
+
+[[File:Closed_barrel.png|none|thumb]] [[File:Broken_chair.png|none|thumb]] [[File:Hay.png|none|thumb]] [[File:Full_jars.png|none|thumb]] [[File:Tall_candle.png|none|thumb]] [[File:Rocks.png|none|thumb]] [[File:Rock.png|none|thumb]] [[File:Fruit_basket.png|none|thumb]]
+
+=== Magincia Stone Exchange and currencies ===
+Magical Stones are in Magincia, you can get there via the Moongate's "Special Locations". You can buy all sort of wonders at these!
+
+[[File:SBhB4xm.png|none|thumb]]
+* LEARN ALL ABOUT THE MAGINCIA STONE EXCHANGE HERE: [[Magincia Magical Stone Exchange]]
+[[File:1675915080725.png|none|thumb]]
+* LEARN ALL ABOUT CURRENCIES HERE: [[Currencies|UOAlive Currencies Explained]]
+[[File:1675915134898.png|none|thumb]]
+* A Soul Stone Reset is available at the Magincia Exchange for a small charge. (this will allow you to target any soulstone and reset it, while binding it to the account you wish to use it on)
+** If account owner owns the stone no action is taken.
+** If account owner doesn't own stone and stone is empty charge 100 sovs and resets and rebinds stone.
+** If account owner doesn't own stone and stone has skills charge 100 Sovs and resets and rebinds stone.
+* '''PLEASE NOTE!!! There are no donation stones as this is a donation free server. All items can be obtained in game.'''
+
+=== Vendors and Vendor Search ===
+* Vendor Search can only be used in your own home or within a guarded part of town.
+* New Vendor Search Capabilities
+[[File:VendorSerarch.png|none|thumb]]
+** Commodities: Lists raw materials and Commodity Deeds
+** Crafting: Crafted items & Bulk Order Deeds
+** Recipes: Recipes by skill type.
+** Bundles: Shows all bags with items in them. ie. Bags with a LRC suit will show up here! Create your bundles now!
+** Pets: Search by slots, bond status and a number of other values.
+** Built in filters for Power, Stat, Transcendence & Alacrity Scrolls, Treasure Maps and Containers!
+* Search Mode for vendor search so you can specific whether it's for items or pets.
+** Added button next to Item Name that allows you to click an item in your inventory to populate the name criteria text box. This will also automatically change your Search Mode depending on the item type.
+* Vendor Search looks at Vendor Item Descriptions as well.
+** Ability to search by weapon type
+** Price Per Unit value for anything stackable. See what the best deal is!
+** Added a new Pet Results window to show you a summary of pets and their bond status.
+* Even more Vendor Search features:
+** Added List date
+** Added auto-switch mode between items & pets.
+** Added Daily Rares
+** Added name search / filtering for transcendence & alacrity scrolls
+** Shields will show up in search
+** Added Spellbooks to Vendor Search and the ability to additionally filter by whether it's full or not.
+** Added Plants/Vegetation under MISC. Players can easily search plant, garden, and vegetation-related items on player vendors.
+** Sales History (including minimum, median & maximum historical values) to the Vendor Search Confirm Buy screen. A great tool in assisting with the pricing of items! Lists the 10 most recent purchases.
+[[File:paytch.png|none|thumb]]
+** Combat & Non-Combat skill values can now be defined as part of your item search.
+** You will see your own listings in Vendor Search (they will appear orange)
+** Ability to Reprice and Delist items directly through Vendor Search. Delisted items are placed in your bank box.
+** There is a 7% Repricing / Delisting fee applied if done through the Vendor Search UI.
+** You will now be shown Bond Info on shrunken pets on vendor search. You can also use <code>[bondinfo</code> on a shrunken pet.
+* Player Vendor History of your sales is now available.
+** To access, open your Vendor and click "View Sales History".
+[[File:viewsales.png|none|thumb]] [[File:JIvyTKrJf6Mxhc-L1XqeuuExrOq6r9qybbqF-7V4xf5nZnAYs4E7q4Z4N0OzDL9PM2ohpAlfZQSwdSfLpP8-ME9nR7LqTYS1Lk8Xlc_LheaffeCNDqiJ-pAs38v4TQ7HxS-UB5puOJTvlLEj0kkSH1c.png|none|thumb]]
+** This will bring up the new Ledger of your last 25 sales with the buyer, sell price, list date, and sell date! Drag over the Item on the left to get your Description of the item you wrote when putting it on your vendor as well as item details.
+[[File:sales.png|none|thumb]]
+* Friends and Co-Owners can now place vendors in another player's home. Bring on the Vendor Malls!
+** Vendors can now be accessed & managed by any character on the same account that placed it.
+** You can now place vendors at houses that you are a co-owner or friend of.
+** NOTE: Owners and Co-owners of the home will have limited access to manage vendors on the property and will otherwise act like normal vendors you don't own.(see image below). Friends will have access to their vendor only.
+** Added "Price" context menu to player vendors so that owners can change the price/description (left click)
+** Added warning if trying to collect ALL of a vendor's held gold.
+** Added extra protection methods for vendors if Demolishing, Resizing, or Changing a House. It will now prevent any of those actions if you do not remove the vendors first.
+
+== Crafting ==
+
+=== Crafting changes ===
+* Salvage Bags are available for sale from Provisioners.
+* Scribes can create Spellbooks and Necromancy Spellbooks, as well as Necromancy scrolls with modifiers. Mysticism books too!
+* You can craft bags as a tailor in any color cloth you wish!
+[[File:bags.png|none|thumb]]
+* Tailors and Weavers now randomly sell rare cloth colors and the color reflected in the menu will be the color you get in your pack!
+* Custom Plants and Trees along with a robust Flower and Plant Growing system. Cross Breeding, [[gardening]], and more! You can even get "Dungeon Plants and Trees" from certain mobs in game!
+[[File:exYx0GB.png|none|thumb]]
+* There's a sawmill in the Brit Crafting Area that will cut logs into boards for you.
+* Get the BRITCOIN(BTC) bonus here while you craft!
+* It also has a Special Forge!
+* Tiered Cake and normal cake can be Dyed and the slices retain the dye. They also can be engraved for that special touch!
+* A New NPC Quest giver located in Eodon to acquire tiger pelt armor recipes. He will ask you to bring him 25 leather pieces and 5 tiger pelts. Depending on your tailoring skill (Skill required to craft tiger pelt armor) your chance of getting a recipe is increased.
+* Runic Reforging now works closer to OSI! Overall this makes runic reforging a lot less painful! Get ready for more precise and powerful reforging!
+** When you select two affixes for your reforging, you can now rest assured that your modifiers will be selected from the combined properties of both, giving you a more targeted and powerful set of upgrades. Say goodbye to the frustration of getting modifiers that don't quite fit and hello to gear that's tailor-made for your needs. Get out there and start crafting!
+** The Runic Amounts of mods have been adjusted to match OSI compared to ServUO for Tailoring (Spined, Horned, Barbed), Blacksmithing (Dull Copper, Shadow, Copper, Bronze, Golden, Agapite, Verite, Valorite), and Carpentry/Bowcrafting (Oak, Ash, Yew, Heartwood). This will make your reforging experiences SO MUCH nicer.
+** Runic Reforging Low end and High end have been adjusted to be more in line with OSI, giving yet another buff overall to reforging!
+* Whip Recipes can now be gotten from Tinker BOD Rewards. These include:
+** Spiked Whip Recipe
+** Bladed Whip Recipe
+** Barbed Whip Recipe
+* Added Gargish Short Table to Carpentry Misc Menu
+
+=== BODs ===
+* Bod Banking Changes — up from 1% for both!
+** Large Bods can be banked for 50% of their points now
+** Small Bods can be banked for 5% of their points now
+* You can purchase a Bod Box from the gold sink vendor that will fill a Large Bod for you automatically with the needed smalls. All bods still need to be filled with the items. But it skips the step of hunting for all the rare bods.
+** LEARN ABOUT IT HERE: [[BOD Deed boxes]]
+** [https://uoalive.com/forum/threads/bod-deed-box-a-solution-to-osis-crappy-bod-system.523/ Bod Deed Box Solution]
+
+=== Dye tubs ===
+* Added the ability to LEFT CLICK any DYE tub and RESET the hue to the natural hue I.E. 0 if you want to reset any colors you dyed with a tub without buying a new one.
+[[File:U1V3z1J.gif|none|thumb]]
+* Leather Dye tub will now work on Orc Masks.
+* Pet Dye tub (renamed from mount) is able to dye all creatures.
+* Decorative guild stones can be dyed with the furniture dye tub.
+* Metallic Dye tub can dye paragon chests.
+* New dye tub: Jewelry Metallic Dye Tub.
+* Special Backpack Dye Tub.
+* Charged Normal Backpack Dye Tub.
+* Special Colored Backpack Dye Tubs.
+* Ice White Backpack Dye Tub.
+* Charcoal Backpack Dye Tub.
+* Black Backpack Dye Tub.
+* Added a bunch of items to the Furniture dye tub, you just have to dye their deed if they have one before placing it like the Kings Tome items.
+* Zento Dye tubs will be removed. However, don't worry—Monthly hues will still be available in New Haven.
+
+== Housing and storage ==
+
+=== Housing ===
+* House decay timers are dynamic between 50-70 days. This means after 50- 70 days of not refreshing a home it will fall and all items can be taken from the ground.
+* Monsters and players can enter ALL houses. You can still set doors, gates, and teleporters to friends only. But players and monsters will no longer be kicked from a house for trying to go on the steps. This is a major nuisance when fighting in a town with houses. It is also a major flaw when using houses to fight monsters without fear of them entering.
+* You can now say "Release" / "Lockdown" / "Secure" in a house to effect items versus the very long "I wish to XXXX this"
+* You will get a warning message when leaving and entering your home if items are not locked down or secured.
+[[File:1682453503982.png|none|thumb]] [[File:Tu0D0d0CjhLAxWZ73DZUAOEaHcfSyZWV88yO3bJy-UI_mQKgMrr4H9nLlImjajydHsk6zielQvPbJTTgLTw789hIkhpoc2fdF7GFXro1fYfrw4zo_IOZGU0t4aM99tOk4yx5357YmjABwhHz36gf2tU.png|none|thumb]]
+* Added a confirmation gump for Retrieve and Relocate on the left click house options. (You cannot opt out of this. It has caused many players to lose items, and many help tickets to be created. We want to make sure all players have this to avoid the headaches of losing items in the future!)
+[[File:1688663715127.png|none|thumb]] [[File:image.png|none|thumb]]
+* House Hunter updates to show ACTIVE IDOCS with new colors as well.
+* We have created a special section dedicated to showcasing noteworthy homes throughout the realm. These remarkable abodes are not just about individual achievements, but rather focus on community-oriented endeavors that uplift and benefit the entire community.
+[[File:SZzHT3om3wBImHTBYL42NIpqlkt3l-PQCSYzuy6ntxOuflDQPAMmwAgQ5Pvx1Nz9xgTKzmJb2JuCV01hIsb_Bk8jwCG2EoPrheQvuYfAkQbpp_hdoqKAFZvmL5YG7PxxodSl97QWyWWA2W84kCee-ZI.png|none|thumb]]
+* Come take a tour of all the custom houses available to you in the game prior to purchase. Take the Moongate to House Tour Island under special locations!
+[[File:1676946604816.png|none|thumb]]
+
+=== Storage boxes ===
+The addition of the storage boxes to UOAlive is an amazing improvement for Quality of Life.
+* Those that regularly do crafting and imbuing will find these particularly useful.
+* There are a range of different boxes available to store categories of items, some are sorted by resource type, others by expansions. Over 12 Total!
+* All Boxes can be retrieved from Locked Down location in your house, moved to another house, re-secured and will still contain all contents!
+[[File:ouh_ZYRcSwF_S-uvqCWfnBqD1VQNUi11LQDSYMQVXvHgtofjD0_UUwPiE6ADUlvcxUHgKDfRGA1PlzpoRSiTp8mGR3llyBz5IvQdyohbR1hlEf0wj8X9RQ68tA4EpVj8JFCaq9ox2Pc8qw_mnwxSNA0.png|none|thumb]]
+* Jewelry Box now opens a bag as well so you can use your client (if your client supports it) to sort through your mass collection of trinkets.
+[[File:jewelrybox.gif|none|thumb]]
+
+For more detailed information about these features and more check out the rest of the wiki or add to the list above!
+
+[[Category:Custom Content]]

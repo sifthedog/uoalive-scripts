@@ -1,0 +1,135 @@
+To do a command you must use a " [ " first. To see all available commands in-game:
+
+<code>[MyCommands</code>
+
+=== Command Tips===
+* To communicate using Global Chat you use the <code>[c</code> command then type what you'd like to say. Click enter and it will appear server-wide. 
+
+[[File:200137.png|203x203px]]
+
+''Hit Enter and it will post "check on the discord or wiki"''
+
+* You can now use ANY skill by typing <code>[SKILLNAME</code> i.e. <code>[animallore</code> <code>[lore</code> <code>[hiding</code> some iterations of the word like <code>[hide</code> will not work as it is used for other commands.
+
+* You can now say "Release" / "Lockdown / "Secure" in a house to effect items versus the very long "I wish to XXXX this"
+
+*THOSE WHO MAY SUFFER FROM SEIZURES, MIGRAINES, AND OR HAVE COMPUTERS WITH LOW SPECS:
+IDOC Effects are now individually toggleable. Use <code>[idoceffects</code> to toggle effects on or off. The default as ON.
+
+=== List of Commands ===
+Below is a list of all commands and what they do:
+
+* <code>[myachievements</code> see your achievements!
+* <code>[addsocket</code> attempts to add socket to targeted item
+* <code>[anatomy</code> uses the [[Anatomy]] skill
+* <code>[animallore</code> uses the [[Animal Lore]] skill
+* <code>[animaltaming</code> uses the [[Animal Taming]] skill
+* <code>[armslore</code> uses the [[Arms Lore]] skill
+* <code>[beg</code> uses the [[Begging]] skill
+* <code>[bondinfo</code> to check when a pet will be bonded with you. Also can be used on shrunken pets
+* <code>[broadcastkills</code> allows you to choose if pvp kills will be broadcast over Global Chat
+* <code>[c</code> allows you to speak in the Global Chat.
+* <code>[challenge</code> challenge another player for points
+* <code>[charactersheet</code> opens a sheet with information about your character
+* <code>[chathistory</code> opens the Global Chat history
+* <code>[chattoggle</code> this will allow you to disable Global Chat. Default ON
+* <code>[checkmobfactions</code> reports faction levels
+* <code>[clearfollowers</code> use if you have a follower count but no follows in the world
+* <code>[clearrc</code>
+* <code>[createeventmoongate</code> only certain players will have access to do this
+* <code>[ctfchallenge</code> creates a CTF challenge game
+* <code>[deathball</code> creates a Deathball challenge game
+* <code>[deathmatch</code> creates a Deathmatch challenge game
+* <code>[deleteeventmoongate</code> only players able to create these will be able to delete them
+* <code>[detecthidden</code> uses the [[Detect Hidden]] skill
+* <code>[didispam</code> This will let you know if you are muted in Global Chat and any spam messages you've sent (if any)
+* <code>[disco</code> uses [[Discordance]] skill
+* <code>[discord</code> uses [[Discordance]] skill
+* <code>[discordance</code> uses [[Discordance]] skill
+* <code>[doom</code>
+* <code>[e</code> allows you to type the emote you want to use from the list i.e. <code>[e cough</code> will perform the cough emote
+* <code>[emote</code> opens the Emote list
+* <code>[encounterstats</code> opens a review of all of that character's ambush encounters
+* <code>[evalint</code> uses [[Evaluating Intelligence]] skill
+* <code>[evaluatingintelligence</code> uses the [[Evaluating Intelligence]] skill
+* <code>[fishmongerstatus</code> shows your status with Fish Mongers
+* <code>[fixme</code> opens screen to help fix issue with character
+* <code>[forensic</code> uses [[Forensic Evaluation]] skill
+* <code>[forensicevaluation</code> uses [[Forensic Evaluation]] skill
+* <code>[gametimes</code> shows all scheduled UOAlive Games
+* <code>[ghostprompt</code> allows you to turn off the resurrection gump when the charachter dies. Default ON
+* <code>[givetoken</code> places a Mythic Character Token in the selected player's backpack
+* <code>[guildlootoff</code> to disallow looting while in a guild of your corpse
+* <code>[guildlooton</code> to toggle it back on if you need help with a corpse run.
+* <code>[help</code> lists all the commands
+* <code>[helpinfo</code> pops up a list all commands and will tell you what they each do
+* <code>[hiding</code> uses the [[Hiding]] skill
+* <code>[idoceffects</code> allows you to turn IDOC effects on or off. Default ON
+* <code>[imbuing</code> uses the [[Imbuing]] skill
+* <code>[inscribe</code> uses the [[Inscription]] skill
+* <code>[inscription</code> uses the [[Inscription]] skill
+* <code>[invade</code> shows a list of invasions
+* <code>[invasion</code> shows a list of invasions
+* <code>[invasions</code> shows a list of invasions
+* <code>[itemid</code> uses the [[Item Identification]] skill
+* <code>[itemidentification</code> uses the [[Item Identification]] skill
+* <code>[kingofthehill</code> creates a King of the Hill challenge
+* <code>[lfg</code> shows list of current public groups. Also allows you to create a public group
+* <code>[lmschallenge</code> creates Last Man Standing challenge
+* <code>[look</code> looks at the targeted player and shows their profile page. Click yourself to edit your profile
+* <code>[lore</code> uses the [[Animal Lore]] skill
+* <code>[med</code> uses the [[Meditation]] skill
+* <code>[meditate</code> uses the [[Meditation]] skill
+* <code>[meditation</code> uses the [[Meditation]] skill
+* <code>[myachievements</code> shows your character's achievements
+* <code>[mystats</code> shows your character's stats
+* <code>[newplayerfinder</code> displays a page of all young players online and allowing teleportation
+* <code>[notify</code> opens notification settings
+* <code>[npcoffduty</code> toggles player OFF as New Player Companion
+* <code>[npconduty</code> toggles player ON as New Player Companion
+* <code>[organizeme</code> command will, well, organize you.
+* <code>[password</code> will allow you change a password without admin support if you have one over 12 characters and are having trouble getting into a different launcher like Classic UO Launcher. They limit their login to 12 characters or less.
+* <code>[peace</code> uses the [[Peacemaking]] skill
+* <code>[peacemaking</code> uses the [[Peacemaking]] skill
+* <code>[played</code> command to see your total play time, per character, broken down into years, months, days, etc.
+[[File:1706298258034.png|269x269px]]
+* <code>[points</code> points at target and states name
+* <code>[pointslanguage</code> sets the langauge the points system uses
+* <code>[poisoning</code> uses [[Poisoning]] skill
+* <code>[provocation</code> uses [[Provocation]] skill
+* <code>[questlog</code> displays player quest history
+* <code>[questpoints</code> displays player quest points
+* <code>[questranking</code> displayers player quest ranking
+* <code>[redeed</code> will put any house deco item that needs an axe to make it a deed again a deed again without needing an ax!
+* <code>[removetrap</code> uses [[Remove Trap]] skill
+* <code>[seekills</code> determines if player sees other pvp broadcast results
+* <code>[showchampiontier</code> - turns on the Champion Tier Popup in the Champion Area you are in
+* <code>[SoPQuestStatus</code> - check your personal cooldown and manage the option to pay it down for [[Quest:Skull of Power|Skull of Power Quest]]
+* <code>[spiritspeak</code> uses the [[Spirit Speak]] skill
+* <code>[steal</code> uses the [[Stealing]] skill
+* <code>[stealing</code> uses the [[Stealing]] skill
+* <code>[stealth</code> uses the [[Stealth]] skill
+* <code>[store</code> opens the store
+* <code>[tame</code> uses the [[Animal Taming]] skill
+* <code>[taming</code> uses the [[Animal Taming]] skill
+* <code>[tasteid</code> uses the [[Taste Identification]] skill
+* <code>[tasteidentification</code> uses the [[Taste Identification]] skill
+* <code>[teamdeathball</code> creates a team Deathball challenge
+* <code>[teamdeathmatch</code> creates a team Deathmatch challenge
+* <code>[teamkoth</code> creates a team King of the Hill challenge
+* <code>[teamlmschallenge</code> creates a team Last Man Standing challenge
+* <code>[time</code> gives you the current game time
+* <code>[timestamp</code> gives you the current date and time
+* <code>[togglechampiontierpopup</code> - Disables and Enables Automatic Champion Tier Popup
+* <code>[topplayers</code> displays the top players in points
+* <code>[track</code> uses the [[Tracking]] skill
+* <code>[tracking</code> uses the [[Tracking]] skill
+* <code>[verbosemobfactions</code> toggles display of faction gain/loss on mob kills. Default ON
+* <code>[veteranrewards</code> pulls up veteran reward choices gump
+* <code>[wallet</code> to see your account balance
+* <code>[whatisit</code> tells you the name of targeted item
+* <code>[where</code> gives your current location
+* <code>[who</code> lists all connected clients, filters results by name
+* <code>[wholist</code> lists all connected clients, filters results by name
+
+[[Category:NewPlayers]] [[Category:Quality of Life]] [[Category: Custom Content]]
