@@ -7,14 +7,17 @@ import { sellAll } from './sell.js';
 let world: FakeWorld;
 const vendor = { serial: 0x99 } as unknown as Mobile;
 
-const listed = (serial: number, amount: number): VendorEntry => ({
+const listed = (serial: number, amount: number, name = 'iron ingot'): VendorEntry => ({
   serial,
-  name: 'iron ingot',
+  name,
   amount,
 });
 
 const ingot = (serial: number, amount: number): Item =>
   item({ serial, graphic: 0x1bf2, name: 'iron ingot', amount });
+
+const blade = (serial: number, amount: number): Item =>
+  item({ serial, graphic: 0x13b6, name: 'scimitar', amount });
 
 const gumpShowing = (...rounds: VendorEntry[][]) => {
   let round = 0;
@@ -40,7 +43,12 @@ const vendorTaking = () =>
           const gone = sold.get(held.serial) ?? 0;
 
           if (gone) {
-            return ingot(held.serial, (held.amount ?? 1) - gone);
+            return item({
+              serial: held.serial,
+              graphic: held.graphic,
+              name: held.name,
+              amount: (held.amount ?? 1) - gone,
+            });
           }
 
           if (Array.isArray(held.contents)) {
@@ -74,11 +82,53 @@ describe('sellAll', () => {
     packHolding(ingot(1, 20), ingot(2, 5));
     world.gump.waitForVendorGumpData = gumpShowing([listed(1, 20), listed(2, 5)]);
 
-    expect(sellAll('iron ingot')).toBe(25);
+    expect(sellAll(['iron ingot']).total).toBe(25);
     expect(world.client.sendSellRequest).toHaveBeenCalledWith(vendor, [
       { serial: 1, amount: 20 },
       { serial: 2, amount: 5 },
     ]);
+  });
+
+  // The gump the vendor already has open lists every name, so selling three items costs one
+  // 'vendor sell' rather than three
+  it('sells several names through one gump', () => {
+    packHolding(ingot(1, 20), blade(2, 3));
+    world.gump.waitForVendorGumpData = gumpShowing([listed(1, 20), listed(2, 3, 'scimitar')]);
+
+    const sold = sellAll(['iron ingot', 'scimitar']);
+
+    expect(sold.total).toBe(23);
+    expect(sold.byName).toEqual(
+      new Map([
+        ['iron ingot', 20],
+        ['scimitar', 3],
+      ]),
+    );
+    expect(world.player.say).toHaveBeenCalledTimes(1);
+    expect(world.client.sendSellRequest).toHaveBeenCalledWith(vendor, [
+      { serial: 1, amount: 20 },
+      { serial: 2, amount: 3 },
+    ]);
+  });
+
+  // The report is keyed by the name that was picked, and a vendor gump need not spell it the same
+  it('reports under the name it was asked for', () => {
+    packHolding(ingot(1, 20));
+    world.gump.waitForVendorGumpData = gumpShowing([listed(1, 20, 'IRON INGOT')]);
+
+    expect(sellAll(['Iron Ingot']).byName).toEqual(new Map([['Iron Ingot', 20]]));
+  });
+
+  // A vendor that buys one of the two still gets sold that one
+  it('sells the names on offer and says which were not', () => {
+    packHolding(ingot(1, 20), blade(2, 3));
+    world.gump.waitForVendorGumpData = gumpShowing([listed(1, 20)], []);
+
+    const sold = sellAll(['iron ingot', 'scimitar']);
+
+    expect(sold.total).toBe(20);
+    expect(sold.byName.get('scimitar')).toBe(0);
+    expect(world.log).toHaveBeenCalledWith(expect.stringContaining('nothing of iron ingot, scimitar'));
   });
 
   // The whole point of watching the pack rather than reopening the gump: with the ingots gone there
@@ -87,7 +137,7 @@ describe('sellAll', () => {
     packHolding(ingot(1, 20));
     world.gump.waitForVendorGumpData = gumpShowing([listed(1, 20)]);
 
-    sellAll('iron ingot');
+    sellAll(['iron ingot']);
 
     expect(world.player.say).toHaveBeenCalledTimes(1);
     expect(world.player.say).toHaveBeenCalledWith('vendor sell');
@@ -99,7 +149,7 @@ describe('sellAll', () => {
     packHolding(ingot(1, 20), ingot(2, 5));
     world.gump.waitForVendorGumpData = gumpShowing([listed(1, 20)], [listed(2, 5)]);
 
-    expect(sellAll('iron ingot')).toBe(25);
+    expect(sellAll(['iron ingot']).total).toBe(25);
     expect(world.player.say).toHaveBeenCalledTimes(2);
   });
 
@@ -109,7 +159,7 @@ describe('sellAll', () => {
     packHolding(ingot(1, 20), item({ serial: 0x10, graphic: 0x0e76, contents: [ingot(2, 5)] }));
     world.gump.waitForVendorGumpData = gumpShowing([listed(1, 20)], [listed(2, 5)]);
 
-    expect(sellAll('iron ingot')).toBe(25);
+    expect(sellAll(['iron ingot']).total).toBe(25);
     expect(world.player.say).toHaveBeenCalledTimes(2);
   });
 
@@ -118,7 +168,7 @@ describe('sellAll', () => {
     world = installGlobals({ backpack: [ingot(1, 20)] });
     world.gump.waitForVendorGumpData = gumpShowing([listed(1, 20)]);
 
-    expect(sellAll('iron ingot')).toBe(0);
+    expect(sellAll(['iron ingot']).total).toBe(0);
     expect(world.client.sendSellRequest).toHaveBeenCalledTimes(1);
     expect(world.log).toHaveBeenCalledWith(expect.stringContaining('stalled'));
   });
@@ -138,20 +188,20 @@ describe('sellAll', () => {
       return true;
     });
 
-    expect(sellAll('iron ingot')).toBe(8);
+    expect(sellAll(['iron ingot']).total).toBe(8);
     expect(world.client.sendSellRequest).toHaveBeenCalledTimes(2);
   });
 
   it('says what the vendor listed when nothing matches', () => {
     world.gump.waitForVendorGumpData = gumpShowing([{ serial: 1, name: 'dull copper ingot' }]);
 
-    expect(sellAll('iron ingot')).toBe(0);
+    expect(sellAll(['iron ingot']).total).toBe(0);
     expect(world.client.sendSellRequest).not.toHaveBeenCalled();
     expect(world.log).toHaveBeenCalledWith(expect.stringContaining('dull copper ingot'));
   });
 
   it('sells nothing when no vendor gump appears', () => {
-    expect(sellAll('iron ingot')).toBe(0);
+    expect(sellAll(['iron ingot']).total).toBe(0);
     expect(world.client.sendSellRequest).not.toHaveBeenCalled();
   });
 });

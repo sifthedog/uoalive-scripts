@@ -12,6 +12,7 @@
   // src/selling/config.ts
   var KEEP = 0;
   var MAX_PASSES = 10;
+  var MAX_PICKS = 20;
   var GUMP_TIMEOUT = 5e3;
   var SELL_DELAY = 1500;
   var SALE_TIMEOUT = 3e3;
@@ -191,27 +192,61 @@
     const fromTooltip = (client.queryItemOPL(serial, OPL_TIMEOUT)?.name ?? "").trim();
     return fromTooltip || (client.findObject(serial)?.name ?? "").trim();
   };
-  var pickItem = () => {
+  var clicked = (prefix) => {
     target.cancel();
-    log("sell: target the item you want to sell");
     const info = target.query();
-    const serial = info?.serial ?? 0;
-    if (!serial) {
+    if (!(info?.serial ?? 0)) {
       target.cancel();
-      log("sell: nothing targeted", info);
+      log(`${prefix}: nothing targeted`, info);
       return void 0;
     }
+    return info;
+  };
+  var describe = (prefix, info) => {
+    const serial = info.serial ?? 0;
     const name = resolveName(serial);
     if (!name) {
-      log(`sell: no name for ${hex(serial)}, the vendor list can only be matched by name`);
+      log(`${prefix}: no name for ${hex(serial)}, the vendor list can only be matched by name`);
       return void 0;
     }
-    const graphic = info?.graphic ?? client.findObject(serial)?.graphic ?? 0;
+    const graphic = info.graphic ?? client.findObject(serial)?.graphic ?? 0;
     return { serial, name, graphic };
+  };
+  var pickItems = (prefix) => {
+    const picks = [];
+    const seen = /* @__PURE__ */ new Set();
+    log(`${prefix}: target the items you want to sell, ESC when done`);
+    let asked = 0;
+    for (; asked < MAX_PICKS; asked++) {
+      const info = clicked(prefix);
+      if (!info) {
+        break;
+      }
+      const picked2 = describe(prefix, info);
+      if (!picked2) {
+        continue;
+      }
+      const name = picked2.name.toLowerCase();
+      if (seen.has(name)) {
+        log(`${prefix}: '${picked2.name}' is already on the list`);
+        continue;
+      }
+      seen.add(name);
+      picks.push(picked2);
+      log(`${prefix}:   ${picks.length}. ${picked2.name}`);
+    }
+    if (asked === MAX_PICKS) {
+      log(`${prefix}: ${MAX_PICKS} clicks is as many as one run takes`);
+      target.cancel();
+    }
+    return picks;
   };
 
   // src/lib/vendor.ts
-  var namedExactly = (name) => (entry) => (entry.name ?? "").toLowerCase() === name.toLowerCase();
+  var namedAnyOf = (names3) => {
+    const wanted = new Set(names3.map((name) => name.toLowerCase()));
+    return (entry) => wanted.has((entry.name ?? "").toLowerCase());
+  };
   var withKeepBack = (matches, keep) => {
     let remaining = keep;
     const toSell = [];
@@ -226,19 +261,25 @@
     }
     return toSell;
   };
-  var packTotal = (serials) => collectIn(packContents(), (item) => serials.has(item.serial)).reduce(
-    (sum, item) => sum + (item.amount ?? 1),
-    0
-  );
-  var waitForSale = (offered, timeoutMs, pollMs) => {
+  var packLeft = (serials) => {
+    const left = /* @__PURE__ */ new Map();
+    for (const item of collectIn(packContents(), (held) => serials.has(held.serial))) {
+      left.set(item.serial, (left.get(item.serial) ?? 0) + (item.amount ?? 1));
+    }
+    return left;
+  };
+  var waitForSaleBySerial = (offered, timeoutMs, pollMs) => {
     const serials = new Set(offered.map((item) => item.serial));
-    const total = offered.reduce((sum, item) => sum + item.amount, 0);
-    let remaining = total;
+    let left = /* @__PURE__ */ new Map();
+    let remaining = offered.reduce((sum, item) => sum + item.amount, 0);
     for (let waited = 0; waited < timeoutMs && remaining > 0; waited += pollMs) {
       sleep(pollMs);
-      remaining = packTotal(serials);
+      left = packLeft(serials);
+      remaining = [...left.values()].reduce((sum, amount) => sum + amount, 0);
     }
-    return total - remaining;
+    return new Map(
+      offered.map((item) => [item.serial, Math.max(0, item.amount - (left.get(item.serial) ?? 0))])
+    );
   };
   var openSellGump = (prefix, timeoutMs) => {
     player.say("vendor sell");
@@ -255,53 +296,91 @@
   };
 
   // src/selling/offer.ts
-  var withKeepBack2 = (matches) => withKeepBack(matches, KEEP);
+  var withKeepBack2 = (matches) => {
+    const byName = /* @__PURE__ */ new Map();
+    for (const entry of matches) {
+      const name = (entry.name ?? "").toLowerCase();
+      const group = byName.get(name);
+      if (group) {
+        group.push(entry);
+        continue;
+      }
+      byName.set(name, [entry]);
+    }
+    const order = new Map(matches.map((entry, index) => [entry.serial, index]));
+    return [...byName.values()].flatMap((group) => withKeepBack(group, KEEP)).sort((a, b) => (order.get(a.serial) ?? 0) - (order.get(b.serial) ?? 0));
+  };
 
   // src/selling/sell.ts
   var amountOf = (items) => items.reduce((sum, item) => sum + (item.amount ?? 1), 0);
-  var sellAll = (name) => {
-    const nameMatches = namedExactly(name);
-    let sold2 = 0;
+  var describeCounts = (counts) => [...counts].filter(([, amount]) => amount > 0).map(([name, amount]) => `${amount} x '${name}'`).join(", ");
+  var totalOfCounts = (counts) => [...counts.values()].reduce((sum, amount) => sum + amount, 0);
+  var stillHeld = (names3) => new Map(names3.map((name) => [name, amountOf(sellableMatches(name))]));
+  var sellAll = (names3) => {
+    const wanted = namedAnyOf(names3);
+    const byName = new Map(names3.map((name) => [name, 0]));
+    const asPicked = new Map(names3.map((name) => [name.toLowerCase(), name]));
+    const nameOf2 = (entry) => asPicked.get((entry.name ?? "").toLowerCase()) ?? (entry.name ?? "");
+    let total = 0;
     for (let pass = 0; pass < MAX_PASSES; pass++) {
       const data = openSellGump("sell", GUMP_TIMEOUT);
       if (!data) {
         break;
       }
-      const matches = data.items.filter(nameMatches);
+      const matches = data.items.filter(wanted);
       if (matches.length === 0) {
-        const names2 = [...new Set(data.items.map((item) => item.name))];
-        log(`sell: no '${name}' on offer. Vendor listed: ${names2.join(", ")}`);
+        const listed = [...new Set(data.items.map((item) => item.name))];
+        log(`sell: nothing of ${names3.join(", ")} on offer. Vendor listed: ${listed.join(", ")}`);
         break;
       }
       const toSell = withKeepBack2(matches);
       if (toSell.length === 0) {
-        log(`sell: ${amountOf(sellableMatches(name))} left, keeping them back`);
+        log(`sell: ${describeCounts(stillHeld(names3))} left, keeping them back`);
         break;
       }
-      const offered = toSell.reduce((sum, item) => sum + item.amount, 0);
+      const named = new Map(matches.map((entry) => [entry.serial, nameOf2(entry)]));
+      const offered = /* @__PURE__ */ new Map();
+      for (const item of toSell) {
+        const name = named.get(item.serial) ?? "";
+        offered.set(name, (offered.get(name) ?? 0) + item.amount);
+      }
       client.sendSellRequest(data.vendor, toSell);
-      const taken = waitForSale(toSell, SALE_TIMEOUT, SALE_POLL);
-      sold2 += taken;
-      log(`sell: pass ${pass + 1}, offered ${offered} x ${name}, vendor took ${taken}`);
-      if (taken === 0) {
-        log(`sell: stalled with ${offered} left, vendor is not taking them`);
+      const taken = waitForSaleBySerial(toSell, SALE_TIMEOUT, SALE_POLL);
+      const tookByName = /* @__PURE__ */ new Map();
+      for (const [serial, amount] of taken) {
+        const name = named.get(serial) ?? "";
+        tookByName.set(name, (tookByName.get(name) ?? 0) + amount);
+        byName.set(name, (byName.get(name) ?? 0) + amount);
+      }
+      const took = totalOfCounts(tookByName);
+      total += took;
+      log(
+        `sell: pass ${pass + 1}, offered ${describeCounts(offered)}, vendor took ${describeCounts(tookByName) || "nothing"}`
+      );
+      if (took === 0) {
+        log(`sell: stalled with ${totalOfCounts(offered)} left, vendor is not taking them`);
         break;
       }
-      const left = amountOf(sellableMatches(name));
-      if (left <= KEEP) {
+      if ([...stillHeld(names3).values()].every((held) => held <= KEEP)) {
         break;
       }
       sleep(SELL_DELAY);
     }
-    return sold2;
+    return { total, byName };
   };
 
   // src/selling/index.ts
-  var picked = pickItem() ?? die("sell: nothing to sell");
-  log(`sell: selling '${picked.name}'`);
-  if (HOIST_FROM_BAGS) {
-    hoistToPack(picked.name);
+  var picked = pickItems("sell");
+  if (picked.length === 0) {
+    die("sell: nothing to sell");
   }
-  var sold = sellAll(picked.name);
-  log(`sell: ${sold} x '${picked.name}' sold`);
+  var names2 = picked.map((item) => item.name);
+  log(`sell: selling ${names2.map((name) => `'${name}'`).join(", ")}`);
+  if (HOIST_FROM_BAGS) {
+    for (const name of names2) {
+      hoistToPack(name);
+    }
+  }
+  var sold = sellAll(names2);
+  log(`sell: ${describeCounts(sold.byName) || "nothing"} sold, ${sold.total} in all`);
 })();

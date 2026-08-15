@@ -17,8 +17,8 @@ one, and what to set. Start there.
 | `dist/boxes.js` | Empties crafted wooden boxes, keys on the floor, optionally sells the boxes | [src/boxes](src/boxes/README.md) |
 | `dist/keys.js` | Drops the keys already in your pack | [src/boxes](src/boxes/README.md) |
 | `dist/key-probe.js` | Works out which client call actually puts an item on the ground here | [src/boxes](src/boxes/README.md) |
-| `dist/sell.js` | Target an item, sell every stack of it | [src/selling](src/selling/README.md) |
-| `dist/sell-watch.js` | Target an item, then sell it in batches as the pack fills | [src/selling](src/selling/README.md) |
+| `dist/sell.js` | Target items until you press ESC, sell every stack of them | [src/selling](src/selling/README.md) |
+| `dist/sell-watch.js` | Target items until you press ESC, then sell them in batches as the pack fills | [src/selling](src/selling/README.md) |
 | `dist/train.js` | Trains a skill by casting through a table of stages, meditating between them — Bushido out of the box | [src/training](src/training/README.md) |
 
 ## Why a build step
@@ -50,7 +50,7 @@ src/lib/           everything more than one script does (see below)
 src/boxes/         empty the crafted wooden boxes, keys on the floor (+ a key dump and a drop probe)
 src/lumberjacking/ chop the nearest tree, make boards, load the pack animals
 src/mining/        mine the nearest vein, smelt the ore on a fire beetle (+ a stand-still variant and an ore tile probe)
-src/selling/       sell-to-vendor: target an item, sell every stack of it
+src/selling/       sell-to-vendor: target items until ESC, sell every stack of them
 src/training/      train a skill by casting the ability that still gains at the level it is at
 types/             the client's TypeScript definitions (see below)
 scripts/           type retrieval and patching

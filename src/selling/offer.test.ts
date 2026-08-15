@@ -32,4 +32,37 @@ describe('withKeepBack', () => {
       { serial: 1, amount: 25 },
     ]);
   });
+
+  // 'Leave ten behind' means ten of each, not ten between them, so a sale carrying several names
+  // has to group before it trims - otherwise the second name pays for the first one's keep-back
+  it('keeps back per name rather than across the offer', async () => {
+    const { withKeepBack } = await withConfig({ KEEP: 10 });
+
+    const mixed: VendorEntry[] = [
+      { serial: 1, name: 'iron ingot', amount: 25 },
+      { serial: 2, name: 'scimitar', amount: 12 },
+    ];
+
+    expect(withKeepBack(mixed)).toEqual([
+      { serial: 1, amount: 15 },
+      { serial: 2, amount: 2 },
+    ]);
+  });
+
+  // Stacks of one name are trimmed as one pile however they are interleaved, and the request comes
+  // back in the order the gump listed them
+  it('spreads the keep-back across the stacks of one name, in gump order', async () => {
+    const { withKeepBack } = await withConfig({ KEEP: 10 });
+
+    const mixed: VendorEntry[] = [
+      { serial: 1, name: 'iron ingot', amount: 4 },
+      { serial: 2, name: 'scimitar', amount: 12 },
+      { serial: 3, name: 'iron ingot', amount: 20 },
+    ];
+
+    expect(withKeepBack(mixed)).toEqual([
+      { serial: 2, amount: 2 },
+      { serial: 3, amount: 14 },
+    ]);
+  });
 });

@@ -352,20 +352,30 @@
     return toSell;
   };
   var totalOf = (entries) => entries.reduce((sum, entry) => sum + (entry.amount ?? 1), 0);
-  var packTotal = (serials) => collectIn(packContents(), (item) => serials.has(item.serial)).reduce(
-    (sum, item) => sum + (item.amount ?? 1),
-    0
-  );
-  var waitForSale = (offered, timeoutMs, pollMs) => {
+  var packLeft = (serials) => {
+    const left2 = /* @__PURE__ */ new Map();
+    for (const item of collectIn(packContents(), (held) => serials.has(held.serial))) {
+      left2.set(item.serial, (left2.get(item.serial) ?? 0) + (item.amount ?? 1));
+    }
+    return left2;
+  };
+  var waitForSaleBySerial = (offered, timeoutMs, pollMs) => {
     const serials = new Set(offered.map((item) => item.serial));
-    const total = offered.reduce((sum, item) => sum + item.amount, 0);
-    let remaining = total;
+    let left2 = /* @__PURE__ */ new Map();
+    let remaining = offered.reduce((sum, item) => sum + item.amount, 0);
     for (let waited = 0; waited < timeoutMs && remaining > 0; waited += pollMs) {
       sleep(pollMs);
-      remaining = packTotal(serials);
+      left2 = packLeft(serials);
+      remaining = [...left2.values()].reduce((sum, amount) => sum + amount, 0);
     }
-    return total - remaining;
+    return new Map(
+      offered.map((item) => [item.serial, Math.max(0, item.amount - (left2.get(item.serial) ?? 0))])
+    );
   };
+  var waitForSale = (offered, timeoutMs, pollMs) => [...waitForSaleBySerial(offered, timeoutMs, pollMs).values()].reduce(
+    (sum, taken) => sum + taken,
+    0
+  );
   var openSellGump = (prefix, timeoutMs) => {
     player.say("vendor sell");
     const data = Gump.waitForVendorGumpData(timeoutMs);

@@ -9,6 +9,11 @@ export const KEEP = 0;
 // A sell gump lists a limited number of entries, so reopen it until nothing matches
 export const MAX_PASSES = 10;
 
+// How many items one run may be pointed at before it stops asking. The selection ends when you
+// press ESC; this is only a backstop, for the same reason MAX_PASSES is one - a loop around a
+// client call should not be able to run forever if the client stops answering the way it should.
+export const MAX_PICKS = 20;
+
 // How long the vendor gump may take to arrive
 export const GUMP_TIMEOUT = 5000;
 

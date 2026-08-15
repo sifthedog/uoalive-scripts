@@ -2,10 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { installGlobals, item, type FakeWorld } from '../test-support/uo.js';
 import {
+  namedAnyOf,
   namedExactly,
   openSellGump,
   totalOf,
   waitForSale,
+  waitForSaleBySerial,
   withKeepBack,
   type VendorEntry,
 } from './vendor.js';
@@ -33,6 +35,20 @@ describe('namedExactly', () => {
 
   it('rejects an entry with no name at all', () => {
     expect(namedExactly('iron ingot')({ serial: 1 } as VendorEntry)).toBe(false);
+  });
+});
+
+describe('namedAnyOf', () => {
+  it('matches any of the given names', () => {
+    const matches = namedAnyOf(['iron ingot', 'Scimitar']);
+
+    expect(matches({ serial: 1, name: 'IRON INGOT' })).toBe(true);
+    expect(matches({ serial: 2, name: 'scimitar' })).toBe(true);
+    expect(matches({ serial: 3, name: 'dull copper ingot' })).toBe(false);
+  });
+
+  it('matches nothing when asked for nothing', () => {
+    expect(namedAnyOf([])({ serial: 1, name: 'iron ingot' })).toBe(false);
   });
 });
 
@@ -180,6 +196,46 @@ describe('waitForSale', () => {
 
     expect(waitForSale([{ serial: 1, amount: 20 }], 1000, 200)).toBe(0);
     expect(world.sleep).toHaveBeenCalledTimes(5);
+  });
+});
+
+describe('waitForSaleBySerial', () => {
+  const stack = (serial: number, amount: number): Item =>
+    item({ serial, graphic: 0x1bf2, amount });
+
+  // One request can carry two names, and 'the vendor took 25' does not say whose 25 they were
+  it('splits the sale between the offered stacks', () => {
+    installGlobals({ backpack: [stack(2, 4)] });
+
+    expect(
+      waitForSaleBySerial(
+        [
+          { serial: 1, amount: 20 },
+          { serial: 2, amount: 12 },
+        ],
+        1000,
+        200,
+      ),
+    ).toEqual(
+      new Map([
+        [1, 20],
+        [2, 8],
+      ]),
+    );
+  });
+
+  it('answers zero for a stack the vendor left alone', () => {
+    installGlobals({ backpack: [stack(1, 20)] });
+
+    expect(waitForSaleBySerial([{ serial: 1, amount: 20 }], 1000, 200)).toEqual(new Map([[1, 0]]));
+  });
+
+  // A stack that came back bigger - merged with one the player picked up mid-sale - is not a
+  // negative sale, and this figure is what the run reports as sold
+  it('never reports a sale below zero', () => {
+    installGlobals({ backpack: [stack(1, 50)] });
+
+    expect(waitForSaleBySerial([{ serial: 1, amount: 20 }], 1000, 200)).toEqual(new Map([[1, 0]]));
   });
 });
 
