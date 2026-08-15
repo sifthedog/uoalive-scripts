@@ -9,12 +9,11 @@ Builds two scripts:
 
 ## Why it exists
 
-A vendor's sell gump lists whatever it will buy, and clearing forty stacks of the same thing out of
-it by hand is forty clicks — repeated, because the gump only lists so many entries at a time. Point
-at the items and the script sells every stack of them in your pack.
+Clearing forty stacks out of a sell gump by hand is forty clicks — repeated, because the gump only
+lists so many entries at a time. Point at the items and the script sells every stack of them.
 
 `sell-watch` is the same sale on a timer, for when you are producing the items rather than clearing
-them out: stand at the vendor and it sells a batch every time enough has piled up.
+them out.
 
 ## What `sell` does
 
@@ -27,9 +26,8 @@ them out: stand at the vendor and it sells a batch every time enough has piled u
    exactly and case-insensitively, never as a substring, so targeting a `wooden box` does not sweep
    up `small wooden box`. All of them go through the one gump: reopening it costs another
    `vendor sell`, and the gump the vendor already has open lists them all anyway.
-3. **Sends one sell request** and then watches the goods leave the pack, because that is the only
-   proof the vendor took anything. What went is attributed per stack, so the report says which of
-   your items sold rather than one lump total.
+3. **Sends one sell request** and then watches the goods leave the pack, which is the only proof the
+   vendor took anything. Attributed per stack, so the report says which of your items sold.
 4. **Reopens the gump** only if matching items are genuinely still in the pack — a sell gump lists a
    limited number of entries, so a pile too big to list at once needs another pass.
 
@@ -47,20 +45,18 @@ It is **off**, because this shard's vendors read a bag as readily as the top of 
    polling by opening the gump would have the character talking to itself every few seconds all
    afternoon.
 3. **Sells when `SELL_AT` (30) of the watched items have piled up between them**, or when the pack
-   is down to its last slots (`SELL_AT_SLOTS`) and there is something of yours to sell — a container
-   holds 125 items, and a pack filling with something else still needs the room the watched items
-   are taking. The threshold is the combined count, because a pack filling with three things fills
-   exactly as fast as one, and they all go through the same gump when it does.
+   is down to its last slots (`SELL_AT_SLOTS`) — a pack filling with something else still needs the
+   room the watched items are taking. The threshold is the combined count, because a pack filling
+   with three things fills exactly as fast as one.
 4. **Backs off when a sale takes nothing.** Out of earshot, out of gold, or refused in silence all
    look the same from here, and none is fixed by asking again straight away. The pause grows each
    time, and after `MAX_QUIET_SALES` in a row the run stops rather than standing there indefinitely.
 
 It counts by **graphic**, not by name — a graphic is on the item already, while a name may have to
-be asked for, and `hoist.ts` stops asking after three unanswered tooltips. That latch never resets,
-so over a run of hours a name-based count could go blind for the rest of the session. The sale still
-matches by name, because a vendor gump has nothing else to match on. Two picks that share art are
-counted once between them, and a pick nothing knows the art for is named out loud at the start —
-it cannot be counted, so it would sit there unsold behind a threshold it can never reach.
+be asked for, and `hoist.ts` stops asking after three unanswered tooltips, a latch that never resets.
+The sale still matches by name, because a vendor gump has nothing else to match on. A pick nothing
+knows the art for is named out loud at the start: it cannot be counted, so it would sit unsold behind
+a threshold it can never reach.
 
 ### Before you paste either
 
@@ -158,29 +154,23 @@ Written against UOAlive.
   second run against the same item as a cancelled cursor. [`pick.ts`](pick.ts) reads the serial off
   the return value for exactly this reason.
 - **There is no ESC event.** Nothing in `types/classicuo.d.ts` reports a key, and the only `cancel`
-  in the whole API is `target.cancel()`, which *closes* a cursor rather than telling you about one.
-  What ESC produces is a `query()` that comes back without a serial — the same answer a click that
-  resolved to nothing gives — and that is the entire basis of the click-until-ESC loop in
-  [`pick.ts`](pick.ts). It also means `query()` has no timeout: a run where you neither click nor
-  press ESC waits for you indefinitely, and there is no knob on that call to change it.
-- **A vendor's sell gump reaches into your bags.** It lists what is inside a container in your pack
-  and sells it from there, which is what stock RunUO does — its `GenericSellInfo` walks the backpack
-  recursively. This entry used to claim the opposite, and everything built on it was wrong in two
-  ways that only showed once the hoist was turned off. `waitForSale` proved a sale by watching the
-  goods leave the *top level*, so an item offered out of a bag was never there to begin with and read
-  as gone the instant it was offered — every silent refusal came back as a completed sale. And the
+  in the API is `target.cancel()`, which *closes* a cursor rather than telling you about one. What
+  ESC produces is a `query()` that comes back without a serial — the same answer a click that
+  resolved to nothing gives — and that is the entire basis of the loop in [`pick.ts`](pick.ts). It
+  also means `query()` has no timeout: a run where you neither click nor press ESC waits for you
+  indefinitely.
+- **A vendor's sell gump reaches into your bags**, which is what stock RunUO's `GenericSellInfo`
+  does. This entry used to claim the opposite, and two things built on it were wrong: `waitForSale`
+  proved a sale by watching the goods leave the *top level*, so an item offered out of a bag read as
+  gone the instant it was offered and every silent refusal came back as a completed sale; and the
   reopen test counted the top level too, so a run stopped with the bags still full. Both now count
-  the whole pack at any depth, which is right whichever way a shard behaves.
-  [`hoist.ts`](hoist.ts) still has the hoisting code behind `HOIST_FROM_BAGS`, off, for a shard where
-  the old claim is true.
+  the whole pack at any depth. The hoisting code stays behind `HOIST_FROM_BAGS`, off, for a shard
+  where the old claim is true.
 - **`client.sendSellRequest` returns whether the packet went out, not whether the vendor took
   anything,** and a vendor that refuses does so in silence. The goods leaving the pack is the only
-  proof a sale landed, so `waitForSale` in [`lib/vendor.ts`](../lib/vendor.ts) polls the pack for the
-  offered serials. That is also what stopped this script saying `vendor sell` twice a run: the second
-  gump used to exist only to find out whether the first pass had worked, and it costs speech and a 5s
-  wait to answer a question the backpack answers for free. The gump is now reopened only when
-  matching items are genuinely still loose in the pack, which is the case the multi-pass was written
-  for.
+  proof, so `waitForSale` in [`lib/vendor.ts`](../lib/vendor.ts) polls the pack for the offered
+  serials. That is also what stopped this script saying `vendor sell` twice a run: the second gump
+  existed only to find out whether the first pass had worked, which the backpack answers for free.
 - Item names are empty until the client has tooltip data for them, and asking again costs a round
   trip per item — so only the nameless ones are worth an OPL query.
 - The gump is matched by name **exactly**, not as a substring, which is the opposite of how
