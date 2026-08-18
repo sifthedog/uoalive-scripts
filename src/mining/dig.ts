@@ -1,6 +1,13 @@
 import { describeItem } from '../lib/entity.js';
 import { outcomeVocabulary } from '../lib/outcomes.js';
-import { DIG_TIMEOUT, NO_CURSOR_READ, OUTCOME_TEXT, TARGET_TIMEOUT } from './config.js';
+import {
+  DIG_PROMPT_TEXT,
+  DIG_TARGET_POLL,
+  DIG_TARGET_TIMEOUT,
+  DIG_TIMEOUT,
+  NO_CURSOR_READ,
+  OUTCOME_TEXT,
+} from './config.js';
 import { oreTotal } from './ore.js';
 
 // The outcomes the shard words itself, plus the two the world is read for when it stays silent
@@ -27,11 +34,7 @@ const silentOutcome = (serial: number | undefined, oreBefore: number): DigOutcom
 // swing is that it refused the action outright and said so, and the journal has been clear since
 // immediately before this swing. Reaching noCursor instead of the throttled or saving branch is what
 // ended a live run in fifteen seconds with a pickaxe plainly in hand.
-const refusedOutcome = (
-  serial: number | undefined,
-  oreBefore: number,
-  cursorCameLate: boolean,
-): DigOutcome | undefined => {
+const refusedOutcome = (serial: number | undefined, oreBefore: number): DigOutcome | undefined => {
   const matched = journal.waitForTextAny(ALL_OUTCOME_TEXT, undefined, NO_CURSOR_READ);
   if (matched) {
     return outcomeFor(matched);
@@ -42,14 +45,26 @@ const refusedOutcome = (
     return silent;
   }
 
-  // A cursor that turned up just too late is a different fault from one that never came -
-  // TARGET_TIMEOUT rather than the shard - and they look alike without saying which.
   log(
     `digOnce: no target cursor - hand ${describeItem(player.equippedItems.oneHanded)}, ` +
-      `cursor ${cursorCameLate ? 'came late' : 'never opened'}`,
+      'and the shard never asked where to dig',
   );
 
   return 'noCursor';
+};
+
+// target.open stayed false through a whole swing the shard had plainly opened a cursor for - its
+// prompt was in the journal 164ms in - so the prompt counts as the cursor being up.
+const cursorOpened = (): boolean => {
+  for (let waited = 0; waited < DIG_TARGET_TIMEOUT; waited += DIG_TARGET_POLL) {
+    if (target.open || DIG_PROMPT_TEXT.some((text) => journal.containsText(text))) {
+      return true;
+    }
+
+    sleep(DIG_TARGET_POLL);
+  }
+
+  return false;
 };
 
 // Takes no vein, unlike lumberjacking's chopOnce, because the swing is aimed by where you stand.
@@ -57,25 +72,28 @@ const refusedOutcome = (
 // outcomeFor cannot actually miss - waitForTextAny hands back one of the strings it was given - but
 // the caller's switch has a default for it, so the maybe is kept rather than asserted away.
 export const digOnce = (serial: number | undefined): DigOutcome | undefined => {
-  // A cursor left open by the previous swing would swallow this one
-  target.cancel();
+  target.clearQueue();
+
+  // Cancelled only when there is one to cancel: an unconditional cancel a few hundred milliseconds
+  // before the swing left target.open false for the cursor that followed, where the same swing after
+  // a two second gap opened one at 222ms and dug.
+  if (target.open) {
+    target.cancel();
+  }
 
   const oreBefore = oreTotal();
   journal.clear();
 
   player.useItemInHand();
 
+  if (!cursorOpened()) {
+    return refusedOutcome(serial, oreBefore);
+  }
+
   // Answered with yourself rather than with the vein's coordinates: the shard takes that as "mine
   // where I am" and picks the ore itself, where an explicit target.terrain has to guess right about
   // land versus static and about which art on the tile carries the ore.
-  if (!target.waitTargetSelf(TARGET_TIMEOUT)) {
-    // Read before the cancel closes it, or the answer is always 'no cursor' and says nothing
-    const cursorCameLate = target.open;
-
-    target.cancel();
-
-    return refusedOutcome(serial, oreBefore, cursorCameLate);
-  }
+  target.self();
 
   // author is left undefined on purpose: a shard may route harvest text through the pickaxe as
   // object text rather than as System, and a wrong author turns every wait into a timeout.

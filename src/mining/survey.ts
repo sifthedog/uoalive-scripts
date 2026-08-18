@@ -66,7 +66,7 @@ export const reportTerrain = (radius: number, limit = Infinity): Art[] => {
   }
 
   if (found.length > limit) {
-    log(`survey: ${found.length - limit} rarer arts not shown, run dist/mine-probe.js for all`);
+    log(`survey: ${found.length - limit} rarer arts not shown`);
   }
 
   return found;

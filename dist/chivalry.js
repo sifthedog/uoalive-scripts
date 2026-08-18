@@ -485,6 +485,7 @@
     "You lack the required skill",
     "You do not have enough skill"
   ];
+  var HOSTILE_NOTORIETY = 16 | 8 | 2 | 4;
 
   // src/chivalry/config.ts
   var SKILL = Skills.Chivalry;

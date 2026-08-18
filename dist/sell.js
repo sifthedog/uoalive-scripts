@@ -8,6 +8,7 @@
 
   // src/lib/timings.ts
   var UNREACHABLE_DELAY = 5 * 60 * 1e3;
+  var HOSTILE_NOTORIETY = 16 | 8 | 2 | 4;
 
   // src/selling/config.ts
   var KEEP = 0;

@@ -127,6 +127,7 @@
   var UNREACHABLE_DELAY = 5 * 60 * 1e3;
   var MAX_CYCLES = 5e3;
   var HEARTBEAT_EVERY = 3e4;
+  var HOSTILE_NOTORIETY = 16 | 8 | 2 | 4;
 
   // src/selling/config.ts
   var KEEP = 0;

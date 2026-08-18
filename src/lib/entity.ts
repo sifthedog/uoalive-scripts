@@ -8,9 +8,10 @@ export const distanceTo = (spot: { x: number; y: number }): number =>
 // _tag is how the client's own typings tell an Item from a Mobile, and it costs no round trip
 export const isMobile = (entity: Item | Mobile): entity is Mobile => entity._tag === 'Mobile';
 
-// Names are empty until the client has tooltip data, so a serial is the fallback that always works
+// Names are empty until the client has tooltip data, so a serial is the fallback that always works.
+// `||` and not `??`: the client's own value for 'not known yet' is '', never undefined.
 export const nameOf = (entity: { name?: string; serial: number }): string =>
-  entity.name ?? hex(entity.serial);
+  entity.name || hex(entity.serial);
 
 // The graphic comes first because it is the half that is always there, and the half a config is
 // corrected with.

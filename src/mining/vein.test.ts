@@ -244,6 +244,54 @@ describe('scanForVein', () => {
     expect(scanForVein().vein).toBeUndefined();
   });
 
+  // The scan runs immediately before every swing, and the box is (2 * SCAN_RADIUS + 1) squared
+  // client calls - enough of them to be the difference between the roaming script and mine-here
+  describe('the tile already being worked', () => {
+    it('re-reads it instead of sweeping the box again', async () => {
+      world.client.getTerrainList = terrainFrom([land({ x: 101, y: 100 })]);
+      const { scanForVein } = await loadVein();
+
+      scanForVein();
+      world.client.getTerrainList.mockClear();
+
+      expect(scanForVein().vein).toMatchObject({ x: 101, y: 100 });
+      expect(world.client.getTerrainList).toHaveBeenCalledTimes(1);
+    });
+
+    it('gives it up once the art on it stops matching', async () => {
+      world.client.getTerrainList = terrainFrom([land({ x: 101, y: 100 })]);
+      const { scanForVein } = await loadVein();
+
+      scanForVein();
+      world.client.getTerrainList = terrainFrom([tile({ x: 101, y: 100, graphic: GRASS })]);
+
+      expect(scanForVein().vein).toBeUndefined();
+    });
+
+    it('gives it up once it is blocked, and finds the next one', async () => {
+      world.client.getTerrainList = terrainFrom([
+        land({ x: 101, y: 100 }),
+        land({ x: 106, y: 100 }),
+      ]);
+      const { markDepleted, scanForVein } = await loadVein();
+
+      markDepleted(scanForVein().vein!);
+
+      expect(scanForVein().vein?.x).toBe(106);
+    });
+
+    // A cached distance would leave the walk unable to tell it had arrived
+    it('measures the distance again from where the character now stands', async () => {
+      world.client.getTerrainList = terrainFrom([land({ x: 105, y: 100 })]);
+      const { scanForVein } = await loadVein();
+
+      expect(scanForVein().vein?.distance).toBe(5);
+      world.player.x = 104;
+
+      expect(scanForVein().vein?.distance).toBe(1);
+    });
+  });
+
   describe('depleted veins', () => {
     it('stops returning a tile once it has run out of ore', async () => {
       world.client.getTerrainList = terrainFrom([land({ x: 102, y: 100 }), land({ x: 106, y: 100 })]);

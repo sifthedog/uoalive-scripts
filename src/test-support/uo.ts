@@ -35,6 +35,35 @@ export const Directions = {
   Up: 7,
 } as const;
 
+// Real values again. threat.ts reads the three search enums inside a call rather than at import
+// time, so a wrong value here fails a test rather than the world.
+export const Notorieties = {
+  Unknown: 0,
+  Innocent: 1,
+  Ally: 2,
+  Gray: 3,
+  Criminal: 4,
+  Enemy: 5,
+  Murderer: 6,
+  Invulnerable: 7,
+} as const;
+
+export const SearchEntityOptions = {
+  Any: 1,
+  Enemy: 2,
+  Murderer: 4,
+  Criminal: 8,
+  Gray: 16,
+  Innocent: 32,
+  Unfriendly: 64,
+  Friend: 128,
+  Invulnerable: 256,
+} as const;
+
+export const SearchEntityRangeOptions = { Next: 0, Previous: 1, Nearest: 2, Closest: 3 } as const;
+
+export const SearchEntityTypeOptions = { Any: 0, Human: 1, NonHuman: 2 } as const;
+
 // All of them rather than the four the scripts used to name, because gear.ts takes its strip list
 // from a folder's config and a layer missing from here is `undefined` at import time - which reads as
 // a layer nobody wears rather than as the typo it is. Plain values and no enumOf: nothing prints a
@@ -240,6 +269,7 @@ export interface FakePlayer {
 
 export interface FakeClient {
   findObject: ReturnType<typeof vi.fn>;
+  selectEntity: ReturnType<typeof vi.fn>;
   findType: ReturnType<typeof vi.fn>;
   findAllMobilesOfType: ReturnType<typeof vi.fn>;
   findItemOnLayer: ReturnType<typeof vi.fn>;
@@ -256,6 +286,8 @@ export interface FakeTarget {
   open: boolean;
 
   cancel: ReturnType<typeof vi.fn>;
+  clearQueue: ReturnType<typeof vi.fn>;
+  self: ReturnType<typeof vi.fn>;
   wait: ReturnType<typeof vi.fn>;
   terrain: ReturnType<typeof vi.fn>;
   waitTargetEntity: ReturnType<typeof vi.fn>;
@@ -331,6 +363,7 @@ const defaults = (): FakeWorld => {
     },
     client: {
       findObject: vi.fn(() => undefined),
+      selectEntity: vi.fn(() => undefined),
       findType: vi.fn(() => undefined),
       findAllMobilesOfType: vi.fn(() => []),
       findItemOnLayer: vi.fn(() => undefined),
@@ -344,6 +377,8 @@ const defaults = (): FakeWorld => {
     target: {
       open: false,
       cancel: vi.fn(),
+      clearQueue: vi.fn(),
+      self: vi.fn(),
       wait: vi.fn(() => true),
       terrain: vi.fn(),
       waitTargetEntity: vi.fn(() => true),
@@ -407,6 +442,10 @@ export const installGlobals = (overrides: WorldOverrides = {}): FakeWorld => {
   scope.Gump = world.gump;
   scope.Directions = Directions;
   scope.Layers = Layers;
+  scope.Notorieties = Notorieties;
+  scope.SearchEntityOptions = SearchEntityOptions;
+  scope.SearchEntityRangeOptions = SearchEntityRangeOptions;
+  scope.SearchEntityTypeOptions = SearchEntityTypeOptions;
   scope.Skills = Skills;
   scope.Spells = Spells;
   scope.BuffDebuffs = BuffDebuffs;

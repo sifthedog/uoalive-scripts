@@ -1,5 +1,7 @@
 import { describeItem } from '../lib/entity.js';
-import { backoffFor, createIdleWait, createStallWatch } from '../lib/loop.js';
+import { runHarvest, type Handled, type Interlude } from '../lib/harvest.js';
+import { createIdleWait, createStallWatch } from '../lib/loop.js';
+import { createApproach } from '../lib/tiles.js';
 import { overweight } from '../lib/weight.js';
 import {
   IDLE_LOG_EVERY,
@@ -12,6 +14,7 @@ import {
   MAX_UNKNOWN,
   MINE_RANGE,
   NOTHING_NEARBY_HINT,
+  PICK_BEETLE,
   SCAN_RADIUS,
   SURVEY_ARTS,
   STALL_STOP,
@@ -27,8 +30,9 @@ import { dismount } from './mount.js';
 import { groupOres, oreTotal, waitForOre } from './ore.js';
 import { equipPickaxe, pickaxeSerial, rememberPickaxe } from './pickaxe.js';
 import { waitOutSave } from './save.js';
-import { retryUnsmeltable, smeltAll } from './smelt.js';
+import { pickBeetle, retryUnsmeltable, smeltAll } from './smelt.js';
 import { reportTerrain } from './survey.js';
+import { watchForTrouble } from './threat.js';
 import {
   markAreaDepleted,
   markDepleted,
@@ -36,10 +40,17 @@ import {
   markUnreachable,
   markUnusable,
   scanForVein,
+  type Vein,
 } from './vein.js';
 import { stepToward } from './walk.js';
 
 rememberPickaxe(player.equippedItems.oneHanded);
+
+if (PICK_BEETLE) {
+  pickBeetle();
+}
+
+const watch = watchForTrouble('mining');
 
 const idleUntil = createIdleWait({
   prefix: 'mining',
@@ -47,6 +58,7 @@ const idleUntil = createIdleWait({
   pollMs: IDLE_POLL,
   logEveryMs: IDLE_LOG_EVERY,
   stopReason,
+  watch,
   onDone: resetBeat,
 });
 
@@ -70,163 +82,63 @@ log(
     `weight ${player.weight}/${player.weightMax}`,
 );
 
-let mined = 0;
-let unknown = 0;
-let stop: string | undefined;
-
-// Compared against rather than `mined % LOG_EVERY`, which is a property of the count and not of the
-// cycle - so it stays true for every cycle after the twenty-fifth swing.
-let reported = 0;
-
-let throttled = 0;
-
-// Counted apart from `unknown`, which it used to share: a refusal is not an outcome the script
-// failed to read, and spending that budget on one ended a run in fifteen seconds with a pickaxe
-// plainly in hand.
-let noCursor = 0;
-
 // Spots in a row the shard said had nothing in them. A few is roaming; a lot in a row is
 // ORE_TILE_GRAPHICS matching ground that carries no ore, which looks identical from the outside.
 let barren = 0;
 
-// Steps spent on the vein currently being walked to, reset when the target changes
-let walkingTo: string | undefined;
-let steps = 0;
+// Taken inside the swing and read by onLanded, because a swing's ore arrives after the sentence that
+// announced it and the pile has to be waited for against the total from before
+let oreBefore = 0;
 
-const stall = createStallWatch({
-  prefix: 'mining',
-  without: 'cycles without a swing landing',
-  warnAt: STALL_WARN,
-  stopAt: STALL_STOP,
-  heartbeat,
-});
+// The backstop rather than the plan - a spot running dry normally sends the ore to the beetle long
+// before the pack fills. Ore weighs twelve stones and an ingot almost nothing, and there is nowhere
+// else for the weight to go, which is why a smelt that frees nothing ends the run.
+const smeltForRoom = (): Interlude => {
+  if (!tooHeavy()) {
+    return undefined;
+  }
 
-const endCycle = (phase: string, cycle: number): void => {
-  stall.endCycle(phase, cycle, mined);
-  stop ??= stall.reason();
+  const before = oreTotal();
+
+  // Unconditional, because the decision has already been taken: a helper that asked tooHeavy() a
+  // second time could disagree, and the run stopped for weight without ever having tried.
+  groupOres();
+  smeltAll();
+
+  // Ore leaving the pack is the proof a smelt landed, not the weight going down: the client can
+  // still be reporting the figure it had before a conversion the pack diff has confirmed, and
+  // reading that as 'smelting freed nothing' ended runs next to a working beetle.
+  if (oreTotal() < before) {
+    return { phase: 'smelting' };
+  }
+
+  // Likeliest reason is a hue given up on earlier - a beetle briefly out of range looks exactly like
+  // an ore that cannot be worked. False once a retry has been spent without freeing any ore, which is
+  // what stops this cycling through 'smelting' until the stall watchdog.
+  if (retryUnsmeltable()) {
+    return { phase: 'smelting' };
+  }
+
+  return {
+    stop:
+      `overweight (${player.weight}/${player.weightMax}) with ${oreTotal()} ore left, ` +
+      'and smelting freed nothing',
+  };
 };
 
-for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
-  stop = stopReason();
-  if (stop) {
-    break;
-  }
-
-  // Asked every cycle rather than once at the start, so a remount or a broken tool costs a single
-  // cycle instead of the rest of the run.
-  if (!dismount()) {
-    stop = 'could not get off the mount';
-    break;
-  }
-
-  if (!equipPickaxe()) {
-    stop = 'no pickaxe';
-    break;
-  }
-
-  // The backstop rather than the plan - a spot running dry normally sends the ore to the beetle long
-  // before the pack fills. Ore weighs twelve stones and an ingot almost nothing, and there is
-  // nowhere else for the weight to go, which is why a smelt that frees nothing ends the run.
-  if (tooHeavy()) {
-    const oreBefore = oreTotal();
-
-    // Unconditional, because the decision has already been taken: a helper that asked tooHeavy() a
-    // second time could disagree, and the run stopped for weight without ever having tried.
-    groupOres();
-    smeltAll();
-
-    // Ore leaving the pack is the proof a smelt landed, not the weight going down: the client can
-    // still be reporting the figure it had before a conversion the pack diff has confirmed, and
-    // reading that as 'smelting freed nothing' ended runs next to a working beetle.
-    if (oreTotal() < oreBefore) {
-      endCycle('smelting', cycle);
-      sleep(STEP_DELAY);
-      continue;
-    }
-
-    // Likeliest reason is a hue given up on earlier - a beetle briefly out of range looks exactly
-    // like an ore that cannot be worked. Returns false once there is nothing left to reconsider, so
-    // this cannot become a loop.
-    if (retryUnsmeltable()) {
-      endCycle('smelting', cycle);
-      sleep(STEP_DELAY);
-      continue;
-    }
-
-    stop =
-      `overweight (${player.weight}/${player.weightMax}) with ${oreTotal()} ore left, ` +
-      'and smelting freed nothing';
-    break;
-  }
-
-  const { vein, respawnsAt } = scanForVein();
-
+const handle = (outcome: string, vein?: Vein): Handled => {
   if (!vein) {
-    if (respawnsAt === undefined) {
-      // The likeliest way a run ends on a shard whose tile numbering ORE_TILE_GRAPHICS does not
-      // match, and 'no ore in range' says nothing you can act on - so name what the scan rejected.
-      log('mining: nothing matched, here is what is actually on the ground');
-      reportTerrain(SCAN_RADIUS, SURVEY_ARTS);
-
-      stop = 'no ore in range';
-      break;
-    }
-
-    idleUntil(respawnsAt);
-    continue;
+    return undefined;
   }
-
-  if (vein.distance > MINE_RANGE) {
-    // Coarser than the block map's key on purpose: a tile carries several arts, and once one is
-    // written off the next is the same walk. Two *different* veins taking turns as nearest still
-    // reset it - the stall watchdog in endCycle is what bounds that.
-    const key = `${vein.x},${vein.y}`;
-    if (key !== walkingTo) {
-      walkingTo = key;
-      steps = 0;
-    }
-
-    // Blocked or out of patience: set the tile aside, or the next scan picks the same vein again
-    if (!stepToward(vein) || ++steps > MAX_STEPS) {
-      markUnreachable(vein);
-      walkingTo = undefined;
-    }
-
-    endCycle('walking', cycle);
-    continue;
-  }
-
-  walkingTo = undefined;
-
-  // digOnce takes this same snapshot for its own silent-outcome read. Left duplicated: it is one
-  // pack walk, against widening what every test reads out of a swing.
-  const oreBefore = oreTotal();
-
-  const outcome = digOnce(pickaxeSerial());
 
   switch (outcome) {
-    case 'dug':
-      mined++;
-      unknown = 0;
-      throttled = 0;
-      barren = 0;
-      stall.progressed();
-
-      // Ore arrives as a new pile rather than joining the one already there. Grouping every swing
-      // keeps the pack at one pile per hue, so the item cap is never approached by pile count alone
-      // - packFull destroys the ore of the swing that hits it - and nothing sits below
-      // MIN_SMELT_AMOUNT when the smelt comes.
-      waitForOre(oreBefore);
-      groupOres();
-      break;
-
     // Worked out, not dead: markDepleted times it out and the scan picks it up again in
     // RESPAWN_DELAY.
     case 'empty':
       markDepleted(vein);
-      unknown = 0;
       groupAndSmelt();
-      break;
+
+      return {};
 
     // The shard answering about where you stand rather than about a tile. Everything in reach goes
     // on the respawn cooldown together so the loop walks off; parking only the vein it happened to
@@ -234,7 +146,6 @@ for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
     // run ended before this had a bucket of its own.
     case 'nothingNearby':
       markAreaDepleted(MINE_RANGE);
-      unknown = 0;
 
       // Said once, at the point it stops looking like bad luck: a run that walks from empty spot to
       // empty spot is what a wrong ORE_TILE_GRAPHICS looks like from the outside.
@@ -247,28 +158,29 @@ for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
       }
 
       groupAndSmelt();
-      break;
+
+      return {};
 
     // A wrong band in ORE_TILE_GRAPHICS is a whole stretch of mountain, so ban the graphic rather
     // than walking to its copies one at a time
     case 'notOre':
       markNotMineable(vein);
       markUnusable(vein, 'cannot be mined');
-      unknown = 0;
-      break;
+
+      return {};
 
     // Already inside MINE_RANGE, so the shard disagrees about the range rather than the walk having
     // fallen short
     case 'tooFar':
       markUnusable(vein, `is out of reach at ${vein.distance} tiles`);
-      unknown = 0;
-      break;
+
+      return {};
 
     // Line of sight: walking closer would not help and neither would waiting
     case 'notSeen':
       markUnusable(vein, 'is not in line of sight');
-      unknown = 0;
-      break;
+
+      return {};
 
     // The ore this swing produced was destroyed rather than dropped, so swinging again destroys
     // more. A full pack is a container at its item cap, so consolidating is the fix: forty piles of
@@ -276,89 +188,100 @@ for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
     case 'packFull':
       log('mining: pack is full, consolidating before the next swing');
       groupOres();
-      unknown = 0;
-      break;
 
-    case 'wornOut':
-      log('mining: pickaxe worn out, swapping');
-      unknown = 0;
-      break;
-
-    // The counters are reset rather than left alone, because whatever they had accumulated was
-    // measured against a server that was not answering. The stall watchdog goes with them: a shard
-    // that saves often would otherwise walk a run to STALL_STOP a save at a time.
-    case 'saving':
-      waitOutSave();
-      unknown = 0;
-      throttled = 0;
-      stall.progressed();
-      break;
-
-    case 'throttled':
-      throttled++;
-
-      // A refusal is a read outcome, so it clears the unreadable count: left standing, a shard
-      // alternating refusals with silence ends the run on MAX_UNKNOWN without ever producing five
-      // unreadable cycles in a row.
-      unknown = 0;
-      log(`mining: shard says wait (${throttled}/${MAX_THROTTLED}), backing off`);
-      sleep(backoffFor(throttled, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX));
-
-      if (throttled >= MAX_THROTTLED) {
-        stop = 'the shard kept refusing the swing';
-      }
-      break;
-
-    // With a pickaxe demonstrably in hand this is the shard declining to start the swing, which on a
-    // live run was a third of them. digOnce has already looked for a reason, so this is a refusal
-    // with nothing said about it - backed off like one, on a budget of its own.
-    case 'noCursor':
-      noCursor++;
-      log(`mining: no target cursor (${noCursor}/${MAX_NO_CURSOR}), backing off`);
-      sleep(backoffFor(noCursor, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX));
-
-      if (noCursor >= MAX_NO_CURSOR) {
-        stop = 'the shard never opened a target cursor';
-      }
-      break;
+      return {};
 
     default:
-      unknown++;
-      log(`mining: unreadable outcome (${unknown}/${MAX_UNKNOWN}), check OUTCOME_TEXT`);
+      return undefined;
   }
+};
 
-  // Done here rather than inside each branch the way `unknown` is: every branch but one clears it,
-  // and one added later would have to remember to.
-  if (outcome !== 'noCursor') {
-    noCursor = 0;
-  }
+runHarvest<Vein>({
+  prefix: 'mining',
+  landed: 'dug',
+  toolName: 'pickaxe',
 
-  if (unknown >= MAX_UNKNOWN) {
-    stop = `${MAX_UNKNOWN} unreadable outcomes in a row`;
-    break;
-  }
+  stopReason,
+  watch,
+  equipTool: equipPickaxe,
+  ready: () => (dismount() ? undefined : 'could not get off the mount'),
+  relieve: smeltForRoom,
+  waitOutSave,
 
-  if (mined >= reported + LOG_EVERY) {
-    reported = mined;
-    log(`mining: ${mined} swings, ${oreTotal()} ore, ${player.weight}/${player.weightMax}`);
-  }
+  approach: createApproach<Vein>({
+    // Renamed rather than shared: 'vein' and 'respawnsAt' are what this folder's tests read
+    scan: () => {
+      const { vein, respawnsAt } = scanForVein();
 
-  endCycle(outcome ?? 'unknown', cycle);
-  sleep(STEP_DELAY);
-}
+      return { found: vein, readyAt: respawnsAt };
+    },
 
-// Smelted only if the run is ending over the limit: what is in the pack is a few swings' worth, and
-// a run that ended on a stop reason has usually ended because something is wrong.
-groupOres();
-if (tooHeavy()) {
-  smeltAll();
-}
+    range: MINE_RANGE,
+    maxSteps: MAX_STEPS,
+    step: stepToward,
+    markUnreachable,
+    idleUntil,
 
-// Swings rather than an ore delta: smelted ore has left the pack, so the pack cannot total the run
-const reason = stop ?? `hit the ${MAX_CYCLES} cycle backstop`;
-log(`mining: ${mined} swings, ${oreTotal()} ore still in the pack`);
+    nothingFound: () => {
+      // The likeliest way a run ends on a shard whose tile numbering ORE_TILE_GRAPHICS does not
+      // match, and 'no ore in range' says nothing you can act on - so name what the scan rejected.
+      log('mining: nothing matched, here is what is actually on the ground');
+      reportTerrain(SCAN_RADIUS, SURVEY_ARTS);
 
-// Said through log as well as handed to exit, because how the client renders an exit message is its
-// own business
-log(`mining: stopping - ${reason}`);
-exit(`mining: ${reason}`);
+      return 'no ore in range';
+    },
+  }),
+
+  harvest: () => {
+    oreBefore = oreTotal();
+
+    return digOnce(pickaxeSerial());
+  },
+
+  // Ore arrives as a new pile rather than joining the one already there. Grouping every swing keeps
+  // the pack at one pile per hue, so the item cap is never approached by pile count alone - packFull
+  // destroys the ore of the swing that hits it - and nothing sits below MIN_SMELT_AMOUNT when the
+  // smelt comes.
+  onLanded: () => {
+    barren = 0;
+    waitForOre(oreBefore);
+    groupOres();
+  },
+
+  handle,
+
+  progress: (mined) => `${mined} swings, ${oreTotal()} ore`,
+
+  // Smelted only if the run is ending over the limit: what is in the pack is a few swings' worth,
+  // and a run that ended on a stop reason has usually ended because something is wrong.
+  finish: (mined) => {
+    groupOres();
+
+    if (tooHeavy()) {
+      smeltAll();
+    }
+
+    // Swings rather than an ore delta: smelted ore has left the pack, so the pack cannot total the
+    // run
+    log(`mining: ${mined} swings, ${oreTotal()} ore still in the pack`);
+  },
+
+  stall: createStallWatch({
+    prefix: 'mining',
+    without: 'cycles without a swing landing',
+    warnAt: STALL_WARN,
+    stopAt: STALL_STOP,
+    heartbeat,
+  }),
+
+  timings: {
+    stepDelay: STEP_DELAY,
+    maxCycles: MAX_CYCLES,
+    maxUnknown: MAX_UNKNOWN,
+    maxThrottled: MAX_THROTTLED,
+    maxNoCursor: MAX_NO_CURSOR,
+    logEvery: LOG_EVERY,
+    throttleBackoff: THROTTLE_BACKOFF,
+    throttleBackoffMax: THROTTLE_BACKOFF_MAX,
+  },
+});

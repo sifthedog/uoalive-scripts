@@ -45,6 +45,11 @@ describe('nameOf', () => {
   it('falls back to the serial', () => {
     expect(nameOf({ serial: 0x40000001 })).toBe('0x40000001');
   });
+
+  // The client's own value for 'not known yet', which `??` reads as a name
+  it('falls back to the serial on an empty name', () => {
+    expect(nameOf({ name: '', serial: 0x40000001 })).toBe('0x40000001');
+  });
 });
 
 describe('describeItem', () => {

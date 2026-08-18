@@ -19,6 +19,7 @@
       for (let slice = 0; slice < slices && now() < until; slice++) {
         sleep(options.pollMs);
         since += options.pollMs;
+        options.watch?.();
         if (options.stopReason()) {
           return;
         }
@@ -51,14 +52,157 @@
     };
   };
 
-  // src/lib/weight.ts
-  var overweight = (buffer = 0) => player.weightMax > 0 && player.weight > player.weightMax - buffer;
+  // src/lib/harvest.ts
+  var runHarvest = ({
+    prefix,
+    landed,
+    toolName,
+    stopReason: stopReason2,
+    watch,
+    equipTool,
+    ready,
+    relieve,
+    approach: approach2,
+    harvest,
+    onLanded,
+    handle: handle2,
+    progress,
+    finish,
+    waitOutSave: waitOutSave2,
+    stall,
+    timings
+  }) => {
+    let tally = 0;
+    let unknown = 0;
+    let stop;
+    let reported2 = 0;
+    let throttled = 0;
+    let noCursor = 0;
+    const endCycle = (phase, cycle) => {
+      stall.endCycle(phase, cycle, tally);
+      stop ?? (stop = stall.reason());
+    };
+    for (let cycle = 0; cycle < timings.maxCycles && !stop; cycle++) {
+      stop = stopReason2();
+      if (stop) {
+        break;
+      }
+      watch?.();
+      stop = ready?.();
+      if (stop) {
+        break;
+      }
+      if (!equipTool()) {
+        stop = `no ${toolName}`;
+        break;
+      }
+      const relieved = relieve?.();
+      if (relieved) {
+        if ("stop" in relieved) {
+          stop = relieved.stop;
+          break;
+        }
+        endCycle(relieved.phase, cycle);
+        sleep(timings.stepDelay);
+        continue;
+      }
+      let target2;
+      if (approach2) {
+        const found = approach2();
+        if ("stop" in found) {
+          stop = found.stop;
+          break;
+        }
+        if ("waited" in found) {
+          continue;
+        }
+        if ("walked" in found) {
+          endCycle("walking", cycle);
+          continue;
+        }
+        target2 = found.target;
+      }
+      const outcome = harvest(target2);
+      if (outcome === landed) {
+        tally++;
+        unknown = 0;
+        throttled = 0;
+        stall.progressed();
+        onLanded?.();
+      } else {
+        switch (outcome) {
+          case "wornOut":
+            log(`${prefix}: ${toolName} worn out, swapping`);
+            unknown = 0;
+            break;
+          // The counters are reset rather than left alone, because whatever they had accumulated was
+          // measured against a server that was not answering. The stall watchdog goes with them: a
+          // shard that saves often would otherwise walk a run to its stop a save at a time.
+          case "saving":
+            waitOutSave2();
+            unknown = 0;
+            throttled = 0;
+            stall.progressed();
+            break;
+          case "throttled":
+            throttled++;
+            unknown = 0;
+            log(`${prefix}: shard says wait (${throttled}/${timings.maxThrottled}), backing off`);
+            sleep(backoffFor(throttled, timings.throttleBackoff, timings.throttleBackoffMax));
+            if (throttled >= timings.maxThrottled) {
+              stop = "the shard kept refusing the swing";
+            }
+            break;
+          // With a tool demonstrably in hand this is the shard declining to start the swing, which on
+          // a live run was a third of them. The swing has already looked for a reason, so this is a
+          // refusal with nothing said about it - backed off like one, on a budget of its own.
+          case "noCursor":
+            noCursor++;
+            log(`${prefix}: no target cursor (${noCursor}/${timings.maxNoCursor}), backing off`);
+            sleep(backoffFor(noCursor, timings.throttleBackoff, timings.throttleBackoffMax));
+            if (noCursor >= timings.maxNoCursor) {
+              stop = "the shard never opened a target cursor";
+            }
+            break;
+          default: {
+            const handled = outcome === void 0 ? void 0 : handle2(outcome, target2);
+            if (handled) {
+              unknown = 0;
+              stop ?? (stop = handled.stop);
+            } else {
+              unknown++;
+              log(
+                `${prefix}: unreadable outcome (${unknown}/${timings.maxUnknown}), check OUTCOME_TEXT`
+              );
+            }
+          }
+        }
+      }
+      if (outcome !== "noCursor") {
+        noCursor = 0;
+      }
+      if (unknown >= timings.maxUnknown) {
+        stop = `${timings.maxUnknown} unreadable outcomes in a row`;
+        break;
+      }
+      if (tally >= reported2 + timings.logEvery) {
+        reported2 = tally;
+        log(`${prefix}: ${progress(tally)}, ${player.weight}/${player.weightMax}`);
+      }
+      endCycle(outcome ?? "unknown", cycle);
+      sleep(timings.stepDelay);
+    }
+    const reason = stop ?? `hit the ${timings.maxCycles} cycle backstop`;
+    finish?.(tally, reason);
+    log(`${prefix}: stopping - ${reason}`);
+    exit(`${prefix}: ${reason}`);
+  };
 
   // src/lib/entity.ts
   var hex = (value) => `0x${(value >>> 0).toString(16)}`;
   var distanceTo = (spot) => Math.max(Math.abs(spot.x - player.x), Math.abs(spot.y - player.y));
   var isMobile = (entity) => entity._tag === "Mobile";
-  var nameOf = (entity) => entity.name ?? hex(entity.serial);
+  var nameOf = (entity) => entity.name || hex(entity.serial);
   var describeItem = (item) => item ? `${hex(item.graphic)} '${item.name ?? ""}'` : "empty";
   var approach = (serial, options) => {
     for (let taken = 0; taken < options.maxSteps; taken++) {
@@ -78,6 +222,115 @@
     log(`${options.label}: still not next to ${hex(serial)} after ${options.maxSteps} steps`);
     return void 0;
   };
+
+  // src/lib/tiles.ts
+  var tileKey = (tile) => `${tile.x},${tile.y},${tile.z},${tile.graphic}`;
+  var minutes2 = (ms) => Math.max(1, Math.round(ms / 6e4));
+  var createTileStore = (options) => {
+    const block = (tile, until) => options.blocked().set(tileKey(tile), until);
+    return {
+      block,
+      blockedUntil: (tile) => options.blocked().get(tileKey(tile)),
+      markDepleted: (tile) => {
+        block(tile, now() + options.depletedFor);
+        log(
+          `${options.label}: ${tile.x},${tile.y} ${options.depleted}, back in ${minutes2(options.depletedFor)}m`
+        );
+      },
+      markUnreachable: (tile) => {
+        block(tile, now() + options.unreachableFor);
+        log(
+          `${options.label}: ${tile.x},${tile.y} could not be walked to, retrying in ${minutes2(options.unreachableFor)}m`
+        );
+      },
+      markUnusable: (tile, reason) => {
+        block(tile, Infinity);
+        log(`${options.label}: ${tile.x},${tile.y} ${reason}, ignoring it from here on`);
+      }
+    };
+  };
+  var createScan = (options) => {
+    const reported2 = /* @__PURE__ */ new Set();
+    return (radius = options.radius) => {
+      const blocked = options.blocked();
+      const time = now();
+      let best;
+      let readyAt;
+      for (let dx = -radius; dx <= radius; dx++) {
+        for (let dy = -radius; dy <= radius; dy++) {
+          for (const tile of client.getTerrainList(player.x + dx, player.y + dy) ?? []) {
+            if (options.skipLand && tile.isLand) {
+              continue;
+            }
+            if (!options.matches(tile.graphic, tile.isLand)) {
+              continue;
+            }
+            if (options.reachable && !options.reachable(tile.x, tile.y)) {
+              continue;
+            }
+            const candidate = {
+              x: tile.x,
+              y: tile.y,
+              z: tile.z,
+              graphic: tile.graphic,
+              isLand: tile.isLand,
+              distance: distanceTo(tile)
+            };
+            const key = tileKey(candidate);
+            const until = blocked.get(key);
+            if (until !== void 0) {
+              if (time < until) {
+                if (Number.isFinite(until) && (readyAt === void 0 || until < readyAt)) {
+                  readyAt = until;
+                }
+                continue;
+              }
+              blocked.delete(key);
+            }
+            if (!best || candidate.distance < best.distance) {
+              best = candidate;
+            }
+          }
+        }
+      }
+      if (best && !reported2.has(best.graphic)) {
+        log(`${options.label}: matching ${hex(best.graphic)} ${options.describe(best)}`);
+        reported2.add(best.graphic);
+      }
+      return { found: best, readyAt };
+    };
+  };
+  var createApproach = (options) => {
+    let walkingTo;
+    let steps = 0;
+    return () => {
+      const { found, readyAt } = options.scan();
+      if (!found) {
+        if (readyAt === void 0) {
+          return { stop: options.nothingFound() };
+        }
+        options.idleUntil(readyAt);
+        return { waited: true };
+      }
+      if (found.distance <= options.range) {
+        walkingTo = void 0;
+        return { target: found };
+      }
+      const key = `${found.x},${found.y}`;
+      if (key !== walkingTo) {
+        walkingTo = key;
+        steps = 0;
+      }
+      if (!options.step(found) || ++steps > options.maxSteps) {
+        options.markUnreachable(found);
+        walkingTo = void 0;
+      }
+      return { walked: true };
+    };
+  };
+
+  // src/lib/weight.ts
+  var overweight = (buffer = 0) => player.weightMax > 0 && player.weight > player.weightMax - buffer;
 
   // src/lib/containers.ts
   var CONTAINER_GRAPHICS = /* @__PURE__ */ new Set([
@@ -293,6 +546,23 @@
     "You lack the required skill",
     "You do not have enough skill"
   ];
+  var HOSTILE_NOTORIETY = 16 | 8 | 2 | 4;
+  var THREAT_RANGE = 12;
+  var WATCH_FOR_TROUBLE = true;
+  var GUARD_CALL = "guards";
+  var GUARD_CALLS = 3;
+  var GUARD_CALL_DELAY = 1e4;
+  var GUARD_REPLY_WAIT = 800;
+  var NO_GUARDS_TEXT = [
+    "The guards can not be called here",
+    "The guards cannot be called here",
+    "Guards can not be called here",
+    "Guards cannot be called here",
+    "There are no guards here"
+  ];
+  var ATTACK_TEXT = [];
+  var GUARD_ZONE_TEXT = ["under the protection of the town guards", "now under guard"];
+  var UNGUARDED_TEXT = ["left the protection of the town guards", "no longer under guard"];
 
   // src/lumberjacking/config.ts
   var AXE_NAME = "axe";
@@ -392,6 +662,7 @@
   var createConverter = (options) => {
     const writtenOff = /* @__PURE__ */ new Set();
     const misses = /* @__PURE__ */ new Map();
+    let progressed = true;
     const missed = (hue) => {
       const count = (misses.get(hue) ?? 0) + 1;
       misses.set(hue, count);
@@ -433,6 +704,7 @@
       const changes = waitForChange(before);
       if (changes.length > 0) {
         misses.delete(hue);
+        progressed = true;
         learnOutput(changes);
         return;
       }
@@ -475,9 +747,10 @@
         return false;
       },
       retry: () => {
-        if (writtenOff.size === 0) {
+        if (writtenOff.size === 0 || !progressed) {
           return false;
         }
+        progressed = false;
         log(`${options.label}: giving ${writtenOff.size} hue(s) written off earlier another go`);
         writtenOff.clear();
         misses.clear();
@@ -552,6 +825,9 @@
       options.onDone();
     }
   });
+
+  // src/lib/vitals.ts
+  var hitsCeiling = () => player.maxHits > 0 ? player.maxHits : void 0;
 
   // src/lib/guards.ts
   var dead = () => player.isDead ? "you are dead" : void 0;
@@ -821,82 +1097,134 @@
     return moved;
   };
 
-  // src/lib/tiles.ts
-  var tileKey = (tile) => `${tile.x},${tile.y},${tile.z},${tile.graphic}`;
-  var minutes2 = (ms) => Math.max(1, Math.round(ms / 6e4));
-  var createTileStore = (options) => {
-    const block = (tile, until) => options.blocked().set(tileKey(tile), until);
+  // src/lib/threat.ts
+  var NOTORIETY = [
+    "unknown",
+    "innocent",
+    "ally",
+    "gray",
+    "criminal",
+    "enemy",
+    "murderer",
+    "invulnerable"
+  ];
+  var dropped = (was, is) => was > 0 && is > 0 && is < was;
+  var createThreatWatch = (options) => {
+    let lastHits = 0;
+    let lastCompanionHits = 0;
+    let lastCall = 0;
+    let calls = 0;
+    let episode = false;
+    let noGuards = false;
+    let saidProtection = false;
+    let zone;
+    const nearest = (mask, type) => {
+      const found = client.selectEntity(mask, SearchEntityRangeOptions.Nearest, type, false);
+      if (!found || found.serial === player.serial || found.isDead) {
+        return void 0;
+      }
+      return distanceTo(found) <= options.range ? found : void 0;
+    };
+    const hostileNear = () => {
+      const found = nearest(options.hostile, SearchEntityTypeOptions.Any);
+      return found && !found.isRenamable ? found : void 0;
+    };
+    const readZone = () => {
+      if (options.guardedText.some((text) => journal.containsText(text))) {
+        zone = "guarded";
+      } else if (options.unguardedText.some((text) => journal.containsText(text))) {
+        zone = "unguarded";
+      }
+    };
+    const protection = () => {
+      if (zone) {
+        return `the journal says ${zone}`;
+      }
+      const yellow = nearest(SearchEntityOptions.Invulnerable, SearchEntityTypeOptions.Human);
+      return yellow ? `an invulnerable '${nameOf(yellow)}' in sight, so probably a town` : "nothing in sight to say either way";
+    };
+    const callGuards = () => {
+      if (noGuards || options.calls > 0 && calls >= options.calls) {
+        return;
+      }
+      const at = now();
+      if (calls > 0 && at - lastCall < options.callDelay) {
+        return;
+      }
+      lastCall = at;
+      calls++;
+      if (!saidProtection) {
+        saidProtection = true;
+        log(`${options.prefix}: guard protection - ${protection()}`);
+      }
+      log(
+        `${options.prefix}: calling the guards (${calls}${options.calls > 0 ? `/${options.calls}` : ""})`
+      );
+      player.say(options.call);
+      if (options.noGuardsText.length === 0) {
+        return;
+      }
+      const refused = journal.waitForTextAny(options.noGuardsText, void 0, options.replyWait);
+      if (refused) {
+        noGuards = true;
+        log(`${options.prefix}: the shard says '${refused}' - not calling again this run`);
+      }
+    };
+    const describe = (hostile, friend) => {
+      const who = hostile ? `'${nameOf(hostile)}' ${hex(hostile.graphic)} ${distanceTo(hostile)} tiles off (${NOTORIETY[hostile.notoriety] ?? hostile.notoriety})` : "nothing in sight";
+      const mine = `you ${player.hits}/${hitsCeiling() ?? "?"}`;
+      const theirs = friend ? `, ${options.companionName} ${friend.hits}/${friend.maxHits || "?"}` : "";
+      return `${who}, ${mine}${theirs}`;
+    };
     return {
-      block,
-      markDepleted: (tile) => {
-        block(tile, now() + options.depletedFor);
-        log(
-          `${options.label}: ${tile.x},${tile.y} ${options.depleted}, back in ${minutes2(options.depletedFor)}m`
-        );
-      },
-      markUnreachable: (tile) => {
-        block(tile, now() + options.unreachableFor);
-        log(
-          `${options.label}: ${tile.x},${tile.y} could not be walked to, retrying in ${minutes2(options.unreachableFor)}m`
-        );
-      },
-      markUnusable: (tile, reason) => {
-        block(tile, Infinity);
-        log(`${options.label}: ${tile.x},${tile.y} ${reason}, ignoring it from here on`);
-      }
-    };
-  };
-  var createScan = (options) => {
-    const reported3 = /* @__PURE__ */ new Set();
-    return () => {
-      const blocked = options.blocked();
-      const time = now();
-      let best;
-      let readyAt;
-      for (let dx = -options.radius; dx <= options.radius; dx++) {
-        for (let dy = -options.radius; dy <= options.radius; dy++) {
-          for (const tile of client.getTerrainList(player.x + dx, player.y + dy) ?? []) {
-            if (options.skipLand && tile.isLand) {
-              continue;
-            }
-            if (!options.matches(tile.graphic, tile.isLand)) {
-              continue;
-            }
-            if (options.reachable && !options.reachable(tile.x, tile.y)) {
-              continue;
-            }
-            const candidate = {
-              x: tile.x,
-              y: tile.y,
-              z: tile.z,
-              graphic: tile.graphic,
-              isLand: tile.isLand,
-              distance: distanceTo(tile)
-            };
-            const key = tileKey(candidate);
-            const until = blocked.get(key);
-            if (until !== void 0) {
-              if (time < until) {
-                if (Number.isFinite(until) && (readyAt === void 0 || until < readyAt)) {
-                  readyAt = until;
-                }
-                continue;
-              }
-              blocked.delete(key);
-            }
-            if (!best || candidate.distance < best.distance) {
-              best = candidate;
-            }
-          }
+      check: () => {
+        readZone();
+        const hits = player.hits;
+        const hurt = dropped(lastHits, hits);
+        if (hits > 0) {
+          lastHits = hits;
         }
+        const friend = options.companion?.();
+        const friendHits = friend?.hits ?? 0;
+        const friendHurt = dropped(lastCompanionHits, friendHits);
+        if (friendHits > 0) {
+          lastCompanionHits = friendHits;
+        }
+        const said = options.attackText.some((text) => journal.containsText(text));
+        const hostile = hostileNear();
+        if (!hostile && !hurt && !friendHurt && !said) {
+          if (episode) {
+            episode = false;
+            calls = 0;
+            log(`${options.prefix}: clear`);
+          }
+          return;
+        }
+        if (!episode) {
+          episode = true;
+          log(`${options.prefix}: trouble - ${describe(hostile, friend)}`);
+        }
+        callGuards();
       }
-      if (best && !reported3.has(best.graphic)) {
-        log(`${options.label}: matching ${hex(best.graphic)} ${options.describe(best)}`);
-        reported3.add(best.graphic);
-      }
-      return { found: best, readyAt };
     };
   };
+
+  // src/lumberjacking/threat.ts
+  var watchForTrouble = WATCH_FOR_TROUBLE ? createThreatWatch({
+    prefix: "lumberjack",
+    range: THREAT_RANGE,
+    hostile: HOSTILE_NOTORIETY,
+    companion: () => findPackAnimals()[0],
+    companionName: "pack animal",
+    call: GUARD_CALL,
+    calls: GUARD_CALLS,
+    callDelay: GUARD_CALL_DELAY,
+    replyWait: GUARD_REPLY_WAIT,
+    noGuardsText: NO_GUARDS_TEXT,
+    attackText: ATTACK_TEXT,
+    guardedText: GUARD_ZONE_TEXT,
+    unguardedText: UNGUARDED_TEXT
+  }).check : void 0;
 
   // src/lib/store.ts
   var scope = globalThis;
@@ -1002,162 +1330,103 @@
     pollMs: IDLE_POLL,
     logEveryMs: IDLE_LOG_EVERY,
     stopReason,
+    watch: watchForTrouble,
     onDone: resetBeat
   });
   log(`lumberjack: ${logTotal()} logs in the pack to start, staying within ${describeBounds()}`);
-  var chopped = 0;
-  var unknown = 0;
-  var stop;
-  var reported2 = 0;
-  var throttled = 0;
-  var noCursor = 0;
   var hauling = true;
-  var walkingTo;
-  var steps = 0;
-  var stall = createStallWatch({
-    prefix: "lumberjack",
-    without: "cycles without a chop",
-    warnAt: STALL_WARN,
-    stopAt: STALL_STOP,
-    heartbeat
-  });
-  var endCycle = (phase, cycle) => {
-    stall.endCycle(phase, cycle, chopped);
-    stop ?? (stop = stall.reason());
+  var haulForRoom = () => {
+    if (!hauling || !overweight(HAUL_BUFFER)) {
+      return void 0;
+    }
+    const weightBefore = player.weight;
+    makeBoards();
+    unload();
+    if (isSaving()) {
+      waitOutSave();
+    } else if (player.weight >= weightBefore) {
+      hauling = false;
+      log("lumberjack: hauling freed nothing, carrying on until overweight");
+    }
+    return { phase: "hauling" };
   };
-  for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
-    stop = stopReason();
-    if (stop) {
-      break;
-    }
-    if (!equipAxe()) {
-      stop = "no axe";
-      break;
-    }
-    if (hauling && overweight(HAUL_BUFFER)) {
-      const weightBefore = player.weight;
-      makeBoards();
-      unload();
-      if (isSaving()) {
-        waitOutSave();
-      } else if (player.weight >= weightBefore) {
-        hauling = false;
-        log("lumberjack: hauling freed nothing, carrying on until overweight");
-      }
-      endCycle("hauling", cycle);
-      sleep(STEP_DELAY);
-      continue;
-    }
-    const { tree, regrowsAt } = scanForTree();
+  var handle = (outcome, tree) => {
     if (!tree) {
-      if (regrowsAt === void 0) {
-        stop = "no tree in range";
-        break;
-      }
-      idleUntil(regrowsAt);
-      continue;
+      return void 0;
     }
-    if (tree.distance > CHOP_RANGE) {
-      const key = `${tree.x},${tree.y}`;
-      if (key !== walkingTo) {
-        walkingTo = key;
-        steps = 0;
-      }
-      if (!stepToward(tree) || ++steps > MAX_STEPS) {
-        markUnreachable(tree);
-        walkingTo = void 0;
-      }
-      endCycle("walking", cycle);
-      continue;
-    }
-    walkingTo = void 0;
-    const outcome = chopOnce(tree, axeSerial());
     switch (outcome) {
-      case "chopped":
-        chopped++;
-        unknown = 0;
-        throttled = 0;
-        stall.progressed();
-        break;
       // A stump, not a dead tile: markDepleted times it out and the scan picks it up again later
       case "empty":
         markDepleted(tree);
-        unknown = 0;
-        break;
+        return {};
       // The whole art is scenery, not just this tile, so ban the graphic rather than walking to the
       // forest's copies of it one at a time
       case "notTree":
         markNotHarvestable(tree.graphic);
         markUnusable(tree, "is not harvestable");
-        unknown = 0;
-        break;
+        return {};
       // Already inside CHOP_RANGE, so the shard disagrees about the range rather than the walk having
       // fallen short
       case "tooFar":
         markUnusable(tree, `is out of reach at ${tree.distance} tiles`);
-        unknown = 0;
-        break;
+        return {};
       // Line of sight: walking closer would not help and neither would waiting. Without this the tile
       // reads as an unreadable outcome, is picked again by the next scan, and five end the run.
       case "notSeen":
         markUnusable(tree, "is not in line of sight");
-        unknown = 0;
-        break;
-      case "wornOut":
-        log("lumberjack: axe worn out, swapping");
-        unknown = 0;
-        break;
-      // The counters are reset rather than left alone, because whatever they had accumulated was
-      // measured against a server that was not answering. The stall watchdog goes with them: a shard
-      // that saves often would otherwise walk a run to STALL_STOP a save at a time.
-      case "saving":
-        waitOutSave();
-        unknown = 0;
-        throttled = 0;
-        stall.progressed();
-        break;
-      case "throttled":
-        throttled++;
-        unknown = 0;
-        log(`lumberjack: shard says wait (${throttled}/${MAX_THROTTLED}), backing off`);
-        sleep(backoffFor(throttled, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX));
-        if (throttled >= MAX_THROTTLED) {
-          stop = "the shard kept refusing the swing";
-        }
-        break;
-      // With an axe demonstrably in hand this is the shard declining to start the swing, which on a
-      // live mining run was a third of them. chopOnce has already looked for a reason, so this is a
-      // refusal with nothing said about it - backed off like one, on a budget of its own.
-      case "noCursor":
-        noCursor++;
-        log(`lumberjack: no target cursor (${noCursor}/${MAX_NO_CURSOR}), backing off`);
-        sleep(backoffFor(noCursor, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX));
-        if (noCursor >= MAX_NO_CURSOR) {
-          stop = "the shard never opened a target cursor";
-        }
-        break;
+        return {};
       default:
-        unknown++;
-        log(`lumberjack: unreadable outcome (${unknown}/${MAX_UNKNOWN}), check OUTCOME_TEXT`);
+        return void 0;
     }
-    if (outcome !== "noCursor") {
-      noCursor = 0;
+  };
+  runHarvest({
+    prefix: "lumberjack",
+    landed: "chopped",
+    toolName: "axe",
+    stopReason,
+    watch: watchForTrouble,
+    equipTool: equipAxe,
+    relieve: haulForRoom,
+    waitOutSave,
+    approach: createApproach({
+      // Renamed rather than shared: 'tree' and 'regrowsAt' are what this folder's tests read
+      scan: () => {
+        const { tree, regrowsAt } = scanForTree();
+        return { found: tree, readyAt: regrowsAt };
+      },
+      range: CHOP_RANGE,
+      maxSteps: MAX_STEPS,
+      step: stepToward,
+      markUnreachable,
+      idleUntil,
+      nothingFound: () => "no tree in range"
+    }),
+    harvest: (tree) => tree ? chopOnce(tree, axeSerial()) : void 0,
+    handle,
+    progress: (chopped) => `${chopped} chops, ${logTotal()} logs`,
+    finish: (chopped) => {
+      makeBoards();
+      if (hauling) {
+        unload();
+      }
+      log(`lumberjack: ${chopped} chops, ${logTotal()} logs still in the pack`);
+    },
+    stall: createStallWatch({
+      prefix: "lumberjack",
+      without: "cycles without a chop",
+      warnAt: STALL_WARN,
+      stopAt: STALL_STOP,
+      heartbeat
+    }),
+    timings: {
+      stepDelay: STEP_DELAY,
+      maxCycles: MAX_CYCLES,
+      maxUnknown: MAX_UNKNOWN,
+      maxThrottled: MAX_THROTTLED,
+      maxNoCursor: MAX_NO_CURSOR,
+      logEvery: LOG_EVERY,
+      throttleBackoff: THROTTLE_BACKOFF,
+      throttleBackoffMax: THROTTLE_BACKOFF_MAX
     }
-    if (unknown >= MAX_UNKNOWN) {
-      stop = `${MAX_UNKNOWN} unreadable outcomes in a row`;
-      break;
-    }
-    if (chopped >= reported2 + LOG_EVERY) {
-      reported2 = chopped;
-      log(`lumberjack: ${chopped} chops, ${logTotal()} logs, ${player.weight}/${player.weightMax}`);
-    }
-    endCycle(outcome ?? "unknown", cycle);
-    sleep(STEP_DELAY);
-  }
-  makeBoards();
-  if (hauling) {
-    unload();
-  }
-  log(`lumberjack: ${chopped} chops, ${logTotal()} logs still in the pack`);
-  exit(`lumberjack: ${stop ?? `hit the ${MAX_CYCLES} cycle backstop`}`);
+  });
 })();

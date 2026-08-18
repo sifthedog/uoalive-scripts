@@ -1,16 +1,15 @@
 # mining — dig ore, smelt it on a fire beetle
 
-Builds three scripts:
+Builds two scripts:
 
 | Script | What it does |
 | --- | --- |
 | `dist/mining.js` | Walks to the nearest vein, swings, consolidates the ore, and smelts it against a fire beetle |
 | `dist/mine-here.js` | Stands still and works the spot you are on until it runs dry, then smelts and stops |
-| `dist/mine-probe.js` | Read-only. Lists every land and static art around you, so `ORE_TILE_GRAPHICS` can be filled in |
 
-**Run the probe first.** `ORE_TILE_GRAPHICS` ships as a stock RunUO guess and it is the one setting
-most likely to be wrong for your shard. Everything else degrades gracefully; this one ends runs — for
-`dist/mining.js`, at least. `dist/mine-here.js` never reads it.
+**`ORE_TILE_GRAPHICS` ships as a stock RunUO guess** and it is the one setting most likely to be
+wrong for your shard. Everything else degrades gracefully; this one ends runs — for `dist/mining.js`,
+at least. `dist/mine-here.js` never reads it, and a dead-end run prints the arts it actually saw.
 
 ## Why it exists
 
@@ -38,6 +37,11 @@ Every cycle:
    `UNREACHABLE_DELAY`.
 7. **Swing**, and branch on what the shard says.
 
+Steps 1-4 and 7, along with the counters that end a run, are
+[`lib/harvest.ts`](../lib/harvest.js)'s `runHarvest` — the same loop `dist/mine-here.js` and
+`dist/lumberjack.js` run. Steps 5 and 6 are `createApproach` in [`lib/tiles.ts`](../lib/tiles.ts).
+What this folder supplies is the wordings, the tool, the smelt, and the outcomes in the table below.
+
 | Outcome | What the loop does |
 | --- | --- |
 | `dug` | Wait for the ore to land, then consolidate the pack to one pile per hue |
@@ -63,8 +67,9 @@ asks whether any pile is worth smelting *before* it looks for the beetle.
 - Stand on the mountain face or in the cave you mean to work.
 - **A pickaxe in hand.** The run learns its graphic from what you are holding. Spares go in the pack
   or in one bag inside it — `SPARE_BAG_SERIAL` pins a bag nested deeper than that.
-- **The fire beetle nearby**, and yours. Without one the run still mines; it stops when the pack
-  fills, saying smelting freed nothing.
+- **The fire beetle nearby**, and yours. It opens a cursor at startup for you to click it — ESC to
+  let the script find one instead. Without a beetle the run still mines; it stops when the pack fills,
+  saying smelting freed nothing.
 - Being mounted is fine — it gets off by itself.
 
 ### How to run it
@@ -73,31 +78,19 @@ asks whether any pile is worth smelting *before* it looks for the beetle.
 npm run build
 ```
 
-Paste `dist/mine-probe.js` first and correct `ORE_TILE_GRAPHICS`, rebuild, then paste
-`dist/mining.js`. The first thing the run prints is the world as it sees it — mounted or not, what is
-in your hand, your weight — because a run that stops on its first cycle otherwise looks exactly like
-a script that never started.
-
-## What `dist/mine-probe.js` does
-
-It never swings, targets or moves. It walks the tiles within `PROBE_RADIUS`, collects every distinct
-art, and prints each with its `isLand` flag, its tiledata flags, how many tiles carry it, and whether
-`ORE_TILE_GRAPHICS` matches it — commonest first, because a mountain face is hundreds of tiles of the
-same handful of arts. Graphics are printed in decimal as well as hex, since the RunUO tables the
-config is seeded from are decimal.
-
-The same listing is printed by the main loop when it ends with `no ore in range`, capped at
-`SURVEY_ARTS` entries.
+Paste `dist/mining.js`. The first thing the run prints is the world as it sees it — mounted or not,
+what is in your hand, your weight — because a run that stops on its first cycle otherwise looks
+exactly like a script that never started.
 
 ## What `dist/mine-here.js` does
 
 The stationary half of `dist/mining.js`. It stands where you put it, swings until the shard says
 there is nothing left, smelts what it mined, and stops.
 
-It can leave out the scan, the walk, the block map and the respawn wait because [`dig.ts`](dig.ts)
-answers the target cursor with *yourself* and lets the shard pick the ore — so a swing is aimed by
-where the character stands rather than by naming a tile, which is all
-[`vein.ts`](vein.ts) exists to decide.
+It runs the same `runHarvest` as `dist/mining.js`, and simply passes it no `approach`: it can leave
+out the scan, the walk, the block map and the respawn wait because [`dig.ts`](dig.ts) answers the
+target cursor with *yourself* and lets the shard pick the ore — so a swing is aimed by where the
+character stands rather than by naming a tile, which is all [`vein.ts`](vein.ts) exists to decide.
 
 | Outcome | What the loop does |
 | --- | --- |
@@ -133,6 +126,25 @@ has to be standing next to you*, call the beetle over and paste it again.
 Heartbeat and world-save lines still say `mining:` — those modules are shared. The loop's own lines
 say `mine-here:`.
 
+## Trouble
+
+The shard runs encounters that spawn monsters at anyone macroing AFK. Every cycle — and every slice
+of an idle wait, which is where a run stands still longest — the loop checks four things: a hostile
+mobile within `THREAT_RANGE`, your health going down, your beetle's health going down, and any
+wording in `ATTACK_TEXT`. Any one of them opens an episode: it says `guards`, up to `GUARD_CALLS`
+times, one call per `GUARD_CALL_DELAY`, and goes on mining. The count resets when a check comes back
+clear, so something that comes back gets a fresh set of calls.
+
+**None of it ends a run.** `dead` is still the only thing that stops one for combat reasons. If you
+would rather it stopped at a health floor, `hurt(fraction)` is already in
+[`lib/guards.ts`](../lib/guards.ts) and goes into this folder's `stopReason` in one line.
+
+**There is no way to ask whether the guards can hear you.** The first call of a run says what it can
+work out — a boundary wording in the journal, or an invulnerable human in sight — and neither is
+authoritative. What is worth knowing: on stock RunUO the guard call answers criminal *players*, not
+wild monsters, so a spot outside a town may do nothing with this at all. `NO_GUARDS_TEXT` is how a
+shard that says so gets the run to stop wasting the breath.
+
 ## What to set
 
 Everything lives in [`config.ts`](config.ts). Values re-exported from
@@ -143,13 +155,13 @@ mining its own, delete it from the re-export list and declare it below.
 
 | Setting | What it is for |
 | --- | --- |
-| `ORE_TILE_GRAPHICS` | **The important one.** The land tiles the shard calls a mountain or a cave floor. Fill it in from `dist/mine-probe.js` |
+| `ORE_TILE_GRAPHICS` | **The important one.** The land tiles the shard calls a mountain or a cave floor. Fill it in from what a dead-end run lists |
 | `NOT_ORE_GRAPHICS` | The override, and a seed only — a refusal learned on the shard goes to the run's memory, not back here |
 | `ORE_STATIC_NAME` | `/cave\|rock\|mountain\|ore/i`. Cave floors are *statics*, and those the client can name. Wider than it looks — `rock` also names the pebbles scattered over half the world — but that is the cheap direction: the first swing at one gets `notOre` and the art is banned |
 | `ORE_GRAPHICS` | The arts an ore pile is drawn with. A set to match against and nothing more — never a way to read a stack's size |
 | `ORE_NAME` | `/\bore\b/i`, the fallback for a shard whose ore wears an unknown art. A whole word: `ore` inside `sycamore` would put something in the smelter |
 | `MINE_RANGE` | 2. Where walking stops and swinging starts — not a range the shard enforces, since the swing names no tile |
-| `SCAN_RADIUS`, `PROBE_RADIUS`, `SURVEY_ARTS` | How far the loop looks, how far the probe looks, and how many arts the loop lists on a dead end |
+| `SCAN_RADIUS`, `SURVEY_ARTS` | How far the loop looks, and how many arts it lists on a dead end |
 | `RESPAWN_DELAY` | 25 minutes. The knob to turn if the script comes back to a vein that is still empty |
 
 ### The tool
@@ -159,6 +171,8 @@ mining its own, delete it from the re-export list and declare it below.
 | `PICKAXE_NAME` | `'pickaxe'`. Matched against the name; the graphic is learned from the one you start holding |
 | `SPARE_BAG_SERIAL` | Pin the bag the spares live in. Worth setting if they are in a bag inside another bag |
 | `DIG_TIMEOUT` | 8s. A swing plays its animation before the result arrives |
+| `DIG_TARGET_TIMEOUT`, `DIG_TARGET_POLL` | 4s and 100ms. How long to watch for the cursor before reading the swing as refused, and how often |
+| `DIG_PROMPT_TEXT` | **The sentence the shard opens the cursor with.** Waited on as the cursor itself, because `target.open` cannot be relied on — get this wrong and every swing reports `no target cursor` |
 | `EQUIP_ATTEMPTS`, `EQUIP_POLL`, `EQUIP_TIMEOUT` | Equip pacing, shared with lumberjacking |
 
 ### Smelting
@@ -167,6 +181,7 @@ mining its own, delete it from the re-export list and declare it below.
 | --- | --- |
 | `FIRE_BEETLE_GRAPHICS` | `0xa9` is the stock body. The search logs the name and body of whatever it finds |
 | `FIRE_BEETLE_SERIAL` | Pins one exactly and skips the search |
+| `PICK_BEETLE` | On by default: a cursor at startup to click your beetle, ESC to fall back to the search. A picked beetle is pinned |
 | `BEETLE_SCAN_RADIUS`, `SMELT_RANGE`, `MAX_BEETLE_STEPS` | How far to look, how close to stand, how long to spend walking there |
 | `MIN_SMELT_AMOUNT` | 2. Two ore make an ingot, so a stack of one cannot be smelted and the refusal is silent |
 | `SMELT_ATTEMPTS` | 3. Silent failures in a row before giving up on a hue. More than one, because a throttled or stale attempt also looks silent |
@@ -185,6 +200,21 @@ whether the character parks a tile or walks away.
 
 `UNSKILLED_TEXT` and `THROTTLED_TEXT` are checked by the smelt, which has no outcomes of its own.
 
+### Trouble
+
+| Setting | Default | What it is for |
+| --- | --- | --- |
+| `WATCH_FOR_TROUBLE` | true | The whole feature. Off, and none of the rest is read |
+| `HOSTILE_NOTORIETY` | Gray, Criminal, Enemy, Murderer | Which healthbar colours count. Innocent is out, or every blue NPC in the world is trouble |
+| `THREAT_RANGE` | 12 | How close it has to be. `selectEntity` takes no range of its own, so this is the only filter |
+| `GUARD_CALL` | `'guards'` | What gets said |
+| `GUARD_CALLS` | 3 | Calls per episode, `0` for no cap. The count resets the first cycle that sees nothing |
+| `GUARD_CALL_DELAY` | 10s | The gap between them |
+| `NO_GUARDS_TEXT` | | The shard saying the call is pointless here. One match and the run stops calling for good |
+| `ATTACK_TEXT` | empty | Journal wordings that mean you are being attacked. Fill it in from your shard's journal |
+| `GUARD_ZONE_TEXT`, `UNGUARDED_TEXT` | | The region boundary wordings, read only to say what protection you look to have |
+| `GUARD_REPLY_WAIT` | 800ms | How long to watch for `NO_GUARDS_TEXT` after a call |
+
 ### Stopping
 
 | Setting | Default | What it is for |
@@ -202,7 +232,7 @@ whether the character parks a tile or walks away.
 
 **`no ore in range` while standing on a mountain.** The likeliest failure: `ORE_TILE_GRAPHICS` does
 not match this shard's tile numbering. The stop prints the commonest arts under your feet with
-`MATCHES` against the ones the config accepts. Run `dist/mine-probe.js` for the full list.
+`MATCHES` against the ones the config accepts.
 
 **Five spots in a row with nothing to harvest.** Same cause, caught earlier.
 
@@ -211,11 +241,16 @@ the journal after a swing and correct `OUTCOME_TEXT`.
 
 **`no target cursor (n/20), backing off`.** The shard declined to start the swing and said nothing
 about why. A few is ordinary; a run of them with a pickaxe in hand means the shard is refusing in a
-wording `THROTTLED_TEXT` does not have. The line before them names what is in the hand and whether a
-cursor was up. Add the wording and it becomes a throttle, which costs the run nothing.
+wording `THROTTLED_TEXT` does not have. Add the wording and it becomes a throttle, which costs the
+run nothing.
+
+Since the swing waits on `DIG_PROMPT_TEXT` as well as on `target.open`, this now means the shard
+asked for neither. If you can see *Where do you wish to dig?* on screen while the log says this, the
+shard words its prompt differently — correct `DIG_PROMPT_TEXT` and it is fixed.
 
 **`overweight … and smelting freed nothing`.** No beetle in range, a beetle that is not yours, or
-every hue written off. The run clears the write-offs and tries once more before giving up.
+every hue written off. The run clears the write-offs and tries once more before giving up — once,
+not once per cycle, or a smelt that can never land spins in `smelting` until the stall watchdog.
 
 **`could not get off the mount`.** Double-clicking yourself is not how this shard dismounts.
 
@@ -239,9 +274,19 @@ Written against UOAlive.
   pick the ore. That sidesteps every way an explicit `target.terrain` can be wrong — land versus
   static, and which of the several arts stacked on one tile carries the ore. `MINE_RANGE` is
   therefore the distance at which walking stops, not a range the shard enforces.
+- **`target.open` is not reliable, and `target.wait`/`waitTargetSelf` are built on it.** A measured
+  swing had the shard's prompt in the journal at 164 ms and `target.open` false for the whole six
+  seconds after it. So the swing waits on `DIG_PROMPT_TEXT` *or* `target.open`, whichever comes, and
+  then calls `target.self()` — which the client sends regardless of what it thinks its state is.
+- **`target.cancel()` shortly before a swing costs that swing its cursor.** Same character, same
+  tile: cancelled 300 ms before, `target.open` never went true and nothing was dug; after a two
+  second gap it opened at 222 ms and dug. So the cancel is now conditional on a cursor being open.
+- **The vein scan is `(2 * SCAN_RADIUS + 1)` squared `getTerrainList` calls** — 625 at the shipped
+  radius — and it used to run immediately before every swing. `scanForVein` now keeps the tile it is
+  working and re-reads that one tile, falling back to a `MINE_RANGE` box and only then the full one.
 - **Trees can be identified by name and ore cannot.** `client.getStatic` reads the *static* tiledata;
   a mountainside is a land tile, and `client.getTile` answers with flags and no name. Hence a graphic
-  table rather than a name match, and hence the probe.
+  table rather than a name match.
 - **Land and static tiledata are numbered in separate tables**, so 1339 is a mountain band as land
   and a cave floor as a static. Everything that keys on an art keys on the kind too — the runtime ban
   is `land:231` rather than `231`, or one ban would hide an unrelated art.
@@ -278,7 +323,8 @@ Written against UOAlive.
 - **A hue written off after three silent passes is worth reopening.** A beetle briefly out of range,
   a run of throttled attempts and a stack that was too small all look identical to an ore that cannot
   be worked. `retryUnsmeltable()` clears the write-offs for one more go, and returns false once there
-  is nothing left to reconsider.
+  is nothing left to reconsider — and once a retry has already been spent with nothing converting
+  since, because `smeltAll` writes the same hues off again on the next cycle.
 - **A condition is checked where it is decided, not again where it is acted on.** A live run smelted
   nothing because the loop decided it was overweight and then called a helper that asked `tooHeavy()`
   a second time, by which point the answer had changed.
@@ -292,10 +338,16 @@ Written against UOAlive.
   tile within `MINE_RANGE` at once, which is what makes the character walk away. Before it had a
   bucket the character stood still, swung five times for the same sentence, and the run stopped.
 - **A run of empty spots is what a wrong `ORE_TILE_GRAPHICS` looks like from the outside**, and a
-  dead end has to say what it saw. [`survey.ts`](survey.ts) is that listing, shared with the probe.
+  dead end has to say what it saw. [`survey.ts`](survey.ts) is that listing.
 
 ### Known unverified
 
+- **Everything the guard call rests on.** Whether `guards` is the phrase this shard takes, whether
+  guards answer monsters here at all, and the wordings in `NO_GUARDS_TEXT`, `GUARD_ZONE_TEXT` and
+  `UNGUARDED_TEXT` — all stock RunUO guesses.
+- **`HOSTILE_NOTORIETY`**: whether this shard's encounter spawns come up gray or red.
+- Whether `client.selectEntity` disturbs the client's current target, and so whether the watch can
+  cost a swing its cursor the way `target.cancel()` was found to.
 - **`ORE_TILE_GRAPHICS`**, which is the one that matters. Copied from the stock RunUO mountain and
   cave tables, unconfirmed against UOAlive.
 - `OUTCOME_TEXT`, on the same footing. `empty` matters most: it is what parks a vein for

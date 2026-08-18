@@ -23,6 +23,10 @@ export const createIdleWait = (options: {
   pollMs: number;
   logEveryMs: number;
   stopReason: () => string | undefined;
+
+  // Standing still for a quarter of an hour is where this earns most
+  watch?: () => void;
+
   onDone: () => void;
 }) => {
   return (until: number): void => {
@@ -39,6 +43,8 @@ export const createIdleWait = (options: {
     for (let slice = 0; slice < slices && now() < until; slice++) {
       sleep(options.pollMs);
       since += options.pollMs;
+
+      options.watch?.();
 
       // Left to the loop to report and act on, so the wait has one way out and the run has one
       if (options.stopReason()) {

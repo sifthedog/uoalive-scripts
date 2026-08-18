@@ -4,7 +4,7 @@
   var hex = (value) => `0x${(value >>> 0).toString(16)}`;
   var distanceTo = (spot) => Math.max(Math.abs(spot.x - player.x), Math.abs(spot.y - player.y));
   var isMobile = (entity) => entity._tag === "Mobile";
-  var nameOf = (entity) => entity.name ?? hex(entity.serial);
+  var nameOf = (entity) => entity.name || hex(entity.serial);
   var describeItem = (item) => item ? `${hex(item.graphic)} '${item.name ?? ""}'` : "empty";
   var approach = (serial, options) => {
     for (let taken = 0; taken < options.maxSteps; taken++) {
@@ -44,6 +44,7 @@
       for (let slice = 0; slice < slices && now() < until; slice++) {
         sleep(options.pollMs);
         since += options.pollMs;
+        options.watch?.();
         if (options.stopReason()) {
           return;
         }
@@ -57,7 +58,7 @@
   };
   var createStallWatch = (options) => {
     let since = 0;
-    let reason2;
+    let reason;
     return {
       endCycle: (phase, cycle, tally) => {
         options.heartbeat.beat(phase, cycle, tally);
@@ -66,13 +67,265 @@
           log(`${options.prefix}: ${options.warnAt} ${options.without}, last was '${phase}'`);
         }
         if (since >= options.stopAt) {
-          reason2 = `no progress in ${options.stopAt} cycles, last was '${phase}'`;
+          reason = `no progress in ${options.stopAt} cycles, last was '${phase}'`;
         }
       },
       progressed: () => {
         since = 0;
       },
-      reason: () => reason2
+      reason: () => reason
+    };
+  };
+
+  // src/lib/harvest.ts
+  var runHarvest = ({
+    prefix,
+    landed,
+    toolName,
+    stopReason: stopReason2,
+    watch: watch2,
+    equipTool,
+    ready,
+    relieve,
+    approach: approach2,
+    harvest,
+    onLanded,
+    handle: handle2,
+    progress,
+    finish,
+    waitOutSave: waitOutSave2,
+    stall,
+    timings
+  }) => {
+    let tally = 0;
+    let unknown = 0;
+    let stop;
+    let reported2 = 0;
+    let throttled = 0;
+    let noCursor = 0;
+    const endCycle = (phase, cycle) => {
+      stall.endCycle(phase, cycle, tally);
+      stop ?? (stop = stall.reason());
+    };
+    for (let cycle = 0; cycle < timings.maxCycles && !stop; cycle++) {
+      stop = stopReason2();
+      if (stop) {
+        break;
+      }
+      watch2?.();
+      stop = ready?.();
+      if (stop) {
+        break;
+      }
+      if (!equipTool()) {
+        stop = `no ${toolName}`;
+        break;
+      }
+      const relieved = relieve?.();
+      if (relieved) {
+        if ("stop" in relieved) {
+          stop = relieved.stop;
+          break;
+        }
+        endCycle(relieved.phase, cycle);
+        sleep(timings.stepDelay);
+        continue;
+      }
+      let target2;
+      if (approach2) {
+        const found = approach2();
+        if ("stop" in found) {
+          stop = found.stop;
+          break;
+        }
+        if ("waited" in found) {
+          continue;
+        }
+        if ("walked" in found) {
+          endCycle("walking", cycle);
+          continue;
+        }
+        target2 = found.target;
+      }
+      const outcome = harvest(target2);
+      if (outcome === landed) {
+        tally++;
+        unknown = 0;
+        throttled = 0;
+        stall.progressed();
+        onLanded?.();
+      } else {
+        switch (outcome) {
+          case "wornOut":
+            log(`${prefix}: ${toolName} worn out, swapping`);
+            unknown = 0;
+            break;
+          // The counters are reset rather than left alone, because whatever they had accumulated was
+          // measured against a server that was not answering. The stall watchdog goes with them: a
+          // shard that saves often would otherwise walk a run to its stop a save at a time.
+          case "saving":
+            waitOutSave2();
+            unknown = 0;
+            throttled = 0;
+            stall.progressed();
+            break;
+          case "throttled":
+            throttled++;
+            unknown = 0;
+            log(`${prefix}: shard says wait (${throttled}/${timings.maxThrottled}), backing off`);
+            sleep(backoffFor(throttled, timings.throttleBackoff, timings.throttleBackoffMax));
+            if (throttled >= timings.maxThrottled) {
+              stop = "the shard kept refusing the swing";
+            }
+            break;
+          // With a tool demonstrably in hand this is the shard declining to start the swing, which on
+          // a live run was a third of them. The swing has already looked for a reason, so this is a
+          // refusal with nothing said about it - backed off like one, on a budget of its own.
+          case "noCursor":
+            noCursor++;
+            log(`${prefix}: no target cursor (${noCursor}/${timings.maxNoCursor}), backing off`);
+            sleep(backoffFor(noCursor, timings.throttleBackoff, timings.throttleBackoffMax));
+            if (noCursor >= timings.maxNoCursor) {
+              stop = "the shard never opened a target cursor";
+            }
+            break;
+          default: {
+            const handled = outcome === void 0 ? void 0 : handle2(outcome, target2);
+            if (handled) {
+              unknown = 0;
+              stop ?? (stop = handled.stop);
+            } else {
+              unknown++;
+              log(
+                `${prefix}: unreadable outcome (${unknown}/${timings.maxUnknown}), check OUTCOME_TEXT`
+              );
+            }
+          }
+        }
+      }
+      if (outcome !== "noCursor") {
+        noCursor = 0;
+      }
+      if (unknown >= timings.maxUnknown) {
+        stop = `${timings.maxUnknown} unreadable outcomes in a row`;
+        break;
+      }
+      if (tally >= reported2 + timings.logEvery) {
+        reported2 = tally;
+        log(`${prefix}: ${progress(tally)}, ${player.weight}/${player.weightMax}`);
+      }
+      endCycle(outcome ?? "unknown", cycle);
+      sleep(timings.stepDelay);
+    }
+    const reason = stop ?? `hit the ${timings.maxCycles} cycle backstop`;
+    finish?.(tally, reason);
+    log(`${prefix}: stopping - ${reason}`);
+    exit(`${prefix}: ${reason}`);
+  };
+
+  // src/lib/tiles.ts
+  var tileKey = (tile) => `${tile.x},${tile.y},${tile.z},${tile.graphic}`;
+  var minutes2 = (ms) => Math.max(1, Math.round(ms / 6e4));
+  var createTileStore = (options) => {
+    const block = (tile, until) => options.blocked().set(tileKey(tile), until);
+    return {
+      block,
+      blockedUntil: (tile) => options.blocked().get(tileKey(tile)),
+      markDepleted: (tile) => {
+        block(tile, now() + options.depletedFor);
+        log(
+          `${options.label}: ${tile.x},${tile.y} ${options.depleted}, back in ${minutes2(options.depletedFor)}m`
+        );
+      },
+      markUnreachable: (tile) => {
+        block(tile, now() + options.unreachableFor);
+        log(
+          `${options.label}: ${tile.x},${tile.y} could not be walked to, retrying in ${minutes2(options.unreachableFor)}m`
+        );
+      },
+      markUnusable: (tile, reason) => {
+        block(tile, Infinity);
+        log(`${options.label}: ${tile.x},${tile.y} ${reason}, ignoring it from here on`);
+      }
+    };
+  };
+  var createScan = (options) => {
+    const reported2 = /* @__PURE__ */ new Set();
+    return (radius = options.radius) => {
+      const blocked = options.blocked();
+      const time = now();
+      let best;
+      let readyAt;
+      for (let dx = -radius; dx <= radius; dx++) {
+        for (let dy = -radius; dy <= radius; dy++) {
+          for (const tile of client.getTerrainList(player.x + dx, player.y + dy) ?? []) {
+            if (options.skipLand && tile.isLand) {
+              continue;
+            }
+            if (!options.matches(tile.graphic, tile.isLand)) {
+              continue;
+            }
+            if (options.reachable && !options.reachable(tile.x, tile.y)) {
+              continue;
+            }
+            const candidate = {
+              x: tile.x,
+              y: tile.y,
+              z: tile.z,
+              graphic: tile.graphic,
+              isLand: tile.isLand,
+              distance: distanceTo(tile)
+            };
+            const key = tileKey(candidate);
+            const until = blocked.get(key);
+            if (until !== void 0) {
+              if (time < until) {
+                if (Number.isFinite(until) && (readyAt === void 0 || until < readyAt)) {
+                  readyAt = until;
+                }
+                continue;
+              }
+              blocked.delete(key);
+            }
+            if (!best || candidate.distance < best.distance) {
+              best = candidate;
+            }
+          }
+        }
+      }
+      if (best && !reported2.has(best.graphic)) {
+        log(`${options.label}: matching ${hex(best.graphic)} ${options.describe(best)}`);
+        reported2.add(best.graphic);
+      }
+      return { found: best, readyAt };
+    };
+  };
+  var createApproach = (options) => {
+    let walkingTo;
+    let steps = 0;
+    return () => {
+      const { found, readyAt } = options.scan();
+      if (!found) {
+        if (readyAt === void 0) {
+          return { stop: options.nothingFound() };
+        }
+        options.idleUntil(readyAt);
+        return { waited: true };
+      }
+      if (found.distance <= options.range) {
+        walkingTo = void 0;
+        return { target: found };
+      }
+      const key = `${found.x},${found.y}`;
+      if (key !== walkingTo) {
+        walkingTo = key;
+        steps = 0;
+      }
+      if (!options.step(found) || ++steps > options.maxSteps) {
+        options.markUnreachable(found);
+        walkingTo = void 0;
+      }
+      return { walked: true };
     };
   };
 
@@ -117,6 +370,23 @@
     "You lack the required skill",
     "You do not have enough skill"
   ];
+  var HOSTILE_NOTORIETY = 16 | 8 | 2 | 4;
+  var THREAT_RANGE = 12;
+  var WATCH_FOR_TROUBLE = true;
+  var GUARD_CALL = "guards";
+  var GUARD_CALLS = 3;
+  var GUARD_CALL_DELAY = 1e4;
+  var GUARD_REPLY_WAIT = 800;
+  var NO_GUARDS_TEXT = [
+    "The guards can not be called here",
+    "The guards cannot be called here",
+    "Guards can not be called here",
+    "Guards cannot be called here",
+    "There are no guards here"
+  ];
+  var ATTACK_TEXT = [];
+  var GUARD_ZONE_TEXT = ["under the protection of the town guards", "now under guard"];
+  var UNGUARDED_TEXT = ["left the protection of the town guards", "no longer under guard"];
 
   // src/lib/arts.ts
   var INGOT_GRAPHICS = /* @__PURE__ */ new Set([7151, 7152, 7153, 7154]);
@@ -136,6 +406,9 @@
   var MINE_RANGE = 2;
   var RESPAWN_DELAY = 25 * 60 * 1e3;
   var DIG_TIMEOUT = 8e3;
+  var DIG_TARGET_TIMEOUT = 4e3;
+  var DIG_TARGET_POLL = 100;
+  var DIG_PROMPT_TEXT = ["Where do you wish to dig"];
   var ORE_GRAPHICS = /* @__PURE__ */ new Set([6583, 6586, 6585, 6584]);
   var ORE_NAME = /\bore\b/i;
   var COMBINE_DELAY = 700;
@@ -143,6 +416,7 @@
   var ORE_SETTLE_POLL = 150;
   var FIRE_BEETLE_GRAPHICS = /* @__PURE__ */ new Set([169]);
   var FIRE_BEETLE_SERIAL = void 0;
+  var PICK_BEETLE = true;
   var BEETLE_SCAN_RADIUS = 18;
   var SMELT_RANGE = 2;
   var MAX_BEETLE_STEPS = 24;
@@ -401,42 +675,56 @@
 
   // src/mining/dig.ts
   var { all: ALL_OUTCOME_TEXT, outcomeFor } = outcomeVocabulary(OUTCOME_TEXT);
-  var silentOutcome = (serial, oreBefore) => {
+  var silentOutcome = (serial, oreBefore2) => {
     if (serial !== void 0 && !client.findObject(serial)) {
       return "wornOut";
     }
-    if (oreTotal() > oreBefore) {
+    if (oreTotal() > oreBefore2) {
       return "dug";
     }
     return "unknown";
   };
-  var refusedOutcome = (serial, oreBefore, cursorCameLate) => {
+  var refusedOutcome = (serial, oreBefore2) => {
     const matched = journal.waitForTextAny(ALL_OUTCOME_TEXT, void 0, NO_CURSOR_READ);
     if (matched) {
       return outcomeFor(matched);
     }
-    const silent = silentOutcome(serial, oreBefore);
+    const silent = silentOutcome(serial, oreBefore2);
     if (silent !== "unknown") {
       return silent;
     }
     log(
-      `digOnce: no target cursor - hand ${describeItem(player.equippedItems.oneHanded)}, cursor ${cursorCameLate ? "came late" : "never opened"}`
+      `digOnce: no target cursor - hand ${describeItem(player.equippedItems.oneHanded)}, and the shard never asked where to dig`
     );
     return "noCursor";
   };
+  var cursorOpened = () => {
+    for (let waited = 0; waited < DIG_TARGET_TIMEOUT; waited += DIG_TARGET_POLL) {
+      if (target.open || DIG_PROMPT_TEXT.some((text) => journal.containsText(text))) {
+        return true;
+      }
+      sleep(DIG_TARGET_POLL);
+    }
+    return false;
+  };
   var digOnce = (serial) => {
-    target.cancel();
-    const oreBefore = oreTotal();
+    target.clearQueue();
+    if (target.open) {
+      target.cancel();
+    }
+    const oreBefore2 = oreTotal();
     journal.clear();
     player.useItemInHand();
-    if (!target.waitTargetSelf(TARGET_TIMEOUT)) {
-      const cursorCameLate = target.open;
-      target.cancel();
-      return refusedOutcome(serial, oreBefore, cursorCameLate);
+    if (!cursorOpened()) {
+      return refusedOutcome(serial, oreBefore2);
     }
+    target.self();
     const matched = journal.waitForTextAny(ALL_OUTCOME_TEXT, void 0, DIG_TIMEOUT);
-    return matched ? outcomeFor(matched) : silentOutcome(serial, oreBefore);
+    return matched ? outcomeFor(matched) : silentOutcome(serial, oreBefore2);
   };
+
+  // src/lib/vitals.ts
+  var hitsCeiling = () => player.maxHits > 0 ? player.maxHits : void 0;
 
   // src/lib/guards.ts
   var dead = () => player.isDead ? "you are dead" : void 0;
@@ -446,9 +734,9 @@
   };
   var firstReason = (...guards) => {
     for (const guard of guards) {
-      const reason2 = guard();
-      if (reason2) {
-        return reason2;
+      const reason = guard();
+      if (reason) {
+        return reason;
       }
     }
     return void 0;
@@ -652,6 +940,7 @@
   var createConverter = (options) => {
     const writtenOff = /* @__PURE__ */ new Set();
     const misses = /* @__PURE__ */ new Map();
+    let progressed = true;
     const missed = (hue) => {
       const count = (misses.get(hue) ?? 0) + 1;
       misses.set(hue, count);
@@ -693,6 +982,7 @@
       const changes = waitForChange(before);
       if (changes.length > 0) {
         misses.delete(hue);
+        progressed = true;
         learnOutput(changes);
         return;
       }
@@ -735,9 +1025,10 @@
         return false;
       },
       retry: () => {
-        if (writtenOff.size === 0) {
+        if (writtenOff.size === 0 || !progressed) {
           return false;
         }
+        progressed = false;
         log(`${options.label}: giving ${writtenOff.size} hue(s) written off earlier another go`);
         writtenOff.clear();
         misses.clear();
@@ -784,15 +1075,39 @@
 
   // src/mining/smelt.ts
   var beetleSerial = FIRE_BEETLE_SERIAL;
+  var pinned = FIRE_BEETLE_SERIAL !== void 0;
   var reportedFound = false;
   var reportedMissing = false;
+  var pickBeetle = () => {
+    target.cancel();
+    log("smelt: target your fire beetle, ESC to let the script find it");
+    const serial = target.query()?.serial ?? 0;
+    if (!serial) {
+      target.cancel();
+      log("smelt: nothing picked, looking for one instead");
+      return void 0;
+    }
+    const picked = client.findObject(serial);
+    if (!picked || !isMobile(picked)) {
+      log(`smelt: ${hex(serial)} is not a mobile, looking for one instead`);
+      return void 0;
+    }
+    if (!FIRE_BEETLE_GRAPHICS.has(picked.graphic)) {
+      log(`smelt: ${hex(picked.graphic)} is not a body FIRE_BEETLE_GRAPHICS knows, using it anyway`);
+    }
+    beetleSerial = serial;
+    pinned = true;
+    reportedFound = true;
+    log(`smelt: using '${nameOf(picked)}' ${hex(picked.graphic)} as the forge`);
+    return picked;
+  };
   var findBeetle = () => {
     if (beetleSerial !== void 0) {
-      const pinned = client.findObject(beetleSerial);
-      if (pinned && isMobile(pinned)) {
-        return pinned;
+      const resolved = client.findObject(beetleSerial);
+      if (resolved && isMobile(resolved)) {
+        return resolved;
       }
-      if (FIRE_BEETLE_SERIAL !== void 0) {
+      if (pinned) {
         return void 0;
       }
       beetleSerial = void 0;
@@ -910,83 +1225,6 @@
   };
   var smeltAll = () => smeltAgainst(walkToBeetle);
 
-  // src/lib/tiles.ts
-  var tileKey = (tile) => `${tile.x},${tile.y},${tile.z},${tile.graphic}`;
-  var minutes2 = (ms) => Math.max(1, Math.round(ms / 6e4));
-  var createTileStore = (options) => {
-    const block = (tile, until) => options.blocked().set(tileKey(tile), until);
-    return {
-      block,
-      markDepleted: (tile) => {
-        block(tile, now() + options.depletedFor);
-        log(
-          `${options.label}: ${tile.x},${tile.y} ${options.depleted}, back in ${minutes2(options.depletedFor)}m`
-        );
-      },
-      markUnreachable: (tile) => {
-        block(tile, now() + options.unreachableFor);
-        log(
-          `${options.label}: ${tile.x},${tile.y} could not be walked to, retrying in ${minutes2(options.unreachableFor)}m`
-        );
-      },
-      markUnusable: (tile, reason2) => {
-        block(tile, Infinity);
-        log(`${options.label}: ${tile.x},${tile.y} ${reason2}, ignoring it from here on`);
-      }
-    };
-  };
-  var createScan = (options) => {
-    const reported3 = /* @__PURE__ */ new Set();
-    return () => {
-      const blocked = options.blocked();
-      const time = now();
-      let best;
-      let readyAt;
-      for (let dx = -options.radius; dx <= options.radius; dx++) {
-        for (let dy = -options.radius; dy <= options.radius; dy++) {
-          for (const tile of client.getTerrainList(player.x + dx, player.y + dy) ?? []) {
-            if (options.skipLand && tile.isLand) {
-              continue;
-            }
-            if (!options.matches(tile.graphic, tile.isLand)) {
-              continue;
-            }
-            if (options.reachable && !options.reachable(tile.x, tile.y)) {
-              continue;
-            }
-            const candidate = {
-              x: tile.x,
-              y: tile.y,
-              z: tile.z,
-              graphic: tile.graphic,
-              isLand: tile.isLand,
-              distance: distanceTo(tile)
-            };
-            const key = tileKey(candidate);
-            const until = blocked.get(key);
-            if (until !== void 0) {
-              if (time < until) {
-                if (Number.isFinite(until) && (readyAt === void 0 || until < readyAt)) {
-                  readyAt = until;
-                }
-                continue;
-              }
-              blocked.delete(key);
-            }
-            if (!best || candidate.distance < best.distance) {
-              best = candidate;
-            }
-          }
-        }
-      }
-      if (best && !reported3.has(best.graphic)) {
-        log(`${options.label}: matching ${hex(best.graphic)} ${options.describe(best)}`);
-        reported3.add(best.graphic);
-      }
-      return { found: best, readyAt };
-    };
-  };
-
   // src/lib/store.ts
   var scope = globalThis;
   var createStore = (options) => {
@@ -1099,8 +1337,33 @@
     // ordinary case rather than the exception
     describe: (vein) => `'${vein.isLand ? "land" : client.getStatic(vein.graphic)?.name ?? "?"}'`
   });
+  var current;
+  var stillOre = (vein) => {
+    const until = store2.blockedUntil(vein);
+    if (until !== void 0 && now() < until) {
+      return void 0;
+    }
+    for (const tile of client.getTerrainList(vein.x, vein.y) ?? []) {
+      if (tile.z === vein.z && tile.graphic === vein.graphic && tile.isLand === vein.isLand) {
+        return isOre(tile.graphic, tile.isLand) ? { ...vein, distance: distanceTo(vein) } : void 0;
+      }
+    }
+    return void 0;
+  };
   var scanForVein = () => {
+    if (current) {
+      current = stillOre(current);
+      if (current) {
+        return { vein: current };
+      }
+    }
+    const near = scan(MINE_RANGE);
+    if (near.found) {
+      current = near.found;
+      return { vein: current };
+    }
     const { found, readyAt } = scan();
+    current = found;
     return { vein: found, respawnsAt: readyAt };
   };
 
@@ -1141,19 +1404,153 @@
       log(`survey: ${describeArt(art)}`);
     }
     if (found.length > limit) {
-      log(`survey: ${found.length - limit} rarer arts not shown, run dist/mine-probe.js for all`);
+      log(`survey: ${found.length - limit} rarer arts not shown`);
     }
     return found;
   };
 
+  // src/lib/threat.ts
+  var NOTORIETY = [
+    "unknown",
+    "innocent",
+    "ally",
+    "gray",
+    "criminal",
+    "enemy",
+    "murderer",
+    "invulnerable"
+  ];
+  var dropped = (was, is) => was > 0 && is > 0 && is < was;
+  var createThreatWatch = (options) => {
+    let lastHits = 0;
+    let lastCompanionHits = 0;
+    let lastCall = 0;
+    let calls = 0;
+    let episode = false;
+    let noGuards = false;
+    let saidProtection = false;
+    let zone;
+    const nearest = (mask, type) => {
+      const found = client.selectEntity(mask, SearchEntityRangeOptions.Nearest, type, false);
+      if (!found || found.serial === player.serial || found.isDead) {
+        return void 0;
+      }
+      return distanceTo(found) <= options.range ? found : void 0;
+    };
+    const hostileNear = () => {
+      const found = nearest(options.hostile, SearchEntityTypeOptions.Any);
+      return found && !found.isRenamable ? found : void 0;
+    };
+    const readZone = () => {
+      if (options.guardedText.some((text) => journal.containsText(text))) {
+        zone = "guarded";
+      } else if (options.unguardedText.some((text) => journal.containsText(text))) {
+        zone = "unguarded";
+      }
+    };
+    const protection = () => {
+      if (zone) {
+        return `the journal says ${zone}`;
+      }
+      const yellow = nearest(SearchEntityOptions.Invulnerable, SearchEntityTypeOptions.Human);
+      return yellow ? `an invulnerable '${nameOf(yellow)}' in sight, so probably a town` : "nothing in sight to say either way";
+    };
+    const callGuards = () => {
+      if (noGuards || options.calls > 0 && calls >= options.calls) {
+        return;
+      }
+      const at = now();
+      if (calls > 0 && at - lastCall < options.callDelay) {
+        return;
+      }
+      lastCall = at;
+      calls++;
+      if (!saidProtection) {
+        saidProtection = true;
+        log(`${options.prefix}: guard protection - ${protection()}`);
+      }
+      log(
+        `${options.prefix}: calling the guards (${calls}${options.calls > 0 ? `/${options.calls}` : ""})`
+      );
+      player.say(options.call);
+      if (options.noGuardsText.length === 0) {
+        return;
+      }
+      const refused = journal.waitForTextAny(options.noGuardsText, void 0, options.replyWait);
+      if (refused) {
+        noGuards = true;
+        log(`${options.prefix}: the shard says '${refused}' - not calling again this run`);
+      }
+    };
+    const describe = (hostile, friend) => {
+      const who = hostile ? `'${nameOf(hostile)}' ${hex(hostile.graphic)} ${distanceTo(hostile)} tiles off (${NOTORIETY[hostile.notoriety] ?? hostile.notoriety})` : "nothing in sight";
+      const mine = `you ${player.hits}/${hitsCeiling() ?? "?"}`;
+      const theirs = friend ? `, ${options.companionName} ${friend.hits}/${friend.maxHits || "?"}` : "";
+      return `${who}, ${mine}${theirs}`;
+    };
+    return {
+      check: () => {
+        readZone();
+        const hits = player.hits;
+        const hurt = dropped(lastHits, hits);
+        if (hits > 0) {
+          lastHits = hits;
+        }
+        const friend = options.companion?.();
+        const friendHits = friend?.hits ?? 0;
+        const friendHurt = dropped(lastCompanionHits, friendHits);
+        if (friendHits > 0) {
+          lastCompanionHits = friendHits;
+        }
+        const said = options.attackText.some((text) => journal.containsText(text));
+        const hostile = hostileNear();
+        if (!hostile && !hurt && !friendHurt && !said) {
+          if (episode) {
+            episode = false;
+            calls = 0;
+            log(`${options.prefix}: clear`);
+          }
+          return;
+        }
+        if (!episode) {
+          episode = true;
+          log(`${options.prefix}: trouble - ${describe(hostile, friend)}`);
+        }
+        callGuards();
+      }
+    };
+  };
+
+  // src/mining/threat.ts
+  var watchForTrouble = (prefix) => WATCH_FOR_TROUBLE ? createThreatWatch({
+    prefix,
+    range: THREAT_RANGE,
+    hostile: HOSTILE_NOTORIETY,
+    companion: findBeetle,
+    companionName: "beetle",
+    call: GUARD_CALL,
+    calls: GUARD_CALLS,
+    callDelay: GUARD_CALL_DELAY,
+    replyWait: GUARD_REPLY_WAIT,
+    noGuardsText: NO_GUARDS_TEXT,
+    attackText: ATTACK_TEXT,
+    guardedText: GUARD_ZONE_TEXT,
+    unguardedText: UNGUARDED_TEXT
+  }).check : void 0;
+
   // src/mining/index.ts
   rememberPickaxe(player.equippedItems.oneHanded);
+  if (PICK_BEETLE) {
+    pickBeetle();
+  }
+  var watch = watchForTrouble("mining");
   var idleUntil = createIdleWait({
     prefix: "mining",
     waitingFor: "everything in reach is worked out",
     pollMs: IDLE_POLL,
     logEveryMs: IDLE_LOG_EVERY,
     stopReason,
+    watch,
     onDone: resetBeat
   });
   var tooHeavy = () => overweight();
@@ -1165,107 +1562,42 @@
   log(
     `mining: mounted ${player.equippedItems.mount ? "yes" : "no"}, hand ${describeItem(player.equippedItems.oneHanded)}, weight ${player.weight}/${player.weightMax}`
   );
-  var mined = 0;
-  var unknown = 0;
-  var stop;
-  var reported2 = 0;
-  var throttled = 0;
-  var noCursor = 0;
   var barren = 0;
-  var walkingTo;
-  var steps = 0;
-  var stall = createStallWatch({
-    prefix: "mining",
-    without: "cycles without a swing landing",
-    warnAt: STALL_WARN,
-    stopAt: STALL_STOP,
-    heartbeat
-  });
-  var endCycle = (phase, cycle) => {
-    stall.endCycle(phase, cycle, mined);
-    stop ?? (stop = stall.reason());
+  var oreBefore = 0;
+  var smeltForRoom = () => {
+    if (!tooHeavy()) {
+      return void 0;
+    }
+    const before = oreTotal();
+    groupOres();
+    smeltAll();
+    if (oreTotal() < before) {
+      return { phase: "smelting" };
+    }
+    if (retryUnsmeltable()) {
+      return { phase: "smelting" };
+    }
+    return {
+      stop: `overweight (${player.weight}/${player.weightMax}) with ${oreTotal()} ore left, and smelting freed nothing`
+    };
   };
-  for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
-    stop = stopReason();
-    if (stop) {
-      break;
-    }
-    if (!dismount()) {
-      stop = "could not get off the mount";
-      break;
-    }
-    if (!equipPickaxe()) {
-      stop = "no pickaxe";
-      break;
-    }
-    if (tooHeavy()) {
-      const oreBefore2 = oreTotal();
-      groupOres();
-      smeltAll();
-      if (oreTotal() < oreBefore2) {
-        endCycle("smelting", cycle);
-        sleep(STEP_DELAY);
-        continue;
-      }
-      if (retryUnsmeltable()) {
-        endCycle("smelting", cycle);
-        sleep(STEP_DELAY);
-        continue;
-      }
-      stop = `overweight (${player.weight}/${player.weightMax}) with ${oreTotal()} ore left, and smelting freed nothing`;
-      break;
-    }
-    const { vein, respawnsAt } = scanForVein();
+  var handle = (outcome, vein) => {
     if (!vein) {
-      if (respawnsAt === void 0) {
-        log("mining: nothing matched, here is what is actually on the ground");
-        reportTerrain(SCAN_RADIUS, SURVEY_ARTS);
-        stop = "no ore in range";
-        break;
-      }
-      idleUntil(respawnsAt);
-      continue;
+      return void 0;
     }
-    if (vein.distance > MINE_RANGE) {
-      const key = `${vein.x},${vein.y}`;
-      if (key !== walkingTo) {
-        walkingTo = key;
-        steps = 0;
-      }
-      if (!stepToward(vein) || ++steps > MAX_STEPS) {
-        markUnreachable(vein);
-        walkingTo = void 0;
-      }
-      endCycle("walking", cycle);
-      continue;
-    }
-    walkingTo = void 0;
-    const oreBefore = oreTotal();
-    const outcome = digOnce(pickaxeSerial());
     switch (outcome) {
-      case "dug":
-        mined++;
-        unknown = 0;
-        throttled = 0;
-        barren = 0;
-        stall.progressed();
-        waitForOre(oreBefore);
-        groupOres();
-        break;
       // Worked out, not dead: markDepleted times it out and the scan picks it up again in
       // RESPAWN_DELAY.
       case "empty":
         markDepleted(vein);
-        unknown = 0;
         groupAndSmelt();
-        break;
+        return {};
       // The shard answering about where you stand rather than about a tile. Everything in reach goes
       // on the respawn cooldown together so the loop walks off; parking only the vein it happened to
       // pick left the character swinging at the spot the shard had just written off, which is how a
       // run ended before this had a bucket of its own.
       case "nothingNearby":
         markAreaDepleted(MINE_RANGE);
-        unknown = 0;
         if (++barren === NOTHING_NEARBY_HINT) {
           log(
             `mining: ${NOTHING_NEARBY_HINT} spots in a row had nothing to harvest - ORE_TILE_GRAPHICS is probably matching ground that carries no ore`
@@ -1273,90 +1605,100 @@
           reportTerrain(MINE_RANGE, SURVEY_ARTS);
         }
         groupAndSmelt();
-        break;
+        return {};
       // A wrong band in ORE_TILE_GRAPHICS is a whole stretch of mountain, so ban the graphic rather
       // than walking to its copies one at a time
       case "notOre":
         markNotMineable(vein);
         markUnusable(vein, "cannot be mined");
-        unknown = 0;
-        break;
+        return {};
       // Already inside MINE_RANGE, so the shard disagrees about the range rather than the walk having
       // fallen short
       case "tooFar":
         markUnusable(vein, `is out of reach at ${vein.distance} tiles`);
-        unknown = 0;
-        break;
+        return {};
       // Line of sight: walking closer would not help and neither would waiting
       case "notSeen":
         markUnusable(vein, "is not in line of sight");
-        unknown = 0;
-        break;
+        return {};
       // The ore this swing produced was destroyed rather than dropped, so swinging again destroys
       // more. A full pack is a container at its item cap, so consolidating is the fix: forty piles of
       // one become one pile of forty. If weight is the real problem, the next cycle smelts.
       case "packFull":
         log("mining: pack is full, consolidating before the next swing");
         groupOres();
-        unknown = 0;
-        break;
-      case "wornOut":
-        log("mining: pickaxe worn out, swapping");
-        unknown = 0;
-        break;
-      // The counters are reset rather than left alone, because whatever they had accumulated was
-      // measured against a server that was not answering. The stall watchdog goes with them: a shard
-      // that saves often would otherwise walk a run to STALL_STOP a save at a time.
-      case "saving":
-        waitOutSave();
-        unknown = 0;
-        throttled = 0;
-        stall.progressed();
-        break;
-      case "throttled":
-        throttled++;
-        unknown = 0;
-        log(`mining: shard says wait (${throttled}/${MAX_THROTTLED}), backing off`);
-        sleep(backoffFor(throttled, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX));
-        if (throttled >= MAX_THROTTLED) {
-          stop = "the shard kept refusing the swing";
-        }
-        break;
-      // With a pickaxe demonstrably in hand this is the shard declining to start the swing, which on a
-      // live run was a third of them. digOnce has already looked for a reason, so this is a refusal
-      // with nothing said about it - backed off like one, on a budget of its own.
-      case "noCursor":
-        noCursor++;
-        log(`mining: no target cursor (${noCursor}/${MAX_NO_CURSOR}), backing off`);
-        sleep(backoffFor(noCursor, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX));
-        if (noCursor >= MAX_NO_CURSOR) {
-          stop = "the shard never opened a target cursor";
-        }
-        break;
+        return {};
       default:
-        unknown++;
-        log(`mining: unreadable outcome (${unknown}/${MAX_UNKNOWN}), check OUTCOME_TEXT`);
+        return void 0;
     }
-    if (outcome !== "noCursor") {
-      noCursor = 0;
+  };
+  runHarvest({
+    prefix: "mining",
+    landed: "dug",
+    toolName: "pickaxe",
+    stopReason,
+    watch,
+    equipTool: equipPickaxe,
+    ready: () => dismount() ? void 0 : "could not get off the mount",
+    relieve: smeltForRoom,
+    waitOutSave,
+    approach: createApproach({
+      // Renamed rather than shared: 'vein' and 'respawnsAt' are what this folder's tests read
+      scan: () => {
+        const { vein, respawnsAt } = scanForVein();
+        return { found: vein, readyAt: respawnsAt };
+      },
+      range: MINE_RANGE,
+      maxSteps: MAX_STEPS,
+      step: stepToward,
+      markUnreachable,
+      idleUntil,
+      nothingFound: () => {
+        log("mining: nothing matched, here is what is actually on the ground");
+        reportTerrain(SCAN_RADIUS, SURVEY_ARTS);
+        return "no ore in range";
+      }
+    }),
+    harvest: () => {
+      oreBefore = oreTotal();
+      return digOnce(pickaxeSerial());
+    },
+    // Ore arrives as a new pile rather than joining the one already there. Grouping every swing keeps
+    // the pack at one pile per hue, so the item cap is never approached by pile count alone - packFull
+    // destroys the ore of the swing that hits it - and nothing sits below MIN_SMELT_AMOUNT when the
+    // smelt comes.
+    onLanded: () => {
+      barren = 0;
+      waitForOre(oreBefore);
+      groupOres();
+    },
+    handle,
+    progress: (mined) => `${mined} swings, ${oreTotal()} ore`,
+    // Smelted only if the run is ending over the limit: what is in the pack is a few swings' worth,
+    // and a run that ended on a stop reason has usually ended because something is wrong.
+    finish: (mined) => {
+      groupOres();
+      if (tooHeavy()) {
+        smeltAll();
+      }
+      log(`mining: ${mined} swings, ${oreTotal()} ore still in the pack`);
+    },
+    stall: createStallWatch({
+      prefix: "mining",
+      without: "cycles without a swing landing",
+      warnAt: STALL_WARN,
+      stopAt: STALL_STOP,
+      heartbeat
+    }),
+    timings: {
+      stepDelay: STEP_DELAY,
+      maxCycles: MAX_CYCLES,
+      maxUnknown: MAX_UNKNOWN,
+      maxThrottled: MAX_THROTTLED,
+      maxNoCursor: MAX_NO_CURSOR,
+      logEvery: LOG_EVERY,
+      throttleBackoff: THROTTLE_BACKOFF,
+      throttleBackoffMax: THROTTLE_BACKOFF_MAX
     }
-    if (unknown >= MAX_UNKNOWN) {
-      stop = `${MAX_UNKNOWN} unreadable outcomes in a row`;
-      break;
-    }
-    if (mined >= reported2 + LOG_EVERY) {
-      reported2 = mined;
-      log(`mining: ${mined} swings, ${oreTotal()} ore, ${player.weight}/${player.weightMax}`);
-    }
-    endCycle(outcome ?? "unknown", cycle);
-    sleep(STEP_DELAY);
-  }
-  groupOres();
-  if (tooHeavy()) {
-    smeltAll();
-  }
-  var reason = stop ?? `hit the ${MAX_CYCLES} cycle backstop`;
-  log(`mining: ${mined} swings, ${oreTotal()} ore still in the pack`);
-  log(`mining: stopping - ${reason}`);
-  exit(`mining: ${reason}`);
+  });
 })();

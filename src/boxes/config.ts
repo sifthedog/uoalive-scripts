@@ -28,8 +28,8 @@ export const LOG_EVERY_KEY = 5;
 // Without it a shard that has stopped accepting keys costs DROP_TIMEOUT per key for the whole pile.
 export const MAX_STUCK = 3;
 
-// Pinned from what dist/key-probe.js proved on UOAlive: the offset is from where *you* stand rather
-// than from the item. 'auto' tries each in turn instead.
+// Pinned from what a live run proved on UOAlive: the offset is from where *you* stand rather than
+// from the item. 'auto' tries each in turn instead.
 export const DROP_METHOD: 'auto' | 'groundOffset' | 'groundOffsetStep' | 'worldSerial' =
   'groundOffset';
 
@@ -38,8 +38,6 @@ export const DROP_METHOD: 'auto' | 'groundOffset' | 'groundOffsetStep' | 'worldS
 export const DROP_TIMEOUT = 3000;
 export const DROP_POLL = 200;
 
-// Probe only: which attempt worked is read off the world rather than out of a return value
-export const PROBE_DELAY = 1200;
 
 // Matched alongside the name, and the first key found teaches the run the art for the rest
 export const KEY_GRAPHICS = new Set([0x100e, 0x100f, 0x1010, 0x1011, 0x1012, 0x1013]);

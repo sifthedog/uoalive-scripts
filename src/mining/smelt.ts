@@ -26,20 +26,67 @@ import { stepToward } from './walk.js';
 // Latched once found, but re-resolved through findObject every time it is used: the beetle is a
 // pet and it follows you, so its coordinates go stale within a cycle.
 let beetleSerial = FIRE_BEETLE_SERIAL;
+
+// A serial chosen rather than guessed - from config or from the cursor - is the law, so a moment out
+// of sight is not a reason to go looking for someone else's beetle.
+let pinned = FIRE_BEETLE_SERIAL !== undefined;
+
 let reportedFound = false;
 let reportedMissing = false;
 
+// `TargetInfo` is stubbed as `any` in types/classicuo.d.ts because the client ships no type for it.
+interface TargetInfo {
+  serial?: number;
+}
+
+// Empty for a cancelled cursor, which is the only sign the client gives that ESC was pressed.
+export const pickBeetle = (): Mobile | undefined => {
+  // A cursor left open by whatever ran last would swallow this query
+  target.cancel();
+  log('smelt: target your fire beetle, ESC to let the script find it');
+
+  const serial = (target.query() as TargetInfo | undefined)?.serial ?? 0;
+
+  if (!serial) {
+    // A cancelled pick can still leave the cursor up, and a live one would spend the double-clicks
+    // that follow as target clicks instead
+    target.cancel();
+    log('smelt: nothing picked, looking for one instead');
+    return undefined;
+  }
+
+  const picked = client.findObject(serial);
+
+  if (!picked || !isMobile(picked)) {
+    log(`smelt: ${hex(serial)} is not a mobile, looking for one instead`);
+    return undefined;
+  }
+
+  // Not a refusal: FIRE_BEETLE_GRAPHICS is a guess at this shard, so a body it has never heard of is
+  // worth reporting and then using.
+  if (!FIRE_BEETLE_GRAPHICS.has(picked.graphic)) {
+    log(`smelt: ${hex(picked.graphic)} is not a body FIRE_BEETLE_GRAPHICS knows, using it anyway`);
+  }
+
+  beetleSerial = serial;
+  pinned = true;
+  reportedFound = true;
+  log(`smelt: using '${nameOf(picked)}' ${hex(picked.graphic)} as the forge`);
+
+  return picked;
+};
+
 export const findBeetle = (): Mobile | undefined => {
   if (beetleSerial !== undefined) {
-    const pinned = client.findObject(beetleSerial);
+    const resolved = client.findObject(beetleSerial);
 
-    if (pinned && isMobile(pinned)) {
-      return pinned;
+    if (resolved && isMobile(resolved)) {
+      return resolved;
     }
 
     // Out of range, dead, or a hand-written serial that was never a mobile. Fall through to the
-    // search rather than giving up, unless the serial came from config and is meant to be the law.
-    if (FIRE_BEETLE_SERIAL !== undefined) {
+    // search rather than giving up, unless the serial was chosen and is meant to be the law.
+    if (pinned) {
       return undefined;
     }
     beetleSerial = undefined;

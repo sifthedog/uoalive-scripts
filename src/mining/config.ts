@@ -1,9 +1,16 @@
 // Re-exported rather than imported directly so this file stays the only one consumers import.
 export {
+  ATTACK_TEXT,
   EQUIP_ATTEMPTS,
   EQUIP_POLL,
   EQUIP_TIMEOUT,
+  GUARD_CALL,
+  GUARD_CALLS,
+  GUARD_CALL_DELAY,
+  GUARD_REPLY_WAIT,
+  GUARD_ZONE_TEXT,
   HEARTBEAT_EVERY,
+  HOSTILE_NOTORIETY,
   IDLE_LOG_EVERY,
   IDLE_POLL,
   LOG_EVERY,
@@ -13,6 +20,7 @@ export {
   MAX_THROTTLED,
   MAX_UNKNOWN,
   NO_CURSOR_READ,
+  NO_GUARDS_TEXT,
   PACK_LIMIT,
   SAVE_DONE_TEXT,
   SAVE_POLL,
@@ -23,11 +31,14 @@ export {
   STALL_WARN,
   STEP_DELAY,
   TARGET_TIMEOUT,
+  THREAT_RANGE,
   THROTTLED_TEXT,
   THROTTLE_BACKOFF,
   THROTTLE_BACKOFF_MAX,
+  UNGUARDED_TEXT,
   UNREACHABLE_DELAY,
   WALK_DELAY,
+  WATCH_FOR_TROUBLE,
 } from '../lib/timings.js';
 
 // Imported as well as re-exported: OUTCOME_TEXT aliases SAVING_TEXT into its own `saving` bucket,
@@ -47,8 +58,8 @@ export const SPARE_BAG_SERIAL: number | undefined = undefined;
 // A table because these cannot be identified by name: getStatic reads the *static* tiledata, and a
 // mountainside is a land tile, which getTile answers for with flags and no name at all.
 //
-// These are the stock RunUO bands and a hypothesis about this shard. Stand on a mountainside and run
-// dist/mine-probe.js to settle the real numbers.
+// These are the stock RunUO bands and a hypothesis about this shard. A dead-end run prints the arts
+// it actually saw, which is what settles the real numbers.
 const range = (from: number, to: number): number[] =>
   Array.from({ length: to - from + 1 }, (_, offset) => from + offset);
 
@@ -79,6 +90,14 @@ export const RESPAWN_DELAY = 25 * 60 * 1000;
 // A swing plays its animation before the result arrives, so this has to outlast the animation
 export const DIG_TIMEOUT = 8000;
 
+// Longer than the shared TARGET_TIMEOUT, because the cursor is waited for by polling two signals
+export const DIG_TARGET_TIMEOUT = 4000;
+export const DIG_TARGET_POLL = 100;
+
+// The cursor the shard opens for a swing. Read only to tell a shard that refused the action apart
+// from one that asked and had its cursor missed - the two are the same 'no cursor' without it.
+export const DIG_PROMPT_TEXT = ['Where do you wish to dig'];
+
 // A set to be matched against and nothing more. The stock tables call these the 1, 2, 3 and 4+
 // sizes; on this shard they are not that - a pile of 33 arrives wearing the one called a single. Use
 // item.amount to read a stack's size.
@@ -103,6 +122,10 @@ export const ORE_SETTLE_POLL = 150;
 // and body of whatever it finds, so a wrong guess here is visible rather than silent.
 export const FIRE_BEETLE_GRAPHICS = new Set([0xa9]);
 export const FIRE_BEETLE_SERIAL: number | undefined = undefined;
+
+// A cursor at startup, so the beetle is chosen rather than guessed at by body and renamability -
+// which picks a stranger's pet if theirs is the nearer one. ESC falls back to that search.
+export const PICK_BEETLE = true;
 
 export const BEETLE_SCAN_RADIUS = 18;
 export const SMELT_RANGE = 2;
@@ -180,10 +203,6 @@ export const OUTCOME_TEXT = {
   throttled: SHARED_THROTTLED_TEXT,
 };
 
-// Larger than SCAN_RADIUS on purpose: the probe is read once by a human, so it may as well cover
-// more ground than the loop does.
-export const PROBE_RADIUS = 16;
-
-// Capped where the probe is not, because this one prints into the middle of a run: enough to
-// recognise the mountain you are standing on, not so many that the reason for the stop scrolls away.
+// Capped because this prints into the middle of a run: enough to recognise the mountain you are
+// standing on, not so many that the reason for the stop scrolls away.
 export const SURVEY_ARTS = 15;

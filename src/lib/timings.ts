@@ -98,3 +98,40 @@ export const UNSKILLED_TEXT = [
   'You lack the required skill',
   'You do not have enough skill',
 ];
+
+// SearchEntityOptions Gray|Criminal|Enemy|Murderer, as numbers so a bundle with nothing to do with
+// combat does not read a client enum at startup. Innocent is out: every blue NPC would be trouble.
+export const HOSTILE_NOTORIETY = 16 | 8 | 2 | 4;
+
+// selectEntity takes no range at all - it answers with whatever the client is tracking - so this is
+// the filter that makes 'the nearest hostile' mean anything.
+export const THREAT_RANGE = 12;
+
+export const WATCH_FOR_TROUBLE = true;
+
+export const GUARD_CALL = 'guards';
+
+// Calls per episode, 0 for no cap. More than one because a guard that arrives late, or kills one of
+// two, leaves the run in the trouble it started in.
+export const GUARD_CALLS = 3;
+export const GUARD_CALL_DELAY = 10_000;
+
+// Long enough for the shard to refuse, short enough that the next swing does not notice
+export const GUARD_REPLY_WAIT = 800;
+
+// The one answer worth acting on: a wording found here stops the run calling for the rest of it.
+export const NO_GUARDS_TEXT = [
+  'The guards can not be called here',
+  'The guards cannot be called here',
+  'Guards can not be called here',
+  'Guards cannot be called here',
+  'There are no guards here',
+];
+
+// Empty on purpose: nothing in stock RunUO announces being attacked, and a wrong guess here calls
+// the guards at every cycle of a quiet run. Add what this shard actually says.
+export const ATTACK_TEXT: string[] = [];
+
+// Said only on crossing the boundary, so a run that started inside a town never sees either
+export const GUARD_ZONE_TEXT = ['under the protection of the town guards', 'now under guard'];
+export const UNGUARDED_TEXT = ['left the protection of the town guards', 'no longer under guard'];

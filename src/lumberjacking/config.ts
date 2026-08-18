@@ -1,9 +1,16 @@
 // Re-exported rather than imported directly so this file stays the only one consumers import.
 export {
+  ATTACK_TEXT,
   EQUIP_ATTEMPTS,
   EQUIP_POLL,
   EQUIP_TIMEOUT,
+  GUARD_CALL,
+  GUARD_CALLS,
+  GUARD_CALL_DELAY,
+  GUARD_REPLY_WAIT,
+  GUARD_ZONE_TEXT,
   HEARTBEAT_EVERY,
+  HOSTILE_NOTORIETY,
   IDLE_LOG_EVERY,
   IDLE_POLL,
   LOG_EVERY,
@@ -13,6 +20,7 @@ export {
   MAX_THROTTLED,
   MAX_UNKNOWN,
   NO_CURSOR_READ,
+  NO_GUARDS_TEXT,
   PACK_LIMIT,
   SAVE_DONE_TEXT,
   SAVE_POLL,
@@ -23,11 +31,14 @@ export {
   STALL_WARN,
   STEP_DELAY,
   TARGET_TIMEOUT,
+  THREAT_RANGE,
   THROTTLE_BACKOFF,
   THROTTLE_BACKOFF_MAX,
-  UNSKILLED_TEXT,
+  UNGUARDED_TEXT,
   UNREACHABLE_DELAY,
+  UNSKILLED_TEXT,
   WALK_DELAY,
+  WATCH_FOR_TROUBLE,
 } from '../lib/timings.js';
 
 // Imported as well as re-exported: OUTCOME_TEXT aliases it into its own `saving` bucket, while the

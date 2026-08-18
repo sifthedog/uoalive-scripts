@@ -1,7 +1,8 @@
 import { now } from '../lib/clock.js';
-import { hex } from '../lib/entity.js';
+import { distanceTo, hex } from '../lib/entity.js';
 import { createScan, createTileStore, type Tile as BlockedTile } from '../lib/tiles.js';
 import {
+  MINE_RANGE,
   NOT_ORE_GRAPHICS,
   ORE_STATIC_NAME,
   ORE_TILE_GRAPHICS,
@@ -135,8 +136,48 @@ const scan = /* @__PURE__ */ createScan<Tile>({
   describe: (vein) => `'${vein.isLand ? 'land' : (client.getStatic(vein.graphic)?.name ?? '?')}'`,
 });
 
+// The tile the loop is working, kept across cycles so the swing is not preceded by a box scan
+let current: Vein | undefined;
+
+// One getTerrainList against the (2 * SCAN_RADIUS + 1) squared the box costs. The z and the art have
+// to match as well as the coordinates: a tile carries several, and only one of them is the vein.
+const stillOre = (vein: Vein): Vein | undefined => {
+  const until = store.blockedUntil(vein);
+
+  if (until !== undefined && now() < until) {
+    return undefined;
+  }
+
+  for (const tile of client.getTerrainList(vein.x, vein.y) ?? []) {
+    if (tile.z === vein.z && tile.graphic === vein.graphic && tile.isLand === vein.isLand) {
+      return isOre(tile.graphic, tile.isLand) ? { ...vein, distance: distanceTo(vein) } : undefined;
+    }
+  }
+
+  return undefined;
+};
+
+// Widened rather than swept: a mountain face is wall-to-wall ore, so the tile that replaces a worked
+// out one is almost always within reach, and the full box is 625 client calls to find it.
 export const scanForVein = (): Scan => {
+  if (current) {
+    current = stillOre(current);
+
+    if (current) {
+      return { vein: current };
+    }
+  }
+
+  const near = scan(MINE_RANGE);
+
+  if (near.found) {
+    current = near.found;
+
+    return { vein: current };
+  }
+
   const { found, readyAt } = scan();
+  current = found;
 
   return { vein: found, respawnsAt: readyAt };
 };

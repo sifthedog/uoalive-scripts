@@ -12,17 +12,17 @@ let spread = 0;
 const nextTile = (): Offset =>
   DROP_SPREAD[spread++ % DROP_SPREAD.length] ?? { x: 0, y: 0, z: 0 };
 
-// `moveItemOnGroundOffset` at 0/0/0 is the answer on UOAlive, proven by dist/key-probe.js: the key
-// landed on the tile the character was standing on, so the offset is from *you* and not from the
-// item. The others are kept so a different shard needs no re-probing - DROP_METHOD = 'auto' tries
-// each and keeps whichever demonstrably moves the item.
+// `moveItemOnGroundOffset` at 0/0/0 is the answer on UOAlive: the key landed on the tile the
+// character was standing on, so the offset is from *you* and not from the item. The others are kept
+// for a shard that disagrees - DROP_METHOD = 'auto' tries each and keeps whichever demonstrably
+// moves the item.
 export type DropMethod = 'groundOffset' | 'groundOffsetStep' | 'worldSerial';
 
 // The container serial the UO drop packet uses to mean "the ground"
 const GROUND = 0xffffffff;
 
 const ATTEMPTS: Record<DropMethod, (item: Item, tile: Offset) => void> = {
-  // The documented call. The offset is from the character, which dist/key-probe.js proved.
+  // The documented call. The offset is from the character, which a live run proved.
   groundOffset: (item, tile) => player.moveItemOnGroundOffset(item.serial, tile.x, tile.y, tile.z),
 
   // The same call one tile east, in case an offset of 0/0/0 reads as "do not move"

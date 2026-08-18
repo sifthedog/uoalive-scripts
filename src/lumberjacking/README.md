@@ -32,6 +32,11 @@ Every cycle:
    step that would leave the box falls back to whichever cardinal half stays inside.
 6. **Chop**, and branch on what the shard says.
 
+Steps 1-3 and 6, along with the counters that end a run, are
+[`lib/harvest.ts`](../lib/harvest.ts)'s `runHarvest` — the same loop `dist/mining.js` and
+`dist/mine-here.js` run. Steps 4 and 5 are `createApproach` in [`lib/tiles.ts`](../lib/tiles.ts).
+What this folder supplies is the wordings, the axe, the haul, and the outcomes in the table below.
+
 | Outcome | What the loop does |
 | --- | --- |
 | `chopped` | Count it and carry on |
@@ -69,6 +74,25 @@ npm run build
 
 Paste `dist/lumberjack.js`. The opening line names how many logs are in the pack and which box it
 will stay inside. Then correct `OUTCOME_TEXT` against what the journal actually says.
+
+## Trouble
+
+The shard runs encounters that spawn monsters at anyone macroing AFK. Every cycle — and every slice
+of an idle wait, which is where a run stands still longest — the loop checks four things: a hostile
+mobile within `THREAT_RANGE`, your health going down, your nearest pack animal's health going down,
+and any wording in `ATTACK_TEXT`. Any one of them opens an episode: it says `guards`, up to
+`GUARD_CALLS` times, one call per `GUARD_CALL_DELAY`, and goes on chopping. The count resets when a
+check comes back clear, so something that comes back gets a fresh set of calls.
+
+**None of it ends a run.** `dead` is still the only thing that stops one for combat reasons. If you
+would rather it stopped at a health floor, `hurt(fraction)` is already in
+[`lib/guards.ts`](../lib/guards.ts) and goes into this folder's `stopReason` in one line.
+
+**There is no way to ask whether the guards can hear you.** The first call of a run says what it can
+work out — a boundary wording in the journal, or an invulnerable human in sight — and neither is
+authoritative. What is worth knowing: on stock RunUO the guard call answers criminal *players*, not
+wild monsters, so a spot outside a town may do nothing with this at all. `NO_GUARDS_TEXT` is how a
+shard that says so gets the run to stop wasting the breath.
 
 ## What to set
 
@@ -119,6 +143,21 @@ lumberjacking its own, delete it from the re-export list and declare it below.
 after the first run — a phrase that never matches shows up as an `unknown` outcome, which stops the
 run, rather than as a silent wrong turn. `UNSKILLED_TEXT` is checked by the board conversion, which
 has no outcomes of its own.
+
+### Trouble
+
+| Setting | Default | What it is for |
+| --- | --- | --- |
+| `WATCH_FOR_TROUBLE` | true | The whole feature. Off, and none of the rest is read |
+| `HOSTILE_NOTORIETY` | Gray, Criminal, Enemy, Murderer | Which healthbar colours count. Innocent is out, or every blue NPC in the world is trouble |
+| `THREAT_RANGE` | 12 | How close it has to be. `selectEntity` takes no range of its own, so this is the only filter |
+| `GUARD_CALL` | `'guards'` | What gets said |
+| `GUARD_CALLS` | 3 | Calls per episode, `0` for no cap. The count resets the first cycle that sees nothing |
+| `GUARD_CALL_DELAY` | 10s | The gap between them |
+| `NO_GUARDS_TEXT` | | The shard saying the call is pointless here. One match and the run stops calling for good |
+| `ATTACK_TEXT` | empty | Journal wordings that mean you are being attacked. Fill it in from your shard's journal |
+| `GUARD_ZONE_TEXT`, `UNGUARDED_TEXT` | | The region boundary wordings, read only to say what protection you look to have |
+| `GUARD_REPLY_WAIT` | 800ms | How long to watch for `NO_GUARDS_TEXT` after a call |
 
 ### Stopping
 
@@ -218,6 +257,12 @@ confirmed comes from mining runs that exercise the same shared code.
 
 ### Known unverified
 
+- **Everything the guard call rests on.** Whether `guards` is the phrase this shard takes, whether
+  guards answer monsters here at all, and the wordings in `NO_GUARDS_TEXT`, `GUARD_ZONE_TEXT` and
+  `UNGUARDED_TEXT` — all stock RunUO guesses.
+- **`HOSTILE_NOTORIETY`**: whether this shard's encounter spawns come up gray or red.
+- Whether `client.selectEntity` disturbs the client's current target, and so whether the watch can
+  cost a swing its cursor the way `target.cancel()` was found to.
 - **Everything about this script**, which has not been run. `OUTCOME_TEXT` is stock RunUO wording as a
   hypothesis, and `LOG_GRAPHICS` assumes log stacks change graphic with size the way ore does.
 - `REGROW_DELAY`. 25 minutes is a guess at the shard's respawn timer.

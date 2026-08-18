@@ -1,5 +1,6 @@
 import { now } from './clock.js';
 import { distanceTo, hex } from './entity.js';
+import type { Approach } from './harvest.js';
 
 // Finding a tile, walking to it, and remembering what the shard said about it. What the harvest
 // scripts do not share is how a tile is recognised as harvestable: lumberjacking asks the tiledata
@@ -31,6 +32,7 @@ const minutes = (ms: number) => Math.max(1, Math.round(ms / 60_000));
 
 export interface TileStore<T extends Tile> {
   block: (tile: T, until: number) => void;
+  blockedUntil: (tile: T) => number | undefined;
   markDepleted: (tile: T) => void;
   markUnreachable: (tile: T) => void;
   markUnusable: (tile: T, reason: string) => void;
@@ -53,6 +55,7 @@ export const createTileStore = <T extends Tile>(options: {
 
   return {
     block,
+    blockedUntil: (tile) => options.blocked().get(tileKey(tile)),
 
     markDepleted: (tile) => {
       block(tile, now() + options.depletedFor);
@@ -97,15 +100,15 @@ export const createScan = <T extends Tile>(options: {
 }) => {
   const reported = new Set<number>();
 
-  return (): Found<T> => {
+  return (radius = options.radius): Found<T> => {
     const blocked = options.blocked();
     const time = now();
 
     let best: (T & { distance: number }) | undefined;
     let readyAt: number | undefined;
 
-    for (let dx = -options.radius; dx <= options.radius; dx++) {
-      for (let dy = -options.radius; dy <= options.radius; dy++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      for (let dy = -radius; dy <= radius; dy++) {
         for (const tile of client.getTerrainList(player.x + dx, player.y + dy) ?? []) {
           if (options.skipLand && tile.isLand) {
             continue;
@@ -161,5 +164,60 @@ export const createScan = <T extends Tile>(options: {
     }
 
     return { found: best, readyAt };
+  };
+};
+
+// Scan, then either swing at what was found, take a step toward it, or wait for it to come back.
+export const createApproach = <T extends Tile>(options: {
+  scan: () => Found<T>;
+  range: number;
+  maxSteps: number;
+  step: (target: T & { distance: number }) => boolean;
+  markUnreachable: (target: T & { distance: number }) => void;
+  idleUntil: (at: number) => void;
+
+  // The stop reason for an area with nothing left in it, and the one chance to say what was on the
+  // ground instead
+  nothingFound: () => string;
+}) => {
+  // Steps spent on the tile currently being walked to, reset when the target changes
+  let walkingTo: string | undefined;
+  let steps = 0;
+
+  return (): Approach<T & { distance: number }> => {
+    const { found, readyAt } = options.scan();
+
+    if (!found) {
+      if (readyAt === undefined) {
+        return { stop: options.nothingFound() };
+      }
+
+      options.idleUntil(readyAt);
+
+      return { waited: true };
+    }
+
+    if (found.distance <= options.range) {
+      walkingTo = undefined;
+
+      return { target: found };
+    }
+
+    // Coarser than the block map's key on purpose: a tile carries several arts, and once one is
+    // written off the next is the same walk. Two *different* targets taking turns as nearest still
+    // reset it - the stall watchdog is what bounds that.
+    const key = `${found.x},${found.y}`;
+    if (key !== walkingTo) {
+      walkingTo = key;
+      steps = 0;
+    }
+
+    // Blocked or out of patience: set the tile aside, or the next scan picks the same one again
+    if (!options.step(found) || ++steps > options.maxSteps) {
+      options.markUnreachable(found);
+      walkingTo = undefined;
+    }
+
+    return { walked: true };
   };
 };

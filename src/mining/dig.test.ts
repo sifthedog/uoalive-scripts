@@ -56,19 +56,49 @@ describe('digOnce', () => {
   // Where this parts company with lumberjacking's chop: the shard picks the ore and no tile is
   // named, so nothing here has to be right about land versus static.
   it('answers the cursor with yourself rather than a tile', () => {
+    world.target.open = true;
+
     digOnce(PICKAXE);
 
-    expect(world.target.waitTargetSelf).toHaveBeenCalled();
+    expect(world.target.self).toHaveBeenCalled();
     expect(world.target.terrain).not.toHaveBeenCalled();
   });
 
+  // A live swing had the shard's prompt in the journal at 164ms with target.open false throughout,
+  // and waiting on target.open alone reported every one of those as a cursor that never came
+  it('takes the shard asking as the cursor being up', () => {
+    world.journal.containsText.mockReturnValue(true);
+
+    digOnce(PICKAXE);
+
+    expect(world.target.self).toHaveBeenCalled();
+  });
+
+  // An unconditional cancel a few hundred milliseconds before a swing left target.open false for the
+  // cursor that followed; the same swing after a gap opened one at 222ms and dug
+  it('leaves the cursor alone when there is none to cancel', () => {
+    digOnce(PICKAXE);
+
+    expect(world.target.cancel).not.toHaveBeenCalled();
+  });
+
   it('cancels a cursor left open by the previous swing', () => {
+    world.target.open = true;
+
     digOnce(PICKAXE);
 
     expect(world.target.cancel).toHaveBeenCalled();
   });
 
+  // A queued answer left behind by a wait that timed out closes the next cursor the instant it opens
+  it('clears a queued answer left by the previous swing', () => {
+    digOnce(PICKAXE);
+
+    expect(world.target.clearQueue).toHaveBeenCalled();
+  });
+
   it('reads the shard back as the outcome it worded', () => {
+    world.target.open = true;
     world.journal.waitForTextAny.mockReturnValue('There is no metal here to mine');
 
     expect(digOnce(PICKAXE)).toBe('empty');
@@ -76,11 +106,7 @@ describe('digOnce', () => {
 
   // Not the same as nothing having happened: the shard usually refused the swing and said why.
   // Reaching noCursor instead of the throttle or the save ended a live run in fifteen seconds.
-  describe('when no cursor opens', () => {
-    beforeEach(() => {
-      world.target.waitTargetSelf.mockReturnValue(false);
-    });
-
+  describe('when neither the cursor nor the prompt turns up', () => {
     it('reads the refusal the shard already worded', () => {
       world.journal.waitForTextAny.mockReturnValue('You must wait');
 
@@ -111,6 +137,12 @@ describe('digOnce', () => {
       expect(digOnce(PICKAXE)).toBe('noCursor');
     });
 
+    it('says the shard never asked', () => {
+      digOnce(PICKAXE);
+
+      expect(world.log).toHaveBeenCalledWith(expect.stringContaining('never asked'));
+    });
+
     // The old line guessed at an empty hand and was wrong about it on the run that found this
     it('says what is in the hand rather than guessing at it', () => {
       world.player.equippedItems.oneHanded = item({
@@ -124,24 +156,13 @@ describe('digOnce', () => {
       expect(world.log).toHaveBeenCalledWith(expect.stringContaining("0xe86 'pickaxe'"));
     });
 
-    // A late cursor is TARGET_TIMEOUT being short, not the shard refusing - and the cancel on this
-    // path closes it, so the read has to come first.
-    it('tells a cursor that came late from one that never came', () => {
-      world.target.open = true;
-
-      digOnce(PICKAXE);
-
-      expect(world.log).toHaveBeenCalledWith(expect.stringContaining('came late'));
-    });
-
-    it('says so when no cursor turned up at all', () => {
-      digOnce(PICKAXE);
-
-      expect(world.log).toHaveBeenCalledWith(expect.stringContaining('never opened'));
-    });
   });
 
   describe('when the journal says nothing', () => {
+    beforeEach(() => {
+      world.target.open = true;
+    });
+
     // A shard that words its messages differently leaves the journal silent, so read the world:
     // ore landing in the pack is the only proof of a swing that does not depend on wording
     it('reads ore arriving in the pack as a swing that landed', () => {

@@ -1,12 +1,11 @@
 # boxes — emptying crafted wooden boxes
 
-Builds three scripts:
+Builds two scripts:
 
 | Script | What it does |
 | --- | --- |
 | `dist/boxes.js` | Opens every wooden box in the pack, keys on the floor, optionally sells the boxes |
 | `dist/keys.js` | Drops the keys **already** in your pack. Touches nothing else |
-| `dist/key-probe.js` | Works out which client call actually puts an item on the ground here |
 
 ## Why it exists
 
@@ -62,21 +61,6 @@ It reports every `LOG_EVERY_KEY` keys, because a pile of forty is otherwise one 
 and one more line, which reads exactly like a hung script. It gives up after `MAX_STUCK` keys in a
 row refuse to drop, since each costs the full `DROP_TIMEOUT`.
 
-## What `dist/key-probe.js` does
-
-For a shard where the keys will not land. It takes **one** key and tries eight shapes of drop on it,
-reporting after each one where the key actually is:
-
-- `moveItemOnGroundOffset` at 0/0/0 and at 1/0/0
-- `moveItem` addressed to the ground's container serial (`0xFFFFFFFF`), with and without coordinates
-- `moveItem` to container `0`, which is how some clients spell "no container"
-- `moveTypeOnGroundOffset`, the by-graphic twin
-- moving the key into the pack first and then trying the offset, twice
-
-The first one that gets the key off you is the answer; pin it as `DROP_METHOD`. It also prints the
-key's own `x`/`y`/`z` next to yours, which is the thing worth looking at — see the note on
-container-relative coordinates below.
-
 ## What to set
 
 Everything lives in [`config.ts`](config.ts).
@@ -120,7 +104,7 @@ to paste back in.
 | `CLOSE_BOXES` | `'perBox'` | `'perBox'` closes each box's own window as it is emptied. `'allGumps'` calls `client.closeAllGumps()` at the end — it definitely works, and it definitely also closes your paperdoll, character sheet and journal, because the client has no per-container close. `'never'` leaves them |
 | `LOG_EVERY_BOX` | `true` | A line per box. Worth having on the first run — it is what puts the shard's real key graphic in the console. Turn it off for a pile of a hundred |
 | `LOG_EVERY_KEY` | 5 | How often `keys.js` reports |
-| `OPEN_DELAY`, `MOVE_DELAY`, `OPL_TIMEOUT`, `CLOSE_TIMEOUT`, `PROBE_DELAY` | | Timings. `MOVE_DELAY` is a pause between moves rather than a wait for one to land |
+| `OPEN_DELAY`, `MOVE_DELAY`, `OPL_TIMEOUT`, `CLOSE_TIMEOUT` | | Timings. `MOVE_DELAY` is a pause between moves rather than a wait for one to land |
 | `WEIGHT_BUFFER`, `PACK_LIMIT` | 40 / 120 | Only consulted when `DROP_KEYS` is off |
 | `MAX_EMPTY_PASSES` | 5 | How many times a box may be rescanned while it is still shifting items |
 
@@ -135,7 +119,7 @@ paste into `BOX_GRAPHICS`.
 went into the pack. The graphic it listed goes into `KEY_GRAPHICS`.
 
 **`0 of 40 keys on the floor`.** They were recognised but no drop would land. The run will have said
-which calls it tried; paste `dist/key-probe.js` and pin the winner as `DROP_METHOD`.
+which calls it tried; pin the winner as `DROP_METHOD`.
 
 **`emptied 0` with a guard message.** With `DROP_KEYS = false` the weight and pack-slot guards are
 live, and they stop the run before the first box. That is the fix they were given — see below.
@@ -157,8 +141,8 @@ Written against UOAlive.
   out of a box adds one item to the *top level* while the total weight is unchanged. Throwing the
   keys on the floor is what avoids that.
 - **`moveItemOnGroundOffset` offsets from *you*, not from the item, and 0/0/0 is your own tile.**
-  `dist/key-probe.js` settled it. The doubt was worth having, because an item inside a container
-  reports the *slot* it occupies as its x/y, so an offset from the item would have landed nowhere.
+  The doubt was worth having, because an item inside a container reports the *slot* it occupies as
+  its x/y, so an offset from the item would have landed nowhere.
 - **A drop is polled for, not slept through.** The call is silent and returns an undocumented
   number, so the only proof is the item's container changing. Read back after a flat 700ms, a drop
   that had *worked* looked like one that had not — whereupon the recovery path moved the key "into

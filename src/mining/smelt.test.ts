@@ -109,6 +109,66 @@ describe('findBeetle', () => {
   });
 });
 
+describe('pickBeetle', () => {
+  const clicks = (serial: number) => vi.fn(() => ({ serial }));
+
+  it('smelts against the one that was clicked', async () => {
+    world = installGlobals({ player: { x: 100, y: 100 }, backpack: [ore(1, IRON)] });
+    beetleNearby([beetle(), beetle({ serial: 0x0000c002, x: 100, y: 100 })]);
+    world.target.query = clicks(0x0000c002);
+    const { pickBeetle, smeltAll } = await loadSmelt();
+
+    expect(pickBeetle()?.serial).toBe(0x0000c002);
+
+    smeltAll();
+
+    expect(world.target.waitTargetEntity).toHaveBeenCalledWith(0x0000c002, expect.any(Number));
+    expect(world.client.findAllMobilesOfType).not.toHaveBeenCalled();
+  });
+
+  // ESC is indistinguishable from a click that resolved to nothing, and both mean the same thing
+  it('falls back to the search when the cursor is cancelled', async () => {
+    beetleNearby();
+    const { findBeetle, pickBeetle } = await loadSmelt();
+
+    expect(pickBeetle()).toBeUndefined();
+    expect(findBeetle()?.serial).toBe(BEETLE);
+  });
+
+  it('falls back to the search when the click landed on something that is not a mobile', async () => {
+    beetleNearby();
+    world.target.query = clicks(0x40000123);
+    const { findBeetle, pickBeetle } = await loadSmelt();
+
+    expect(pickBeetle()).toBeUndefined();
+    expect(findBeetle()?.serial).toBe(BEETLE);
+  });
+
+  // FIRE_BEETLE_GRAPHICS is a guess at this shard, so a body it does not know is reported and used
+  it('takes a body it does not recognise, and says so', async () => {
+    beetleNearby([beetle({ graphic: 0x317 })]);
+    world.target.query = clicks(BEETLE);
+    const { pickBeetle } = await loadSmelt();
+
+    expect(pickBeetle()?.serial).toBe(BEETLE);
+    expect(world.log).toHaveBeenCalledWith(expect.stringContaining('not a body'));
+  });
+
+  // A beetle chosen by hand is the law: out of sight for a moment must not send the smelt looking
+  // for a stranger's pet, which is the thing picking it exists to prevent
+  it('does not go looking for another when the picked one drops out of sight', async () => {
+    beetleNearby();
+    world.target.query = clicks(BEETLE);
+    const { findBeetle, pickBeetle } = await loadSmelt();
+
+    pickBeetle();
+    world.client.findObject.mockReturnValue(undefined);
+
+    expect(findBeetle()).toBeUndefined();
+    expect(world.client.findAllMobilesOfType).not.toHaveBeenCalled();
+  });
+});
+
 describe('smeltAll', () => {
   it('does nothing at all when there is no ore', async () => {
     beetleNearby();
@@ -345,6 +405,45 @@ describe('smeltAll', () => {
     const { retryUnsmeltable } = await loadSmelt();
 
     expect(retryUnsmeltable()).toBe(false);
+  });
+
+  // smeltAll writes the same hues off again every call, so a retry granted unconditionally answers
+  // true forever and the caller spends its whole stall budget in 'smelting'
+  it('refuses a second retry when the first one freed no ore', async () => {
+    world = installGlobals({ player: { x: 100, y: 100 }, backpack: [ore(1, IRON)] });
+    beetleNearby();
+    const { retryUnsmeltable, smeltAll, unsmeltable } = await loadSmelt();
+
+    smeltAll();
+    expect(retryUnsmeltable()).toBe(true);
+
+    smeltAll();
+    expect(unsmeltable.has(IRON)).toBe(true);
+    expect(retryUnsmeltable()).toBe(false);
+  });
+
+  // The other half of it: a retry spent is only spent until something converts, or a run whose beetle
+  // came back would carry the rest of its ore home as ore
+  it('grants another retry once a smelt has landed in between', async () => {
+    world = installGlobals({
+      player: { x: 100, y: 100 },
+      backpack: [ore(1, IRON), ore(2, VALORITE)],
+    });
+    beetleNearby();
+    const { retryUnsmeltable, smeltAll, unsmeltable } = await loadSmelt();
+
+    smeltAll();
+    expect(retryUnsmeltable()).toBe(true);
+
+    // The iron converts on the first target, the valorite stays silent through its three attempts
+    smeltWorks([
+      [ore(1, IRON), ore(2, VALORITE)],
+      [item({ serial: 3, graphic: INGOT, hue: IRON, amount: 5 }), ore(2, VALORITE)],
+    ]);
+    smeltAll();
+
+    expect(unsmeltable.has(VALORITE)).toBe(true);
+    expect(retryUnsmeltable()).toBe(true);
   });
 
   // The misses are cleared along with the verdict, or the very next silent pass re-lands it

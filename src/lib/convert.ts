@@ -15,8 +15,8 @@ export interface Converter {
 
   // Written off is not the same as impossible: a target that stepped out of range, a run of throttled
   // attempts and a stack that was briefly too small all look alike. When the alternative is ending the
-  // run overweight, this clears the verdicts for one more go, and returns false once there is nothing
-  // left to reconsider.
+  // run overweight, this clears the verdicts for one more go. False once there is nothing left to
+  // reconsider, and once a retry has already been spent without anything converting since.
   retry: () => boolean;
 }
 
@@ -68,6 +68,11 @@ export const createConverter = (options: {
 
   // Silent misses per hue, cleared by a success, so only a hue that fails repeatedly is given up on
   const misses = new Map<number, number>();
+
+  // Whether anything has converted since the last retry. `run` refills the written-off set every
+  // call, so a retry granted unconditionally answers true again on the next cycle and the caller
+  // loops - which in mining is hours of 'smelting' phases before the stall watchdog ends the run.
+  let progressed = true;
 
   // Every failing path has to come through here: one that returned without counting leaves the
   // candidate set unchanged, so the next pass picks the same stack and the loop runs to its backstop
@@ -128,6 +133,7 @@ export const createConverter = (options: {
     const changes = waitForChange(before);
     if (changes.length > 0) {
       misses.delete(hue);
+      progressed = true;
       learnOutput(changes);
       return;
     }
@@ -192,9 +198,10 @@ export const createConverter = (options: {
     },
 
     retry: () => {
-      if (writtenOff.size === 0) {
+      if (writtenOff.size === 0 || !progressed) {
         return false;
       }
+      progressed = false;
 
       log(`${options.label}: giving ${writtenOff.size} hue(s) written off earlier another go`);
       writtenOff.clear();

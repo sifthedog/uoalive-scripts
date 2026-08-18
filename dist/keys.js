@@ -61,7 +61,7 @@
   var nextTile = () => DROP_SPREAD[spread++ % DROP_SPREAD.length] ?? { x: 0, y: 0, z: 0 };
   var GROUND = 4294967295;
   var ATTEMPTS = {
-    // The documented call. The offset is from the character, which dist/key-probe.js proved.
+    // The documented call. The offset is from the character, which a live run proved.
     groundOffset: (item, tile) => player.moveItemOnGroundOffset(item.serial, tile.x, tile.y, tile.z),
     // The same call one tile east, in case an offset of 0/0/0 reads as "do not move"
     groundOffsetStep: (item) => player.moveItemOnGroundOffset(item.serial, 1, 0, 0),

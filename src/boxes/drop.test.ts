@@ -33,7 +33,7 @@ beforeEach(() => {
 });
 
 describe('dropToGround', () => {
-  // The checked-in config pins what the probe proved on the shard, so no candidates are tried
+  // The checked-in config pins what a live run proved on the shard, so no candidates are tried
   it('uses the pinned method without hunting for one', async () => {
     world.client.findObject = livingAt(0);
 

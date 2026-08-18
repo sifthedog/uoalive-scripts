@@ -12,11 +12,9 @@ one, and what to set. Start there.
 | --- | --- | --- |
 | `dist/mining.js` | Mines the nearest vein and smelts the ore on a fire beetle | [src/mining](src/mining/README.md) |
 | `dist/mine-here.js` | Mines the spot you are standing on until it runs dry, without moving at all | [src/mining](src/mining/README.md) |
-| `dist/mine-probe.js` | Read-only: lists the land arts around you, to calibrate `ORE_TILE_GRAPHICS` | [src/mining](src/mining/README.md) |
 | `dist/lumberjack.js` | Chops the nearest tree, makes boards, loads the pack animals | [src/lumberjacking](src/lumberjacking/README.md) |
 | `dist/boxes.js` | Empties crafted wooden boxes, keys on the floor, optionally sells the boxes | [src/boxes](src/boxes/README.md) |
 | `dist/keys.js` | Drops the keys already in your pack | [src/boxes](src/boxes/README.md) |
-| `dist/key-probe.js` | Works out which client call actually puts an item on the ground here | [src/boxes](src/boxes/README.md) |
 | `dist/sell.js` | Target items until you press ESC, sell every stack of them | [src/selling](src/selling/README.md) |
 | `dist/sell-watch.js` | Target items until you press ESC, then sell them in batches as the pack fills | [src/selling](src/selling/README.md) |
 | `dist/train.js` | Trains a skill by casting through a table of stages, meditating between them — Bushido out of the box | [src/training](src/training/README.md) |
@@ -31,7 +29,7 @@ The client's script editor is one buffer with no module system, and the runtime 
 
 ```bash
 npm install
-npm run build      # typecheck, then src/ -> the thirteen files in dist/
+npm run build      # typecheck, then src/ -> the eleven files in dist/
 npm run watch      # rebuild on save
 npm run typecheck  # tsc against the client's own typings, then again over the tests
 npm test           # vitest, no client and no shard needed
@@ -48,11 +46,11 @@ identifier*.
 
 ```
 src/lib/           everything more than one script does (see below)
-src/boxes/         empty the crafted wooden boxes, keys on the floor (+ a key dump and a drop probe)
+src/boxes/         empty the crafted wooden boxes, keys on the floor (+ a key dump)
 src/chivalry/      train Chivalry through its five bands, on the same loop as src/training/
 src/lumberjacking/ chop the nearest tree, make boards, load the pack animals
 src/magery/        train Magery on the spells that gain without a victim, on the same loop as src/training/
-src/mining/        mine the nearest vein, smelt the ore on a fire beetle (+ a stand-still variant and an ore tile probe)
+src/mining/        mine the nearest vein, smelt the ore on a fire beetle (+ a stand-still variant)
 src/necromancy/    train Necromancy through its five bands, on the same loop as src/training/
 src/selling/       sell-to-vendor: target items until ESC, sell every stack of them
 src/training/      train a skill by casting the ability that still gains at the level it is at
@@ -78,6 +76,7 @@ convert     resource -> product, judged by pack diff, with per-hue write-off
 die         exit() that the compiler will narrow on
 entity      hex, Chebyshev distance, item-vs-mobile, name-or-serial, walk-to-a-mobile
 guards      the stop conditions, composed per folder
+harvest     the swing loop all three harvest scripts run
 heal        bandaging the character, proved by the health going up
 heartbeat   'still here', on the clock rather than per cycle
 loop        the idle wait, the stall watchdog, the throttle backoff
@@ -89,7 +88,8 @@ save        sitting out a world save
 skill       every read of getSkill, and what a client that has not answered means
 stages      the skill-stage table, and which band a value falls in
 store       state parked on globalThis so it outlives the run
-tiles       the tile cooldown map and the terrain scan
+threat      noticing trouble and calling the guards, without ending the run over it
+tiles       the tile cooldown map, the terrain scan, and the walk toward what it found
 timings     the constants both harvest scripts agreed on
 tool        find it, learn its graphic, equip it, notice it break
 trainer     the training loop both trainers run
@@ -213,5 +213,16 @@ ones that bit more than one of them.
   and `src/boxes/` empties it onto the floor, so the same overweight check that protects one stops
   the other on exactly the character it would have relieved. `src/lib/guards.ts` is composed per
   folder for that reason.
+- **There is no sound API.** No `playSound`, no music, no beep, in either the pristine download or
+  the patched typings — the only feedback channels are `client.sysMsg`, `client.headMsg`,
+  `player.say` and `log`. An audible alert would have to be an in-game action that happens to make a
+  noise, which is a hack rather than an API.
+- **Nothing says whether you are standing in a guard zone.** No region call, no protection flag. The
+  two proxies `threat.ts` uses — a journal latch on the boundary wordings, and an invulnerable human
+  in sight — are reported and never enforced, since a wrong guess would silence the one thing that
+  helps.
+- **`client.selectEntity` takes no range**; it answers with whatever the client is tracking, which
+  can be most of a screen away. Its result has to be filtered with `distanceTo` or a monster on the
+  far side of the mountain reads as one standing next to you.
 - **Serials come back as signed 32-bit ints**, so one prints as `0x-3266af2f` unless run through
   `>>> 0`. `hex()` in `src/lib/entity.ts` does the shift.
