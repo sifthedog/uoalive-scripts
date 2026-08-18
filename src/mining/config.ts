@@ -113,6 +113,19 @@ export { INGOT_GRAPHICS } from '../lib/arts.js';
 // Pause after each ore combine, to stay under the server's action throttle
 export const COMBINE_DELAY = 700;
 
+// A combine is silent whether it lands or not, so the pack is polled for the proof rather than slept
+// through: the throttle can hold one well past a fixed pause.
+export const COMBINE_TIMEOUT = 2000;
+export const COMBINE_POLL = 200;
+
+// Attempts per groupOres call. A pack holding several metals can spend one refusal per metal on every
+// new pile, and this is what keeps that off the swing loop.
+export const MAX_COMBINE_ATTEMPTS = 12;
+
+// The shard refusing two piles as different metals, which is what tells the metals apart here - hue
+// reads 0 for a pile the client has not been sent the properties of. Stock RunUO wording, a guess.
+export const DIFFERENT_ORE_TEXT = ['You cannot combine ores of different metals'];
+
 // A swing's ore arrives after the sentence that announced it, so grouping the instant the journal
 // reads 'dug' can consolidate a pack the new pile has not turned up in yet.
 export const ORE_SETTLE_TIMEOUT = 1500;

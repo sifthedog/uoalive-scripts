@@ -2,11 +2,16 @@ import { packContents } from '../lib/containers.js';
 import { totalMatching } from '../lib/pack.js';
 import {
   COMBINE_DELAY,
+  COMBINE_POLL,
+  COMBINE_TIMEOUT,
+  DIFFERENT_ORE_TEXT,
+  MAX_COMBINE_ATTEMPTS,
   ORE_GRAPHICS,
   ORE_NAME,
   ORE_SETTLE_POLL,
   ORE_SETTLE_TIMEOUT,
   TARGET_TIMEOUT,
+  THROTTLED_TEXT,
 } from './config.js';
 
 // Named for the item rather than the tile, because vein.ts already owns `isOre` for the ground.
@@ -49,67 +54,143 @@ export const waitForOre = (before: number): boolean => {
   return false;
 };
 
+const amountOf = (item: Item): number => item.amount ?? 1;
+const hueOf = (item: Item): number => item.hue ?? 0;
+const describe = (item: Item): string => `${amountOf(item)} hue ${hueOf(item)}`;
+
 // Top level only, unlike oreTotal: the combine and the smelt both act by serial on loose items.
-export const oresByHue = (): Map<number, Item[]> => {
-  const groups = new Map<number, Item[]>();
+// Largest first, so the pile a combine consumes is always the smaller one.
+export const orePiles = (): Item[] =>
+  (packContents() ?? []).filter(isOrePile).sort((a, b) => amountOf(b) - amountOf(a));
 
-  for (const item of packContents() ?? []) {
-    if (!isOrePile(item)) {
-      continue;
+// Two piles the shard itself refused, which is the only authority on the metal there is: item.hue is
+// 0 for a pile whose properties the client has not been sent yet, so grouping by it alone left piles
+// of one metal sitting apart with nothing said.
+const differing = new Set<string>();
+
+// This call only: a silent miss is as likely to be a busy moment as a verdict, and remembering it for
+// the run would split two piles of one metal for good.
+const skipped = new Set<string>();
+
+const serialKey = (a: Item, b: Item): string =>
+  a.serial < b.serial ? `s${a.serial}:${b.serial}` : `s${b.serial}:${a.serial}`;
+
+const hueKey = (a: Item, b: Item): string =>
+  hueOf(a) < hueOf(b) ? `h${hueOf(a)}:${hueOf(b)}` : `h${hueOf(b)}:${hueOf(a)}`;
+
+// Never for hue 0, which is both iron and 'the client has not said yet'
+const hueTellsThemApart = (a: Item, b: Item): boolean =>
+  hueOf(a) !== 0 && hueOf(b) !== 0 && hueOf(a) !== hueOf(b);
+
+const differs = (a: Item, b: Item): boolean =>
+  differing.has(serialKey(a, b)) ||
+  skipped.has(serialKey(a, b)) ||
+  (hueTellsThemApart(a, b) && differing.has(hueKey(a, b)));
+
+const said = (texts: string[]): boolean => texts.some((text) => journal.containsText(text));
+
+// A merge is silent either way, so the pack is the evidence: the consumed pile gone, or the pile it
+// went into grown. The refusal cuts the wait short, or a pack holding two metals spends the whole
+// timeout on every swing.
+const merged = (primary: Item, dup: Item, before: number): boolean => {
+  for (let waited = 0; waited < COMBINE_TIMEOUT; waited += COMBINE_POLL) {
+    const piles = packContents() ?? [];
+    const grown = piles.find((item) => item.serial === primary.serial);
+
+    if (!piles.some((item) => item.serial === dup.serial) || (grown && amountOf(grown) > before)) {
+      return true;
     }
 
-    const oreHue = item.hue ?? 0;
-    const group = groups.get(oreHue);
-
-    if (group) {
-      group.push(item);
-    } else {
-      groups.set(oreHue, [item]);
+    if (said(DIFFERENT_ORE_TEXT)) {
+      return false;
     }
+
+    sleep(COMBINE_POLL);
   }
 
-  return groups;
+  return false;
+};
+
+const combine = (primary: Item, dup: Item): void => {
+  const before = amountOf(primary);
+
+  journal.clear();
+  player.use(dup.serial);
+
+  // No cancel before the use: a cursor cancelled shortly before an action has been measured costing
+  // that action its own cursor.
+  if (!target.waitTargetEntity(primary.serial, TARGET_TIMEOUT)) {
+    target.cancel();
+    skipped.add(serialKey(primary, dup));
+    log(`groupOres: no target cursor for ${describe(dup)}`);
+
+    return;
+  }
+
+  if (merged(primary, dup, before)) {
+    return;
+  }
+
+  // Nothing was attempted, so nothing has been learned about the metals
+  if (said(THROTTLED_TEXT)) {
+    log('groupOres: the shard says wait, leaving the two of them paired');
+
+    return;
+  }
+
+  if (said(DIFFERENT_ORE_TEXT)) {
+    differing.add(serialKey(primary, dup));
+
+    if (hueTellsThemApart(primary, dup)) {
+      differing.add(hueKey(primary, dup));
+    }
+
+    return;
+  }
+
+  skipped.add(serialKey(primary, dup));
+  log(`groupOres: ${describe(primary)} and ${describe(dup)} did not merge and nothing was said`);
+};
+
+// The first pile that can join one already seen, largest first. Everything ahead of it is a family of
+// its own, so returning nothing means every pile in the pack is a metal of its own.
+const nextPair = (piles: Item[]): [Item, Item] | undefined => {
+  const primaries: Item[] = [];
+
+  for (const pile of piles) {
+    // Same hue first: hue is right nearly always, and a wrong guess costs a refusal
+    const home =
+      primaries.find((primary) => hueOf(primary) === hueOf(pile) && !differs(primary, pile)) ??
+      primaries.find((primary) => !differs(primary, pile));
+
+    if (home) {
+      return [home, pile];
+    }
+
+    primaries.push(pile);
+  }
+
+  return undefined;
 };
 
 export const groupOres = (): void => {
-  let previousPiles = Infinity;
+  skipped.clear();
 
-  // A combine consumes one of the two piles, so rescan the pack between passes
-  while (true) {
-    const groups = oresByHue();
-    const piles = [...groups.values()].reduce((total, items) => total + items.length, 0);
+  for (let attempt = 0; attempt < MAX_COMBINE_ATTEMPTS; attempt++) {
+    const piles = orePiles();
+    const pair = nextPair(piles);
 
-    if (piles >= previousPiles) {
-      log(`groupOres: stalled at ${piles} piles`);
+    if (!pair) {
+      if (skipped.size > 0 && piles.length > 1) {
+        log(`groupOres: left ${piles.length} piles - ${piles.map(describe).join(', ')}`);
+      }
+
       return;
     }
-    previousPiles = piles;
 
-    let combined = false;
-
-    for (const [oreHue, items] of groups) {
-      if (items.length <= 1) {
-        continue;
-      }
-
-      const primary = items.reduce((a, b) => ((b.amount ?? 1) > (a.amount ?? 1) ? b : a));
-      const dup = items.find((item) => item.serial !== primary.serial);
-      if (!dup) {
-        continue;
-      }
-
-      player.use(dup.serial);
-      if (!target.waitTargetEntity(primary.serial, TARGET_TIMEOUT)) {
-        log(`groupOres: no target cursor for hue ${oreHue}`);
-        target.cancel();
-      }
-
-      combined = true;
-      sleep(COMBINE_DELAY);
-    }
-
-    if (!combined) {
-      return;
-    }
+    combine(pair[0], pair[1]);
+    sleep(COMBINE_DELAY);
   }
+
+  log(`groupOres: hit the ${MAX_COMBINE_ATTEMPTS} attempt backstop`);
 };

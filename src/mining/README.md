@@ -23,6 +23,10 @@ where the ore is.
 
 ## What `dist/mining.js` does
 
+Before the loop: get off the mount, open the beetle cursor, consolidate the pack, and smelt if it is
+already over the limit — in that order, so a run pasted with a full pack can take its first swing and
+the beetle you click is one standing next to you rather than the one you were sitting on.
+
 Every cycle:
 
 1. **Check the stop conditions** — dead, or the pack at its item cap.
@@ -44,7 +48,7 @@ What this folder supplies is the wordings, the tool, the smelt, and the outcomes
 
 | Outcome | What the loop does |
 | --- | --- |
-| `dug` | Wait for the ore to land, then consolidate the pack to one pile per hue |
+| `dug` | Wait for the ore to land, then consolidate the pack to one pile per metal |
 | `empty` | Park that tile for `RESPAWN_DELAY`, **and smelt** — the spot has run dry |
 | `nothingNearby` | Park *everything* within `MINE_RANGE`, so the next scan looks further and the character walks off. **And smelt** |
 | `notOre` | Ban the whole graphic, not just the tile — a wrong band in `ORE_TILE_GRAPHICS` is a whole stretch of mountain |
@@ -85,7 +89,8 @@ exactly like a script that never started.
 ## What `dist/mine-here.js` does
 
 The stationary half of `dist/mining.js`. It stands where you put it, swings until the shard says
-there is nothing left, smelts what it mined, and stops.
+there is nothing left, smelts what it mined, and stops. Same prologue: off the mount, the beetle
+cursor, then a consolidation and a smelt if the pack arrives over the limit.
 
 It runs the same `runHarvest` as `dist/mining.js`, and simply passes it no `approach`: it can leave
 out the scan, the walk, the block map and the respawn wait because [`dig.ts`](dig.ts) answers the
@@ -94,7 +99,7 @@ character stands rather than by naming a tile, which is all [`vein.ts`](vein.ts)
 
 | Outcome | What the loop does |
 | --- | --- |
-| `dug` | Wait for the ore to land, then consolidate the pack to one pile per hue |
+| `dug` | Wait for the ore to land, then consolidate the pack to one pile per metal |
 | `empty`, `nothingNearby` | **The spot is worked out.** Consolidate, smelt, and stop. One branch, not two — the pair differ by scope, and scope only matters to a run with somewhere else to walk |
 | `notOre` | Nothing here can be mined. No art to ban and nowhere to walk, so it is an ending |
 | `tooFar`, `notSeen` | Neither is answerable by moving, so both stop |
@@ -187,6 +192,9 @@ mining its own, delete it from the re-export list and declare it below.
 | `SMELT_ATTEMPTS` | 3. Silent failures in a row before giving up on a hue. More than one, because a throttled or stale attempt also looks silent |
 | `MAX_SMELT_PASSES`, `SMELT_DELAY`, `SMELT_TIMEOUT`, `SMELT_POLL` | Smelting loop bounds and pacing |
 | `COMBINE_DELAY`, `ORE_SETTLE_TIMEOUT`, `ORE_SETTLE_POLL` | Consolidation pacing, and how long to wait for a swing's ore |
+| `COMBINE_TIMEOUT`, `COMBINE_POLL` | How long to poll the pack for the proof a combine landed |
+| `MAX_COMBINE_ATTEMPTS` | Combines per consolidation. Bounds a pack holding several metals |
+| `DIFFERENT_ORE_TEXT` | **The shard refusing two piles as different metals.** What tells the metals apart — get it wrong and the run keeps two piles of one metal apart, and says so |
 | `INGOT_GRAPHICS` | Re-exported from [`lib/arts.ts`](../lib/arts.ts). A seed only — the real graphic is learned by diffing the pack |
 | `DISMOUNT_TIMEOUT`, `DISMOUNT_POLL`, `DISMOUNT_ATTEMPTS` | Getting off the mount |
 
@@ -249,8 +257,9 @@ asked for neither. If you can see *Where do you wish to dig?* on screen while th
 shard words its prompt differently — correct `DIG_PROMPT_TEXT` and it is fixed.
 
 **`overweight … and smelting freed nothing`.** No beetle in range, a beetle that is not yours, or
-every hue written off. The run clears the write-offs and tries once more before giving up — once,
-not once per cycle, or a smelt that can never land spins in `smelting` until the stall watchdog.
+every hue written off. The run clears the write-offs, consolidates and smelts once more before giving
+up — once, not once per cycle, or a smelt that can never land spins in `smelting` until the stall
+watchdog.
 
 **`could not get off the mount`.** Double-clicking yourself is not how this shard dismounts.
 
@@ -263,11 +272,20 @@ Written against UOAlive.
 
 - **Ore piles come in four arts** (`0x19B7`, `0x19BA`, `0x19B9`, `0x19B8`), which the stock tables
   call the 1, 2, 3 and 4+ stack sizes. **They are not that here** — a pile of 33 arrives wearing the
-  one called a single. So the arts are a set to match against and nothing more: ore is grouped by
-  hue, and a stack's size is read from `item.amount` alone.
+  one called a single. So the arts are a set to match against and nothing more, and a stack's size is
+  read from `item.amount` alone.
+- **`item.hue` is not a name for the metal.** It reads 0 both for iron and for a pile whose properties
+  the client has not been sent, so grouping by it alone left piles of one metal sitting apart with
+  nothing logged. The shard is the authority instead: the combine is attempted and the refusal in
+  `DIFFERENT_ORE_TEXT` is what splits two metals. Hue only orders the candidates, since it is right
+  nearly always and a wrong guess costs one refusal. A refusal is remembered for the run, a silent
+  miss only for the pass — a busy moment must not split a metal for good.
+- **A combine is silent whether it lands or not.** The proof is the pack: the consumed pile gone, or
+  the pile it went into grown. Counting piles before and after read a client that had not refreshed
+  yet as "no progress" and gave up with several piles of one metal still in the pack.
 - **A swing's ore arrives as a new pile** rather than joining the one already in the pack, and it
   lands *after* the journal line announcing it. `waitForOre` polls for it, then `groupOres`
-  consolidates: that keeps the pack at one pile per hue, so the item cap is never approached by pile
+  consolidates: that keeps the pack at one pile per metal, so the item cap is never approached by pile
   count alone — hitting it *destroys* the swing's ore rather than dropping it — and nothing is left
   sitting below `MIN_SMELT_AMOUNT` when the smelt comes.
 - **The dig names no tile at all: it answers the cursor with `waitTargetSelf`** and lets the shard
@@ -362,8 +380,8 @@ Written against UOAlive.
   being targeted with an ore stack here, and whether it has to be yours. `isRenamable` is what tells
   your pet from a stranger's, and the smelt falls back to any beetle in range.
 - Whether double-clicking yourself is how this shard dismounts.
-- Whether the shard merges ore piles of differing graphics. `groupOres` logs and bails rather than
-  looping if a combine makes no progress.
+- `DIFFERENT_ORE_TEXT`, the stock RunUO wording. A shard that words it differently reaches the
+  grouping as silence, which splits the pair for the pass and logs `nothing was said`.
 - Whether the `notOre` branch wants to mark the tile as well as the art. It calls both, and once the
   art is banned the tile ban can never be reached — harmless, but it double-logs.
 - Whether the ingot arts in [`lib/arts.ts`](../lib/arts.ts) are the right four. Nothing depends on

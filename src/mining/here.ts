@@ -33,10 +33,6 @@ import { watchForTrouble } from './threat.js';
 
 rememberPickaxe(player.equippedItems.oneHanded);
 
-if (PICK_BEETLE) {
-  pickBeetle();
-}
-
 const tooHeavy = (): boolean => overweight();
 
 const WORKED_OUT = 'the spot is worked out';
@@ -45,11 +41,29 @@ log(`mine-here: ${oreTotal()} ore in the pack to start, at ${player.x},${player.
 
 // A run that stops on its first cycle looks from the outside like one that never started. The
 // position matters more here than in dist/mining.js: where the character stands is the whole premise.
+// Read before the dismount below, or the mounted half of it always answers no.
 log(
   `mine-here: mounted ${player.equippedItems.mount ? 'yes' : 'no'}, ` +
     `hand ${describeItem(player.equippedItems.oneHanded)}, ` +
     `weight ${player.weight}/${player.weightMax}`,
 );
+
+// Before the cursor, so the beetle you click is one standing next to you rather than the one you are
+// sitting on
+const afoot = dismount();
+
+if (PICK_BEETLE) {
+  pickBeetle();
+}
+
+// A pack that arrives full has no room for the first swing's ore, and the loop would find that out by
+// destroying it. Smelting only once off the mount: a smelt aimed at the beetle you ride is silent,
+// and three silent passes write the hue off before the run has started.
+groupOres();
+
+if (afoot && tooHeavy()) {
+  smeltHere();
+}
 
 let oreBefore = 0;
 
@@ -78,6 +92,15 @@ const smeltForRoom = (): Interlude => {
   // an ore that cannot be worked. False once a retry has been spent without freeing any ore, which is
   // what stops this cycling through 'smelting' until the stall watchdog.
   if (retryUnsmeltable()) {
+    return { phase: 'smelting' };
+  }
+
+  // The last thing tried rather than a second helping of the first: the retry above has just reopened
+  // the hues written off, so this pass is the one that can act on them.
+  groupOres();
+  smeltHere();
+
+  if (oreTotal() < before) {
     return { phase: 'smelting' };
   }
 

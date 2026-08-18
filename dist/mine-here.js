@@ -254,6 +254,10 @@
   var ORE_GRAPHICS = /* @__PURE__ */ new Set([6583, 6586, 6585, 6584]);
   var ORE_NAME = /\bore\b/i;
   var COMBINE_DELAY = 700;
+  var COMBINE_TIMEOUT = 2e3;
+  var COMBINE_POLL = 200;
+  var MAX_COMBINE_ATTEMPTS = 12;
+  var DIFFERENT_ORE_TEXT = ["You cannot combine ores of different metals"];
   var ORE_SETTLE_TIMEOUT = 1500;
   var ORE_SETTLE_POLL = 150;
   var FIRE_BEETLE_GRAPHICS = /* @__PURE__ */ new Set([169]);
@@ -462,54 +466,84 @@
     }
     return false;
   };
-  var oresByHue = () => {
-    const groups = /* @__PURE__ */ new Map();
-    for (const item of packContents() ?? []) {
-      if (!isOrePile(item)) {
-        continue;
+  var amountOf = (item) => item.amount ?? 1;
+  var hueOf = (item) => item.hue ?? 0;
+  var describe = (item) => `${amountOf(item)} hue ${hueOf(item)}`;
+  var orePiles = () => (packContents() ?? []).filter(isOrePile).sort((a, b) => amountOf(b) - amountOf(a));
+  var differing = /* @__PURE__ */ new Set();
+  var skipped = /* @__PURE__ */ new Set();
+  var serialKey = (a, b) => a.serial < b.serial ? `s${a.serial}:${b.serial}` : `s${b.serial}:${a.serial}`;
+  var hueKey = (a, b) => hueOf(a) < hueOf(b) ? `h${hueOf(a)}:${hueOf(b)}` : `h${hueOf(b)}:${hueOf(a)}`;
+  var hueTellsThemApart = (a, b) => hueOf(a) !== 0 && hueOf(b) !== 0 && hueOf(a) !== hueOf(b);
+  var differs = (a, b) => differing.has(serialKey(a, b)) || skipped.has(serialKey(a, b)) || hueTellsThemApart(a, b) && differing.has(hueKey(a, b));
+  var said = (texts) => texts.some((text) => journal.containsText(text));
+  var merged = (primary, dup, before) => {
+    for (let waited = 0; waited < COMBINE_TIMEOUT; waited += COMBINE_POLL) {
+      const piles = packContents() ?? [];
+      const grown = piles.find((item) => item.serial === primary.serial);
+      if (!piles.some((item) => item.serial === dup.serial) || grown && amountOf(grown) > before) {
+        return true;
       }
-      const oreHue = item.hue ?? 0;
-      const group = groups.get(oreHue);
-      if (group) {
-        group.push(item);
-      } else {
-        groups.set(oreHue, [item]);
+      if (said(DIFFERENT_ORE_TEXT)) {
+        return false;
       }
+      sleep(COMBINE_POLL);
     }
-    return groups;
+    return false;
+  };
+  var combine = (primary, dup) => {
+    const before = amountOf(primary);
+    journal.clear();
+    player.use(dup.serial);
+    if (!target.waitTargetEntity(primary.serial, TARGET_TIMEOUT)) {
+      target.cancel();
+      skipped.add(serialKey(primary, dup));
+      log(`groupOres: no target cursor for ${describe(dup)}`);
+      return;
+    }
+    if (merged(primary, dup, before)) {
+      return;
+    }
+    if (said(THROTTLED_TEXT)) {
+      log("groupOres: the shard says wait, leaving the two of them paired");
+      return;
+    }
+    if (said(DIFFERENT_ORE_TEXT)) {
+      differing.add(serialKey(primary, dup));
+      if (hueTellsThemApart(primary, dup)) {
+        differing.add(hueKey(primary, dup));
+      }
+      return;
+    }
+    skipped.add(serialKey(primary, dup));
+    log(`groupOres: ${describe(primary)} and ${describe(dup)} did not merge and nothing was said`);
+  };
+  var nextPair = (piles) => {
+    const primaries = [];
+    for (const pile of piles) {
+      const home = primaries.find((primary) => hueOf(primary) === hueOf(pile) && !differs(primary, pile)) ?? primaries.find((primary) => !differs(primary, pile));
+      if (home) {
+        return [home, pile];
+      }
+      primaries.push(pile);
+    }
+    return void 0;
   };
   var groupOres = () => {
-    let previousPiles = Infinity;
-    while (true) {
-      const groups = oresByHue();
-      const piles = [...groups.values()].reduce((total, items) => total + items.length, 0);
-      if (piles >= previousPiles) {
-        log(`groupOres: stalled at ${piles} piles`);
+    skipped.clear();
+    for (let attempt = 0; attempt < MAX_COMBINE_ATTEMPTS; attempt++) {
+      const piles = orePiles();
+      const pair = nextPair(piles);
+      if (!pair) {
+        if (skipped.size > 0 && piles.length > 1) {
+          log(`groupOres: left ${piles.length} piles - ${piles.map(describe).join(", ")}`);
+        }
         return;
       }
-      previousPiles = piles;
-      let combined = false;
-      for (const [oreHue, items] of groups) {
-        if (items.length <= 1) {
-          continue;
-        }
-        const primary = items.reduce((a, b) => (b.amount ?? 1) > (a.amount ?? 1) ? b : a);
-        const dup = items.find((item) => item.serial !== primary.serial);
-        if (!dup) {
-          continue;
-        }
-        player.use(dup.serial);
-        if (!target.waitTargetEntity(primary.serial, TARGET_TIMEOUT)) {
-          log(`groupOres: no target cursor for hue ${oreHue}`);
-          target.cancel();
-        }
-        combined = true;
-        sleep(COMBINE_DELAY);
-      }
-      if (!combined) {
-        return;
-      }
+      combine(pair[0], pair[1]);
+      sleep(COMBINE_DELAY);
     }
+    log(`groupOres: hit the ${MAX_COMBINE_ATTEMPTS} attempt backstop`);
   };
 
   // src/mining/dig.ts
@@ -846,9 +880,9 @@
           }
           const stack = options.nextStack(writtenOff);
           if (!stack) {
-            const skipped = options.describeSkipped?.(writtenOff);
-            if (skipped) {
-              log(`${options.label}: ${skipped}`);
+            const skipped2 = options.describeSkipped?.(writtenOff);
+            if (skipped2) {
+              log(`${options.label}: ${skipped2}`);
             }
             return true;
           }
@@ -1120,7 +1154,7 @@
         log(`${options.prefix}: the shard says '${refused}' - not calling again this run`);
       }
     };
-    const describe = (hostile, friend) => {
+    const describe2 = (hostile, friend) => {
       const who = hostile ? `'${nameOf(hostile)}' ${hex(hostile.graphic)} ${distanceTo(hostile)} tiles off (${NOTORIETY[hostile.notoriety] ?? hostile.notoriety})` : "nothing in sight";
       const mine = `you ${player.hits}/${hitsCeiling() ?? "?"}`;
       const theirs = friend ? `, ${options.companionName} ${friend.hits}/${friend.maxHits || "?"}` : "";
@@ -1140,9 +1174,9 @@
         if (friendHits > 0) {
           lastCompanionHits = friendHits;
         }
-        const said = options.attackText.some((text) => journal.containsText(text));
+        const said2 = options.attackText.some((text) => journal.containsText(text));
         const hostile = hostileNear();
-        if (!hostile && !hurt && !friendHurt && !said) {
+        if (!hostile && !hurt && !friendHurt && !said2) {
           if (episode) {
             episode = false;
             calls = 0;
@@ -1152,7 +1186,7 @@
         }
         if (!episode) {
           episode = true;
-          log(`${options.prefix}: trouble - ${describe(hostile, friend)}`);
+          log(`${options.prefix}: trouble - ${describe2(hostile, friend)}`);
         }
         callGuards();
       }
@@ -1178,15 +1212,20 @@
 
   // src/mining/here.ts
   rememberPickaxe(player.equippedItems.oneHanded);
-  if (PICK_BEETLE) {
-    pickBeetle();
-  }
   var tooHeavy = () => overweight();
   var WORKED_OUT = "the spot is worked out";
   log(`mine-here: ${oreTotal()} ore in the pack to start, at ${player.x},${player.y}`);
   log(
     `mine-here: mounted ${player.equippedItems.mount ? "yes" : "no"}, hand ${describeItem(player.equippedItems.oneHanded)}, weight ${player.weight}/${player.weightMax}`
   );
+  var afoot = dismount();
+  if (PICK_BEETLE) {
+    pickBeetle();
+  }
+  groupOres();
+  if (afoot && tooHeavy()) {
+    smeltHere();
+  }
   var oreBefore = 0;
   var smeltForRoom = () => {
     if (!tooHeavy()) {
@@ -1199,6 +1238,11 @@
       return { phase: "smelting" };
     }
     if (retryUnsmeltable()) {
+      return { phase: "smelting" };
+    }
+    groupOres();
+    smeltHere();
+    if (oreTotal() < before) {
       return { phase: "smelting" };
     }
     return {

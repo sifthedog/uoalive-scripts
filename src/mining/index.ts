@@ -46,10 +46,6 @@ import { stepToward } from './walk.js';
 
 rememberPickaxe(player.equippedItems.oneHanded);
 
-if (PICK_BEETLE) {
-  pickBeetle();
-}
-
 const watch = watchForTrouble('mining');
 
 const idleUntil = createIdleWait({
@@ -75,12 +71,30 @@ const groupAndSmelt = (): void => {
 log(`mining: ${oreTotal()} ore in the pack to start, at ${player.x},${player.y}`);
 
 // A run that stops on its first cycle looks from the outside like one that never started, so the
-// three things that end one that early are said out loud first.
+// three things that end one that early are said out loud first. Read before the dismount below, or
+// the mounted half of it always answers no.
 log(
   `mining: mounted ${player.equippedItems.mount ? 'yes' : 'no'}, ` +
     `hand ${describeItem(player.equippedItems.oneHanded)}, ` +
     `weight ${player.weight}/${player.weightMax}`,
 );
+
+// Before the cursor, so the beetle you click is one standing next to you rather than the one you are
+// sitting on
+const afoot = dismount();
+
+if (PICK_BEETLE) {
+  pickBeetle();
+}
+
+// A pack that arrives full has no room for the first swing's ore, and the loop would find that out by
+// destroying it. Smelting only once off the mount: a smelt aimed at the beetle you ride is silent,
+// and three silent passes write the hue off before the run has started.
+groupOres();
+
+if (afoot && tooHeavy()) {
+  smeltAll();
+}
 
 // Spots in a row the shard said had nothing in them. A few is roaming; a lot in a row is
 // ORE_TILE_GRAPHICS matching ground that carries no ore, which looks identical from the outside.
@@ -116,6 +130,15 @@ const smeltForRoom = (): Interlude => {
   // an ore that cannot be worked. False once a retry has been spent without freeing any ore, which is
   // what stops this cycling through 'smelting' until the stall watchdog.
   if (retryUnsmeltable()) {
+    return { phase: 'smelting' };
+  }
+
+  // The last thing tried rather than a second helping of the first: the retry above has just reopened
+  // the hues written off, so this pass is the one that can act on them.
+  groupOres();
+  smeltAll();
+
+  if (oreTotal() < before) {
     return { phase: 'smelting' };
   }
 

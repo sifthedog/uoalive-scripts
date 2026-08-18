@@ -1,8 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { installGlobals, item, type FakeWorld } from '../test-support/uo.js';
-import { ORE_GRAPHICS, ORE_SETTLE_POLL, ORE_SETTLE_TIMEOUT } from './config.js';
-import { groupOres, oreTotal, oresByHue, waitForOre } from './ore.js';
+import {
+  DIFFERENT_ORE_TEXT,
+  MAX_COMBINE_ATTEMPTS,
+  ORE_GRAPHICS,
+  ORE_SETTLE_POLL,
+  ORE_SETTLE_TIMEOUT,
+  THROTTLED_TEXT,
+} from './config.js';
+import { orePiles, oreTotal, waitForOre } from './ore.js';
 
 const IRON = 0;
 const COPPER = 0x60c;
@@ -20,44 +27,29 @@ beforeEach(() => {
   world = installGlobals();
 });
 
-describe('oresByHue', () => {
+describe('orePiles', () => {
   it('finds nothing in an empty pack', () => {
-    expect(oresByHue().size).toBe(0);
+    expect(orePiles()).toEqual([]);
   });
 
-  // Ore is grouped by hue and never by graphic, because the graphic only says how big the pile is
-  it('groups piles of every stack size together', () => {
+  // The graphic only says how the pile is drawn, so every stack size is one candidate list
+  it('collects piles of every stack size, largest first', () => {
     installGlobals({
       backpack: [
         ore(1, IRON, 1, ONE),
-        ore(2, IRON, 2, TWO),
+        ore(2, IRON, 9, TWO),
         ore(3, IRON, 3, THREE),
-        ore(4, IRON, 9, MANY),
+        ore(4, IRON, 2, MANY),
       ],
     });
 
-    expect(oresByHue().get(IRON)?.map((i) => i.serial)).toEqual([1, 2, 3, 4]);
-  });
-
-  it('keeps two ore types apart', () => {
-    installGlobals({ backpack: [ore(1, IRON, 5), ore(2, COPPER, 5), ore(3, IRON, 5)] });
-
-    const groups = oresByHue();
-
-    expect(groups.get(IRON)?.map((i) => i.serial)).toEqual([1, 3]);
-    expect(groups.get(COPPER)?.map((i) => i.serial)).toEqual([2]);
-  });
-
-  it('treats a missing hue as iron', () => {
-    installGlobals({ backpack: [item({ serial: 1, graphic: MANY, amount: 5 })] });
-
-    expect(oresByHue().get(IRON)).toHaveLength(1);
+    expect(orePiles().map((i) => i.serial)).toEqual([2, 3, 4, 1]);
   });
 
   it('ignores everything that is not ore', () => {
     installGlobals({ backpack: [ore(1, IRON, 5), item({ serial: 2, graphic: 0x0f3f })] });
 
-    expect(oresByHue().get(IRON)).toHaveLength(1);
+    expect(orePiles().map((i) => i.serial)).toEqual([1]);
   });
 
   // Top level only, because the combine and the smelt both act by serial on loose piles. The
@@ -67,7 +59,7 @@ describe('oresByHue', () => {
       backpack: [item({ serial: 1, graphic: 0x0e76, contents: [ore(2, IRON, 5)] })],
     });
 
-    expect(oresByHue().size).toBe(0);
+    expect(orePiles()).toEqual([]);
   });
 });
 
@@ -155,80 +147,160 @@ describe('oreTotal', () => {
   });
 });
 
+// A shard stands behind these: it merges the pairs `allows` accepts, and refuses the rest in the
+// wording DIFFERENT_ORE_TEXT knows. The module remembers what it learns for the run, so every test
+// gets its own copy of it.
+const onShard = async (
+  piles: Item[],
+  allows: (primary: Item, dup: Item) => boolean = () => true,
+  refusal: string = DIFFERENT_ORE_TEXT[0],
+) => {
+  vi.resetModules();
+
+  const world = installGlobals();
+  const pack = [...piles];
+  let said = '';
+
+  Object.defineProperty(world.player, 'backpack', {
+    configurable: true,
+    get: () => ({ serial: 0x40000000, contents: pack }),
+  });
+
+  let held: Item | undefined;
+  world.player.use.mockImplementation((serial: number) => {
+    held = pack.find((pile) => pile.serial === serial);
+  });
+
+  world.target.waitTargetEntity.mockImplementation((serial: number) => {
+    const primary = pack.find((pile) => pile.serial === serial);
+    said = '';
+
+    if (!held || !primary) {
+      return true;
+    }
+
+    if (allows(primary, held)) {
+      primary.amount = (primary.amount ?? 1) + (held.amount ?? 1);
+      pack.splice(pack.indexOf(held), 1);
+    } else {
+      said = refusal;
+    }
+
+    return true;
+  });
+
+  world.journal.containsText.mockImplementation((text: string) => said.includes(text));
+
+  const { groupOres } = await import('./ore.js');
+  groupOres();
+
+  return { world, pack };
+};
+
+const sameHue = (a: Item, b: Item) => (a.hue ?? 0) === (b.hue ?? 0);
+
 describe('groupOres', () => {
-  it('does nothing when there is no ore', () => {
-    groupOres();
+  it('does nothing when there is no ore', async () => {
+    const { world } = await onShard([]);
 
     expect(world.player.use).not.toHaveBeenCalled();
   });
 
-  it('does nothing when each hue is already a single pile', () => {
-    installGlobals({ backpack: [ore(1, IRON, 5), ore(2, COPPER, 5)] });
+  // One attempt is the price of not trusting hue: it is 0 for iron and for a pile the client has said
+  // nothing about, so the shard has to be the one that says these two are different metals.
+  it('spends one attempt finding out two lone piles are different metals', async () => {
+    const { world, pack } = await onShard([ore(1, IRON, 5), ore(2, COPPER, 5)], sameHue);
 
-    groupOres();
-
-    expect(world.player.use).not.toHaveBeenCalled();
+    expect(world.player.use).toHaveBeenCalledTimes(1);
+    expect(pack).toHaveLength(2);
   });
 
   // Double-click one pile and target another, which is what works by hand on this shard. The
   // largest is the target so the smaller pile is the one consumed.
-  it('combines a smaller pile into the largest one of its hue', () => {
-    world = installGlobals({ backpack: [ore(1, IRON, 3), ore(2, IRON, 30)] });
-
-    groupOres();
+  it('combines a smaller pile into the largest one of its metal', async () => {
+    const { world, pack } = await onShard([ore(1, IRON, 3), ore(2, IRON, 30)]);
 
     expect(world.player.use).toHaveBeenCalledWith(1);
     expect(world.target.waitTargetEntity).toHaveBeenCalledWith(2, expect.any(Number));
+    expect(pack.map((pile) => pile.amount)).toEqual([33]);
   });
 
-  it('leaves a lone pile of another hue untouched', () => {
-    world = installGlobals({ backpack: [ore(1, IRON, 3), ore(2, IRON, 30), ore(3, COPPER, 5)] });
+  it('works a pile of three down to one', async () => {
+    const { pack } = await onShard([ore(1, IRON, 3), ore(2, IRON, 30), ore(3, IRON, 7)]);
 
-    groupOres();
-
-    expect(world.player.use).not.toHaveBeenCalledWith(3);
+    expect(pack.map((pile) => pile.amount)).toEqual([40]);
   });
 
-  // A combine consumes one of the two piles, so the pack is rescanned between passes rather than
-  // planned up front. With a fake pack that never changes, that is a stall - and it must not loop.
-  it('bails out rather than looping when a pass makes no progress', () => {
-    world = installGlobals({ backpack: [ore(1, IRON, 3), ore(2, IRON, 30)] });
+  // The bug this grouping exists to fix: hue reads 0 for a pile the client has not been sent the
+  // properties of, so two piles of one metal can arrive wearing different hues.
+  it('merges two piles the shard accepts even when their hues disagree', async () => {
+    const { pack } = await onShard([ore(1, IRON, 30), ore(2, COPPER, 3)]);
 
-    groupOres();
-
-    expect(world.log).toHaveBeenCalledWith(expect.stringContaining('stalled'));
+    expect(pack.map((pile) => pile.amount)).toEqual([33]);
   });
 
-  it('reports a missing target cursor and cancels it', () => {
-    world = installGlobals({ backpack: [ore(1, IRON, 3), ore(2, IRON, 30)] });
+  it('leaves two metals the shard refuses apart', async () => {
+    const { pack } = await onShard([ore(1, IRON, 30), ore(2, COPPER, 3)], sameHue);
+
+    expect(pack.map((pile) => pile.serial)).toEqual([1, 2]);
+  });
+
+  it('does not offer a refused pair a second time', async () => {
+    const { world } = await onShard(
+      [ore(1, IRON, 30), ore(2, COPPER, 3), ore(3, COPPER, 2)],
+      sameHue,
+    );
+
+    expect(world.player.use.mock.calls.filter(([serial]) => serial === 2)).toHaveLength(1);
+  });
+
+  // Nothing was attempted, so nothing has been learned - the pair is still worth trying
+  it('holds a throttled attempt against nobody', async () => {
+    const { world } = await onShard([ore(1, IRON, 30), ore(2, IRON, 3)], () => false, THROTTLED_TEXT[0]);
+
+    expect(world.player.use.mock.calls.length).toBeGreaterThan(1);
+    expect(world.log).toHaveBeenCalledWith(expect.stringContaining('says wait'));
+  });
+
+  it('reports a missing target cursor and cancels it', async () => {
+    vi.resetModules();
+    const world = installGlobals({ backpack: [ore(1, IRON, 3), ore(2, IRON, 30)] });
     world.target.waitTargetEntity.mockReturnValue(false);
 
+    const { groupOres } = await import('./ore.js');
     groupOres();
 
     expect(world.log).toHaveBeenCalledWith(expect.stringContaining('no target cursor'));
     expect(world.target.cancel).toHaveBeenCalled();
   });
 
-  it('stops once the piles have actually merged', () => {
-    const packs = [
-      [ore(1, IRON, 3), ore(2, IRON, 30)],
-      [ore(2, IRON, 33)],
-    ];
-    let pass = 0;
-    world = installGlobals();
-    Object.defineProperty(world.player, 'backpack', {
-      configurable: true,
-      get: () => ({ serial: 0x40000000, contents: packs[Math.min(pass, 1)] }),
-    });
-    world.target.waitTargetEntity.mockImplementation(() => {
-      pass = 1;
-      return true;
-    });
+  // A shard that answers a combine with silence, which is also what a pack the client has not
+  // refreshed looks like. It must not loop, and it must say what it left behind.
+  it('gives up on a silent pair and names what is left', async () => {
+    vi.resetModules();
+    const world = installGlobals({ backpack: [ore(1, IRON, 3), ore(2, IRON, 30)] });
 
+    const { groupOres } = await import('./ore.js');
     groupOres();
 
-    expect(world.log).not.toHaveBeenCalledWith(expect.stringContaining('stalled'));
-    expect(world.player.use).toHaveBeenCalledTimes(1);
+    expect(world.log).toHaveBeenCalledWith(expect.stringContaining('nothing was said'));
+    expect(world.log).toHaveBeenCalledWith(expect.stringContaining('left 2 piles'));
+  });
+
+  it('stops at the attempt backstop rather than looping', async () => {
+    vi.resetModules();
+    const world = installGlobals({
+      backpack: [ore(1, IRON, 3), ore(2, IRON, 30)],
+    });
+    world.journal.containsText.mockImplementation((text: string) =>
+      THROTTLED_TEXT[0].includes(text),
+    );
+
+    const { groupOres } = await import('./ore.js');
+    groupOres();
+
+    expect(world.player.use).toHaveBeenCalledTimes(MAX_COMBINE_ATTEMPTS);
+    expect(world.log).toHaveBeenCalledWith(expect.stringContaining('backstop'));
   });
 });
 
