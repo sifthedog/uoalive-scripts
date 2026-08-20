@@ -176,6 +176,9 @@ export const createApproach = <T extends Tile>(options: {
   markUnreachable: (target: T & { distance: number }) => void;
   idleUntil: (at: number) => void;
 
+  // A step during a save does not move you, which is what this reads as a wall
+  isSaving?: () => boolean;
+
   // The stop reason for an area with nothing left in it, and the one chance to say what was on the
   // ground instead
   nothingFound: () => string;
@@ -212,8 +215,9 @@ export const createApproach = <T extends Tile>(options: {
       steps = 0;
     }
 
-    // Blocked or out of patience: set the tile aside, or the next scan picks the same one again
-    if (!options.step(found) || ++steps > options.maxSteps) {
+    // Blocked or out of patience: set the tile aside, or the next scan picks the same one again. Not
+    // during a save, where a step that does not move cost a live run two good veins for five minutes.
+    if ((!options.step(found) && !options.isSaving?.()) || ++steps > options.maxSteps) {
       options.markUnreachable(found);
       walkingTo = undefined;
     }

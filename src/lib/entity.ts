@@ -28,6 +28,9 @@ export const approach = (
     range: number;
     maxSteps: number;
     step: (spot: { x: number; y: number }) => boolean;
+
+    // A step during a save does not move you, which is what this reads as a wall
+    isSaving?: () => boolean;
   },
 ): Mobile | undefined => {
   for (let taken = 0; taken < options.maxSteps; taken++) {
@@ -42,7 +45,9 @@ export const approach = (
       return found;
     }
 
-    if (!options.step(found)) {
+    // Still spent against maxSteps, the same as lib/tiles.ts: the saving line sits in the journal
+    // until something clears it, and a step that is free during a save never ends the walk.
+    if (!options.step(found) && !options.isSaving?.()) {
       log(`${options.label}: cannot reach ${nameOf(found)}`);
       return undefined;
     }

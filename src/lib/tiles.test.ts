@@ -81,6 +81,39 @@ describe('createApproach', () => {
       expect(markUnreachable).toHaveBeenCalled();
     });
 
+    // A frozen shard does not move you, and read as a wall it cost a live mining run two good veins
+    // for five minutes each. The harvest loop waits the save out next cycle and the walk resumes.
+    it('does not set it aside for a step the shard never processed', () => {
+      const markUnreachable = vi.fn();
+
+      approaching({
+        scan: () => ({ found: at(5, 5) }),
+        step: () => false,
+        isSaving: () => true,
+        markUnreachable,
+      })();
+
+      expect(markUnreachable).not.toHaveBeenCalled();
+    });
+
+    // The backstop still applies: a save that never ends must not walk forever
+    it('still sets it aside once the walk is out of patience during a save', () => {
+      const markUnreachable = vi.fn();
+      const approach = approaching({
+        scan: () => ({ found: at(5, 5) }),
+        step: () => false,
+        isSaving: () => true,
+        maxSteps: 2,
+        markUnreachable,
+      });
+
+      approach();
+      approach();
+      approach();
+
+      expect(markUnreachable).toHaveBeenCalled();
+    });
+
     // Two different targets taking turns as nearest still reset it - the stall watchdog is what
     // bounds that, not this counter
     it('starts the count again when the walk changes target', () => {

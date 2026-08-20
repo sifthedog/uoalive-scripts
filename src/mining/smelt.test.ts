@@ -301,6 +301,30 @@ describe('smeltAll', () => {
     expect(world.target.cancel).toHaveBeenCalled();
   });
 
+  // Same measurement dig.ts:80 and ore.ts:120 already carry: a cursor cancelled shortly before an
+  // action costs that action its own, and every silent smelt it causes is counted against the hue
+  it('does not cancel a cursor that is not open before using the ore', async () => {
+    world = installGlobals({ player: { x: 100, y: 100 }, backpack: [ore(1, IRON)] });
+    beetleNearby();
+    world.target.open = false;
+    const { smeltAll } = await loadSmelt();
+
+    smeltAll();
+
+    expect(world.target.cancel).not.toHaveBeenCalled();
+  });
+
+  it('does cancel one that is open, which would otherwise swallow the use', async () => {
+    world = installGlobals({ player: { x: 100, y: 100 }, backpack: [ore(1, IRON)] });
+    beetleNearby();
+    world.target.open = true;
+    const { smeltAll } = await loadSmelt();
+
+    smeltAll();
+
+    expect(world.target.cancel).toHaveBeenCalled();
+  });
+
   it('leaves an ore of another hue alone once it has given up on one', async () => {
     world = installGlobals({
       player: { x: 100, y: 100 },

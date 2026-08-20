@@ -2,11 +2,13 @@ import { describeItem } from '../lib/entity.js';
 import { outcomeVocabulary } from '../lib/outcomes.js';
 import { totalMatching } from '../lib/pack.js';
 import {
+  CHOP_PROMPT_TEXT,
+  CHOP_TARGET_POLL,
+  CHOP_TARGET_TIMEOUT,
   CHOP_TIMEOUT,
   LOG_GRAPHICS,
   NO_CURSOR_READ,
   OUTCOME_TEXT,
-  TARGET_TIMEOUT,
 } from './config.js';
 import type { Tree } from './tree.js';
 
@@ -39,11 +41,7 @@ const silentOutcome = (serial: number | undefined, logsBefore: number): ChopOutc
 // swing is that it refused the action outright and said so, and the journal has been clear since
 // immediately before this swing. Reaching noCursor instead of the throttled or saving branch is what
 // ended a live mining run in fifteen seconds with a pickaxe plainly in hand.
-const refusedOutcome = (
-  serial: number | undefined,
-  logsBefore: number,
-  cursorCameLate: boolean,
-): ChopOutcome | undefined => {
+const refusedOutcome = (serial: number | undefined, logsBefore: number): ChopOutcome | undefined => {
   const matched = journal.waitForTextAny(ALL_OUTCOME_TEXT, undefined, NO_CURSOR_READ);
   if (matched) {
     return outcomeFor(matched);
@@ -54,35 +52,51 @@ const refusedOutcome = (
     return silent;
   }
 
-  // A cursor that turned up just too late is a different fault from one that never came -
-  // TARGET_TIMEOUT rather than the shard. Two-handed first, the way rememberAxe reads the layers.
+  // Two-handed first, the way rememberAxe reads the layers
   log(
     `chopOnce: no target cursor - hand ` +
       `${describeItem(player.equippedItems.twoHanded ?? player.equippedItems.oneHanded)}, ` +
-      `cursor ${cursorCameLate ? 'came late' : 'never opened'}`,
+      `neither target.open nor CHOP_PROMPT_TEXT in ${CHOP_TARGET_TIMEOUT}ms`,
   );
 
   return 'noCursor';
 };
 
+// target.open stayed false through a whole mining swing the shard had plainly opened a cursor for -
+// its prompt was in the journal 164ms in - so the prompt counts as the cursor being up.
+const cursorOpened = (): boolean => {
+  for (let waited = 0; waited < CHOP_TARGET_TIMEOUT; waited += CHOP_TARGET_POLL) {
+    if (target.open || CHOP_PROMPT_TEXT.some((text) => journal.containsText(text))) {
+      return true;
+    }
+
+    sleep(CHOP_TARGET_POLL);
+  }
+
+  return false;
+};
+
 // outcomeFor cannot actually miss - waitForTextAny hands back one of the strings it was given - but
 // the caller's switch has always had a default for it, so the maybe is kept rather than asserted away
 export const chopOnce = (tree: Tree, serial: number | undefined): ChopOutcome | undefined => {
-  // A cursor left open by the previous swing would swallow this one
-  target.cancel();
+  target.clearQueue();
+
+  // Cancelled only when there is one to cancel: an unconditional cancel a few hundred milliseconds
+  // before the swing left target.open false for the cursor that followed, which is what dig.ts was
+  // fixed for and what left a live lumberjack run swinging an Executioner's Axe at nothing.
+  if (target.open) {
+    target.cancel();
+  }
 
   const logsBefore = logTotal();
   journal.clear();
 
   player.useItemInHand();
 
-  if (!target.wait(TARGET_TIMEOUT)) {
-    // Read before the cancel closes it, or the answer is always 'no cursor' and says nothing
-    const cursorCameLate = target.open;
-
+  if (!cursorOpened()) {
     target.cancel();
 
-    return refusedOutcome(serial, logsBefore, cursorCameLate);
+    return refusedOutcome(serial, logsBefore);
   }
 
   // The graphic is not optional here: target.terrain without one targets the land tile under the

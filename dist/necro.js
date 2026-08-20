@@ -482,6 +482,7 @@
     "You do not have enough skill"
   ];
   var HOSTILE_NOTORIETY = 16 | 8 | 2 | 4;
+  var CALL_ON_SIGHT_NOTORIETY = 8 | 2 | 4;
 
   // src/necromancy/config.ts
   var SKILL = Skills.Necromancy;

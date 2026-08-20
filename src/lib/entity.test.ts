@@ -126,4 +126,42 @@ describe('approach', () => {
     expect(step).toHaveBeenCalledTimes(4);
     expect(world.log).toHaveBeenCalledWith(expect.stringContaining('after 4 steps'));
   });
+
+  describe('during a world save', () => {
+    const walkWhileSaving = (step: (spot: { x: number; y: number }) => boolean) =>
+      approach(0x77, { label: 'smelt', range: 2, maxSteps: 4, step, isSaving: () => true });
+
+    // A frozen shard refuses every step, and read as a wall it aborts the haul the save interrupted
+    it('does not read a step that did not move as a wall', () => {
+      world.client.findObject.mockReturnValue(beetle(60, 50));
+
+      expect(walkWhileSaving(() => false)).toBeUndefined();
+      expect(world.log).not.toHaveBeenCalledWith(expect.stringContaining('cannot reach'));
+    });
+
+    // The saving line sits in the journal until something clears it
+    it('still spends the steps it was given', () => {
+      world.client.findObject.mockReturnValue(beetle(60, 50));
+      const step = vi.fn(() => false);
+
+      walkWhileSaving(step);
+
+      expect(step).toHaveBeenCalledTimes(4);
+    });
+
+    it('arrives when the shard thaws mid-walk', () => {
+      let x = 60;
+      let frozen = 2;
+      world.client.findObject.mockImplementation(() => beetle(x, 50));
+      const step = vi.fn(() => {
+        if (frozen-- > 0) {
+          return false;
+        }
+        x -= 8;
+        return true;
+      });
+
+      expect(walkWhileSaving(step)).toBeDefined();
+    });
+  });
 });

@@ -30,20 +30,22 @@ the beetle you click is one standing next to you rather than the one you were si
 Every cycle:
 
 1. **Check the stop conditions** — dead, or the pack at its item cap.
-2. **Get off the mount.** Asked every cycle, so a remount costs one cycle rather than the rest of the
+2. **Sit out a world save.** The shard stops answering for a few seconds, and every step below reads
+   that silence as its own kind of failure.
+3. **Get off the mount.** Asked every cycle, so a remount costs one cycle rather than the rest of the
    run. There is no dismount call in this API: it double-clicks the player and polls
    `equippedItems.mount` until it clears.
-3. **Equip a pickaxe.** Also every cycle. Spares are found in the pack, one level of bags down.
-4. **The weight backstop.** If the pack is genuinely over the limit, smelt now.
-5. **Scan for a vein** within `SCAN_RADIUS`, nearest first, skipping tiles the run has parked.
-6. **Walk to it** if it is further than `MINE_RANGE`. One naive `Math.sign` step per cycle; there is
+4. **Equip a pickaxe.** Also every cycle. Spares are found in the pack, one level of bags down.
+5. **The weight backstop.** If the pack is genuinely over the limit, smelt now.
+6. **Scan for a vein** within `SCAN_RADIUS`, nearest first, skipping tiles the run has parked.
+7. **Walk to it** if it is further than `MINE_RANGE`. One naive `Math.sign` step per cycle; there is
    no pathfinding API. A vein that takes more than `MAX_STEPS` is marked unreachable for
    `UNREACHABLE_DELAY`.
-7. **Swing**, and branch on what the shard says.
+8. **Swing**, and branch on what the shard says.
 
-Steps 1-4 and 7, along with the counters that end a run, are
+Steps 1-5 and 8, along with the counters that end a run, are
 [`lib/harvest.ts`](../lib/harvest.js)'s `runHarvest` — the same loop `dist/mine-here.js` and
-`dist/lumberjack.js` run. Steps 5 and 6 are `createApproach` in [`lib/tiles.ts`](../lib/tiles.ts).
+`dist/lumberjack.js` run. Steps 6 and 7 are `createApproach` in [`lib/tiles.ts`](../lib/tiles.ts).
 What this folder supplies is the wordings, the tool, the smelt, and the outcomes in the table below.
 
 | Outcome | What the loop does |
@@ -214,6 +216,7 @@ whether the character parks a tile or walks away.
 | --- | --- | --- |
 | `WATCH_FOR_TROUBLE` | true | The whole feature. Off, and none of the rest is read |
 | `HOSTILE_NOTORIETY` | Gray, Criminal, Enemy, Murderer | Which healthbar colours count. Innocent is out, or every blue NPC in the world is trouble |
+| `CALL_ON_SIGHT_NOTORIETY` | Criminal, Enemy, Murderer | Which of those are worth a `guards` on sight alone. Gray is out: the wildlife is gray, and a cat wandering past is not evidence of anything. A gray still draws the call the moment it damages you or the pet |
 | `THREAT_RANGE` | 12 | How close it has to be. `selectEntity` takes no range of its own, so this is the only filter |
 | `GUARD_CALL` | `'guards'` | What gets said |
 | `GUARD_CALLS` | 3 | Calls per episode, `0` for no cap. The count resets the first cycle that sees nothing |
@@ -259,7 +262,8 @@ shard words its prompt differently — correct `DIG_PROMPT_TEXT` and it is fixed
 **`overweight … and smelting freed nothing`.** No beetle in range, a beetle that is not yours, or
 every hue written off. The run clears the write-offs, consolidates and smelts once more before giving
 up — once, not once per cycle, or a smelt that can never land spins in `smelting` until the stall
-watchdog.
+watchdog. Never a world save: that is waited out instead, both before the retry is spent and before
+the verdict is drawn.
 
 **`could not get off the mount`.** Double-clicking yourself is not how this shard dismounts.
 
@@ -363,7 +367,9 @@ Written against UOAlive.
 - **Everything the guard call rests on.** Whether `guards` is the phrase this shard takes, whether
   guards answer monsters here at all, and the wordings in `NO_GUARDS_TEXT`, `GUARD_ZONE_TEXT` and
   `UNGUARDED_TEXT` — all stock RunUO guesses.
-- **`HOSTILE_NOTORIETY`**: whether this shard's encounter spawns come up gray or red.
+- **`HOSTILE_NOTORIETY`**: whether this shard's encounter spawns come up gray or red. If they are
+  gray they share a notoriety with every cat and crow, so the call waits for blood — put them in
+  `CALL_ON_SIGHT_NOTORIETY` only if a gray in sight is worth shouting at here.
 - Whether `client.selectEntity` disturbs the client's current target, and so whether the watch can
   cost a swing its cursor the way `target.cancel()` was found to.
 - **`ORE_TILE_GRAPHICS`**, which is the one that matters. Copied from the stock RunUO mountain and

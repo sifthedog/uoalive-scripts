@@ -1,8 +1,7 @@
 import { describeItem } from '../lib/entity.js';
-import { runHarvest, type Handled, type Interlude } from '../lib/harvest.js';
+import { runHarvest, type Handled } from '../lib/harvest.js';
 import { createIdleWait, createStallWatch } from '../lib/loop.js';
 import { createApproach } from '../lib/tiles.js';
-import { overweight } from '../lib/weight.js';
 import {
   IDLE_LOG_EVERY,
   IDLE_POLL,
@@ -29,8 +28,9 @@ import { heartbeat, resetBeat } from './heartbeat.js';
 import { dismount } from './mount.js';
 import { groupOres, oreTotal, waitForOre } from './ore.js';
 import { equipPickaxe, pickaxeSerial, rememberPickaxe } from './pickaxe.js';
-import { waitOutSave } from './save.js';
-import { pickBeetle, retryUnsmeltable, smeltAll } from './smelt.js';
+import { createSmeltForRoom, tooHeavy } from './relieve.js';
+import { isSaving, waitOutSave } from './save.js';
+import { pickBeetle, smeltAll } from './smelt.js';
 import { reportTerrain } from './survey.js';
 import { watchForTrouble } from './threat.js';
 import {
@@ -57,9 +57,6 @@ const idleUntil = createIdleWait({
   watch,
   onDone: resetBeat,
 });
-
-// No buffer: ore travels as ore until it cannot travel at all.
-const tooHeavy = (): boolean => overweight();
 
 // A spot running dry is the cheapest moment to turn a pack of ore into a pocketful of ingots: the
 // character is about to walk off anyway. Neither call costs anything when there is nothing to do.
@@ -105,49 +102,8 @@ let barren = 0;
 let oreBefore = 0;
 
 // The backstop rather than the plan - a spot running dry normally sends the ore to the beetle long
-// before the pack fills. Ore weighs twelve stones and an ingot almost nothing, and there is nowhere
-// else for the weight to go, which is why a smelt that frees nothing ends the run.
-const smeltForRoom = (): Interlude => {
-  if (!tooHeavy()) {
-    return undefined;
-  }
-
-  const before = oreTotal();
-
-  // Unconditional, because the decision has already been taken: a helper that asked tooHeavy() a
-  // second time could disagree, and the run stopped for weight without ever having tried.
-  groupOres();
-  smeltAll();
-
-  // Ore leaving the pack is the proof a smelt landed, not the weight going down: the client can
-  // still be reporting the figure it had before a conversion the pack diff has confirmed, and
-  // reading that as 'smelting freed nothing' ended runs next to a working beetle.
-  if (oreTotal() < before) {
-    return { phase: 'smelting' };
-  }
-
-  // Likeliest reason is a hue given up on earlier - a beetle briefly out of range looks exactly like
-  // an ore that cannot be worked. False once a retry has been spent without freeing any ore, which is
-  // what stops this cycling through 'smelting' until the stall watchdog.
-  if (retryUnsmeltable()) {
-    return { phase: 'smelting' };
-  }
-
-  // The last thing tried rather than a second helping of the first: the retry above has just reopened
-  // the hues written off, so this pass is the one that can act on them.
-  groupOres();
-  smeltAll();
-
-  if (oreTotal() < before) {
-    return { phase: 'smelting' };
-  }
-
-  return {
-    stop:
-      `overweight (${player.weight}/${player.weightMax}) with ${oreTotal()} ore left, ` +
-      'and smelting freed nothing',
-  };
-};
+// before the pack fills.
+const smeltForRoom = createSmeltForRoom({ smelt: smeltAll });
 
 const handle = (outcome: string, vein?: Vein): Handled => {
   if (!vein) {
@@ -229,6 +185,7 @@ runHarvest<Vein>({
   equipTool: equipPickaxe,
   ready: () => (dismount() ? undefined : 'could not get off the mount'),
   relieve: smeltForRoom,
+  isSaving,
   waitOutSave,
 
   approach: createApproach<Vein>({
@@ -244,6 +201,7 @@ runHarvest<Vein>({
     step: stepToward,
     markUnreachable,
     idleUntil,
+    isSaving,
 
     nothingFound: () => {
       // The likeliest way a run ends on a shard whose tile numbering ORE_TILE_GRAPHICS does not

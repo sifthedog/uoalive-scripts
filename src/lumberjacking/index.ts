@@ -17,6 +17,7 @@ import {
   MAX_STEPS,
   MAX_THROTTLED,
   MAX_UNKNOWN,
+  PICK_PACK_ANIMALS,
   STALL_STOP,
   STALL_WARN,
   STEP_DELAY,
@@ -24,7 +25,7 @@ import {
   THROTTLE_BACKOFF_MAX,
 } from './config.js';
 import { stopReason } from './guards.js';
-import { unload } from './haul.js';
+import { pickPackAnimals, unload } from './haul.js';
 import { heartbeat, resetBeat } from './heartbeat.js';
 import { isSaving, waitOutSave } from './save.js';
 import { watchForTrouble } from './threat.js';
@@ -52,6 +53,10 @@ const idleUntil = createIdleWait({
 
 log(`lumberjack: ${logTotal()} logs in the pack to start, staying within ${describeBounds()}`);
 
+if (PICK_PACK_ANIMALS) {
+  pickPackAnimals();
+}
+
 // Latched off the first time a haul frees nothing, so a missing animal costs one search rather than
 // one per cycle for the rest of the run
 let hauling = true;
@@ -63,16 +68,17 @@ const haulForRoom = (): Interlude => {
     return undefined;
   }
 
-  const weightBefore = player.weight;
-
   makeBoards();
-  unload();
+
+  // Stacks leaving the pack is the proof, not the weight going down: the client can still report its
+  // pre-haul figure over a move the pack diff has confirmed, which is what ended live mining runs.
+  const moved = unload();
 
   // A save freezes every part of a haul at once, and read as an ordinary result it latches hauling
   // off for the rest of the run.
   if (isSaving()) {
     waitOutSave();
-  } else if (player.weight >= weightBefore) {
+  } else if (!moved) {
     hauling = false;
     log('lumberjack: hauling freed nothing, carrying on until overweight');
   }
@@ -128,6 +134,7 @@ runHarvest<Tree & { distance: number }>({
   watch: watchForTrouble,
   equipTool: equipAxe,
   relieve: haulForRoom,
+  isSaving,
   waitOutSave,
 
   approach: createApproach<Tree>({
@@ -143,6 +150,7 @@ runHarvest<Tree & { distance: number }>({
     step: stepToward,
     markUnreachable,
     idleUntil,
+    isSaving,
     nothingFound: () => 'no tree in range',
   }),
 

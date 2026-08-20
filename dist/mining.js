@@ -16,7 +16,7 @@
       if (distanceTo(found) <= options.range) {
         return found;
       }
-      if (!options.step(found)) {
+      if (!options.step(found) && !options.isSaving?.()) {
         log(`${options.label}: cannot reach ${nameOf(found)}`);
         return void 0;
       }
@@ -93,6 +93,7 @@
     handle: handle2,
     progress,
     finish,
+    isSaving: isSaving2,
     waitOutSave: waitOutSave2,
     stall,
     timings
@@ -111,6 +112,14 @@
       stop = stopReason2();
       if (stop) {
         break;
+      }
+      if (isSaving2()) {
+        waitOutSave2();
+        unknown = 0;
+        throttled = 0;
+        stall.progressed();
+        endCycle("saving", cycle);
+        continue;
       }
       watch2?.();
       stop = ready?.();
@@ -321,16 +330,13 @@
         walkingTo = key;
         steps = 0;
       }
-      if (!options.step(found) || ++steps > options.maxSteps) {
+      if (!options.step(found) && !options.isSaving?.() || ++steps > options.maxSteps) {
         options.markUnreachable(found);
         walkingTo = void 0;
       }
       return { walked: true };
     };
   };
-
-  // src/lib/weight.ts
-  var overweight = (buffer = 0) => player.weightMax > 0 && player.weight > player.weightMax - buffer;
 
   // src/lib/timings.ts
   var SCAN_RADIUS = 12;
@@ -371,6 +377,7 @@
     "You do not have enough skill"
   ];
   var HOSTILE_NOTORIETY = 16 | 8 | 2 | 4;
+  var CALL_ON_SIGHT_NOTORIETY = 8 | 2 | 4;
   var THREAT_RANGE = 12;
   var WATCH_FOR_TROUBLE = true;
   var GUARD_CALL = "guards";
@@ -545,28 +552,28 @@
     }
     return opened;
   };
-  var findIn = (contents, matches) => {
+  var findIn = (contents, matches2) => {
     for (const item of contents ?? []) {
-      if (matches(item)) {
+      if (matches2(item)) {
         return item;
       }
       const sub = contentsOf(item);
       if (sub && sub.length > 0) {
-        const foundInSub = findIn(sub, matches);
+        const foundInSub = findIn(sub, matches2);
         if (foundInSub) return foundInSub;
       }
     }
     return null;
   };
-  var collectIn = (contents, matches) => {
+  var collectIn = (contents, matches2) => {
     const found = [];
     for (const item of contents ?? []) {
-      if (matches(item)) {
+      if (matches2(item)) {
         found.push(item);
       }
       const sub = contentsOf(item);
       if (sub && sub.length > 0) {
-        found.push(...collectIn(sub, matches));
+        found.push(...collectIn(sub, matches2));
       }
     }
     return found;
@@ -600,8 +607,8 @@
     }
     return changes;
   };
-  var totalMatching = (matches, contents = packContents()) => (contents ?? []).reduce(
-    (total, item) => total + (matches(item) ? item.amount ?? 1 : 0) + totalMatching(matches, contentsOf(item) ?? []),
+  var totalMatching = (matches2, contents = packContents()) => (contents ?? []).reduce(
+    (total, item) => total + (matches2(item) ? item.amount ?? 1 : 0) + totalMatching(matches2, contentsOf(item) ?? []),
     0
   );
 
@@ -759,6 +766,9 @@
 
   // src/lib/vitals.ts
   var hitsCeiling = () => player.maxHits > 0 ? player.maxHits : void 0;
+
+  // src/lib/weight.ts
+  var overweight = (buffer = 0) => player.weightMax > 0 && player.weight > player.weightMax - buffer;
 
   // src/lib/guards.ts
   var dead = () => player.isDead ? "you are dead" : void 0;
@@ -1006,10 +1016,20 @@
       }
       return [];
     };
+    const saving = (hue) => {
+      if (!options.isSaving()) {
+        return false;
+      }
+      log(`${options.label}: the world is saving, not counting it against hue ${hue}`);
+      return true;
+    };
     const convertOne = (stack) => {
       const hue = stack.hue ?? 0;
       const before = countsByGraphic();
       if (!options.perform(stack)) {
+        if (saving(hue)) {
+          return;
+        }
         missed(hue);
         return;
       }
@@ -1018,6 +1038,9 @@
         misses.delete(hue);
         progressed = true;
         learnOutput(changes);
+        return;
+      }
+      if (saving(hue)) {
         return;
       }
       if (options.throttledText?.some((text) => journal.containsText(text))) {
@@ -1167,7 +1190,8 @@
     label: "smelt",
     range: SMELT_RANGE,
     maxSteps: MAX_BEETLE_STEPS,
-    step: stepToward
+    step: stepToward,
+    isSaving
   });
   var bigEnough = (item) => {
     const amount = item.amount ?? 0;
@@ -1222,7 +1246,9 @@
       if (!forge) {
         return false;
       }
-      target.cancel();
+      if (target.open) {
+        target.cancel();
+      }
       journal.clear();
       player.use(stack.serial);
       if (!target.waitTargetEntity(forge.serial, TARGET_TIMEOUT)) {
@@ -1258,6 +1284,42 @@
     return converter.run();
   };
   var smeltAll = () => smeltAgainst(walkToBeetle);
+
+  // src/mining/relieve.ts
+  var tooHeavy = () => overweight();
+  var createSmeltForRoom = (options) => {
+    const stop = () => ({
+      stop: `overweight (${player.weight}/${player.weightMax}) with ${oreTotal()} ore left, and smelting freed nothing` + (options.hint ? ` - ${options.hint}` : "")
+    });
+    return () => {
+      if (!tooHeavy()) {
+        return void 0;
+      }
+      const before = oreTotal();
+      groupOres();
+      options.smelt();
+      if (oreTotal() < before) {
+        return { phase: "smelting" };
+      }
+      if (isSaving()) {
+        waitOutSave();
+        return { phase: "smelting" };
+      }
+      if (retryUnsmeltable()) {
+        return { phase: "smelting" };
+      }
+      groupOres();
+      options.smelt();
+      if (oreTotal() < before) {
+        return { phase: "smelting" };
+      }
+      if (isSaving()) {
+        waitOutSave();
+        return { phase: "smelting" };
+      }
+      return stop();
+    };
+  };
 
   // src/lib/store.ts
   var scope = globalThis;
@@ -1317,9 +1379,9 @@
       return remembered;
     }
     const name = client.getStatic(graphic)?.name ?? "";
-    const matches = ORE_STATIC_NAME.test(name);
-    known.set(graphic, matches);
-    return matches;
+    const matches2 = ORE_STATIC_NAME.test(name);
+    known.set(graphic, matches2);
+    return matches2;
   };
   var store2 = /* @__PURE__ */ createTileStore({
     label: "vein",
@@ -1454,6 +1516,17 @@
     "murderer",
     "invulnerable"
   ];
+  var NOTORIETY_BIT = [
+    0,
+    SearchEntityOptions.Innocent,
+    SearchEntityOptions.Friend,
+    SearchEntityOptions.Gray,
+    SearchEntityOptions.Criminal,
+    SearchEntityOptions.Enemy,
+    SearchEntityOptions.Murderer,
+    SearchEntityOptions.Invulnerable
+  ];
+  var matches = (mobile, mask) => ((NOTORIETY_BIT[mobile.notoriety] ?? 0) & mask) !== 0;
   var dropped = (was, is) => was > 0 && is > 0 && is < was;
   var createThreatWatch = (options) => {
     let lastHits = 0;
@@ -1550,7 +1623,9 @@
           episode = true;
           log(`${options.prefix}: trouble - ${describe2(hostile, friend)}`);
         }
-        callGuards();
+        if (hurt || friendHurt || said2 || hostile && matches(hostile, options.callOnSight)) {
+          callGuards();
+        }
       }
     };
   };
@@ -1560,6 +1635,7 @@
     prefix,
     range: THREAT_RANGE,
     hostile: HOSTILE_NOTORIETY,
+    callOnSight: CALL_ON_SIGHT_NOTORIETY,
     companion: findBeetle,
     companionName: "beetle",
     call: GUARD_CALL,
@@ -1584,7 +1660,6 @@
     watch,
     onDone: resetBeat
   });
-  var tooHeavy = () => overweight();
   var groupAndSmelt = () => {
     groupOres();
     smeltAll();
@@ -1603,28 +1678,7 @@
   }
   var barren = 0;
   var oreBefore = 0;
-  var smeltForRoom = () => {
-    if (!tooHeavy()) {
-      return void 0;
-    }
-    const before = oreTotal();
-    groupOres();
-    smeltAll();
-    if (oreTotal() < before) {
-      return { phase: "smelting" };
-    }
-    if (retryUnsmeltable()) {
-      return { phase: "smelting" };
-    }
-    groupOres();
-    smeltAll();
-    if (oreTotal() < before) {
-      return { phase: "smelting" };
-    }
-    return {
-      stop: `overweight (${player.weight}/${player.weightMax}) with ${oreTotal()} ore left, and smelting freed nothing`
-    };
-  };
+  var smeltForRoom = createSmeltForRoom({ smelt: smeltAll });
   var handle = (outcome, vein) => {
     if (!vein) {
       return void 0;
@@ -1685,6 +1739,7 @@
     equipTool: equipPickaxe,
     ready: () => dismount() ? void 0 : "could not get off the mount",
     relieve: smeltForRoom,
+    isSaving,
     waitOutSave,
     approach: createApproach({
       // Renamed rather than shared: 'vein' and 'respawnsAt' are what this folder's tests read
@@ -1697,6 +1752,7 @@
       step: stepToward,
       markUnreachable,
       idleUntil,
+      isSaving,
       nothingFound: () => {
         log("mining: nothing matched, here is what is actually on the ground");
         reportTerrain(SCAN_RADIUS, SURVEY_ARTS);

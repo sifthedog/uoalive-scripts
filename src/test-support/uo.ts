@@ -146,8 +146,11 @@ const enumOf = (members: Record<string, number>): Record<string, number | string
 
 // Real values, copied from types/classicuo.d.ts, and only the members the scripts name
 export const Skills = enumOf({
+  Hiding: 21,
+  Lockpicking: 24,
   Magery: 25,
   Meditation: 46,
+  Stealth: 47,
   Necromancy: 49,
   Chivalry: 51,
   Bushido: 52,
@@ -219,6 +222,7 @@ export interface FakePlayer {
   weight: number;
   weightMax: number;
   isDead: boolean;
+  isHidden: boolean;
   hits: number;
   maxHits: number;
   mana: number;
@@ -257,6 +261,7 @@ export interface FakePlayer {
   moveItem: ReturnType<typeof vi.fn>;
   moveItemOnGroundOffset: ReturnType<typeof vi.fn>;
   run: ReturnType<typeof vi.fn>;
+  walk: ReturnType<typeof vi.fn>;
   say: ReturnType<typeof vi.fn>;
   useItemInHand: ReturnType<typeof vi.fn>;
   cast: ReturnType<typeof vi.fn>;
@@ -332,6 +337,7 @@ const defaults = (): FakeWorld => {
       weight: 0,
       weightMax: 400,
       isDead: false,
+      isHidden: false,
 
       // Rested and unhurt, which is this fixture's version of inert: a character with nothing to wait
       // for. Deliberately not 0/0 - that is the stat-refresh fault src/lib/vitals.ts exists for, and
@@ -348,6 +354,7 @@ const defaults = (): FakeWorld => {
       moveItem: vi.fn(),
       moveItemOnGroundOffset: vi.fn(),
       run: vi.fn(),
+      walk: vi.fn(),
       say: vi.fn(),
       useItemInHand: vi.fn(),
       cast: vi.fn(),

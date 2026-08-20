@@ -123,6 +123,7 @@ const walkToBeetle = (serial: number): Mobile | undefined =>
     range: SMELT_RANGE,
     maxSteps: MAX_BEETLE_STEPS,
     step: stepToward,
+    isSaving,
   });
 
 // The stationary counterpart: a beetle not already next to you is not a forge this run can use. The
@@ -235,7 +236,12 @@ const converter = /* @__PURE__ */ createConverter({
       return false;
     }
 
-    target.cancel();
+    // Cancelled only when there is one to cancel: a cursor cancelled shortly before an action has
+    // been measured costing that action its own, the same fix dig.ts and ore.ts already carry.
+    if (target.open) {
+      target.cancel();
+    }
+
     journal.clear();
     player.use(stack.serial);
 

@@ -1,32 +1,95 @@
 import { collectIn, type ItemPredicate } from '../lib/containers.js';
-import { approach, distanceTo, isMobile, nameOf } from '../lib/entity.js';
+import { approach, distanceTo, hex, isMobile, nameOf } from '../lib/entity.js';
+import { pickMany } from '../lib/pick.js';
 import { overweight } from '../lib/weight.js';
 import { isBoard, makeBoards, retryUnconvertible, unconvertible } from './boards.js';
 import { isLog } from './chop.js';
 import {
   HAUL_BUFFER,
+  MAX_PICKS,
   MAX_STEPS,
   MOVE_DELAY,
+  OPL_TIMEOUT,
   PACK_ANIMAL_GRAPHICS,
   PACK_ANIMAL_SERIALS,
   SCAN_RADIUS,
   UNLOAD_RANGE,
 } from './config.js';
+import { isSaving } from './save.js';
 import { stepToward } from './walk.js';
 
 // Boards, plus the logs of a wood this run has given up on converting. A log that is merely
 // waiting its turn stays in the pack: it is worth more as boards, and the next haul retries it.
 const isCargo = (item: Item): boolean => isBoard(item) || (isLog(item) && unconvertible.has(item.hue ?? 0));
 
+const writtenOffLogs = (): Item[] =>
+  collectIn(player.backpack?.contents, (item) => isLog(item) && unconvertible.has(item.hue ?? 0));
+
 let reported = false;
 
+// A list chosen rather than guessed - from config or from the cursor - is the law, so an animal out
+// of sight for a moment is not a reason to go loading a stranger's mule.
+let pinnedSerials: number[] = [...PACK_ANIMAL_SERIALS];
+
+// Empty for a cursor cancelled straight away, which leaves whatever config pinned in place.
+export const pickPackAnimals = (): Mobile[] => {
+  // Keyed rather than appended to, because pickMany calls keyOf before its own dedupe: the same
+  // animal clicked twice would otherwise be pinned twice and walked to twice per haul.
+  const resolved = new Map<number, Mobile>();
+
+  if (player.equippedItems.mount) {
+    log('haul: you are mounted - dismount first if the animal you want is the one you are riding');
+  }
+
+  const picks = pickMany({
+    prefix: 'haul',
+    prompt: 'target the pack animals to load, ESC when done',
+    maxPicks: MAX_PICKS,
+    oplTimeout: OPL_TIMEOUT,
+
+    // undefined skips the click without ending the selection, which is what a misclick on the
+    // ground should cost
+    keyOf: (click) => {
+      const found = client.findObject(click.serial);
+
+      if (!found || !isMobile(found)) {
+        log(`haul: ${hex(click.serial)} is not a mobile`);
+        return undefined;
+      }
+
+      // Not a refusal: PACK_ANIMAL_GRAPHICS is a guess at this shard, so a body it has never heard
+      // of is worth reporting and then using.
+      if (!PACK_ANIMAL_GRAPHICS.has(found.graphic)) {
+        log(`haul: ${hex(found.graphic)} is not a body PACK_ANIMAL_GRAPHICS knows, using it anyway`);
+      }
+
+      resolved.set(found.serial, found);
+      return String(found.serial);
+    },
+  });
+
+  const picked = picks
+    .map((pick) => resolved.get(pick.serial))
+    .filter((animal): animal is Mobile => animal !== undefined);
+
+  if (picked.length === 0) {
+    log('haul: nothing picked, looking for the animals instead');
+    return [];
+  }
+
+  pinnedSerials = picked.map((animal) => animal.serial);
+
+  return picked;
+};
+
 export const findPackAnimals = (): Mobile[] => {
-  if (PACK_ANIMAL_SERIALS.length > 0) {
-    // findObject answers with an Item for anything that is not a mobile, and a pinned serial is
-    // only ever hand-written, so check what came back rather than trusting the number
-    return PACK_ANIMAL_SERIALS.map((serial) => client.findObject(serial)).filter(
-      (pinned): pinned is Mobile => pinned !== undefined && isMobile(pinned),
-    );
+  if (pinnedSerials.length > 0) {
+    // findObject answers with an Item for anything that is not a mobile, and a pinned serial can be
+    // hand-written, so check what came back rather than trusting the number
+    return pinnedSerials
+      .map((serial) => client.findObject(serial))
+      .filter((pinned): pinned is Mobile => pinned !== undefined && isMobile(pinned))
+      .sort((a, b) => distanceTo(a) - distanceTo(b));
   }
 
   const found: Mobile[] = [];
@@ -72,6 +135,7 @@ const walkToAnimal = (serial: number): boolean =>
     range: UNLOAD_RANGE,
     maxSteps: MAX_STEPS,
     step: stepToward,
+    isSaving,
   }) !== undefined;
 
 // Moves are asynchronous, so rescan between passes rather than trusting moveItem's return value.
@@ -138,6 +202,13 @@ export const unload = (): boolean => {
     return false;
   }
 
+  // isCargo is about to ship these as logs, and three silent passes is a thin basis for it: a
+  // throttled run of attempts and an axe that broke mid-conversion look exactly like a wood that
+  // cannot be worked. Returns false once there is nothing left to reconsider, so this cannot loop.
+  if (writtenOffLogs().length > 0 && retryUnconvertible()) {
+    makeBoards();
+  }
+
   const moved = unloadTo(animals, isCargo);
 
   // Only asked once every animal has had a turn at the boards - a full first animal is no evidence
@@ -146,14 +217,20 @@ export const unload = (): boolean => {
     const logs = collectIn(player.backpack?.contents, isLog);
 
     if (logs.length > 0) {
-      // Three silent passes is a thin basis for carrying wood home as wood: a throttled run of
-      // attempts and an axe that broke mid-conversion look exactly like a wood that cannot be
-      // worked. Returns false once there is nothing left to reconsider, so this cannot loop.
-      if (retryUnconvertible() && makeBoards()) {
-        const left = collectIn(player.backpack?.contents, isLog);
-        if (left.length === 0) {
-          return unloadTo(animals, isCargo) || moved;
-        }
+      // Both, rather than the retry gating the conversion: a makeBoards cut short by a save or the
+      // pass backstop writes nothing off, so the retry declines - and skipping the conversion with
+      // it shipped every log raw under a line saying they would not convert in time.
+      retryUnconvertible();
+      makeBoards();
+
+      if (collectIn(player.backpack?.contents, isLog).length === 0) {
+        return unloadTo(animals, isCargo) || moved;
+      }
+
+      // A frozen shard converts nothing, and a log that leaves as a log never comes back as a board
+      if (isSaving()) {
+        log('haul: the world is saving, keeping the logs for the next haul');
+        return moved;
       }
 
       const total = logs.reduce((sum, item) => sum + (item.amount ?? 1), 0);

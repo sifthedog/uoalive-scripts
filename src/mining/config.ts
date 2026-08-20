@@ -1,6 +1,7 @@
 // Re-exported rather than imported directly so this file stays the only one consumers import.
 export {
   ATTACK_TEXT,
+  CALL_ON_SIGHT_NOTORIETY,
   EQUIP_ATTEMPTS,
   EQUIP_POLL,
   EQUIP_TIMEOUT,

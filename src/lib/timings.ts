@@ -103,6 +103,11 @@ export const UNSKILLED_TEXT = [
 // combat does not read a client enum at startup. Innocent is out: every blue NPC would be trouble.
 export const HOSTILE_NOTORIETY = 16 | 8 | 2 | 4;
 
+// Criminal, Enemy and Murderer - the notorieties worth saying 'guards' at on sight alone. Gray is
+// deliberately out of it: every wild cat and crow on this shard is gray, and one wandering past is
+// not evidence of anything. A gray that actually draws blood still gets the call.
+export const CALL_ON_SIGHT_NOTORIETY = 8 | 2 | 4;
+
 // selectEntity takes no range at all - it answers with whatever the client is tracking - so this is
 // the filter that makes 'the nearest hostile' mean anything.
 export const THREAT_RANGE = 12;

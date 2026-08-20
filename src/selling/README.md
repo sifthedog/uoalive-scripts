@@ -151,12 +151,12 @@ Written against UOAlive.
 - **`target.query()` answers a click with `{serial, graphic, x, y, z, hue}`, and that return is the
   *only* place the clicked serial shows up.** It does not move `target.lastSerial`, which still
   holds whatever was targeted before — so comparing `lastSerial` either side of a `query()` reads a
-  second run against the same item as a cancelled cursor. [`pick.ts`](pick.ts) reads the serial off
-  the return value for exactly this reason.
+  second run against the same item as a cancelled cursor. [`lib/pick.ts`](../lib/pick.ts) reads the serial
+  off the return value for exactly this reason.
 - **There is no ESC event.** Nothing in `types/classicuo.d.ts` reports a key, and the only `cancel`
   in the API is `target.cancel()`, which *closes* a cursor rather than telling you about one. What
   ESC produces is a `query()` that comes back without a serial — the same answer a click that
-  resolved to nothing gives — and that is the entire basis of the loop in [`pick.ts`](pick.ts). It
+  resolved to nothing gives — and that is the entire basis of the loop in [`lib/pick.ts`](../lib/pick.ts). It
   also means `query()` has no timeout: a run where you neither click nor press ESC waits for you
   indefinitely.
 - **A vendor's sell gump reaches into your bags**, which is what stock RunUO's `GenericSellInfo`

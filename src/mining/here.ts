@@ -5,9 +5,8 @@
 // It does not move at all, which is why the smelt is smeltHere rather than smeltAll: a beetle that
 // has wandered off is a pass skipped, not a walk taken.
 import { describeItem } from '../lib/entity.js';
-import { runHarvest, type Handled, type Interlude } from '../lib/harvest.js';
+import { runHarvest, type Handled } from '../lib/harvest.js';
 import { createStallWatch } from '../lib/loop.js';
-import { overweight } from '../lib/weight.js';
 import {
   LOG_EVERY,
   MAX_CYCLES,
@@ -27,13 +26,12 @@ import { heartbeat } from './heartbeat.js';
 import { dismount } from './mount.js';
 import { groupOres, oreTotal, waitForOre } from './ore.js';
 import { equipPickaxe, pickaxeSerial, rememberPickaxe } from './pickaxe.js';
-import { waitOutSave } from './save.js';
-import { pickBeetle, retryUnsmeltable, smeltHere } from './smelt.js';
+import { createSmeltForRoom, tooHeavy } from './relieve.js';
+import { isSaving, waitOutSave } from './save.js';
+import { pickBeetle, smeltHere } from './smelt.js';
 import { watchForTrouble } from './threat.js';
 
 rememberPickaxe(player.equippedItems.oneHanded);
-
-const tooHeavy = (): boolean => overweight();
 
 const WORKED_OUT = 'the spot is worked out';
 
@@ -70,46 +68,10 @@ let oreBefore = 0;
 // A real ending here in a way it is not in dist/mining.js, which empties the pack every time it walks
 // on: a beetle out of range is a beetle this run will not walk to. Read the ending it leads to as
 // "put the beetle next to me" rather than as a bug.
-const smeltForRoom = (): Interlude => {
-  if (!tooHeavy()) {
-    return undefined;
-  }
-
-  const before = oreTotal();
-
-  // Unconditional: asking tooHeavy() a second time inside a helper is how a live run once stopped
-  // overweight without ever having tried.
-  groupOres();
-  smeltHere();
-
-  // Ore leaving the pack is the proof a smelt landed, not the weight going down: the client can
-  // still be reporting its pre-smelt figure when the pack diff has confirmed the conversion.
-  if (oreTotal() < before) {
-    return { phase: 'smelting' };
-  }
-
-  // Likeliest reason is a hue given up on earlier - a beetle briefly out of range looks exactly like
-  // an ore that cannot be worked. False once a retry has been spent without freeing any ore, which is
-  // what stops this cycling through 'smelting' until the stall watchdog.
-  if (retryUnsmeltable()) {
-    return { phase: 'smelting' };
-  }
-
-  // The last thing tried rather than a second helping of the first: the retry above has just reopened
-  // the hues written off, so this pass is the one that can act on them.
-  groupOres();
-  smeltHere();
-
-  if (oreTotal() < before) {
-    return { phase: 'smelting' };
-  }
-
-  return {
-    stop:
-      `overweight (${player.weight}/${player.weightMax}) with ${oreTotal()} ore left, ` +
-      'and smelting freed nothing - the beetle has to be standing next to you',
-  };
-};
+const smeltForRoom = createSmeltForRoom({
+  smelt: smeltHere,
+  hint: 'the beetle has to be standing next to you',
+});
 
 const handle = (outcome: string): Handled => {
   switch (outcome) {
@@ -160,6 +122,7 @@ runHarvest({
   equipTool: equipPickaxe,
   ready: () => (dismount() ? undefined : 'could not get off the mount'),
   relieve: smeltForRoom,
+  isSaving,
   waitOutSave,
 
   harvest: () => {

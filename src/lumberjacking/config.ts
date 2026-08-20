@@ -1,6 +1,7 @@
 // Re-exported rather than imported directly so this file stays the only one consumers import.
 export {
   ATTACK_TEXT,
+  CALL_ON_SIGHT_NOTORIETY,
   EQUIP_ATTEMPTS,
   EQUIP_POLL,
   EQUIP_TIMEOUT,
@@ -32,6 +33,7 @@ export {
   STEP_DELAY,
   TARGET_TIMEOUT,
   THREAT_RANGE,
+  THROTTLED_TEXT,
   THROTTLE_BACKOFF,
   THROTTLE_BACKOFF_MAX,
   UNGUARDED_TEXT,
@@ -77,12 +79,32 @@ export const REGROW_DELAY = 25 * 60 * 1000;
 // A swing plays its animation before the result arrives, so this has to outlast the animation
 export const CHOP_TIMEOUT = 8000;
 
+// Longer than the shared TARGET_TIMEOUT, because the cursor is waited for by polling two signals
+export const CHOP_TARGET_TIMEOUT = 4000;
+export const CHOP_TARGET_POLL = 100;
+
+// The cursor the shard opens for a swing, read only to tell a shard that refused the action apart
+// from one whose cursor target.open missed. Unverified here - correct it against the real journal.
+export const CHOP_PROMPT_TEXT = [
+  'What do you want to use this on',
+  'Select a tree',
+  'Where do you wish to chop',
+];
+
 // Optional: pin the animals instead of discovering them. Order does not matter - the haul walks to
 // whichever is nearest first either way.
 export const PACK_ANIMAL_SERIALS: number[] = [];
 
 // Pack horse, pack llama, giant beetle. Unverified on this shard; the search logs the body it finds.
 export const PACK_ANIMAL_GRAPHICS = new Set([0x123, 0x124, 0x317]);
+
+// A cursor at startup to click the animals, ESC to fall back to PACK_ANIMAL_SERIALS or the search
+export const PICK_PACK_ANIMALS = true;
+
+// A backstop only - the selection ends when you press ESC
+export const MAX_PICKS = 8;
+
+export const OPL_TIMEOUT = 2000;
 
 export const UNLOAD_RANGE = 2;
 

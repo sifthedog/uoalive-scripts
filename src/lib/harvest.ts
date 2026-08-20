@@ -73,6 +73,7 @@ export interface HarvestOptions<T> {
   // The run's own last word, before the stop reason is said and handed to exit
   finish?: (tally: number, reason: string) => void;
 
+  isSaving: () => boolean;
   waitOutSave: () => void;
   stall: StallWatch;
 
@@ -94,6 +95,7 @@ export const runHarvest = <T>({
   handle,
   progress,
   finish,
+  isSaving,
   waitOutSave,
   stall,
   timings,
@@ -122,6 +124,17 @@ export const runHarvest = <T>({
     stop = stopReason();
     if (stop) {
       break;
+    }
+
+    // Everything before the swing reads a frozen shard as its own failure: a step that does not
+    // move is a wall, a smelt that converts nothing is ore that cannot be worked.
+    if (isSaving()) {
+      waitOutSave();
+      unknown = 0;
+      throttled = 0;
+      stall.progressed();
+      endCycle('saving', cycle);
+      continue;
     }
 
     watch?.();

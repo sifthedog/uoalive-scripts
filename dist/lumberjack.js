@@ -68,6 +68,7 @@
     handle: handle2,
     progress,
     finish,
+    isSaving: isSaving2,
     waitOutSave: waitOutSave2,
     stall,
     timings
@@ -86,6 +87,14 @@
       stop = stopReason2();
       if (stop) {
         break;
+      }
+      if (isSaving2()) {
+        waitOutSave2();
+        unknown = 0;
+        throttled = 0;
+        stall.progressed();
+        endCycle("saving", cycle);
+        continue;
       }
       watch?.();
       stop = ready?.();
@@ -214,7 +223,7 @@
       if (distanceTo(found) <= options.range) {
         return found;
       }
-      if (!options.step(found)) {
+      if (!options.step(found) && !options.isSaving?.()) {
         log(`${options.label}: cannot reach ${nameOf(found)}`);
         return void 0;
       }
@@ -321,7 +330,7 @@
         walkingTo = key;
         steps = 0;
       }
-      if (!options.step(found) || ++steps > options.maxSteps) {
+      if (!options.step(found) && !options.isSaving?.() || ++steps > options.maxSteps) {
         options.markUnreachable(found);
         walkingTo = void 0;
       }
@@ -399,28 +408,28 @@
     }
     return opened;
   };
-  var findIn = (contents, matches) => {
+  var findIn = (contents, matches2) => {
     for (const item of contents ?? []) {
-      if (matches(item)) {
+      if (matches2(item)) {
         return item;
       }
       const sub = contentsOf(item);
       if (sub && sub.length > 0) {
-        const foundInSub = findIn(sub, matches);
+        const foundInSub = findIn(sub, matches2);
         if (foundInSub) return foundInSub;
       }
     }
     return null;
   };
-  var collectIn = (contents, matches) => {
+  var collectIn = (contents, matches2) => {
     const found = [];
     for (const item of contents ?? []) {
-      if (matches(item)) {
+      if (matches2(item)) {
         found.push(item);
       }
       const sub = contentsOf(item);
       if (sub && sub.length > 0) {
-        found.push(...collectIn(sub, matches));
+        found.push(...collectIn(sub, matches2));
       }
     }
     return found;
@@ -541,12 +550,18 @@
   var SAVE_POLL = 1e3;
   var SAVE_DONE_TEXT = ["World save complete", "Save complete", "World save is complete"];
   var SAVING_TEXT = ["The world is saving", "Saving world", "World save started"];
+  var THROTTLED_TEXT = [
+    "You must wait to perform another action",
+    "You must wait a moment",
+    "You must wait"
+  ];
   var UNSKILLED_TEXT = [
     "You are not skilled enough",
     "You lack the required skill",
     "You do not have enough skill"
   ];
   var HOSTILE_NOTORIETY = 16 | 8 | 2 | 4;
+  var CALL_ON_SIGHT_NOTORIETY = 8 | 2 | 4;
   var THREAT_RANGE = 12;
   var WATCH_FOR_TROUBLE = true;
   var GUARD_CALL = "guards";
@@ -575,8 +590,18 @@
   var BOARD_GRAPHICS = /* @__PURE__ */ new Set([7127, 7129, 7130, 7131]);
   var REGROW_DELAY = 25 * 60 * 1e3;
   var CHOP_TIMEOUT = 8e3;
+  var CHOP_TARGET_TIMEOUT = 4e3;
+  var CHOP_TARGET_POLL = 100;
+  var CHOP_PROMPT_TEXT = [
+    "What do you want to use this on",
+    "Select a tree",
+    "Where do you wish to chop"
+  ];
   var PACK_ANIMAL_SERIALS = [];
   var PACK_ANIMAL_GRAPHICS = /* @__PURE__ */ new Set([291, 292, 791]);
+  var PICK_PACK_ANIMALS = true;
+  var MAX_PICKS = 8;
+  var OPL_TIMEOUT = 2e3;
   var UNLOAD_RANGE = 2;
   var HAUL_BUFFER = 120;
   var CONVERT_DELAY = 700;
@@ -653,8 +678,8 @@
     }
     return changes;
   };
-  var totalMatching = (matches, contents = packContents()) => (contents ?? []).reduce(
-    (total, item) => total + (matches(item) ? item.amount ?? 1 : 0) + totalMatching(matches, contentsOf(item) ?? []),
+  var totalMatching = (matches2, contents = packContents()) => (contents ?? []).reduce(
+    (total, item) => total + (matches2(item) ? item.amount ?? 1 : 0) + totalMatching(matches2, contentsOf(item) ?? []),
     0
   );
 
@@ -694,10 +719,20 @@
       }
       return [];
     };
+    const saving = (hue) => {
+      if (!options.isSaving()) {
+        return false;
+      }
+      log(`${options.label}: the world is saving, not counting it against hue ${hue}`);
+      return true;
+    };
     const convertOne = (stack) => {
       const hue = stack.hue ?? 0;
       const before = countsByGraphic();
       if (!options.perform(stack)) {
+        if (saving(hue)) {
+          return;
+        }
         missed(hue);
         return;
       }
@@ -706,6 +741,9 @@
         misses.delete(hue);
         progressed = true;
         learnOutput(changes);
+        return;
+      }
+      if (saving(hue)) {
         return;
       }
       if (options.throttledText?.some((text) => journal.containsText(text))) {
@@ -778,7 +816,7 @@
     }
     return "unknown";
   };
-  var refusedOutcome = (serial, logsBefore, cursorCameLate) => {
+  var refusedOutcome = (serial, logsBefore) => {
     const matched = journal.waitForTextAny(ALL_OUTCOME_TEXT, void 0, NO_CURSOR_READ);
     if (matched) {
       return outcomeFor(matched);
@@ -788,19 +826,30 @@
       return silent;
     }
     log(
-      `chopOnce: no target cursor - hand ${describeItem(player.equippedItems.twoHanded ?? player.equippedItems.oneHanded)}, cursor ${cursorCameLate ? "came late" : "never opened"}`
+      `chopOnce: no target cursor - hand ${describeItem(player.equippedItems.twoHanded ?? player.equippedItems.oneHanded)}, neither target.open nor CHOP_PROMPT_TEXT in ${CHOP_TARGET_TIMEOUT}ms`
     );
     return "noCursor";
   };
+  var cursorOpened = () => {
+    for (let waited = 0; waited < CHOP_TARGET_TIMEOUT; waited += CHOP_TARGET_POLL) {
+      if (target.open || CHOP_PROMPT_TEXT.some((text) => journal.containsText(text))) {
+        return true;
+      }
+      sleep(CHOP_TARGET_POLL);
+    }
+    return false;
+  };
   var chopOnce = (tree, serial) => {
-    target.cancel();
+    target.clearQueue();
+    if (target.open) {
+      target.cancel();
+    }
     const logsBefore = logTotal();
     journal.clear();
     player.useItemInHand();
-    if (!target.wait(TARGET_TIMEOUT)) {
-      const cursorCameLate = target.open;
+    if (!cursorOpened()) {
       target.cancel();
-      return refusedOutcome(serial, logsBefore, cursorCameLate);
+      return refusedOutcome(serial, logsBefore);
     }
     target.terrain(tree.x, tree.y, tree.z, tree.graphic);
     const matched = journal.waitForTextAny(ALL_OUTCOME_TEXT, void 0, CHOP_TIMEOUT);
@@ -935,11 +984,16 @@
     delayMs: CONVERT_DELAY,
     maxPasses: MAX_CONVERT_PASSES,
     unskilledText: UNSKILLED_TEXT,
+    // Without it a throttled conversion reads as a verdict on the wood, and three busy moments write
+    // hue 0 off - which is every ordinary log. smelt.ts has always passed it; this did not.
+    throttledText: THROTTLED_TEXT,
     isSaving,
     nextStack: (writtenOff) => collectIn(player.backpack?.contents, isLog).find((item) => !writtenOff.has(item.hue ?? 0)),
     // The tool is used and the resource targeted - the inverse of smelting
     perform: (stack) => {
-      target.cancel();
+      if (target.open) {
+        target.cancel();
+      }
       journal.clear();
       player.useItemInHand();
       if (!target.waitTargetEntity(stack.serial, TARGET_TIMEOUT)) {
@@ -956,6 +1010,69 @@
   var unconvertible = converter.writtenOff;
   var makeBoards = converter.run;
   var retryUnconvertible = converter.retry;
+
+  // src/lib/pick.ts
+  var resolveName = (serial, oplTimeout) => {
+    const fromTooltip = (client.queryItemOPL(serial, oplTimeout)?.name ?? "").trim();
+    return fromTooltip || (client.findObject(serial)?.name ?? "").trim();
+  };
+  var clicked = (prefix) => {
+    target.cancel();
+    const info = target.query();
+    if (!(info?.serial ?? 0)) {
+      target.cancel();
+      log(`${prefix}: nothing targeted`, info);
+      return void 0;
+    }
+    return info;
+  };
+  var describe = (info, oplTimeout) => {
+    const serial = info.serial ?? 0;
+    const found = client.findObject(serial);
+    return {
+      serial,
+      name: resolveName(serial, oplTimeout),
+      graphic: info.graphic ?? found?.graphic ?? 0,
+      hue: info.hue ?? found?.hue ?? 0
+    };
+  };
+  var pickMany = ({
+    prefix,
+    prompt,
+    maxPicks,
+    oplTimeout,
+    keyOf,
+    label
+  }) => {
+    const picks = [];
+    const seen = /* @__PURE__ */ new Set();
+    const name = label ?? ((picked) => picked.name);
+    log(`${prefix}: ${prompt}`);
+    let asked = 0;
+    for (; asked < maxPicks; asked++) {
+      const info = clicked(prefix);
+      if (!info) {
+        break;
+      }
+      const picked = describe(info, oplTimeout);
+      const key = keyOf(picked);
+      if (key === void 0) {
+        continue;
+      }
+      if (seen.has(key)) {
+        log(`${prefix}: '${name(picked)}' is already on the list`);
+        continue;
+      }
+      seen.add(key);
+      picks.push(picked);
+      log(`${prefix}:   ${picks.length}. ${name(picked)}`);
+    }
+    if (asked === maxPicks) {
+      log(`${prefix}: ${maxPicks} clicks is as many as one run takes`);
+      target.cancel();
+    }
+    return picks;
+  };
 
   // src/lib/walk.ts
   var DIRECTION_BY_STEP = /* @__PURE__ */ new Map([
@@ -995,12 +1112,45 @@
 
   // src/lumberjacking/haul.ts
   var isCargo = (item) => isBoard(item) || isLog(item) && unconvertible.has(item.hue ?? 0);
+  var writtenOffLogs = () => collectIn(player.backpack?.contents, (item) => isLog(item) && unconvertible.has(item.hue ?? 0));
   var reported = false;
+  var pinnedSerials = [...PACK_ANIMAL_SERIALS];
+  var pickPackAnimals = () => {
+    const resolved = /* @__PURE__ */ new Map();
+    if (player.equippedItems.mount) {
+      log("haul: you are mounted - dismount first if the animal you want is the one you are riding");
+    }
+    const picks = pickMany({
+      prefix: "haul",
+      prompt: "target the pack animals to load, ESC when done",
+      maxPicks: MAX_PICKS,
+      oplTimeout: OPL_TIMEOUT,
+      // undefined skips the click without ending the selection, which is what a misclick on the
+      // ground should cost
+      keyOf: (click) => {
+        const found = client.findObject(click.serial);
+        if (!found || !isMobile(found)) {
+          log(`haul: ${hex(click.serial)} is not a mobile`);
+          return void 0;
+        }
+        if (!PACK_ANIMAL_GRAPHICS.has(found.graphic)) {
+          log(`haul: ${hex(found.graphic)} is not a body PACK_ANIMAL_GRAPHICS knows, using it anyway`);
+        }
+        resolved.set(found.serial, found);
+        return String(found.serial);
+      }
+    });
+    const picked = picks.map((pick) => resolved.get(pick.serial)).filter((animal) => animal !== void 0);
+    if (picked.length === 0) {
+      log("haul: nothing picked, looking for the animals instead");
+      return [];
+    }
+    pinnedSerials = picked.map((animal) => animal.serial);
+    return picked;
+  };
   var findPackAnimals = () => {
-    if (PACK_ANIMAL_SERIALS.length > 0) {
-      return PACK_ANIMAL_SERIALS.map((serial) => client.findObject(serial)).filter(
-        (pinned) => pinned !== void 0 && isMobile(pinned)
-      );
+    if (pinnedSerials.length > 0) {
+      return pinnedSerials.map((serial) => client.findObject(serial)).filter((pinned) => pinned !== void 0 && isMobile(pinned)).sort((a, b) => distanceTo(a) - distanceTo(b));
     }
     const found = [];
     for (const graphic of PACK_ANIMAL_GRAPHICS) {
@@ -1031,12 +1181,13 @@
     label: "haul",
     range: UNLOAD_RANGE,
     maxSteps: MAX_STEPS,
-    step: stepToward
+    step: stepToward,
+    isSaving
   }) !== void 0;
-  var moveAll = (packSerial, matches) => {
+  var moveAll = (packSerial, matches2) => {
     let previousStacks = Infinity;
     while (true) {
-      const stacks = collectIn(player.backpack?.contents, matches);
+      const stacks = collectIn(player.backpack?.contents, matches2);
       if (stacks.length === 0 || stacks.length >= previousStacks) {
         return;
       }
@@ -1047,10 +1198,10 @@
       }
     }
   };
-  var unloadTo = (animals, matches) => {
+  var unloadTo = (animals, matches2) => {
     let moved = false;
     for (const animal of animals) {
-      const before = collectIn(player.backpack?.contents, matches).length;
+      const before = collectIn(player.backpack?.contents, matches2).length;
       if (before === 0) {
         break;
       }
@@ -1062,8 +1213,8 @@
         log(`haul: '${nameOf(animal)}' has no reachable backpack`);
         continue;
       }
-      moveAll(pack.serial, matches);
-      const after = collectIn(player.backpack?.contents, matches).length;
+      moveAll(pack.serial, matches2);
+      const after = collectIn(player.backpack?.contents, matches2).length;
       if (after < before) {
         moved = true;
       }
@@ -1079,15 +1230,21 @@
       log("haul: no pack animal nearby");
       return false;
     }
+    if (writtenOffLogs().length > 0 && retryUnconvertible()) {
+      makeBoards();
+    }
     const moved = unloadTo(animals, isCargo);
     if (overweight(HAUL_BUFFER)) {
       const logs = collectIn(player.backpack?.contents, isLog);
       if (logs.length > 0) {
-        if (retryUnconvertible() && makeBoards()) {
-          const left = collectIn(player.backpack?.contents, isLog);
-          if (left.length === 0) {
-            return unloadTo(animals, isCargo) || moved;
-          }
+        retryUnconvertible();
+        makeBoards();
+        if (collectIn(player.backpack?.contents, isLog).length === 0) {
+          return unloadTo(animals, isCargo) || moved;
+        }
+        if (isSaving()) {
+          log("haul: the world is saving, keeping the logs for the next haul");
+          return moved;
         }
         const total = logs.reduce((sum, item) => sum + (item.amount ?? 1), 0);
         log(`haul: ${total} logs would not convert in time, moving them as logs`);
@@ -1108,6 +1265,17 @@
     "murderer",
     "invulnerable"
   ];
+  var NOTORIETY_BIT = [
+    0,
+    SearchEntityOptions.Innocent,
+    SearchEntityOptions.Friend,
+    SearchEntityOptions.Gray,
+    SearchEntityOptions.Criminal,
+    SearchEntityOptions.Enemy,
+    SearchEntityOptions.Murderer,
+    SearchEntityOptions.Invulnerable
+  ];
+  var matches = (mobile, mask) => ((NOTORIETY_BIT[mobile.notoriety] ?? 0) & mask) !== 0;
   var dropped = (was, is) => was > 0 && is > 0 && is < was;
   var createThreatWatch = (options) => {
     let lastHits = 0;
@@ -1170,7 +1338,7 @@
         log(`${options.prefix}: the shard says '${refused}' - not calling again this run`);
       }
     };
-    const describe = (hostile, friend) => {
+    const describe2 = (hostile, friend) => {
       const who = hostile ? `'${nameOf(hostile)}' ${hex(hostile.graphic)} ${distanceTo(hostile)} tiles off (${NOTORIETY[hostile.notoriety] ?? hostile.notoriety})` : "nothing in sight";
       const mine = `you ${player.hits}/${hitsCeiling() ?? "?"}`;
       const theirs = friend ? `, ${options.companionName} ${friend.hits}/${friend.maxHits || "?"}` : "";
@@ -1202,9 +1370,11 @@
         }
         if (!episode) {
           episode = true;
-          log(`${options.prefix}: trouble - ${describe(hostile, friend)}`);
+          log(`${options.prefix}: trouble - ${describe2(hostile, friend)}`);
         }
-        callGuards();
+        if (hurt || friendHurt || said || hostile && matches(hostile, options.callOnSight)) {
+          callGuards();
+        }
       }
     };
   };
@@ -1214,6 +1384,7 @@
     prefix: "lumberjack",
     range: THREAT_RANGE,
     hostile: HOSTILE_NOTORIETY,
+    callOnSight: CALL_ON_SIGHT_NOTORIETY,
     companion: () => findPackAnimals()[0],
     companionName: "pack animal",
     call: GUARD_CALL,
@@ -1283,9 +1454,9 @@
       return remembered;
     }
     const name = client.getStatic(graphic)?.name ?? "";
-    const matches = /tree/i.test(name);
-    known.set(graphic, matches);
-    return matches;
+    const matches2 = /tree/i.test(name);
+    known.set(graphic, matches2);
+    return matches2;
   };
   var store2 = /* @__PURE__ */ createTileStore({
     label: "tree",
@@ -1334,17 +1505,19 @@
     onDone: resetBeat
   });
   log(`lumberjack: ${logTotal()} logs in the pack to start, staying within ${describeBounds()}`);
+  if (PICK_PACK_ANIMALS) {
+    pickPackAnimals();
+  }
   var hauling = true;
   var haulForRoom = () => {
     if (!hauling || !overweight(HAUL_BUFFER)) {
       return void 0;
     }
-    const weightBefore = player.weight;
     makeBoards();
-    unload();
+    const moved = unload();
     if (isSaving()) {
       waitOutSave();
-    } else if (player.weight >= weightBefore) {
+    } else if (!moved) {
       hauling = false;
       log("lumberjack: hauling freed nothing, carrying on until overweight");
     }
@@ -1387,6 +1560,7 @@
     watch: watchForTrouble,
     equipTool: equipAxe,
     relieve: haulForRoom,
+    isSaving,
     waitOutSave,
     approach: createApproach({
       // Renamed rather than shared: 'tree' and 'regrowsAt' are what this folder's tests read
@@ -1399,6 +1573,7 @@
       step: stepToward,
       markUnreachable,
       idleUntil,
+      isSaving,
       nothingFound: () => "no tree in range"
     }),
     harvest: (tree) => tree ? chopOnce(tree, axeSerial()) : void 0,

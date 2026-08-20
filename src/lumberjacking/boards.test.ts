@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { installGlobals, item, type FakeWorld } from '../test-support/uo.js';
-import { CONVERT_ATTEMPTS, MAX_CONVERT_PASSES } from './config.js';
+import { CONVERT_ATTEMPTS, MAX_CONVERT_PASSES, THROTTLED_TEXT } from './config.js';
 
 const LOG = 0x1bdd;
 const BOARD = 0x1bd7;
@@ -88,11 +88,24 @@ describe('makeBoards', () => {
   // A cursor left open by the last chop would swallow this one
   it('cancels a leftover cursor before starting', async () => {
     pack(item({ serial: 5, graphic: LOG, amount: 10 }));
+    world.target.open = true;
     const { makeBoards } = await loadBoards();
 
     makeBoards();
 
     expect(world.target.cancel).toHaveBeenCalled();
+  });
+
+  // An unconditional cancel shortly before the action leaves target.open false for the cursor that
+  // follows, and a conversion that loses its cursor is counted against the wood - three of those
+  // write hue 0 off, which puts every ordinary log on the pack animal
+  it('leaves the cursor alone when there was none to cancel', async () => {
+    convertsTo([item({ serial: 5, graphic: LOG, amount: 10 })], [item({ serial: 6, graphic: BOARD })]);
+    const { makeBoards } = await loadBoards();
+
+    makeBoards();
+
+    expect(world.target.cancel).not.toHaveBeenCalled();
   });
 
   it('gives up on the attempt when no target cursor appears', async () => {
@@ -132,6 +145,21 @@ describe('makeBoards', () => {
     makeBoards();
 
     expect(unconvertible.has(0)).toBe(false);
+  });
+
+  // The wording is the shard saying it is busy, not a verdict on the wood. smelt.ts has always passed
+  // THROTTLED_TEXT to the converter and this did not, so three busy moments wrote hue 0 off.
+  it('does not count a throttled conversion against the hue', async () => {
+    pack(item({ serial: 5, graphic: LOG, amount: 10 }));
+    world.journal.containsText.mockImplementation((text: string) =>
+      THROTTLED_TEXT.includes(text),
+    );
+    const { makeBoards, unconvertible } = await loadBoards();
+
+    makeBoards();
+
+    expect(unconvertible.has(0)).toBe(false);
+    expect(world.log).toHaveBeenCalledWith(expect.stringContaining('the shard says wait'));
   });
 
   describe('giving up on a hue', () => {

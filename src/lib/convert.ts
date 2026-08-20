@@ -119,11 +119,27 @@ export const createConverter = (options: {
     return [];
   };
 
+  // `perform` clears the journal, so a save that starts mid-attempt is past the check at the top of
+  // the pass: one cost three hues and ended a live run overweight beside a working beetle.
+  const saving = (hue: number): boolean => {
+    if (!options.isSaving()) {
+      return false;
+    }
+
+    log(`${options.label}: the world is saving, not counting it against hue ${hue}`);
+
+    return true;
+  };
+
   const convertOne = (stack: Item): void => {
     const hue = stack.hue ?? 0;
     const before = countsByGraphic();
 
     if (!options.perform(stack)) {
+      if (saving(hue)) {
+        return;
+      }
+
       // Counted like any other failure. Without this an empty hand - dead tool, just broken,
       // mid-swap - spends every pass waiting on a cursor that is never going to come.
       missed(hue);
@@ -135,6 +151,11 @@ export const createConverter = (options: {
       misses.delete(hue);
       progressed = true;
       learnOutput(changes);
+      return;
+    }
+
+    // Asked before either wording, because a frozen shard's verdict on the material is worthless
+    if (saving(hue)) {
       return;
     }
 

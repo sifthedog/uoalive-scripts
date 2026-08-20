@@ -21,11 +21,16 @@ const monster = (fields: Partial<Mobile> = {}) =>
     ...fields,
   });
 
+// The notorieties CALL_ON_SIGHT_NOTORIETY names - a player killer rather than the local wildlife
+const aggressor = (fields: Partial<Mobile> = {}) =>
+  monster({ name: 'Rakan', notoriety: Notorieties.Murderer, ...fields });
+
 const watch = (overrides: Partial<Parameters<typeof createThreatWatch>[0]> = {}) =>
   createThreatWatch({
     prefix: 'mining',
     range: 12,
     hostile: 30,
+    callOnSight: 14,
     companionName: 'beetle',
     call: 'guards',
     calls: 3,
@@ -54,12 +59,12 @@ describe('createThreatWatch', () => {
   });
 
   it('calls the guards when something hostile is in range', () => {
-    world.client.selectEntity.mockReturnValue(monster());
+    world.client.selectEntity.mockReturnValue(aggressor());
 
     watch().check();
 
     expect(world.player.say).toHaveBeenCalledWith('guards');
-    expect(said().join('\n')).toContain("'a ratman' 0x21 2 tiles off (gray)");
+    expect(said().join('\n')).toContain("'Rakan' 0x21 2 tiles off (murderer)");
   });
 
   it('ignores a hostile further off than the range', () => {
@@ -126,7 +131,7 @@ describe('createThreatWatch', () => {
   });
 
   it('calls again once the cooldown has passed, and not before', () => {
-    world.client.selectEntity.mockReturnValue(monster());
+    world.client.selectEntity.mockReturnValue(aggressor());
     const check = watch().check;
 
     check();
@@ -142,7 +147,7 @@ describe('createThreatWatch', () => {
   });
 
   it('stops at the cap for one episode and starts over after it clears', () => {
-    world.client.selectEntity.mockReturnValue(monster());
+    world.client.selectEntity.mockReturnValue(aggressor());
     const check = watch({ calls: 2 }).check;
 
     for (let tick = 0; tick < 6; tick++) {
@@ -157,7 +162,7 @@ describe('createThreatWatch', () => {
 
     expect(said().join('\n')).toContain('mining: clear');
 
-    world.client.selectEntity.mockReturnValue(monster());
+    world.client.selectEntity.mockReturnValue(aggressor());
     clock += 20_000;
     check();
 
@@ -165,7 +170,7 @@ describe('createThreatWatch', () => {
   });
 
   it('stops calling for good once the shard says the guards cannot be called here', () => {
-    world.client.selectEntity.mockReturnValue(monster());
+    world.client.selectEntity.mockReturnValue(aggressor());
     world.journal.waitForTextAny.mockReturnValue('The guards cannot be called here');
     const check = watch().check;
 
@@ -178,7 +183,7 @@ describe('createThreatWatch', () => {
   });
 
   it('reports what it can work out about guard protection, once', () => {
-    world.client.selectEntity.mockReturnValue(monster());
+    world.client.selectEntity.mockReturnValue(aggressor());
     world.journal.containsText.mockImplementation(
       (text: string) => text === 'under the protection',
     );
@@ -191,6 +196,67 @@ describe('createThreatWatch', () => {
     const protection = said().filter((line) => line.includes('guard protection'));
 
     expect(protection).toEqual(['mining: guard protection - the journal says guarded']);
+  });
+
+  // Every wild cat and crow on this shard is gray, and three 'guards' shouted at a passing cat is
+  // what CALL_ON_SIGHT_NOTORIETY exists to stop
+  describe('a gray that has done nothing', () => {
+    const cat = () => monster({ name: 'a cat', graphic: 0x00c9 });
+
+    it('is reported but not called on', () => {
+      world.client.selectEntity.mockReturnValue(cat());
+
+      watch().check();
+
+      expect(world.player.say).not.toHaveBeenCalled();
+      expect(said().join('\n')).toContain("'a cat' 0xc9 2 tiles off (gray)");
+    });
+
+    it('is still only reported once, however many cycles it stands there', () => {
+      world.client.selectEntity.mockReturnValue(cat());
+      const check = watch().check;
+
+      check();
+      clock = 60_000;
+      check();
+
+      expect(said().filter((line) => line.includes('trouble'))).toHaveLength(1);
+      expect(world.player.say).not.toHaveBeenCalled();
+    });
+
+    it('draws the call the moment it takes a bite out of you', () => {
+      world.client.selectEntity.mockReturnValue(cat());
+      const check = watch().check;
+
+      check();
+      expect(world.player.say).not.toHaveBeenCalled();
+
+      world.player.hits = 80;
+      check();
+
+      expect(world.player.say).toHaveBeenCalledWith('guards');
+    });
+
+    it('draws the call when it goes for the companion instead', () => {
+      const beetle = monster({ serial: 0x40000009, hits: 90, isRenamable: true });
+      world.client.selectEntity.mockReturnValue(cat());
+      const check = watch({ companion: () => beetle }).check;
+
+      check();
+      beetle.hits = 60;
+      check();
+
+      expect(world.player.say).toHaveBeenCalledWith('guards');
+    });
+
+    it('draws the call when the journal says it is attacking you', () => {
+      world.client.selectEntity.mockReturnValue(cat());
+      world.journal.containsText.mockImplementation((text: string) => text === '*attacks you*');
+
+      watch({ attackText: ['*attacks you*'] }).check();
+
+      expect(world.player.say).toHaveBeenCalledWith('guards');
+    });
   });
 
   it('takes a journal wording as trouble in its own right', () => {

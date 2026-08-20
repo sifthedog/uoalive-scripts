@@ -18,7 +18,8 @@ is how a script ends up in a town or in the water.
 
 ## What it does
 
-Every cycle:
+At startup it opens a cursor to click your pack animals — one after another, ESC when done. ESC on
+the first falls back to `PACK_ANIMAL_SERIALS`, and then to the body search. Then, every cycle:
 
 1. **Check the stop conditions** — dead, outside `BOUNDS`, overweight, or the pack at its item cap.
 2. **Equip an axe.** Axes are two-handed and hatchets one-handed, so it reads
@@ -124,6 +125,8 @@ lumberjacking its own, delete it from the re-export list and declare it below.
 | `AXE_NAME` | `'axe'`. The graphic is learned from the one you start holding |
 | `SPARE_BAG_SERIAL` | Pin the bag the spares live in instead of discovering it |
 | `CHOP_TIMEOUT` | 8s. A swing plays its animation before the result arrives |
+| `CHOP_TARGET_TIMEOUT`, `CHOP_TARGET_POLL` | 4s / 100ms. The cursor is waited for by polling two signals, so this is longer than the shared `TARGET_TIMEOUT` |
+| `CHOP_PROMPT_TEXT` | The wording the shard opens the cursor with. Unverified — correct it against the journal. Read only so a cursor `target.open` missed is not mistaken for a refusal |
 
 ### Boards and hauling
 
@@ -132,9 +135,12 @@ lumberjacking its own, delete it from the re-export list and declare it below.
 | `BOARD_GRAPHICS` | A seed only. The real board graphic is learned by diffing the pack across the first conversion |
 | `HAUL_BUFFER` | 120. The weight headroom at which it stops chopping and goes to make boards. Deliberately wider than the guards' `WEIGHT_BUFFER` (40), so hauling always gets its turn first |
 | `PACK_ANIMAL_GRAPHICS` | Pack horse, pack llama, giant beetle. The search logs the body it finds |
-| `PACK_ANIMAL_SERIALS` | Pin the animals exactly and skip the search. Order does not matter |
+| `PACK_ANIMAL_SERIALS` | Pin the animals exactly and skip the search. Order does not matter, and the cursor overrides it for the run |
+| `PICK_PACK_ANIMALS` | On by default: a cursor at startup to click your animals, ESC to fall back. A picked list is pinned |
+| `MAX_PICKS` | 8. A backstop on the cursor only — the selection ends when you press ESC |
+| `OPL_TIMEOUT` | 2s. How long to wait for the tooltip that names a pick |
 | `UNLOAD_RANGE` | 2. How close you have to be to move items onto the animal |
-| `CONVERT_ATTEMPTS` | 3. Silent failures in a row before giving up on a hue. More than one, because a throttled or stale attempt also looks silent, and giving up on hue 0 means hauling ordinary logs |
+| `CONVERT_ATTEMPTS` | 3. Silent failures in a row before giving up on a hue. A save, a throttle and a cursor that never opened are all excluded, so reaching this means the wood really did not work — raising it is rarely the fix |
 | `MAX_CONVERT_PASSES`, `CONVERT_DELAY`, `CONVERT_TIMEOUT`, `CONVERT_POLL`, `MOVE_DELAY` | Conversion and move pacing |
 
 ### Reading the journal
@@ -150,6 +156,7 @@ has no outcomes of its own.
 | --- | --- | --- |
 | `WATCH_FOR_TROUBLE` | true | The whole feature. Off, and none of the rest is read |
 | `HOSTILE_NOTORIETY` | Gray, Criminal, Enemy, Murderer | Which healthbar colours count. Innocent is out, or every blue NPC in the world is trouble |
+| `CALL_ON_SIGHT_NOTORIETY` | Criminal, Enemy, Murderer | Which of those are worth a `guards` on sight alone. Gray is out: the wildlife is gray, and a cat wandering past is not evidence of anything. A gray still draws the call the moment it damages you or the pet |
 | `THREAT_RANGE` | 12 | How close it has to be. `selectEntity` takes no range of its own, so this is the only filter |
 | `GUARD_CALL` | `'guards'` | What gets said |
 | `GUARD_CALLS` | 3 | Calls per episode, `0` for no cap. The count resets the first cycle that sees nothing |
@@ -184,16 +191,34 @@ are guesses. Read the journal after a chop and correct them.
 
 **`no target cursor (n/20), backing off`.** The shard declined to start the swing and said nothing
 about why. A few is ordinary; a run of them with an axe in hand means the shard is refusing in a
-wording `THROTTLED_TEXT` does not have. The line before them names what is in the hand and whether a
-cursor was up.
+wording `THROTTLED_TEXT` does not have, or that `CHOP_PROMPT_TEXT` has the wrong wording and the
+cursor is being missed rather than never opened. The line before them names what is in the hand.
+
+A run of them starting after several good chops used to be this file's own fault: the swing opened
+with an unconditional `target.cancel()`, which left `target.open` false for the cursor that
+followed. It now cancels only when there is a cursor to cancel, the same fix
+[`mining/dig.ts`](../mining/dig.ts) carries.
 
 **`hauling freed nothing, carrying on until overweight`.** No animal found, or the one found will
 take no more. Latched off after one failure so a missing animal costs one search rather than one per
-cycle — check `PACK_ANIMAL_GRAPHICS`, or pin `PACK_ANIMAL_SERIALS`.
+cycle — click the animals at startup, check `PACK_ANIMAL_GRAPHICS`, or pin `PACK_ANIMAL_SERIALS`.
+The verdict is drawn from stacks leaving the pack, not from the weight: the client can report a
+stale figure over a move that landed.
 
-**It converts nothing and hauls plain logs.** A wood was written off after `CONVERT_ATTEMPTS` silent
-passes. Hue 0 is *every* normal log, so this is worth checking: raise `CONVERT_ATTEMPTS` or confirm
-the journal is not saying you are unskilled.
+**It hauls plain logs.** Three causes, all fixed, all worth recognising if they come back:
+
+- The conversion opened with an unconditional `target.cancel()`, which swallowed the cursor it was
+  about to ask for. A lost cursor counts against the wood, and three write hue 0 off — *every*
+  normal log — after which `isCargo` ships them raw and silently. Same fault as
+  [`mining/dig.ts`](../mining/dig.ts) and [`chop.ts`](chop.ts).
+- `THROTTLED_TEXT` was never passed to the converter, so the shard saying it was busy read as a
+  verdict on the wood. `smelt.ts` had always passed it.
+- The haul gated its conversion on `retryUnconvertible()`, which declines when nothing was written
+  off — exactly the case when `makeBoards` was cut short by a save or the pass backstop. Every log
+  then travelled raw under a line claiming they would not convert in time.
+
+If the line still appears, check the journal is not saying you are unskilled, and confirm
+`BOARD_GRAPHICS` against the shard before raising `CONVERT_ATTEMPTS`.
 
 ## Notes on the shard
 
@@ -240,6 +265,8 @@ confirmed comes from mining runs that exercise the same shared code.
   nothing either — both look exactly like a wood that cannot be worked. Giving up there and then is
   what put ordinary logs on the pack animal: hue 0 is *every* normal log, so one hiccup disabled
   conversion for the whole run.
+- A given-up-on hue is reconsidered once more before its logs are shipped, since the verdict may
+  have been reached during a throttle or against a lost cursor.
 - Only boards and the logs of a given-up-on hue go onto the animal; a log still waiting its turn
   stays in the pack. The exception is a pack still over the haul threshold once the boards have gone:
   those logs travel as logs rather than ending the run overweight.
@@ -254,13 +281,19 @@ confirmed comes from mining runs that exercise the same shared code.
 - **A save freezes every part of a haul at once:** the conversion is silent, the animal takes nothing,
   and the weight does not move. Read as an ordinary result it would latch hauling off for the rest of
   the run, so `isSaving()` is checked before that conclusion is drawn.
+- **A save freezes the walking too.** No step moves you, which both `createApproach` and
+  [`lib/entity.ts`](../lib/entity.ts)'s `approach` would otherwise read as a wall — writing off every
+  tree the run was walking to for `UNREACHABLE_DELAY`, and abandoning the walk to the animal. Both
+  take `isSaving` so a step spent during a save ends neither.
 
 ### Known unverified
 
 - **Everything the guard call rests on.** Whether `guards` is the phrase this shard takes, whether
   guards answer monsters here at all, and the wordings in `NO_GUARDS_TEXT`, `GUARD_ZONE_TEXT` and
   `UNGUARDED_TEXT` — all stock RunUO guesses.
-- **`HOSTILE_NOTORIETY`**: whether this shard's encounter spawns come up gray or red.
+- **`HOSTILE_NOTORIETY`**: whether this shard's encounter spawns come up gray or red. If they are
+  gray they share a notoriety with every cat and crow, so the call waits for blood — put them in
+  `CALL_ON_SIGHT_NOTORIETY` only if a gray in sight is worth shouting at here.
 - Whether `client.selectEntity` disturbs the client's current target, and so whether the watch can
   cost a swing its cursor the way `target.cancel()` was found to.
 - **Everything about this script**, which has not been run. `OUTCOME_TEXT` is stock RunUO wording as a

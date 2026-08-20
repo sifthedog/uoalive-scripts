@@ -10,6 +10,7 @@ import {
   LOG_GRAPHICS,
   MAX_CONVERT_PASSES,
   TARGET_TIMEOUT,
+  THROTTLED_TEXT,
   UNSKILLED_TEXT,
 } from './config.js';
 import { isSaving } from './save.js';
@@ -25,6 +26,10 @@ const converter = /* @__PURE__ */ createConverter({
   delayMs: CONVERT_DELAY,
   maxPasses: MAX_CONVERT_PASSES,
   unskilledText: UNSKILLED_TEXT,
+
+  // Without it a throttled conversion reads as a verdict on the wood, and three busy moments write
+  // hue 0 off - which is every ordinary log. smelt.ts has always passed it; this did not.
+  throttledText: THROTTLED_TEXT,
   isSaving,
 
   nextStack: (writtenOff) =>
@@ -32,7 +37,12 @@ const converter = /* @__PURE__ */ createConverter({
 
   // The tool is used and the resource targeted - the inverse of smelting
   perform: (stack) => {
-    target.cancel();
+    // Cancelled only when there is one to cancel: an unconditional cancel shortly before the action
+    // leaves target.open false for the cursor that follows, the same fix dig.ts and chop.ts carry.
+    if (target.open) {
+      target.cancel();
+    }
+
     journal.clear();
     player.useItemInHand();
 

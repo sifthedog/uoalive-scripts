@@ -57,6 +57,7 @@ const run = (overrides: Partial<HarvestOptions<string>> = {}): void =>
     harvest: () => 'dug',
     handle: () => ({}),
     progress: (tally) => `${tally} swings`,
+    isSaving: () => false,
     waitOutSave: vi.fn(),
     stall,
     timings: TIMINGS,
@@ -218,6 +219,58 @@ describe('runHarvest', () => {
     expect(waitOutSave).toHaveBeenCalledTimes(1);
     expect(stall.progress).toBeGreaterThan(0);
     expect(ending()).toContain('cycle backstop');
+  });
+
+  // The swing has always had a `saving` outcome; everything before it in a cycle had none, and a save
+  // landing in the smelt ended a live mining run overweight next to a working beetle
+  describe('a save that lands before the swing', () => {
+    const saveFor = (cycles: number) => {
+      let left = cycles;
+
+      return () => left-- > 0;
+    };
+
+    it('waits it out and lets nothing else in the cycle run', () => {
+      const waitOutSave = vi.fn();
+      const relieve = vi.fn(() => undefined);
+      const approach = vi.fn(() => ({ target: 'vein' }) as const);
+      const harvest = vi.fn(() => 'dug');
+
+      run({
+        isSaving: saveFor(2),
+        waitOutSave,
+        relieve,
+        approach,
+        harvest,
+        timings: { ...TIMINGS, maxCycles: 3 },
+      });
+
+      expect(waitOutSave).toHaveBeenCalledTimes(2);
+      expect(relieve).toHaveBeenCalledTimes(1);
+      expect(approach).toHaveBeenCalledTimes(1);
+      expect(harvest).toHaveBeenCalledTimes(1);
+    });
+
+    // The counters were measured against a server that was not answering, and the watchdog would
+    // otherwise walk a run to its stop a save at a time
+    it('holds none of it against the run', () => {
+      const waitOutSave = vi.fn();
+
+      run({ isSaving: saveFor(5), waitOutSave, timings: { ...TIMINGS, maxCycles: 5 } });
+
+      expect(waitOutSave).toHaveBeenCalledTimes(5);
+      expect(stall.progress).toBe(5);
+      expect(stall.ended).toEqual(Array(5).fill('saving'));
+      expect(ending()).toContain('cycle backstop');
+    });
+
+    it('resumes the swing once the shard answers again', () => {
+      const harvest = vi.fn(() => 'dug');
+
+      run({ isSaving: saveFor(1), harvest, timings: { ...TIMINGS, maxCycles: 3 } });
+
+      expect(harvest).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('swaps a tool the shard says wore out', () => {

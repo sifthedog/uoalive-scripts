@@ -9,6 +9,10 @@ export interface ThreatOptions {
   // A SearchEntityOptions bitmask
   hostile: number;
 
+  // The subset of `hostile` worth calling the guards for on sight. Anything outside it opens the
+  // episode and is reported, but only draws a call once it has actually landed a hit.
+  callOnSight: number;
+
   companion?: () => Mobile | undefined;
   companionName: string;
 
@@ -37,6 +41,22 @@ const NOTORIETY = [
   'murderer',
   'invulnerable',
 ];
+
+// A mobile carries a Notorieties value while the masks are SearchEntityOptions bits, and the two
+// enums agree on neither order nor numbering - so the notoriety is indexed rather than shifted.
+const NOTORIETY_BIT = [
+  0,
+  SearchEntityOptions.Innocent,
+  SearchEntityOptions.Friend,
+  SearchEntityOptions.Gray,
+  SearchEntityOptions.Criminal,
+  SearchEntityOptions.Enemy,
+  SearchEntityOptions.Murderer,
+  SearchEntityOptions.Invulnerable,
+];
+
+const matches = (mobile: Mobile, mask: number): boolean =>
+  ((NOTORIETY_BIT[mobile.notoriety] ?? 0) & mask) !== 0;
 
 // 0 is what the client reports while it is refreshing stats, and what it reports for a mobile it has
 // lost track of, so a fall to 0 is no news at all.
@@ -179,7 +199,11 @@ export const createThreatWatch = (options: ThreatOptions): ThreatWatch => {
         log(`${options.prefix}: trouble - ${describe(hostile, friend)}`);
       }
 
-      callGuards();
+      // Blood drawn is evidence whatever its notoriety; being in sight is only evidence for the
+      // notorieties callOnSight names.
+      if (hurt || friendHurt || said || (hostile && matches(hostile, options.callOnSight))) {
+        callGuards();
+      }
     },
   };
 };

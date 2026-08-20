@@ -1,6 +1,7 @@
 import { createThreatWatch } from '../lib/threat.js';
 import {
   ATTACK_TEXT,
+  CALL_ON_SIGHT_NOTORIETY,
   GUARD_CALL,
   GUARD_CALLS,
   GUARD_CALL_DELAY,
@@ -22,6 +23,7 @@ export const watchForTrouble = (prefix: string): (() => void) | undefined =>
         prefix,
         range: THREAT_RANGE,
         hostile: HOSTILE_NOTORIETY,
+      callOnSight: CALL_ON_SIGHT_NOTORIETY,
         companion: findBeetle,
         companionName: 'beetle',
         call: GUARD_CALL,

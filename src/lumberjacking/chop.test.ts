@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { installGlobals, item, type FakeWorld } from '../test-support/uo.js';
 import { ALL_OUTCOME_TEXT, chopOnce, isLog, logTotal, outcomeFor } from './chop.js';
-import { LOG_GRAPHICS, OUTCOME_TEXT } from './config.js';
+import { CHOP_PROMPT_TEXT, LOG_GRAPHICS, OUTCOME_TEXT } from './config.js';
 import type { Tree } from './tree.js';
 
 const AXE = 1;
@@ -58,8 +58,6 @@ describe('ALL_OUTCOME_TEXT', () => {
 // Reaching noCursor instead of the throttle or the save ended a live mining run in fifteen seconds.
 describe('chopOnce, when no cursor opens', () => {
   beforeEach(() => {
-    world.target.wait.mockReturnValue(false);
-
     // An axe that still resolves, so the silent read below is about the chop rather than the tool
     world.client.findObject.mockReturnValue(item({ serial: AXE, graphic: 0x0f43 }));
   });
@@ -119,6 +117,67 @@ describe('chopOnce, when no cursor opens', () => {
     chopOnce(TREE, AXE);
 
     expect(world.target.terrain).not.toHaveBeenCalled();
+  });
+});
+
+// A live run swung an Executioner's Axe at nothing for cycle after cycle: the unconditional cancel
+// this used to open with left target.open false for the cursor that followed, the same fault dig.ts
+// was fixed for.
+describe('chopOnce, when the cursor opens', () => {
+  beforeEach(() => {
+    world.client.findObject.mockReturnValue(item({ serial: AXE, graphic: 0x0f45 }));
+  });
+
+  // The cursor the swing opens for itself, which is the ordinary case
+  const cursorOpensOnTheSwing = () => {
+    world.player.useItemInHand.mockImplementation(() => {
+      world.target.open = true;
+    });
+  };
+
+  it('cancels a cursor that is genuinely up before the swing', () => {
+    world.target.open = true;
+    world.journal.waitForTextAny.mockReturnValue('You put');
+
+    chopOnce(TREE, AXE);
+
+    expect(world.target.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the cursor alone when there was none to cancel', () => {
+    cursorOpensOnTheSwing();
+    world.journal.waitForTextAny.mockReturnValue('You put');
+
+    expect(chopOnce(TREE, AXE)).toBe('chopped');
+    expect(world.target.cancel).not.toHaveBeenCalled();
+  });
+
+  it('names the tree with its graphic once the cursor is up', () => {
+    world.target.open = true;
+    world.journal.waitForTextAny.mockReturnValue('You put');
+
+    expect(chopOnce(TREE, AXE)).toBe('chopped');
+    expect(world.target.terrain).toHaveBeenCalledWith(TREE.x, TREE.y, TREE.z, TREE.graphic);
+  });
+
+  // target.open stayed false through a whole mining swing whose prompt was in the journal 164ms in
+  it('takes the prompt in the journal as a cursor target.open missed', () => {
+    world.journal.containsText.mockImplementation((text: string) =>
+      CHOP_PROMPT_TEXT.includes(text),
+    );
+    world.journal.waitForTextAny.mockReturnValue('You put');
+
+    expect(chopOnce(TREE, AXE)).toBe('chopped');
+    expect(world.target.terrain).toHaveBeenCalled();
+  });
+
+  it('drops whatever the last swing left queued', () => {
+    world.target.open = true;
+    world.journal.waitForTextAny.mockReturnValue('You put');
+
+    chopOnce(TREE, AXE);
+
+    expect(world.target.clearQueue).toHaveBeenCalled();
   });
 });
 

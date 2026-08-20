@@ -21,6 +21,9 @@ one, and what to set. Start there.
 | `dist/necro.js` | The same run for Necromancy: Pain Spike, the forms, and Wither, bandaging itself at a health floor | [src/necromancy](src/necromancy/README.md) |
 | `dist/magery.js` | The same run for Magery, on the spells that gain without something to hit | [src/magery](src/magery/README.md) |
 | `dist/chivalry.js` | The same run for Chivalry, which spends tithing points as well as mana | [src/chivalry](src/chivalry/README.md) |
+| `dist/lockpick-training.js` | Target a locked container, pick it until the lockpicks run out or Lockpicking is capped | [src/lockpicking](src/lockpicking/README.md) |
+| `dist/hiding.js` | Stand still, hide, and spam Stealth until one fails - then hide again | [src/hiding](src/hiding/README.md) |
+| `dist/transfer.js` | Target a container to empty and one to fill, move everything across | [src/transfer](src/transfer/README.md) |
 
 ## Why a build step
 
@@ -29,7 +32,7 @@ The client's script editor is one buffer with no module system, and the runtime 
 
 ```bash
 npm install
-npm run build      # typecheck, then src/ -> the eleven files in dist/
+npm run build      # typecheck, then src/ -> the files in dist/
 npm run watch      # rebuild on save
 npm run typecheck  # tsc against the client's own typings, then again over the tests
 npm test           # vitest, no client and no shard needed
@@ -48,12 +51,15 @@ identifier*.
 src/lib/           everything more than one script does (see below)
 src/boxes/         empty the crafted wooden boxes, keys on the floor (+ a key dump)
 src/chivalry/      train Chivalry through its five bands, on the same loop as src/training/
+src/hiding/        train Hiding and Stealth standing still, hiding and stealthing in turn
 src/lumberjacking/ chop the nearest tree, make boards, load the pack animals
+src/lockpicking/   pick at a locked box until Lockpicking catches up with it
 src/magery/        train Magery on the spells that gain without a victim, on the same loop as src/training/
 src/mining/        mine the nearest vein, smelt the ore on a fire beetle (+ a stand-still variant)
 src/necromancy/    train Necromancy through its five bands, on the same loop as src/training/
 src/selling/       sell-to-vendor: target items until ESC, sell every stack of them
 src/training/      train a skill by casting the ability that still gains at the level it is at
+src/transfer/      move everything out of one container and into another
 types/             the client's TypeScript definitions (see below)
 scripts/           type retrieval and patching
 dist/              build output - this is what you paste
@@ -83,6 +89,7 @@ loop        the idle wait, the stall watchdog, the throttle backoff
 meditate    getting the mana back, with or without hands to clear first
 outcomes    a journal phrase table and the reverse lookup off it
 pack        counting and diffing what the backpack holds
+pick        the target cursor as a prompt: one click, or click-until-ESC
 retry       issue, poll for the proof, reissue
 save        sitting out a world save
 skill       every read of getSkill, and what a client that has not answered means
