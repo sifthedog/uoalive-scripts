@@ -34,6 +34,8 @@ export const OPEN_DELAY = 800;
 export const MAX_HOIST_PASSES = 5;
 
 // sell-watch only. A sale costs the same whether it moves one item or forty, so this is the batch.
+// Counted by stack amount, not by slot, so for something that stacks this is the only trigger that
+// fires - a non-stacking pile reaches SELL_AT_SLOTS first and sells on that instead.
 export const SELL_AT = 30;
 
 // The other way a sale becomes due. Under the 125-item cap rather than at it, so the sale happens

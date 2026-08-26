@@ -44,7 +44,7 @@ It is **off**, because this shard's vendors read a bag as readily as the top of 
    gump. That distinction is the whole design — `openSellGump` says `vendor sell` *out loud*, so
    polling by opening the gump would have the character talking to itself every few seconds all
    afternoon.
-3. **Sells when `SELL_AT` (30) of the watched items have piled up between them**, or when the pack
+3. **Sells when `SELL_AT` (100) of the watched items have piled up between them**, or when the pack
    is down to its last slots (`SELL_AT_SLOTS`) — a pack filling with something else still needs the
    room the watched items are taking. The threshold is the combined count, because a pack filling
    with three things fills exactly as fast as one.
@@ -109,7 +109,7 @@ the first run.
 
 | Setting | Default | What it is for |
 | --- | --- | --- |
-| `SELL_AT` | 30 | How many of the watched items have to pile up between them before a sale is due |
+| `SELL_AT` | 100 | How many of the watched items have to pile up between them before a sale is due. Counted by stack amount, so a single stack of 100 ingots trips it and 100 rings fill 100 slots |
 | `SELL_AT_SLOTS` | 110 | Sell early once the pack is this close to the 125-item container cap |
 | `WATCH_POLL` | 5s | How often the pack is counted. Silent, so it can be brisk |
 | `WATCH_BACKOFF` / `WATCH_BACKOFF_MAX` | 10s / 120s | The growing pause after a sale that took nothing |
