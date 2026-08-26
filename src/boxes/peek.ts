@@ -1,3 +1,4 @@
+import { queryOPL } from '../lib/opl.js';
 import { OPL_TIMEOUT, PEEK_CONTENTS } from './config.js';
 
 // A container's tooltip carries what is in it - RunUO renders it as "Contents: 3/125, 4 stones" -
@@ -19,7 +20,7 @@ export const peekContents = (serial: number): number | undefined => {
     return undefined;
   }
 
-  const opl = client.queryItemOPL(serial, OPL_TIMEOUT);
+  const opl = queryOPL(serial, OPL_TIMEOUT, 'boxes');
 
   for (const property of opl?.properties ?? []) {
     const match = textOf(property).match(/contents[^0-9]*([0-9]+)/i);

@@ -44,6 +44,18 @@ describe('pickOne', () => {
     expect(one()).toMatchObject({ name: 'ingot', graphic: 0x1bf2, hue: 7 });
   });
 
+  // The client throws on an unanswered tooltip, which used to end the selection on the first
+  // un-hovered item clicked
+  it('falls back to the object when the tooltip lookup throws', () => {
+    world.target.query = clicks({ serial: 0x4011, graphic: 0x1bf2, hue: 7 });
+    world.client.queryItemOPL = vi.fn(() => {
+      throw new Error('Waiting for script RequestMegaCliloc 1 timed out after 2000ms');
+    });
+    world.client.findObject = vi.fn(() => ({ name: 'ingot', graphic: 0x1bf2, hue: 7 }));
+
+    expect(one()).toMatchObject({ serial: 0x4011, name: 'ingot' });
+  });
+
   // Zero matches nothing, which is the safe direction - undefined would match every item nothing
   // knows the art of
   it('answers zero for an art and a hue nothing knows', () => {

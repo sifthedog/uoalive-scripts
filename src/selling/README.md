@@ -125,6 +125,13 @@ came out shorter than you clicked, run it again.
 for what you clicked and the gump can only be matched by name, so there is nothing to work with.
 That click is skipped and the selection carries on; hover the item and click it again.
 
+**`the tooltip lookup would not answer`.** The client threw out of `queryItemOPL` instead of
+answering — usually `Waiting for script RequestMegaCliloc timed out`. Said once. That item goes
+unnamed, and three unanswered in a row latch the lookup off for the rest of the run, exactly as a
+tooltip that comes back empty does. Harmless in itself — before it was caught it ended the run, and
+it did so *after* the vendor had paid. If the item is plainly named on screen and this still fires,
+the tooltip is arriving slower than `OPL_TIMEOUT`.
+
 **`nothing of X, Y on offer. Vendor listed: …`.** This vendor buys none of them. The listing tells
 you what they do buy. If an item is clearly in your pack and the vendor plainly deals in it, the
 shard may be one whose vendors *are* blind to sub-containers after all — turn `HOIST_FROM_BAGS` on

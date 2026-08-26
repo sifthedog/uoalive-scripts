@@ -1,5 +1,6 @@
 import { collectIn, isContainer, packContents } from '../lib/containers.js';
 import { hex } from '../lib/entity.js';
+import { queryOPL } from '../lib/opl.js';
 import { MAX_HOIST_PASSES, MOVE_DELAY, OPEN_DELAY, OPL_TIMEOUT } from './config.js';
 
 export { hex };
@@ -29,7 +30,7 @@ const nameOf = (item: Item): string => {
     return '';
   }
 
-  const fromTooltip = (client.queryItemOPL(item.serial, OPL_TIMEOUT)?.name ?? '').trim();
+  const fromTooltip = (queryOPL(item.serial, OPL_TIMEOUT, 'sell')?.name ?? '').trim();
   names.set(item.serial, fromTooltip);
 
   misses = fromTooltip ? 0 : misses + 1;

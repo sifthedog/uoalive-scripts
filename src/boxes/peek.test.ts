@@ -21,6 +21,19 @@ beforeEach(() => {
 });
 
 describe('peekContents', () => {
+
+  // Guessing 'empty' on a box that is not would hand a key to a vendor, so a throw has to read as
+  // 'open it and see' rather than as a count
+  it('says nothing when the tooltip lookup throws', async () => {
+    world.client.queryItemOPL = vi.fn(() => {
+      throw new Error('Waiting for script RequestMegaCliloc 1 timed out after 2000ms');
+    });
+
+    const { peekContents } = await fresh();
+
+    expect(peekContents(7)).toBeUndefined();
+    expect(world.log).toHaveBeenCalledWith(expect.stringContaining('would not answer'));
+  });
   it('reads the count out of a RunUO contents line', async () => {
     world.client.queryItemOPL = opl('Wooden Box', 'Contents: 3/125, 4 stones');
 

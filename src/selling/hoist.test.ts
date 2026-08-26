@@ -179,6 +179,43 @@ describe('nestedMatches', () => {
     expect(world.client.queryItemOPL).toHaveBeenCalledTimes(3);
     expect(world.log).toHaveBeenCalledWith(expect.stringContaining('tooltips are not answering'));
   });
+
+  // The live sell-watch died here, from inside stillHeld, after the vendor had already paid: the
+  // client throws on an unanswered tooltip and `?.name` never gets to see it
+  it('survives a tooltip lookup that throws', async () => {
+    packOf(bag(0x10, [item({ serial: 0x11, graphic: INGOT })]));
+    world.client.queryItemOPL = vi.fn(() => {
+      throw new Error('Waiting for script RequestMegaCliloc 1 timed out after 2000ms');
+    });
+    const { nestedMatches } = await fresh();
+
+    expect(nestedMatches('iron ingot')).toEqual([]);
+    expect(world.log).toHaveBeenCalledWith(expect.stringContaining('would not answer'));
+  });
+
+  // A throw counts against the latch the same as silence, or the serial is re-asked every walk and
+  // the shard is never written off
+  it('gives up on a lookup that keeps throwing rather than asking every walk', async () => {
+    packOf(
+      bag(0x10, [
+        item({ serial: 0x11, graphic: INGOT }),
+        item({ serial: 0x12, graphic: INGOT }),
+        item({ serial: 0x13, graphic: INGOT }),
+        item({ serial: 0x14, graphic: INGOT }),
+        item({ serial: 0x15, graphic: INGOT }),
+      ]),
+    );
+    world.client.queryItemOPL = vi.fn(() => {
+      throw new Error('nope');
+    });
+    const { nestedMatches } = await fresh();
+
+    nestedMatches('iron ingot');
+    nestedMatches('iron ingot');
+
+    expect(world.client.queryItemOPL).toHaveBeenCalledTimes(3);
+    expect(world.log).toHaveBeenCalledWith(expect.stringContaining('tooltips are not answering'));
+  });
 });
 
 describe('hoistToPack', () => {

@@ -1,3 +1,5 @@
+import { queryOPL } from './opl.js';
+
 export interface Picked {
   serial: number;
   name: string;
@@ -31,8 +33,8 @@ export interface PickManyOptions extends PickOneOptions {
 // Names are empty until the client has tooltip data, which an item you have never hovered is. Both
 // lookups key off the serial just clicked - `target.last` is left alone, because `query()` leaves it
 // on the previous pick.
-const resolveName = (serial: number, oplTimeout: number): string => {
-  const fromTooltip = (client.queryItemOPL(serial, oplTimeout)?.name ?? '').trim();
+const resolveName = (serial: number, oplTimeout: number, prefix: string): string => {
+  const fromTooltip = (queryOPL(serial, oplTimeout, prefix)?.name ?? '').trim();
 
   return fromTooltip || (client.findObject(serial)?.name ?? '').trim();
 };
@@ -62,13 +64,13 @@ const clicked = (prefix: string): TargetInfo | undefined => {
 // The query carries the art and the hue on this shard, but it is `any` and undocumented, so both
 // fall back to the object. Zero art means 'nothing known', which matches nothing rather than
 // everything.
-const describe = (info: TargetInfo, oplTimeout: number): Picked => {
+const describe = (info: TargetInfo, oplTimeout: number, prefix: string): Picked => {
   const serial = info.serial ?? 0;
   const found = client.findObject(serial);
 
   return {
     serial,
-    name: resolveName(serial, oplTimeout),
+    name: resolveName(serial, oplTimeout, prefix),
     graphic: info.graphic ?? found?.graphic ?? 0,
     hue: info.hue ?? found?.hue ?? 0,
   };
@@ -79,7 +81,7 @@ export const pickOne = ({ prefix, prompt, oplTimeout }: PickOneOptions): Picked 
 
   const info = clicked(prefix);
 
-  return info && describe(info, oplTimeout);
+  return info && describe(info, oplTimeout, prefix);
 };
 
 // Click item after item, ESC to finish. Empty means the first cursor was cancelled, which callers
@@ -107,7 +109,7 @@ export const pickMany = ({
       break;
     }
 
-    const picked = describe(info, oplTimeout);
+    const picked = describe(info, oplTimeout, prefix);
     const key = keyOf(picked);
 
     if (key === undefined) {

@@ -124,6 +124,10 @@ which calls it tried; pin the winner as `DROP_METHOD`.
 **`emptied 0` with a guard message.** With `DROP_KEYS = false` the weight and pack-slot guards are
 live, and they stop the run before the first box. That is the fix they were given — see below.
 
+**`the tooltip lookup would not answer`.** The client threw out of `queryItemOPL` instead of
+answering. Said once, and from then on every box is opened the slow way rather than peeked at — no
+box is ever assumed empty on a lookup that did not answer.
+
 **The vendor lists boxes but none of their serials match.** The run stops rather than selling by
 name. Empty the boxes it could not open by hand and run again.
 
