@@ -12,6 +12,7 @@ import {
   MAX_THROTTLED,
   MAX_UNKNOWN,
   MINE_RANGE,
+  MINE_Z_RANGE,
   NOTHING_NEARBY_HINT,
   PICK_BEETLE,
   SCAN_RADIUS,
@@ -206,7 +207,9 @@ runHarvest<Vein>({
     nothingFound: () => {
       // The likeliest way a run ends on a shard whose tile numbering ORE_TILE_GRAPHICS does not
       // match, and 'no ore in range' says nothing you can act on - so name what the scan rejected.
-      log('mining: nothing matched, here is what is actually on the ground');
+      // The z is named because the survey below does not filter by it: without this the run says
+      // nothing matched and then prints the mountain art with MATCHES beside it.
+      log(`mining: nothing within ${MINE_Z_RANGE}z of ${player.z} matched, here is what is around`);
       reportTerrain(SCAN_RADIUS, SURVEY_ARTS);
 
       return 'no ore in range';

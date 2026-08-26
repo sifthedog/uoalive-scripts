@@ -246,6 +246,50 @@ describe('scanForVein', () => {
 
   // The scan runs immediately before every swing, and the box is (2 * SCAN_RADIUS + 1) squared
   // client calls - enough of them to be the difference between the roaming script and mine-here
+  // The swing names no tile - it answers the cursor with the character - so a vein is only somewhere
+  // to stand. One up a cliff passes the 2D distance test and the walk at it never closes.
+  describe('veins off the character\'s own level', () => {
+    it('ignores one far above where the character stands', async () => {
+      world.client.getTerrainList = terrainFrom([land({ x: 101, y: 100, z: 60 })]);
+      const { scanForVein } = await loadVein();
+
+      expect(scanForVein().vein).toBeUndefined();
+    });
+
+    it('ignores one far below in the same way', async () => {
+      world.client.getTerrainList = terrainFrom([land({ x: 101, y: 100, z: -60 })]);
+      const { scanForVein } = await loadVein();
+
+      expect(scanForVein().vein).toBeUndefined();
+    });
+
+    it('prefers a further vein at your level to a nearer one up a cliff', async () => {
+      world.client.getTerrainList = terrainFrom([
+        land({ x: 101, y: 100, z: 60 }),
+        land({ x: 105, y: 100 }),
+      ]);
+      const { scanForVein } = await loadVein();
+
+      expect(scanForVein().vein?.x).toBe(105);
+    });
+
+    // Without this an implementation comparing against a hardcoded 0 passes everything above
+    it('measures the tolerance from the character rather than from zero', async () => {
+      world.player.z = 58;
+      world.client.getTerrainList = terrainFrom([land({ x: 101, y: 100, z: 60 })]);
+      const { scanForVein } = await loadVein();
+
+      expect(scanForVein().vein).toMatchObject({ x: 101, z: 60 });
+    });
+
+    it('takes 0 as exactly your level rather than as no tolerance at all', async () => {
+      world.client.getTerrainList = terrainFrom([land({ x: 101, y: 100, z: 1 })]);
+      const { scanForVein } = await loadVein({ MINE_Z_RANGE: 0 });
+
+      expect(scanForVein().vein).toBeUndefined();
+    });
+  });
+
   describe('the tile already being worked', () => {
     it('re-reads it instead of sweeping the box again', async () => {
       world.client.getTerrainList = terrainFrom([land({ x: 101, y: 100 })]);
@@ -264,6 +308,17 @@ describe('scanForVein', () => {
 
       scanForVein();
       world.client.getTerrainList = terrainFrom([tile({ x: 101, y: 100, graphic: GRASS })]);
+
+      expect(scanForVein().vein).toBeUndefined();
+    });
+
+    // scanForVein hands `current` back before it scans at all, so the scan's own filter never sees it
+    it('gives it up once the character is no longer at its level', async () => {
+      world.client.getTerrainList = terrainFrom([land({ x: 101, y: 100 })]);
+      const { scanForVein } = await loadVein();
+
+      scanForVein();
+      world.player.z = 60;
 
       expect(scanForVein().vein).toBeUndefined();
     });
@@ -421,6 +476,17 @@ describe('scanForVein', () => {
       vi.setSystemTime(START + RESPAWN_DELAY + 1);
 
       expect(scanForVein().vein?.x).toBe(101);
+    });
+
+    // The shard's sentence is about what it can reach, so a tile up a cliff is not one it spoke for
+    it('leaves tiles off the character\'s level unparked', async () => {
+      world.client.getTerrainList = terrainFrom([
+        land({ x: 101, y: 100 }),
+        land({ x: 101, y: 100, z: 60, graphic: 232 }),
+      ]);
+      const { markAreaDepleted } = await loadVein();
+
+      expect(markAreaDepleted(2)).toBe(1);
     });
 
     it('ignores tiles that were never ore in the first place', async () => {

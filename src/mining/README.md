@@ -31,13 +31,15 @@ Every cycle:
 
 1. **Check the stop conditions** — dead, or the pack at its item cap.
 2. **Sit out a world save.** The shard stops answering for a few seconds, and every step below reads
-   that silence as its own kind of failure.
+   that silence as its own kind of failure. The wait always says how it ended — the shard's
+   completion line, `SAVE_WAIT` running out, or the run having a reason to stop.
 3. **Get off the mount.** Asked every cycle, so a remount costs one cycle rather than the rest of the
    run. There is no dismount call in this API: it double-clicks the player and polls
    `equippedItems.mount` until it clears.
 4. **Equip a pickaxe.** Also every cycle. Spares are found in the pack, one level of bags down.
 5. **The weight backstop.** If the pack is genuinely over the limit, smelt now.
-6. **Scan for a vein** within `SCAN_RADIUS`, nearest first, skipping tiles the run has parked.
+6. **Scan for a vein** within `SCAN_RADIUS` *and* `MINE_Z_RANGE` of your own elevation, nearest
+   first, skipping tiles the run has parked.
 7. **Walk to it** if it is further than `MINE_RANGE`. One naive `Math.sign` step per cycle; there is
    no pathfinding API. A vein that takes more than `MAX_STEPS` is marked unreachable for
    `UNREACHABLE_DELAY`.
@@ -127,8 +129,8 @@ has to be standing next to you*, call the beetle over and paste it again.
   were in the wrong place.
 - **The fire beetle within `SMELT_RANGE`**, and yours. Further off and the ore stays ore.
 - A pickaxe in hand, spares in the pack. Being mounted is fine.
-- `ORE_TILE_GRAPHICS`, `SCAN_RADIUS`, `MINE_RANGE`, `RESPAWN_DELAY`, `MAX_STEPS` and
-  `NOTHING_NEARBY_HINT` are not read by this script at all.
+- `ORE_TILE_GRAPHICS`, `SCAN_RADIUS`, `MINE_RANGE`, `MINE_Z_RANGE`, `RESPAWN_DELAY`, `MAX_STEPS`
+  and `NOTHING_NEARBY_HINT` are not read by this script at all.
 
 Heartbeat and world-save lines still say `mining:` — those modules are shared. The loop's own lines
 say `mine-here:`.
@@ -168,6 +170,7 @@ mining its own, delete it from the re-export list and declare it below.
 | `ORE_GRAPHICS` | The arts an ore pile is drawn with. A set to match against and nothing more — never a way to read a stack's size |
 | `ORE_NAME` | `/\bore\b/i`, the fallback for a shard whose ore wears an unknown art. A whole word: `ore` inside `sycamore` would put something in the smelter |
 | `MINE_RANGE` | 2. Where walking stops and swinging starts — not a range the shard enforces, since the swing names no tile |
+| `MINE_Z_RANGE` | 20. How far above or below you a tile may sit and still be worth walking to. A mountain face 40 z up passes the 2D distance test and the walk at it never closes |
 | `SCAN_RADIUS`, `SURVEY_ARTS` | How far the loop looks, and how many arts it lists on a dead end |
 | `RESPAWN_DELAY` | 25 minutes. The knob to turn if the script comes back to a vein that is still empty |
 
@@ -292,6 +295,12 @@ Written against UOAlive.
   consolidates: that keeps the pack at one pile per metal, so the item cap is never approached by pile
   count alone — hitting it *destroys* the swing's ore rather than dropping it — and nothing is left
   sitting below `MIN_SMELT_AMOUNT` when the smelt comes.
+- **A vein is only somewhere to stand, so the scan filters by elevation.** `distanceTo` is
+  Chebyshev over x and y, so a mountain face 40 z above you is "one tile away" and the walk at it
+  never closes — it cost a cycle and an `UNREACHABLE_DELAY` write-off each time. Since the swing
+  names no tile, the vein's z never reaches the shard and dropping those candidates changes only
+  where the character walks. `MINE_Z_RANGE` is deliberately generous: the ore land tile legitimately
+  stands above the ground you mine it from, and 0 would find nothing.
 - **The dig names no tile at all: it answers the cursor with `waitTargetSelf`** and lets the shard
   pick the ore. That sidesteps every way an explicit `target.terrain` can be wrong — land versus
   static, and which of the several arts stacked on one tile carries the ore. `MINE_RANGE` is
@@ -382,6 +391,9 @@ Written against UOAlive.
   ore here to mine'` are close enough that a hybrid wording lands in whichever key `Object.keys`
   reaches first.
 - `RESPAWN_DELAY`. 25 minutes, chosen to match lumberjacking's `REGROW_DELAY` and not measured.
+- **`MINE_Z_RANGE`**, on the same footing as `ORE_TILE_GRAPHICS`. 20 comes from the stock climb rule
+  of about 2 z a step over `SCAN_RADIUS`, not from this shard. Too tight ends a run on `no ore in
+  range` with the survey printing the mountain art beside `MATCHES`.
 - The fire beetle body in `FIRE_BEETLE_GRAPHICS` (`0xa9`), and whether a beetle actually smelts by
   being targeted with an ore stack here, and whether it has to be yours. `isRenamable` is what tells
   your pet from a stranger's, and the smelt falls back to any beetle in range.

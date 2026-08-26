@@ -1,8 +1,14 @@
 import { now } from '../lib/clock.js';
 import { distanceTo, hex } from '../lib/entity.js';
-import { createScan, createTileStore, type Tile as BlockedTile } from '../lib/tiles.js';
+import {
+  createScan,
+  createTileStore,
+  withinZOf,
+  type Tile as BlockedTile,
+} from '../lib/tiles.js';
 import {
   MINE_RANGE,
+  MINE_Z_RANGE,
   NOT_ORE_GRAPHICS,
   ORE_STATIC_NAME,
   ORE_TILE_GRAPHICS,
@@ -89,7 +95,9 @@ export const markAreaDepleted = (range: number): number => {
   for (let dx = -range; dx <= range; dx++) {
     for (let dy = -range; dy <= range; dy++) {
       for (const tile of client.getTerrainList(player.x + dx, player.y + dy) ?? []) {
-        if (!isOre(tile.graphic, tile.isLand)) {
+        // The shard's sentence is about what *it* can reach. Parking a tile 60 z up would record a
+        // claim it never made, and hide that tile for RESPAWN_DELAY if the character climbs to it.
+        if (!withinZOf(tile.z, MINE_Z_RANGE) || !isOre(tile.graphic, tile.isLand)) {
           continue;
         }
 
@@ -130,6 +138,7 @@ const scan = /* @__PURE__ */ createScan<Tile>({
   radius: SCAN_RADIUS,
   blocked: () => memory().blocked,
   matches: isOre,
+  withinZ: MINE_Z_RANGE,
 
   // Land is not skipped the way lumberjacking skips it - a mountainside *is* land, and it is the
   // ordinary case rather than the exception
@@ -145,6 +154,12 @@ const stillOre = (vein: Vein): Vein | undefined => {
   const until = store.blockedUntil(vein);
 
   if (until !== undefined && now() < until) {
+    return undefined;
+  }
+
+  // The character has walked since this was picked, and the vein is now up a cliff. scanForVein
+  // hands `current` back before it scans at all, so nothing else would catch it.
+  if (!withinZOf(vein.z, MINE_Z_RANGE)) {
     return undefined;
   }
 

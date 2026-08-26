@@ -85,6 +85,10 @@ export const ORE_STATIC_NAME = /cave|rock|mountain|ore/i;
 // pick the ore - but the distance at which the scan stops walking and starts mining.
 export const MINE_RANGE = 2;
 
+// A guess. The shard lets a character climb about 2 z a step, so 12 tiles of walkable ground is ~24;
+// a mountain 12 tiles off is +60 and the walk at it never closes. Too tight ends a run on 'no ore'.
+export const MINE_Z_RANGE = 20;
+
 // How long before a tile that answered "there is no ore here" is worth returning to
 export const RESPAWN_DELAY = 25 * 60 * 1000;
 

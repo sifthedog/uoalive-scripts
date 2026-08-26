@@ -80,6 +80,10 @@ export const createTileStore = <T extends Tile>(options: {
   };
 };
 
+// Read against the player rather than against the other tile: the question is whether the character
+// can get to it, and the character is what moves.
+export const withinZOf = (z: number, allowed: number): boolean => Math.abs(z - player.z) <= allowed;
+
 // Every distinct graphic a scan settles on is named once, not just the first: the first one it locks
 // onto may well be scenery, and then the console would never name the art that does work.
 export const createScan = <T extends Tile>(options: {
@@ -96,6 +100,9 @@ export const createScan = <T extends Tile>(options: {
   // never picked, walked at, refused and only then written off. Mining has no box.
   reachable?: (x: number, y: number) => boolean;
 
+  // Mining only: a mountain face 40 z above you passes the 2D distance test and the walk never closes
+  withinZ?: number;
+
   describe: (tile: T & { distance: number }) => string;
 }) => {
   const reported = new Set<number>();
@@ -111,6 +118,11 @@ export const createScan = <T extends Tile>(options: {
       for (let dy = -radius; dy <= radius; dy++) {
         for (const tile of client.getTerrainList(player.x + dx, player.y + dy) ?? []) {
           if (options.skipLand && tile.isLand) {
+            continue;
+          }
+
+          // Undefined rather than falsy, or a tolerance of 0 would read as no tolerance at all
+          if (options.withinZ !== undefined && !withinZOf(tile.z, options.withinZ)) {
             continue;
           }
 
