@@ -67,8 +67,9 @@ table, the wordings, and the three things Necromancy does that Bushido does not.
   anything is held, so the run stows what is in hand before every trance and puts it back before the
   next cast — the *exact* items, by serial, so Faster Casting, Lower Mana Cost and Mana Regeneration
   come back with them. If the shard also refuses a trance with armour on, the run learns that from its
-  own refusal, takes the armour off too, and remembers; jewellery is left alone. `STRIP_LAYERS` is the
-  list. The start-up line names everything that will come off — if it names nothing on a dressed
+  own refusal, takes the armour off too, and remembers. The neck comes off with the armour, since
+  that layer carries gorgets; the rest of the jewellery is left alone. `STRIP_LAYERS` is the list.
+  The start-up line names everything that will come off — if it names nothing on a dressed
   character, the client is not answering and the run will fall back on natural regeneration.
 - **Carry reagents**, and enough of them: bat wing, daemon blood, grave dust, nox crystal and pig
   iron. Running out ends the run by name.
@@ -106,7 +107,7 @@ Everything is in `config.ts`.
 | `SKIP_WHEN_BUFFED` | **Off**, and it has to be: a form does not expire, so gating on its buff casts once and then waits forever |
 | `DISABLED_IS_PROGRESS` | **On**: the toggle-off is a cast the shard charged for |
 | `MEDITATE_TO_FULL` | Fill the pool, or stop as soon as the next cast is affordable |
-| `STRIP_LAYERS` | Every layer that comes off for a trance, in the order it comes off — which is also the order it goes back on. Hands first. Jewellery is deliberately absent, and so is `Layers.Necklace`, because that layer carries gorgets too |
+| `STRIP_LAYERS` | Every layer that comes off for a trance, in the order it comes off — which is also the order it goes back on. Hands first. `Layers.Necklace` is in because that layer carries gorgets; the rest of the jewellery is deliberately absent |
 | `STRIP_MOVE_DELAY` | Pause between the individual moves inside one strip, to stay under the shard's action throttle |
 | `STRIP_AT_ONCE` | On strips the armour from the first trance instead of waiting to be refused once |
 | `MEDITATE_TIMEOUT` / `MEDITATE_ATTEMPTS` | How long one trance is given, and how many are tried before the stretch is a failure |
@@ -139,9 +140,9 @@ script's cycles are mostly mana coming back on purpose. The heartbeat stays.
 - **`no bandages left in the pack`** — said once. The run carries on, unhealed, until the floor stops
   it.
 - **`the shard refuses meditation (blocked)`** — by the time this fires everything on `STRIP_LAYERS`
-  is already off, so what is refusing the trance is something the run cannot reach: jewellery, a layer
-  missing from the list, or a shard that gates meditation another way. The run degrades to natural
-  regeneration rather than stopping.
+  is already off, so what is refusing the trance is something the run cannot reach: a ring or a
+  bracelet, a layer missing from the list, or a shard that gates meditation another way. The run
+  degrades to natural regeneration rather than stopping.
 - **`the trance was refused with armour on - took more off, trying again`** — expected, once, on a
   shard that blocks on armour. The lesson latches for the rest of the run.
 - **`… would not go back on`** — a piece the restore could not return. The run carries on slightly

@@ -128,13 +128,12 @@ export const REGEN_TIMEOUT = 120_000;
 export const MAX_STALE = 200;
 
 // In the order it comes off, which is also the order it goes back on. Hands first: they are the only
-// layers whose absence ends a run. Jewellery is left on - it blocks meditation on no shard this was
-// written against, and every layer here is two more item moves on every trance. Add Layers.Necklace
-// where a gorget counts as armour; that layer carries both.
+// layers whose absence ends a run. Necklace is here for gorgets; the rest has blocked no trance yet.
 export const STRIP_LAYERS: Layer[] = [
   Layers.OneHanded,
   Layers.TwoHanded,
   Layers.Helmet,
+  Layers.Necklace,
   Layers.Gloves,
   Layers.Arms,
   Layers.Torso,

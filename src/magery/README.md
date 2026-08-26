@@ -62,7 +62,8 @@ slower one — an 8th-circle cast still rolls the skill when it fizzles.
   puts it back before the next cast. It puts back the *exact* items it took, by serial, so Faster
   Casting, Lower Mana Cost and Mana Regeneration come back with them. A spellbook in the pack is never
   touched. If the shard also refuses a trance with armour on, the run finds that out from its own
-  refusal, takes the armour off too, and remembers for the rest of the run — jewellery is left alone.
+  refusal, takes the armour off too, and remembers for the rest of the run. The neck comes off with
+  the armour, since that layer carries gorgets; the rest of the jewellery is left alone.
   `STRIP_LAYERS` is the list, if your shard disagrees.
 - **Carry reagents**, or wear a 100% Lower Reagent Cost suit, which is what every guide recommends and
   what makes this run cheap. Running out ends the run by name.
@@ -96,7 +97,7 @@ Everything is in `config.ts`.
 | `SKIP_WHEN_BUFFED` | **Off**: gating on the buff would cap the run at one cast per buff duration |
 | `DISABLED_IS_PROGRESS` | **On**: a toggle is still a cast the shard charged for |
 | `MEDITATE_TO_FULL` | Fill the pool, or stop as soon as the next cast is affordable. **On**, and it matters most here |
-| `STRIP_LAYERS` | Every layer that comes off for a trance, in the order it comes off — which is also the order it goes back on. Hands first. Jewellery is deliberately absent, and so is `Layers.Necklace`, because that layer carries gorgets too |
+| `STRIP_LAYERS` | Every layer that comes off for a trance, in the order it comes off — which is also the order it goes back on. Hands first. `Layers.Necklace` is in because that layer carries gorgets; the rest of the jewellery is deliberately absent |
 | `STRIP_MOVE_DELAY` | Pause between the individual moves inside one strip, to stay under the shard's action throttle |
 | `STRIP_AT_ONCE` | On strips the armour from the first trance instead of waiting to be refused once |
 | `MEDITATE_*` / `MANA_*` | The mana wait — see `src/training/README.md` |

@@ -93,7 +93,7 @@ order they will be worked.
 | `WEAPON_NAME` | Substring match for the draw, used only before a graphic has been learned |
 | `SPARE_BAG_SERIAL` | The bag inside the pack to open when a plain search misses |
 | `DISARM_TIMEOUT` / `DISARM_POLL` / `DISARM_ATTEMPTS` | How long a stow is given before it is reissued, and how many times |
-| `STRIP_LAYERS` | Every layer that comes off for a trance, in the order it comes off — which is also the order it goes back on. Hands first. Jewellery is deliberately absent, and so is `Layers.Necklace`, because that layer carries gorgets too |
+| `STRIP_LAYERS` | Every layer that comes off for a trance, in the order it comes off — which is also the order it goes back on. Hands first. `Layers.Necklace` is in because that layer carries gorgets; the rest of the jewellery is deliberately absent |
 | `STRIP_MOVE_DELAY` | Pause between the individual moves inside one strip, to stay under the shard's action throttle |
 | `STRIP_AT_ONCE` | On strips the armour from the first trance instead of waiting to be refused once |
 
@@ -150,8 +150,8 @@ well. The heartbeat stays, because the trances are the longest silences in the r
   `throttled`.
 - **`the shard refuses meditation (blocked)`** — by the time this fires the weapon *and* everything
   on `STRIP_LAYERS` is already off, so what is refusing the trance is something the run cannot reach:
-  jewellery, a layer missing from the list, or a shard that gates meditation another way. The run
-  degrades to natural regeneration rather than stopping.
+  a ring or a bracelet, a layer missing from the list, or a shard that gates meditation another way.
+  The run degrades to natural regeneration rather than stopping.
 - **`the trance was refused with armour on - took more off, trying again`** — expected, once, on a
   shard that blocks on armour. The lesson latches, so every later trance strips fully up front. Seeing
   it more than once a run means the latch is not holding.
@@ -227,8 +227,9 @@ well. The heartbeat stays, because the trances are the longest silences in the r
   carries on.
 - **Whether any shard cares about the order gear goes back on.** Each item owns its own layer, so it
   should not; restore order is strip order, so `STRIP_LAYERS` is the fix if one does.
-- **Whether jewellery blocks the trance anywhere.** It is left on deliberately — add `Layers.Ring` and
-  the rest to `STRIP_LAYERS` if your shard disagrees.
+- **Whether the rest of the jewellery blocks the trance anywhere.** The neck comes off with the
+  armour; rings, bracelets, earrings and talismans are left on — add them to `STRIP_LAYERS` if your
+  shard disagrees.
 - **Whether `player.dressKr` / `undressKr` are honoured here.** They would strip in one call rather
   than fifteen, but both return `void`, so there would be no proof to poll — which is the whole safety
   story of every item move in this repo. Worth revisiting only if a shard is confirmed to answer them.

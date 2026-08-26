@@ -94,7 +94,7 @@ Everything is in `config.ts`.
 | `WEAPON_NAME` | Substring match for the draw, used only before a graphic has been learned |
 | `SPARE_BAG_SERIAL` | The bag inside the pack to open when a plain search misses |
 | `DISARM_*` | How long a stow is given before it is reissued, and how many times |
-| `STRIP_LAYERS` | Every layer that comes off for a trance, in the order it comes off — which is also the order it goes back on. Hands first. Jewellery is deliberately absent, and so is `Layers.Necklace`, because that layer carries gorgets too |
+| `STRIP_LAYERS` | Every layer that comes off for a trance, in the order it comes off — which is also the order it goes back on. Hands first. `Layers.Necklace` is in because that layer carries gorgets; the rest of the jewellery is deliberately absent |
 | `STRIP_MOVE_DELAY` | Pause between the individual moves inside one strip, to stay under the shard's action throttle |
 | `STRIP_AT_ONCE` | On strips the armour from the first trance instead of waiting to be refused once |
 | `HURT_FLOOR` | The fraction of maximum health below which the run bandages, then stops |
