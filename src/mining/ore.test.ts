@@ -4,6 +4,7 @@ import { installGlobals, item, type FakeWorld } from '../test-support/uo.js';
 import {
   DIFFERENT_ORE_TEXT,
   MAX_COMBINE_ATTEMPTS,
+  METAL_ASKS,
   ORE_GRAPHICS,
   ORE_SETTLE_POLL,
   ORE_SETTLE_TIMEOUT,
@@ -147,6 +148,10 @@ describe('oreTotal', () => {
   });
 });
 
+// A serial mapped to its tooltip's metal lines. An empty list is a tooltip that named no metal,
+// which is plain iron; a serial left out is one the shard never answered for.
+type Tooltips = Record<number, string[]>;
+
 // A shard stands behind these: it merges the pairs `allows` accepts, and refuses the rest in the
 // wording DIFFERENT_ORE_TEXT knows. The module remembers what it learns for the run, so every test
 // gets its own copy of it.
@@ -154,12 +159,26 @@ const onShard = async (
   piles: Item[],
   allows: (primary: Item, dup: Item) => boolean = () => true,
   refusal: string = DIFFERENT_ORE_TEXT[0],
+  tooltips?: Tooltips,
 ) => {
   vi.resetModules();
 
   const world = installGlobals();
   const pack = [...piles];
   let said = '';
+
+  if (tooltips) {
+    world.client.queryItemOPL.mockImplementation((serial: number) => {
+      const lines = tooltips[serial];
+
+      return (
+        lines && {
+          name: 'Ore',
+          properties: [{ text: 'Ore' }, { text: 'Weight: 12' }, ...lines.map((text) => ({ text }))],
+        }
+      );
+    });
+  }
 
   Object.defineProperty(world.player, 'backpack', {
     configurable: true,
@@ -194,7 +213,7 @@ const onShard = async (
   const { groupOres } = await import('./ore.js');
   groupOres();
 
-  return { world, pack };
+  return { world, pack, groupOres };
 };
 
 const sameHue = (a: Item, b: Item) => (a.hue ?? 0) === (b.hue ?? 0);
@@ -206,9 +225,9 @@ describe('groupOres', () => {
     expect(world.player.use).not.toHaveBeenCalled();
   });
 
-  // One attempt is the price of not trusting hue: it is 0 for iron and for a pile the client has said
-  // nothing about, so the shard has to be the one that says these two are different metals.
-  it('spends one attempt finding out two lone piles are different metals', async () => {
+  // The fallback, reached when no tooltip named the metal: hue is 0 both for iron and for a pile the
+  // client has said nothing about, so the shard has to be the one that splits these two.
+  it('spends one attempt finding out two unnamed piles are different metals', async () => {
     const { world, pack } = await onShard([ore(1, IRON, 5), ore(2, COPPER, 5)], sameHue);
 
     expect(world.player.use).toHaveBeenCalledTimes(1);
@@ -349,5 +368,131 @@ describe('waitForOre', () => {
 
     expect(waitForOre(30)).toBe(true);
     expect(world.sleep).not.toHaveBeenCalled();
+  });
+});
+
+// What this whole path exists for: the metal is on the pile's own tooltip, so two of them are told
+// apart before anything is double-clicked rather than by being refused once per new serial.
+describe('groupOres, with the metal on the tooltip', () => {
+  it('never attempts two piles the tooltips name as different metals', async () => {
+    const { world, pack } = await onShard(
+      [ore(1, IRON, 5), ore(2, COPPER, 5)],
+      sameHue,
+      DIFFERENT_ORE_TEXT[0],
+      { 1: ['Verite'], 2: ['Copper'] },
+    );
+
+    expect(world.player.use).not.toHaveBeenCalled();
+    expect(pack).toHaveLength(2);
+  });
+
+  // Hue would have paired 1 with 2 here and spent the refusal. The tooltip reaches past it for 3,
+  // whose hue disagrees and whose metal does not.
+  it('pairs by the metal ahead of the hue', async () => {
+    const { world } = await onShard(
+      [ore(1, IRON, 9), ore(2, IRON, 5), ore(3, COPPER, 5)],
+      () => true,
+      DIFFERENT_ORE_TEXT[0],
+      { 1: ['Verite'], 2: ['Copper'], 3: ['Verite'] },
+    );
+
+    expect(world.player.use).toHaveBeenNthCalledWith(1, 3);
+  });
+
+  it('keeps a pile whose tooltip named no metal away from a named one', async () => {
+    const { world } = await onShard(
+      [ore(1, IRON, 5), ore(2, IRON, 5)],
+      sameHue,
+      DIFFERENT_ORE_TEXT[0],
+      { 1: [], 2: ['Verite'] },
+    );
+
+    expect(world.player.use).not.toHaveBeenCalled();
+  });
+
+  it('merges two piles whose tooltips both named no metal', async () => {
+    const { pack } = await onShard(
+      [ore(1, IRON, 5), ore(2, IRON, 5)],
+      () => true,
+      DIFFERENT_ORE_TEXT[0],
+      { 1: [], 2: [] },
+    );
+
+    expect(pack).toHaveLength(1);
+  });
+
+  // The refusal every cycle came from here: the pile the swing had just delivered had no tooltip
+  // yet, so it was paired on a guess against whatever had not yet been proven different.
+  it('leaves a pile whose tooltip has not arrived yet alone rather than guessing at it', async () => {
+    const { world, pack } = await onShard(
+      [ore(1, IRON, 5), ore(2, COPPER, 5)],
+      sameHue,
+      DIFFERENT_ORE_TEXT[0],
+      { 1: ['Verite'] },
+    );
+
+    expect(world.player.use).not.toHaveBeenCalled();
+    expect(pack).toHaveLength(2);
+  });
+
+  it('groups it on the pass its tooltip arrives, without spending a refusal', async () => {
+    const tooltips: Tooltips = { 1: ['Verite'] };
+    const { world, pack, groupOres } = await onShard(
+      [ore(1, IRON, 9), ore(2, COPPER, 5)],
+      () => true,
+      DIFFERENT_ORE_TEXT[0],
+      tooltips,
+    );
+
+    expect(world.player.use).not.toHaveBeenCalled();
+
+    tooltips[2] = ['Verite'];
+    groupOres();
+
+    expect(world.player.use).toHaveBeenCalledTimes(1);
+    expect(pack).toHaveLength(1);
+  });
+
+  // Deferring must be a wait, never a stranding: a tooltip that never comes falls back to the
+  // refusal that carried the whole run before any of this.
+  it('tries it anyway once the lookups for it have run out', async () => {
+    const { world, groupOres } = await onShard(
+      [ore(1, IRON, 5), ore(2, COPPER, 5)],
+      sameHue,
+      DIFFERENT_ORE_TEXT[0],
+      { 1: ['Verite'] },
+    );
+
+    for (let pass = 1; pass < METAL_ASKS; pass++) {
+      groupOres();
+    }
+
+    expect(world.player.use).toHaveBeenCalledTimes(1);
+  });
+
+  // Only reachable when the line being read is not the metal, so the metal goes back to unknown
+  // rather than the pair being remembered
+  it('doubts a metal the shard refuses against itself', async () => {
+    const { world } = await onShard(
+      [ore(1, IRON, 5), ore(2, IRON, 5)],
+      () => false,
+      DIFFERENT_ORE_TEXT[0],
+      { 1: ['Verite'], 2: ['Verite'] },
+    );
+
+    expect(world.log).toHaveBeenCalledWith(expect.stringContaining("both read as 'verite'"));
+    expect(world.player.use).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks the shard once per pile, not once per pass', async () => {
+    const { world, pack } = await onShard(
+      [ore(1, IRON, 9), ore(2, IRON, 5), ore(3, IRON, 5)],
+      () => true,
+      DIFFERENT_ORE_TEXT[0],
+      { 1: ['Verite'], 2: ['Verite'], 3: ['Verite'] },
+    );
+
+    expect(pack).toHaveLength(1);
+    expect(world.client.queryItemOPL).toHaveBeenCalledTimes(3);
   });
 });

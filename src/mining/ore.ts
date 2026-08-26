@@ -13,6 +13,13 @@ import {
   TARGET_TIMEOUT,
   THROTTLED_TEXT,
 } from './config.js';
+import {
+  doubtMetal,
+  forgetMissingMetals,
+  metalOf,
+  metalPending,
+  startMetalPass,
+} from './metal.js';
 
 // Named for the item rather than the tile, because vein.ts already owns `isOre` for the ground.
 //
@@ -56,16 +63,16 @@ export const waitForOre = (before: number): boolean => {
 
 const amountOf = (item: Item): number => item.amount ?? 1;
 const hueOf = (item: Item): number => item.hue ?? 0;
-const describe = (item: Item): string => `${amountOf(item)} hue ${hueOf(item)}`;
+const describe = (item: Item): string =>
+  `${amountOf(item)} ${metalOf(item) ?? `hue ${hueOf(item)}`}`;
 
 // Top level only, unlike oreTotal: the combine and the smelt both act by serial on loose items.
 // Largest first, so the pile a combine consumes is always the smaller one.
 export const orePiles = (): Item[] =>
   (packContents() ?? []).filter(isOrePile).sort((a, b) => amountOf(b) - amountOf(a));
 
-// Two piles the shard itself refused, which is the only authority on the metal there is: item.hue is
-// 0 for a pile whose properties the client has not been sent yet, so grouping by it alone left piles
-// of one metal sitting apart with nothing said.
+// The backstop for the piles metal.ts could not name. Remembered by serial, which is why it cannot
+// carry a run alone: every swing delivers a pile wearing a serial nothing has been learned about.
 const differing = new Set<string>();
 
 // This call only: a silent miss is as likely to be a busy moment as a verdict, and remembering it for
@@ -82,10 +89,29 @@ const hueKey = (a: Item, b: Item): string =>
 const hueTellsThemApart = (a: Item, b: Item): boolean =>
   hueOf(a) !== 0 && hueOf(b) !== 0 && hueOf(a) !== hueOf(b);
 
+// Only ever forbids: one pile the tooltip could not name must not split its own metal, so an unknown
+// on either side falls through to the hue and the refusal below.
+const metalTellsThemApart = (a: Item, b: Item): boolean => {
+  const mine = metalOf(a);
+
+  return mine !== undefined && metalOf(b) !== undefined && mine !== metalOf(b);
+};
+
 const differs = (a: Item, b: Item): boolean =>
+  // A pile whose tooltip is still in flight is paired with nothing at all. Guessing at it is what
+  // earned a refusal every cycle, and one more swing loose costs the pack nothing.
+  metalPending(a) ||
+  metalPending(b) ||
+  metalTellsThemApart(a, b) ||
   differing.has(serialKey(a, b)) ||
   skipped.has(serialKey(a, b)) ||
   (hueTellsThemApart(a, b) && differing.has(hueKey(a, b)));
+
+const sameMetal = (a: Item, b: Item): boolean => {
+  const mine = metalOf(a);
+
+  return mine !== undefined && mine === metalOf(b);
+};
 
 const said = (texts: string[]): boolean => texts.some((text) => journal.containsText(text));
 
@@ -139,6 +165,12 @@ const combine = (primary: Item, dup: Item): void => {
   }
 
   if (said(DIFFERENT_ORE_TEXT)) {
+    const metal = metalOf(primary);
+
+    if (metal !== undefined && metal === metalOf(dup)) {
+      doubtMetal(metal);
+    }
+
     differing.add(serialKey(primary, dup));
 
     if (hueTellsThemApart(primary, dup)) {
@@ -158,8 +190,9 @@ const nextPair = (piles: Item[]): [Item, Item] | undefined => {
   const primaries: Item[] = [];
 
   for (const pile of piles) {
-    // Same hue first: hue is right nearly always, and a wrong guess costs a refusal
+    // The tooltip's metal first, then hue: hue is right nearly always, and wrong costs a refusal
     const home =
+      primaries.find((primary) => sameMetal(primary, pile) && !differs(primary, pile)) ??
       primaries.find((primary) => hueOf(primary) === hueOf(pile) && !differs(primary, pile)) ??
       primaries.find((primary) => !differs(primary, pile));
 
@@ -175,9 +208,12 @@ const nextPair = (piles: Item[]): [Item, Item] | undefined => {
 
 export const groupOres = (): void => {
   skipped.clear();
+  startMetalPass();
 
   for (let attempt = 0; attempt < MAX_COMBINE_ATTEMPTS; attempt++) {
     const piles = orePiles();
+    forgetMissingMetals(piles);
+
     const pair = nextPair(piles);
 
     if (!pair) {

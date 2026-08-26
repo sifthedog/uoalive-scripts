@@ -127,8 +127,38 @@ export const COMBINE_POLL = 200;
 // new pile, and this is what keeps that off the swing loop.
 export const MAX_COMBINE_ATTEMPTS = 12;
 
-// The shard refusing two piles as different metals, which is what tells the metals apart here - hue
-// reads 0 for a pile the client has not been sent the properties of. Stock RunUO wording, a guess.
+// How long to wait for the tooltip that names a pile's metal. Paid once per new pile.
+export const OPL_TIMEOUT = 1000;
+
+// Stock RunUO's nine. A metal this shard has that these do not joins the set off its first tooltip.
+export const ORE_METALS = new Set([
+  'iron',
+  'dull copper',
+  'shadow iron',
+  'copper',
+  'bronze',
+  'gold',
+  'agapite',
+  'verite',
+  'valorite',
+]);
+
+// Letters only, so the divider the client draws between tooltip blocks is not read as a metal
+export const ORE_METAL_LINE = /^[a-z][a-z' -]*$/i;
+
+// Tooltip lines that are not metals. 'ore' because the name line is that word on its own.
+export const NOT_METAL_TEXT =
+  /\b(blessed|cursed|insured|exceptional|newbie|antique|brittle|unmovable|weight|contents|ore)\b/i;
+
+// Unanswered tooltips in a row before the lookup stops costing OPL_TIMEOUT a pile
+export const METAL_MISSES = 3;
+
+// Lookups one pile gets before it is left unnamed for good. More than one because the pile a swing
+// just delivered has usually not been sent its tooltip yet, and one miss is not a verdict.
+export const METAL_ASKS = 3;
+
+// The backstop for a pile whose tooltip named no metal, and remembered by serial only - every swing
+// delivers a new one, which is why this was never enough to tell the metals apart on its own.
 export const DIFFERENT_ORE_TEXT = ['You cannot combine ores of different metals'];
 
 // A swing's ore arrives after the sentence that announced it, so grouping the instant the journal

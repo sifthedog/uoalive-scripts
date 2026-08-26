@@ -199,7 +199,11 @@ mining its own, delete it from the re-export list and declare it below.
 | `COMBINE_DELAY`, `ORE_SETTLE_TIMEOUT`, `ORE_SETTLE_POLL` | Consolidation pacing, and how long to wait for a swing's ore |
 | `COMBINE_TIMEOUT`, `COMBINE_POLL` | How long to poll the pack for the proof a combine landed |
 | `MAX_COMBINE_ATTEMPTS` | Combines per consolidation. Bounds a pack holding several metals |
-| `DIFFERENT_ORE_TEXT` | **The shard refusing two piles as different metals.** What tells the metals apart — get it wrong and the run keeps two piles of one metal apart, and says so |
+| `ORE_METALS` | Stock RunUO's nine metal names. A metal this shard has that these do not joins the set off its first tooltip |
+| `ORE_METAL_LINE`, `NOT_METAL_TEXT` | Which tooltip line is the metal: letters only, and not one of the flags every item can carry |
+| `OPL_TIMEOUT`, `METAL_MISSES` | How long to wait for a pile's tooltip, and how many unanswered ones before the lookup stops costing that wait |
+| `METAL_ASKS` | Passes a pile's tooltip is waited for before it is grouped unnamed and left to the refusal |
+| `DIFFERENT_ORE_TEXT` | The shard refusing two piles as different metals. The backstop for a pile no tooltip named — get it wrong and the run keeps two of those apart, and says so |
 | `INGOT_GRAPHICS` | Re-exported from [`lib/arts.ts`](../lib/arts.ts). A seed only — the real graphic is learned by diffing the pack |
 | `DISMOUNT_TIMEOUT`, `DISMOUNT_POLL`, `DISMOUNT_ATTEMPTS` | Getting off the mount |
 
@@ -268,6 +272,23 @@ up — once, not once per cycle, or a smelt that can never land spins in `smelti
 watchdog. Never a world save: that is waited out instead, both before the retry is spent and before
 the verdict is drawn.
 
+**`tooltips are not naming the metal here`.** No tooltip answered for three piles in a row, so the
+run falls back to telling the metals apart the slow way — attempt a pair, read the refusal. Ordinary
+on a shard with no OPL. If the metal *is* on screen and this still fires, the tooltip is arriving
+slower than `OPL_TIMEOUT`.
+
+**`save: nothing said in 60s, carrying on`.** No completion line arrived. Either the save really
+did outlast `SAVE_WAIT`, or the shard words the end of it in a way `SAVE_DONE_TEXT` does not have —
+read the journal after a save and correct it. Harmless in itself; the run carries on either way.
+
+**`the tooltip lookup would not answer`.** The client threw out of `queryItemOPL` instead of
+answering. Said once, and that pile keeps its metal unread; three in a row and the run falls back to
+the refusal-driven grouping for good. Harmless on its own — before it was caught, it ended the run.
+
+**`the shard refused two piles both read as 'x'`.** The line being read as the metal is not the
+metal. Those piles go back to the refusal-driven grouping; correct `ORE_METAL_LINE` or
+`NOT_METAL_TEXT` against what the tooltip actually shows.
+
 **`could not get off the mount`.** Double-clicking yourself is not how this shard dismounts.
 
 **`no pickaxe`.** Nothing in hand and no spare found. If the spares are in a nested bag, pin
@@ -281,12 +302,21 @@ Written against UOAlive.
   call the 1, 2, 3 and 4+ stack sizes. **They are not that here** — a pile of 33 arrives wearing the
   one called a single. So the arts are a set to match against and nothing more, and a stack's size is
   read from `item.amount` alone.
-- **`item.hue` is not a name for the metal.** It reads 0 both for iron and for a pile whose properties
-  the client has not been sent, so grouping by it alone left piles of one metal sitting apart with
-  nothing logged. The shard is the authority instead: the combine is attempted and the refusal in
-  `DIFFERENT_ORE_TEXT` is what splits two metals. Hue only orders the candidates, since it is right
-  nearly always and a wrong guess costs one refusal. A refusal is remembered for the run, a silent
-  miss only for the pass — a busy moment must not split a metal for good.
+- **The metal is its own tooltip line.** The pile is named `Ore`, weighed, and then the metal is
+  printed under a divider — `Verite`. That is per-pile and costs no failed combine, so two metals are
+  told apart before anything is double-clicked. A tooltip that answers and names no metal is *plain
+  iron*, which is the distinction hue could never draw: `item.hue` reads 0 both for iron and for a
+  pile whose properties the client has not been sent.
+- **The refusal alone was never enough.** `DIFFERENT_ORE_TEXT` is remembered against a pair of
+  serials, and every swing delivers a pile wearing a serial nothing has been learned about — so the
+  run paid a refusal per metal per new pile. It is the backstop now, for piles no tooltip named; hue
+  still orders those candidates, since it is right nearly always. A refusal is remembered for the run,
+  a silent miss only for the pass — a busy moment must not split a metal for good.
+- **A world save can start and finish inside one swing.** A dig waits up to `DIG_TIMEOUT`, so by the
+  time the loop reads the journal the shard has usually said both that it was saving and that it was
+  done. `waitOutSave` reads the completion *before* it clears the journal for exactly that reason —
+  clearing first threw the line away and then stood still for the whole of `SAVE_WAIT`, once per
+  save. The clear still happens, so the last save's completion cannot end the next one's wait.
 - **A combine is silent whether it lands or not.** The proof is the pack: the consumed pile gone, or
   the pile it went into grown. Counting piles before and after read a client that had not refreshed
   yet as "no progress" and gave up with several piles of one metal still in the pack.
