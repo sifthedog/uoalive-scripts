@@ -36,9 +36,23 @@
     };
   };
 
+  // src/lib/opl.ts
+  var threw = false;
+  var queryOPL = (serial, timeoutMs, prefix) => {
+    try {
+      return client.queryItemOPL(serial, timeoutMs);
+    } catch (error) {
+      if (!threw) {
+        threw = true;
+        log(`${prefix}: the tooltip lookup would not answer - ${String(error)}`);
+      }
+      return void 0;
+    }
+  };
+
   // src/lib/pick.ts
-  var resolveName = (serial, oplTimeout) => {
-    const fromTooltip = (client.queryItemOPL(serial, oplTimeout)?.name ?? "").trim();
+  var resolveName = (serial, oplTimeout, prefix) => {
+    const fromTooltip = (queryOPL(serial, oplTimeout, prefix)?.name ?? "").trim();
     return fromTooltip || (client.findObject(serial)?.name ?? "").trim();
   };
   var clicked = (prefix) => {
@@ -51,12 +65,12 @@
     }
     return info;
   };
-  var describe = (info, oplTimeout) => {
+  var describe = (info, oplTimeout, prefix) => {
     const serial = info.serial ?? 0;
     const found = client.findObject(serial);
     return {
       serial,
-      name: resolveName(serial, oplTimeout),
+      name: resolveName(serial, oplTimeout, prefix),
       graphic: info.graphic ?? found?.graphic ?? 0,
       hue: info.hue ?? found?.hue ?? 0
     };
@@ -64,7 +78,7 @@
   var pickOne = ({ prefix, prompt, oplTimeout }) => {
     log(`${prefix}: ${prompt}`);
     const info = clicked(prefix);
-    return info && describe(info, oplTimeout);
+    return info && describe(info, oplTimeout, prefix);
   };
 
   // src/lib/skill.ts
@@ -186,24 +200,45 @@
     // gold chest
   ]);
   var unreadable = /* @__PURE__ */ new Set();
-  var contentsOf = (item) => {
+  var complained = /* @__PURE__ */ new Set();
+  var packComplained = false;
+  var forgetUnreadable = (serial) => {
+    if (serial === void 0) {
+      unreadable.clear();
+      return;
+    }
+    unreadable.delete(serial);
+  };
+  var describe2 = (item) => {
     try {
-      return item?.contents;
+      return `${hex(item.serial)} ${hex(item.graphic)} '${item.name ?? ""}'`;
+    } catch {
+      return `${hex(item.serial)} which will not say what it is`;
+    }
+  };
+  var contentsOf = (item) => {
+    if (!item || unreadable.has(item.serial)) {
+      return void 0;
+    }
+    try {
+      return item.contents;
     } catch (error) {
-      const serial = item?.serial ?? 0;
-      if (!unreadable.has(serial)) {
-        unreadable.add(serial);
-        log(`contents: ${hex(serial)} would not answer - ${String(error)}`);
+      unreadable.add(item.serial);
+      if (!complained.has(item.serial)) {
+        complained.add(item.serial);
+        log(`contents: ${describe2(item)} would not answer - ${String(error)}`);
       }
       return void 0;
     }
   };
   var packContents = () => {
     try {
-      return contentsOf(player.backpack);
+      const pack = player.backpack;
+      forgetUnreadable(pack?.serial);
+      return contentsOf(pack);
     } catch (error) {
-      if (!unreadable.has(0)) {
-        unreadable.add(0);
+      if (!packComplained) {
+        packComplained = true;
         log(`contents: the backpack would not answer - ${String(error)}`);
       }
       return void 0;
@@ -214,6 +249,7 @@
     if (preferredSerial) {
       player.use(preferredSerial);
       sleep(800);
+      forgetUnreadable(preferredSerial);
       return true;
     }
     let opened = false;
@@ -223,6 +259,7 @@
       }
       player.use(item.serial);
       sleep(800);
+      forgetUnreadable(item.serial);
       opened = true;
     }
     return opened;
@@ -442,16 +479,18 @@
     isSaving: () => options.savingText.some((text) => journal.containsText(text)),
     waitOutSave: () => {
       log("save: the world is saving, waiting it out");
+      const said = (texts) => texts.some((text) => journal.containsText(text));
+      let ended2 = said(options.doneText) ? "the shard had already finished" : void 0;
       journal.clear();
-      for (let waited = 0; waited < options.waitMs; waited += options.pollMs) {
+      for (let waited = 0; !ended2 && waited < options.waitMs; waited += options.pollMs) {
         sleep(options.pollMs);
-        if (options.doneText.some((text) => journal.containsText(text))) {
-          break;
-        }
-        if (options.stopReason()) {
-          break;
+        if (said(options.doneText)) {
+          ended2 = "the shard says it is done";
+        } else if (options.stopReason()) {
+          ended2 = "the run has a reason to stop";
         }
       }
+      log(`save: ${ended2 ?? `nothing said in ${Math.round(options.waitMs / 1e3)}s`}, carrying on`);
       options.onDone();
     }
   });

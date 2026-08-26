@@ -258,6 +258,7 @@
       }
     };
   };
+  var withinZOf = (z, allowed) => Math.abs(z - player.z) <= allowed;
   var createScan = (options) => {
     const reported2 = /* @__PURE__ */ new Set();
     return (radius = options.radius) => {
@@ -269,6 +270,9 @@
         for (let dy = -radius; dy <= radius; dy++) {
           for (const tile of client.getTerrainList(player.x + dx, player.y + dy) ?? []) {
             if (options.skipLand && tile.isLand) {
+              continue;
+            }
+            if (options.withinZ !== void 0 && !withinZOf(tile.z, options.withinZ)) {
               continue;
             }
             if (!options.matches(tile.graphic, tile.isLand)) {
@@ -411,6 +415,7 @@
   var NOT_ORE_GRAPHICS = /* @__PURE__ */ new Set();
   var ORE_STATIC_NAME = /cave|rock|mountain|ore/i;
   var MINE_RANGE = 2;
+  var MINE_Z_RANGE = 20;
   var RESPAWN_DELAY = 25 * 60 * 1e3;
   var DIG_TIMEOUT = 8e3;
   var DIG_TARGET_TIMEOUT = 4e3;
@@ -422,6 +427,22 @@
   var COMBINE_TIMEOUT = 2e3;
   var COMBINE_POLL = 200;
   var MAX_COMBINE_ATTEMPTS = 12;
+  var OPL_TIMEOUT = 1e3;
+  var ORE_METALS = /* @__PURE__ */ new Set([
+    "iron",
+    "dull copper",
+    "shadow iron",
+    "copper",
+    "bronze",
+    "gold",
+    "agapite",
+    "verite",
+    "valorite"
+  ]);
+  var ORE_METAL_LINE = /^[a-z][a-z' -]*$/i;
+  var NOT_METAL_TEXT = /\b(blessed|cursed|insured|exceptional|newbie|antique|brittle|unmovable|weight|contents|ore)\b/i;
+  var METAL_MISSES = 3;
+  var METAL_ASKS = 3;
   var DIFFERENT_ORE_TEXT = ["You cannot combine ores of different metals"];
   var ORE_SETTLE_TIMEOUT = 1500;
   var ORE_SETTLE_POLL = 150;
@@ -511,24 +532,45 @@
     // gold chest
   ]);
   var unreadable = /* @__PURE__ */ new Set();
-  var contentsOf = (item) => {
+  var complained = /* @__PURE__ */ new Set();
+  var packComplained = false;
+  var forgetUnreadable = (serial) => {
+    if (serial === void 0) {
+      unreadable.clear();
+      return;
+    }
+    unreadable.delete(serial);
+  };
+  var describe = (item) => {
     try {
-      return item?.contents;
+      return `${hex(item.serial)} ${hex(item.graphic)} '${item.name ?? ""}'`;
+    } catch {
+      return `${hex(item.serial)} which will not say what it is`;
+    }
+  };
+  var contentsOf = (item) => {
+    if (!item || unreadable.has(item.serial)) {
+      return void 0;
+    }
+    try {
+      return item.contents;
     } catch (error) {
-      const serial = item?.serial ?? 0;
-      if (!unreadable.has(serial)) {
-        unreadable.add(serial);
-        log(`contents: ${hex(serial)} would not answer - ${String(error)}`);
+      unreadable.add(item.serial);
+      if (!complained.has(item.serial)) {
+        complained.add(item.serial);
+        log(`contents: ${describe(item)} would not answer - ${String(error)}`);
       }
       return void 0;
     }
   };
   var packContents = () => {
     try {
-      return contentsOf(player.backpack);
+      const pack = player.backpack;
+      forgetUnreadable(pack?.serial);
+      return contentsOf(pack);
     } catch (error) {
-      if (!unreadable.has(0)) {
-        unreadable.add(0);
+      if (!packComplained) {
+        packComplained = true;
         log(`contents: the backpack would not answer - ${String(error)}`);
       }
       return void 0;
@@ -539,6 +581,7 @@
     if (preferredSerial) {
       player.use(preferredSerial);
       sleep(800);
+      forgetUnreadable(preferredSerial);
       return true;
     }
     let opened = false;
@@ -548,6 +591,7 @@
       }
       player.use(item.serial);
       sleep(800);
+      forgetUnreadable(item.serial);
       opened = true;
     }
     return opened;
@@ -612,6 +656,101 @@
     0
   );
 
+  // src/lib/opl.ts
+  var threw = false;
+  var queryOPL = (serial, timeoutMs, prefix) => {
+    try {
+      return client.queryItemOPL(serial, timeoutMs);
+    } catch (error) {
+      if (!threw) {
+        threw = true;
+        log(`${prefix}: the tooltip lookup would not answer - ${String(error)}`);
+      }
+      return void 0;
+    }
+  };
+
+  // src/mining/metal.ts
+  var PLAIN = "iron";
+  var metals = /* @__PURE__ */ new Map();
+  var missedThisPass = /* @__PURE__ */ new Set();
+  var asks = /* @__PURE__ */ new Map();
+  var doubted = /* @__PURE__ */ new Set();
+  var oplNamesMetals = true;
+  var misses = 0;
+  var oplAnswered = false;
+  var textOf = (property) => {
+    const values = (property.values ?? []).map((value) => value.text ?? "").join(" ");
+    return `${property.text ?? ""} ${values}`.trim();
+  };
+  var readMetal = (name, properties) => {
+    const lines = properties.map(textOf).filter((line) => line && line !== name);
+    const known2 = lines.find((line) => ORE_METALS.has(line.toLowerCase()));
+    if (known2) {
+      return known2.toLowerCase();
+    }
+    const learned = lines.find((line) => ORE_METAL_LINE.test(line) && !NOT_METAL_TEXT.test(line));
+    if (!learned) {
+      return PLAIN;
+    }
+    ORE_METALS.add(learned.toLowerCase());
+    log(`ore: '${learned}' is a metal too, remembering it`);
+    return learned.toLowerCase();
+  };
+  var worthAsking = (serial) => oplNamesMetals && !missedThisPass.has(serial) && (asks.get(serial) ?? 0) < METAL_ASKS;
+  var lookUp = (serial) => {
+    if (metals.has(serial) || !worthAsking(serial)) {
+      return;
+    }
+    asks.set(serial, (asks.get(serial) ?? 0) + 1);
+    const opl = queryOPL(serial, OPL_TIMEOUT, "ore");
+    const properties = opl?.properties ?? [];
+    if (properties.length === 0) {
+      missedThisPass.add(serial);
+      misses += 1;
+      if (misses >= METAL_MISSES) {
+        oplNamesMetals = false;
+        log("ore: tooltips are not naming the metal here, so a pair has to be refused to be split");
+      }
+      return;
+    }
+    misses = 0;
+    oplAnswered = true;
+    metals.set(serial, readMetal(opl?.name ?? "", properties));
+  };
+  var metalOf = (item) => {
+    lookUp(item.serial);
+    const metal = metals.get(item.serial);
+    return metal !== void 0 && doubted.has(metal) ? void 0 : metal;
+  };
+  var metalPending = (item) => {
+    lookUp(item.serial);
+    return oplAnswered && oplNamesMetals && !metals.has(item.serial) && (asks.get(item.serial) ?? 0) < METAL_ASKS;
+  };
+  var startMetalPass = () => {
+    missedThisPass.clear();
+  };
+  var doubtMetal = (metal) => {
+    if (doubted.has(metal)) {
+      return;
+    }
+    doubted.add(metal);
+    log(`ore: the shard refused two piles both read as '${metal}', so that line is not the metal`);
+  };
+  var forgetMissingMetals = (piles) => {
+    const here = new Set(piles.map((pile) => pile.serial));
+    for (const serial of [...metals.keys()]) {
+      if (!here.has(serial)) {
+        metals.delete(serial);
+      }
+    }
+    for (const serial of [...asks.keys()]) {
+      if (!here.has(serial)) {
+        asks.delete(serial);
+      }
+    }
+  };
+
   // src/mining/ore.ts
   var isOrePile = (item) => {
     if (ORE_GRAPHICS.has(item.graphic)) {
@@ -636,14 +775,26 @@
   };
   var amountOf = (item) => item.amount ?? 1;
   var hueOf = (item) => item.hue ?? 0;
-  var describe = (item) => `${amountOf(item)} hue ${hueOf(item)}`;
+  var describe2 = (item) => `${amountOf(item)} ${metalOf(item) ?? `hue ${hueOf(item)}`}`;
   var orePiles = () => (packContents() ?? []).filter(isOrePile).sort((a, b) => amountOf(b) - amountOf(a));
   var differing = /* @__PURE__ */ new Set();
   var skipped = /* @__PURE__ */ new Set();
   var serialKey = (a, b) => a.serial < b.serial ? `s${a.serial}:${b.serial}` : `s${b.serial}:${a.serial}`;
   var hueKey = (a, b) => hueOf(a) < hueOf(b) ? `h${hueOf(a)}:${hueOf(b)}` : `h${hueOf(b)}:${hueOf(a)}`;
   var hueTellsThemApart = (a, b) => hueOf(a) !== 0 && hueOf(b) !== 0 && hueOf(a) !== hueOf(b);
-  var differs = (a, b) => differing.has(serialKey(a, b)) || skipped.has(serialKey(a, b)) || hueTellsThemApart(a, b) && differing.has(hueKey(a, b));
+  var metalTellsThemApart = (a, b) => {
+    const mine = metalOf(a);
+    return mine !== void 0 && metalOf(b) !== void 0 && mine !== metalOf(b);
+  };
+  var differs = (a, b) => (
+    // A pile whose tooltip is still in flight is paired with nothing at all. Guessing at it is what
+    // earned a refusal every cycle, and one more swing loose costs the pack nothing.
+    metalPending(a) || metalPending(b) || metalTellsThemApart(a, b) || differing.has(serialKey(a, b)) || skipped.has(serialKey(a, b)) || hueTellsThemApart(a, b) && differing.has(hueKey(a, b))
+  );
+  var sameMetal = (a, b) => {
+    const mine = metalOf(a);
+    return mine !== void 0 && mine === metalOf(b);
+  };
   var said = (texts) => texts.some((text) => journal.containsText(text));
   var merged = (primary, dup, before) => {
     for (let waited = 0; waited < COMBINE_TIMEOUT; waited += COMBINE_POLL) {
@@ -666,7 +817,7 @@
     if (!target.waitTargetEntity(primary.serial, TARGET_TIMEOUT)) {
       target.cancel();
       skipped.add(serialKey(primary, dup));
-      log(`groupOres: no target cursor for ${describe(dup)}`);
+      log(`groupOres: no target cursor for ${describe2(dup)}`);
       return;
     }
     if (merged(primary, dup, before)) {
@@ -677,6 +828,10 @@
       return;
     }
     if (said(DIFFERENT_ORE_TEXT)) {
+      const metal = metalOf(primary);
+      if (metal !== void 0 && metal === metalOf(dup)) {
+        doubtMetal(metal);
+      }
       differing.add(serialKey(primary, dup));
       if (hueTellsThemApart(primary, dup)) {
         differing.add(hueKey(primary, dup));
@@ -684,12 +839,12 @@
       return;
     }
     skipped.add(serialKey(primary, dup));
-    log(`groupOres: ${describe(primary)} and ${describe(dup)} did not merge and nothing was said`);
+    log(`groupOres: ${describe2(primary)} and ${describe2(dup)} did not merge and nothing was said`);
   };
   var nextPair = (piles) => {
     const primaries = [];
     for (const pile of piles) {
-      const home = primaries.find((primary) => hueOf(primary) === hueOf(pile) && !differs(primary, pile)) ?? primaries.find((primary) => !differs(primary, pile));
+      const home = primaries.find((primary) => sameMetal(primary, pile) && !differs(primary, pile)) ?? primaries.find((primary) => hueOf(primary) === hueOf(pile) && !differs(primary, pile)) ?? primaries.find((primary) => !differs(primary, pile));
       if (home) {
         return [home, pile];
       }
@@ -699,12 +854,14 @@
   };
   var groupOres = () => {
     skipped.clear();
+    startMetalPass();
     for (let attempt = 0; attempt < MAX_COMBINE_ATTEMPTS; attempt++) {
       const piles = orePiles();
+      forgetMissingMetals(piles);
       const pair = nextPair(piles);
       if (!pair) {
         if (skipped.size > 0 && piles.length > 1) {
-          log(`groupOres: left ${piles.length} piles - ${piles.map(describe).join(", ")}`);
+          log(`groupOres: left ${piles.length} piles - ${piles.map(describe2).join(", ")}`);
         }
         return;
       }
@@ -955,16 +1112,18 @@
     isSaving: () => options.savingText.some((text) => journal.containsText(text)),
     waitOutSave: () => {
       log("save: the world is saving, waiting it out");
+      const said2 = (texts) => texts.some((text) => journal.containsText(text));
+      let ended = said2(options.doneText) ? "the shard had already finished" : void 0;
       journal.clear();
-      for (let waited = 0; waited < options.waitMs; waited += options.pollMs) {
+      for (let waited = 0; !ended && waited < options.waitMs; waited += options.pollMs) {
         sleep(options.pollMs);
-        if (options.doneText.some((text) => journal.containsText(text))) {
-          break;
-        }
-        if (options.stopReason()) {
-          break;
+        if (said2(options.doneText)) {
+          ended = "the shard says it is done";
+        } else if (options.stopReason()) {
+          ended = "the run has a reason to stop";
         }
       }
+      log(`save: ${ended ?? `nothing said in ${Math.round(options.waitMs / 1e3)}s`}, carrying on`);
       options.onDone();
     }
   });
@@ -983,11 +1142,11 @@
   // src/lib/convert.ts
   var createConverter = (options) => {
     const writtenOff = /* @__PURE__ */ new Set();
-    const misses = /* @__PURE__ */ new Map();
+    const misses2 = /* @__PURE__ */ new Map();
     let progressed = true;
     const missed = (hue) => {
-      const count = (misses.get(hue) ?? 0) + 1;
-      misses.set(hue, count);
+      const count = (misses2.get(hue) ?? 0) + 1;
+      misses2.set(hue, count);
       if (count >= options.attempts) {
         writtenOff.add(hue);
         log(`${options.label}: hue ${hue} failed ${count} times, ${options.leftAs}`);
@@ -1035,7 +1194,7 @@
       }
       const changes = waitForChange(before);
       if (changes.length > 0) {
-        misses.delete(hue);
+        misses2.delete(hue);
         progressed = true;
         learnOutput(changes);
         return;
@@ -1088,7 +1247,7 @@
         progressed = false;
         log(`${options.label}: giving ${writtenOff.size} hue(s) written off earlier another go`);
         writtenOff.clear();
-        misses.clear();
+        misses2.clear();
         return true;
       }
     };
@@ -1399,7 +1558,7 @@
     for (let dx = -range2; dx <= range2; dx++) {
       for (let dy = -range2; dy <= range2; dy++) {
         for (const tile of client.getTerrainList(player.x + dx, player.y + dy) ?? []) {
-          if (!isOre(tile.graphic, tile.isLand)) {
+          if (!withinZOf(tile.z, MINE_Z_RANGE) || !isOre(tile.graphic, tile.isLand)) {
             continue;
           }
           store2.block(
@@ -1429,6 +1588,7 @@
     radius: SCAN_RADIUS,
     blocked: () => memory().blocked,
     matches: isOre,
+    withinZ: MINE_Z_RANGE,
     // Land is not skipped the way lumberjacking skips it - a mountainside *is* land, and it is the
     // ordinary case rather than the exception
     describe: (vein) => `'${vein.isLand ? "land" : client.getStatic(vein.graphic)?.name ?? "?"}'`
@@ -1437,6 +1597,9 @@
   var stillOre = (vein) => {
     const until = store2.blockedUntil(vein);
     if (until !== void 0 && now() < until) {
+      return void 0;
+    }
+    if (!withinZOf(vein.z, MINE_Z_RANGE)) {
       return void 0;
     }
     for (const tile of client.getTerrainList(vein.x, vein.y) ?? []) {
@@ -1589,7 +1752,7 @@
         log(`${options.prefix}: the shard says '${refused}' - not calling again this run`);
       }
     };
-    const describe2 = (hostile, friend) => {
+    const describe3 = (hostile, friend) => {
       const who = hostile ? `'${nameOf(hostile)}' ${hex(hostile.graphic)} ${distanceTo(hostile)} tiles off (${NOTORIETY[hostile.notoriety] ?? hostile.notoriety})` : "nothing in sight";
       const mine = `you ${player.hits}/${hitsCeiling() ?? "?"}`;
       const theirs = friend ? `, ${options.companionName} ${friend.hits}/${friend.maxHits || "?"}` : "";
@@ -1621,7 +1784,7 @@
         }
         if (!episode) {
           episode = true;
-          log(`${options.prefix}: trouble - ${describe2(hostile, friend)}`);
+          log(`${options.prefix}: trouble - ${describe3(hostile, friend)}`);
         }
         if (hurt || friendHurt || said2 || hostile && matches(hostile, options.callOnSight)) {
           callGuards();
@@ -1754,7 +1917,7 @@
       idleUntil,
       isSaving,
       nothingFound: () => {
-        log("mining: nothing matched, here is what is actually on the ground");
+        log(`mining: nothing within ${MINE_Z_RANGE}z of ${player.z} matched, here is what is around`);
         reportTerrain(SCAN_RADIUS, SURVEY_ARTS);
         return "no ore in range";
       }

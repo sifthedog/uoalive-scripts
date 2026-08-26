@@ -54,24 +54,45 @@
     // gold chest
   ]);
   var unreadable = /* @__PURE__ */ new Set();
-  var contentsOf = (item) => {
+  var complained = /* @__PURE__ */ new Set();
+  var packComplained = false;
+  var forgetUnreadable = (serial) => {
+    if (serial === void 0) {
+      unreadable.clear();
+      return;
+    }
+    unreadable.delete(serial);
+  };
+  var describe = (item) => {
     try {
-      return item?.contents;
+      return `${hex(item.serial)} ${hex(item.graphic)} '${item.name ?? ""}'`;
+    } catch {
+      return `${hex(item.serial)} which will not say what it is`;
+    }
+  };
+  var contentsOf = (item) => {
+    if (!item || unreadable.has(item.serial)) {
+      return void 0;
+    }
+    try {
+      return item.contents;
     } catch (error) {
-      const serial = item?.serial ?? 0;
-      if (!unreadable.has(serial)) {
-        unreadable.add(serial);
-        log(`contents: ${hex(serial)} would not answer - ${String(error)}`);
+      unreadable.add(item.serial);
+      if (!complained.has(item.serial)) {
+        complained.add(item.serial);
+        log(`contents: ${describe(item)} would not answer - ${String(error)}`);
       }
       return void 0;
     }
   };
   var packContents = () => {
     try {
-      return contentsOf(player.backpack);
+      const pack = player.backpack;
+      forgetUnreadable(pack?.serial);
+      return contentsOf(pack);
     } catch (error) {
-      if (!unreadable.has(0)) {
-        unreadable.add(0);
+      if (!packComplained) {
+        packComplained = true;
         log(`contents: the backpack would not answer - ${String(error)}`);
       }
       return void 0;
@@ -92,6 +113,20 @@
     return found;
   };
 
+  // src/lib/opl.ts
+  var threw = false;
+  var queryOPL = (serial, timeoutMs, prefix) => {
+    try {
+      return client.queryItemOPL(serial, timeoutMs);
+    } catch (error) {
+      if (!threw) {
+        threw = true;
+        log(`${prefix}: the tooltip lookup would not answer - ${String(error)}`);
+      }
+      return void 0;
+    }
+  };
+
   // src/selling/hoist.ts
   var names = /* @__PURE__ */ new Map();
   var oplAnswersNames = true;
@@ -108,7 +143,7 @@
     if (!oplAnswersNames) {
       return "";
     }
-    const fromTooltip = (client.queryItemOPL(item.serial, OPL_TIMEOUT)?.name ?? "").trim();
+    const fromTooltip = (queryOPL(item.serial, OPL_TIMEOUT, "sell")?.name ?? "").trim();
     names.set(item.serial, fromTooltip);
     misses = fromTooltip ? 0 : misses + 1;
     if (misses >= 3) {
@@ -190,8 +225,8 @@
   };
 
   // src/lib/pick.ts
-  var resolveName = (serial, oplTimeout) => {
-    const fromTooltip = (client.queryItemOPL(serial, oplTimeout)?.name ?? "").trim();
+  var resolveName = (serial, oplTimeout, prefix) => {
+    const fromTooltip = (queryOPL(serial, oplTimeout, prefix)?.name ?? "").trim();
     return fromTooltip || (client.findObject(serial)?.name ?? "").trim();
   };
   var clicked = (prefix) => {
@@ -204,12 +239,12 @@
     }
     return info;
   };
-  var describe = (info, oplTimeout) => {
+  var describe2 = (info, oplTimeout, prefix) => {
     const serial = info.serial ?? 0;
     const found = client.findObject(serial);
     return {
       serial,
-      name: resolveName(serial, oplTimeout),
+      name: resolveName(serial, oplTimeout, prefix),
       graphic: info.graphic ?? found?.graphic ?? 0,
       hue: info.hue ?? found?.hue ?? 0
     };
@@ -232,7 +267,7 @@
       if (!info) {
         break;
       }
-      const picked2 = describe(info, oplTimeout);
+      const picked2 = describe2(info, oplTimeout, prefix);
       const key = keyOf(picked2);
       if (key === void 0) {
         continue;

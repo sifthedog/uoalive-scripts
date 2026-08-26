@@ -5,14 +5,46 @@
 
   // src/lib/containers.ts
   var unreadable = /* @__PURE__ */ new Set();
-  var contentsOf = (item) => {
+  var complained = /* @__PURE__ */ new Set();
+  var packComplained = false;
+  var forgetUnreadable = (serial) => {
+    if (serial === void 0) {
+      unreadable.clear();
+      return;
+    }
+    unreadable.delete(serial);
+  };
+  var describe = (item) => {
     try {
-      return item?.contents;
+      return `${hex(item.serial)} ${hex(item.graphic)} '${item.name ?? ""}'`;
+    } catch {
+      return `${hex(item.serial)} which will not say what it is`;
+    }
+  };
+  var contentsOf = (item) => {
+    if (!item || unreadable.has(item.serial)) {
+      return void 0;
+    }
+    try {
+      return item.contents;
     } catch (error) {
-      const serial = item?.serial ?? 0;
-      if (!unreadable.has(serial)) {
-        unreadable.add(serial);
-        log(`contents: ${hex(serial)} would not answer - ${String(error)}`);
+      unreadable.add(item.serial);
+      if (!complained.has(item.serial)) {
+        complained.add(item.serial);
+        log(`contents: ${describe(item)} would not answer - ${String(error)}`);
+      }
+      return void 0;
+    }
+  };
+  var packContents = () => {
+    try {
+      const pack = player.backpack;
+      forgetUnreadable(pack?.serial);
+      return contentsOf(pack);
+    } catch (error) {
+      if (!packComplained) {
+        packComplained = true;
+        log(`contents: the backpack would not answer - ${String(error)}`);
       }
       return void 0;
     }
@@ -115,7 +147,7 @@
   var isKey = (item) => keyGraphic !== void 0 && item.graphic === keyGraphic || KEY_GRAPHICS.has(item.graphic) || KEY_WORD.test(item.name ?? "");
   var dumpPack = () => {
     log("boxes: pack contents (graphic / hue / amount / name)");
-    for (const item of player.backpack?.contents ?? []) {
+    for (const item of packContents() ?? []) {
       log(
         `boxes:   ${hex(item.graphic)} hue ${item.hue ?? 0} x${item.amount ?? 1} "${item.name ?? ""}"`
       );
@@ -124,7 +156,7 @@
 
   // src/boxes/keys.ts
   var backpack = player.backpack ?? die("keys: no backpack");
-  var keys = collectIn(player.backpack?.contents, isKey);
+  var keys = collectIn(packContents(), isKey);
   if (keys.length === 0) {
     log("keys: nothing in the pack looks like a key.");
     dumpPack();

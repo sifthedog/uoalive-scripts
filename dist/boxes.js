@@ -35,24 +35,45 @@
     // gold chest
   ]);
   var unreadable = /* @__PURE__ */ new Set();
-  var contentsOf = (item) => {
+  var complained = /* @__PURE__ */ new Set();
+  var packComplained = false;
+  var forgetUnreadable = (serial) => {
+    if (serial === void 0) {
+      unreadable.clear();
+      return;
+    }
+    unreadable.delete(serial);
+  };
+  var describe = (item) => {
     try {
-      return item?.contents;
+      return `${hex(item.serial)} ${hex(item.graphic)} '${item.name ?? ""}'`;
+    } catch {
+      return `${hex(item.serial)} which will not say what it is`;
+    }
+  };
+  var contentsOf = (item) => {
+    if (!item || unreadable.has(item.serial)) {
+      return void 0;
+    }
+    try {
+      return item.contents;
     } catch (error) {
-      const serial = item?.serial ?? 0;
-      if (!unreadable.has(serial)) {
-        unreadable.add(serial);
-        log(`contents: ${hex(serial)} would not answer - ${String(error)}`);
+      unreadable.add(item.serial);
+      if (!complained.has(item.serial)) {
+        complained.add(item.serial);
+        log(`contents: ${describe(item)} would not answer - ${String(error)}`);
       }
       return void 0;
     }
   };
   var packContents = () => {
     try {
-      return contentsOf(player.backpack);
+      const pack = player.backpack;
+      forgetUnreadable(pack?.serial);
+      return contentsOf(pack);
     } catch (error) {
-      if (!unreadable.has(0)) {
-        unreadable.add(0);
+      if (!packComplained) {
+        packComplained = true;
         log(`contents: the backpack would not answer - ${String(error)}`);
       }
       return void 0;
@@ -63,6 +84,7 @@
     if (preferredSerial) {
       player.use(preferredSerial);
       sleep(800);
+      forgetUnreadable(preferredSerial);
       return true;
     }
     let opened = false;
@@ -72,6 +94,7 @@
       }
       player.use(item.serial);
       sleep(800);
+      forgetUnreadable(item.serial);
       opened = true;
     }
     return opened;
@@ -202,12 +225,12 @@
     return true;
   };
   var findBoxes = () => {
-    let boxes = collectIn(player.backpack?.contents, isBox);
+    let boxes = collectIn(packContents(), isBox);
     if (boxes.length === 0 && openContainers()) {
-      boxes = collectIn(player.backpack?.contents, isBox);
+      boxes = collectIn(packContents(), isBox);
     }
     if (rememberBox(boxes[0])) {
-      boxes = collectIn(player.backpack?.contents, isBox);
+      boxes = collectIn(packContents(), isBox);
     }
     return boxes;
   };
@@ -226,7 +249,7 @@
   };
   var dumpPack = () => {
     log("boxes: pack contents (graphic / hue / amount / name)");
-    for (const item of player.backpack?.contents ?? []) {
+    for (const item of packContents() ?? []) {
       log(
         `boxes:   ${hex(item.graphic)} hue ${item.hue ?? 0} x${item.amount ?? 1} "${item.name ?? ""}"`
       );
@@ -313,6 +336,20 @@
     whenKeepingKeys(packFull(PACK_LIMIT))
   );
 
+  // src/lib/opl.ts
+  var threw = false;
+  var queryOPL = (serial, timeoutMs, prefix) => {
+    try {
+      return client.queryItemOPL(serial, timeoutMs);
+    } catch (error) {
+      if (!threw) {
+        threw = true;
+        log(`${prefix}: the tooltip lookup would not answer - ${String(error)}`);
+      }
+      return void 0;
+    }
+  };
+
   // src/boxes/peek.ts
   var oplReportsContents = true;
   var textOf = (property) => {
@@ -323,7 +360,7 @@
     if (!PEEK_CONTENTS || !oplReportsContents) {
       return void 0;
     }
-    const opl = client.queryItemOPL(serial, OPL_TIMEOUT);
+    const opl = queryOPL(serial, OPL_TIMEOUT, "boxes");
     for (const property of opl?.properties ?? []) {
       const match = textOf(property).match(/contents[^0-9]*([0-9]+)/i);
       if (match) {
@@ -496,8 +533,8 @@
       }
       closeBox(box.serial);
       if (LOG_EVERY_BOX) {
-        const describe = (item) => `${hex(item.graphic)}${dropped.includes(item) ? " -> floor" : " -> pack"}`;
-        const contents = moved.map(describe).join(", ") || "nothing";
+        const describe2 = (item) => `${hex(item.graphic)}${dropped.includes(item) ? " -> floor" : " -> pack"}`;
+        const contents = moved.map(describe2).join(", ") || "nothing";
         log(`boxes: ${hex(box.serial)} ${outcome}, took out ${contents}`);
       }
     }

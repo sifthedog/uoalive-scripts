@@ -10,9 +10,23 @@
   var hex = (value) => `0x${(value >>> 0).toString(16)}`;
   var isMobile = (entity) => entity._tag === "Mobile";
 
+  // src/lib/opl.ts
+  var threw = false;
+  var queryOPL = (serial, timeoutMs, prefix) => {
+    try {
+      return client.queryItemOPL(serial, timeoutMs);
+    } catch (error) {
+      if (!threw) {
+        threw = true;
+        log(`${prefix}: the tooltip lookup would not answer - ${String(error)}`);
+      }
+      return void 0;
+    }
+  };
+
   // src/lib/pick.ts
-  var resolveName = (serial, oplTimeout) => {
-    const fromTooltip = (client.queryItemOPL(serial, oplTimeout)?.name ?? "").trim();
+  var resolveName = (serial, oplTimeout, prefix) => {
+    const fromTooltip = (queryOPL(serial, oplTimeout, prefix)?.name ?? "").trim();
     return fromTooltip || (client.findObject(serial)?.name ?? "").trim();
   };
   var clicked = (prefix) => {
@@ -25,12 +39,12 @@
     }
     return info;
   };
-  var describe = (info, oplTimeout) => {
+  var describe = (info, oplTimeout, prefix) => {
     const serial = info.serial ?? 0;
     const found = client.findObject(serial);
     return {
       serial,
-      name: resolveName(serial, oplTimeout),
+      name: resolveName(serial, oplTimeout, prefix),
       graphic: info.graphic ?? found?.graphic ?? 0,
       hue: info.hue ?? found?.hue ?? 0
     };
@@ -38,7 +52,7 @@
   var pickOne = ({ prefix, prompt, oplTimeout }) => {
     log(`${prefix}: ${prompt}`);
     const info = clicked(prefix);
-    return info && describe(info, oplTimeout);
+    return info && describe(info, oplTimeout, prefix);
   };
   var pickMany = ({
     prefix,
@@ -58,7 +72,7 @@
       if (!info) {
         break;
       }
-      const picked = describe(info, oplTimeout);
+      const picked = describe(info, oplTimeout, prefix);
       const key = keyOf(picked);
       if (key === void 0) {
         continue;
@@ -112,14 +126,32 @@
     // gold chest
   ]);
   var unreadable = /* @__PURE__ */ new Set();
-  var contentsOf = (item) => {
+  var complained = /* @__PURE__ */ new Set();
+  var forgetUnreadable = (serial) => {
+    if (serial === void 0) {
+      unreadable.clear();
+      return;
+    }
+    unreadable.delete(serial);
+  };
+  var describe2 = (item) => {
     try {
-      return item?.contents;
+      return `${hex(item.serial)} ${hex(item.graphic)} '${item.name ?? ""}'`;
+    } catch {
+      return `${hex(item.serial)} which will not say what it is`;
+    }
+  };
+  var contentsOf = (item) => {
+    if (!item || unreadable.has(item.serial)) {
+      return void 0;
+    }
+    try {
+      return item.contents;
     } catch (error) {
-      const serial = item?.serial ?? 0;
-      if (!unreadable.has(serial)) {
-        unreadable.add(serial);
-        log(`contents: ${hex(serial)} would not answer - ${String(error)}`);
+      unreadable.add(item.serial);
+      if (!complained.has(item.serial)) {
+        complained.add(item.serial);
+        log(`contents: ${describe2(item)} would not answer - ${String(error)}`);
       }
       return void 0;
     }
@@ -169,6 +201,7 @@
       opened.add(bag.serial);
       player.use(bag.serial);
       sleep(OPEN_DELAY);
+      forgetUnreadable(bag.serial);
       openedAny = true;
     }
     return openedAny;

@@ -537,6 +537,7 @@
     Layers.OneHanded,
     Layers.TwoHanded,
     Layers.Helmet,
+    Layers.Necklace,
     Layers.Gloves,
     Layers.Arms,
     Layers.Torso,
@@ -628,24 +629,45 @@
     // gold chest
   ]);
   var unreadable = /* @__PURE__ */ new Set();
-  var contentsOf = (item) => {
+  var complained = /* @__PURE__ */ new Set();
+  var packComplained = false;
+  var forgetUnreadable = (serial) => {
+    if (serial === void 0) {
+      unreadable.clear();
+      return;
+    }
+    unreadable.delete(serial);
+  };
+  var describe = (item) => {
     try {
-      return item?.contents;
+      return `${hex(item.serial)} ${hex(item.graphic)} '${item.name ?? ""}'`;
+    } catch {
+      return `${hex(item.serial)} which will not say what it is`;
+    }
+  };
+  var contentsOf = (item) => {
+    if (!item || unreadable.has(item.serial)) {
+      return void 0;
+    }
+    try {
+      return item.contents;
     } catch (error) {
-      const serial = item?.serial ?? 0;
-      if (!unreadable.has(serial)) {
-        unreadable.add(serial);
-        log(`contents: ${hex(serial)} would not answer - ${String(error)}`);
+      unreadable.add(item.serial);
+      if (!complained.has(item.serial)) {
+        complained.add(item.serial);
+        log(`contents: ${describe(item)} would not answer - ${String(error)}`);
       }
       return void 0;
     }
   };
   var packContents = () => {
     try {
-      return contentsOf(player.backpack);
+      const pack = player.backpack;
+      forgetUnreadable(pack?.serial);
+      return contentsOf(pack);
     } catch (error) {
-      if (!unreadable.has(0)) {
-        unreadable.add(0);
+      if (!packComplained) {
+        packComplained = true;
         log(`contents: the backpack would not answer - ${String(error)}`);
       }
       return void 0;
@@ -656,6 +678,7 @@
     if (preferredSerial) {
       player.use(preferredSerial);
       sleep(800);
+      forgetUnreadable(preferredSerial);
       return true;
     }
     let opened = false;
@@ -665,6 +688,7 @@
       }
       player.use(item.serial);
       sleep(800);
+      forgetUnreadable(item.serial);
       opened = true;
     }
     return opened;
@@ -1026,16 +1050,18 @@
     isSaving: () => options.savingText.some((text) => journal.containsText(text)),
     waitOutSave: () => {
       log("save: the world is saving, waiting it out");
+      const said = (texts) => texts.some((text) => journal.containsText(text));
+      let ended = said(options.doneText) ? "the shard had already finished" : void 0;
       journal.clear();
-      for (let waited = 0; waited < options.waitMs; waited += options.pollMs) {
+      for (let waited = 0; !ended && waited < options.waitMs; waited += options.pollMs) {
         sleep(options.pollMs);
-        if (options.doneText.some((text) => journal.containsText(text))) {
-          break;
-        }
-        if (options.stopReason()) {
-          break;
+        if (said(options.doneText)) {
+          ended = "the shard says it is done";
+        } else if (options.stopReason()) {
+          ended = "the run has a reason to stop";
         }
       }
+      log(`save: ${ended ?? `nothing said in ${Math.round(options.waitMs / 1e3)}s`}, carrying on`);
       options.onDone();
     }
   });
