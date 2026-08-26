@@ -157,16 +157,20 @@ describe('openContainers', () => {
 // client failing the question rather than answering it. Nothing above these functions has a try in
 // it, so an unreadable bag took the whole run with it.
 describe('contentsOf', () => {
-  // A bag whose contents getter throws on every read
-  const unreadableBag = (serial: number): Item => {
-    const bag = item({ serial, graphic: BAG });
+  // A bag whose contents getter throws on every read, counting how often it was asked
+  const unreadableBag = (serial: number): Item & { reads: () => number } => {
+    const bag = item({ serial, graphic: BAG }) as Item & { reads: () => number };
+    let reads = 0;
 
     Object.defineProperty(bag, 'contents', {
       configurable: true,
       get: () => {
+        reads += 1;
         throw new SyntaxError('Unexpected end of JSON input');
       },
     });
+
+    bag.reads = () => reads;
 
     return bag;
   };
@@ -202,6 +206,55 @@ describe('contentsOf', () => {
 
     expect(collectIn(contents, (found) => found.graphic === POTION)).toHaveLength(1);
     expect(findIn(contents, (found) => found.graphic === POTION)?.serial).toBe(5);
+  });
+
+  // The read is a native round trip that fails rather than answers, and the pack is walked several
+  // times per swing - re-asking cost a mining run hundreds of these between one dig and the next.
+  it('asks a bag that will not answer once, not once per scan', () => {
+    const bag = unreadableBag(6);
+
+    contentsOf(bag);
+    contentsOf(bag);
+    contentsOf(bag);
+
+    expect(bag.reads()).toBe(1);
+  });
+
+  it('asks again once the bag has been opened, which is what makes it readable', () => {
+    const bag = unreadableBag(7);
+
+    contentsOf(bag);
+    openContainers(7);
+    contentsOf(bag);
+
+    expect(bag.reads()).toBe(2);
+  });
+
+  // Latching this one would leave every later pack read empty, and a run that believes its pack is
+  // empty does nothing at all
+  it('never gives up on the backpack, however it answered last time', () => {
+    const loaded = [item({ serial: 9, graphic: POTION })];
+    let answered = false;
+
+    Object.defineProperty(world.player, 'backpack', {
+      configurable: true,
+      value: item({ serial: 8, graphic: BACKPACK }),
+    });
+
+    Object.defineProperty(world.player.backpack as object, 'contents', {
+      configurable: true,
+      get: () => {
+        if (!answered) {
+          answered = true;
+          throw new SyntaxError('Unexpected end of JSON input');
+        }
+
+        return loaded;
+      },
+    });
+
+    expect(packContents()).toBeUndefined();
+    expect(packContents()).toHaveLength(1);
   });
 
   it('reads the pack as empty when the pack itself will not answer', () => {

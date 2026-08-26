@@ -1,4 +1,4 @@
-import { collectIn } from '../lib/containers.js';
+import { collectIn, packContents } from '../lib/containers.js';
 import { createConverter } from '../lib/convert.js';
 import { isLog } from './chop.js';
 import {
@@ -33,7 +33,7 @@ const converter = /* @__PURE__ */ createConverter({
   isSaving,
 
   nextStack: (writtenOff) =>
-    collectIn(player.backpack?.contents, isLog).find((item) => !writtenOff.has(item.hue ?? 0)),
+    collectIn(packContents(), isLog).find((item) => !writtenOff.has(item.hue ?? 0)),
 
   // The tool is used and the resource targeted - the inverse of smelting
   perform: (stack) => {

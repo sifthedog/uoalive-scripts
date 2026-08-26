@@ -1,4 +1,4 @@
-import { contentsOf, isContainer } from '../lib/containers.js';
+import { contentsOf, forgetUnreadable, isContainer } from '../lib/containers.js';
 import { hex, isMobile } from '../lib/entity.js';
 import type { Picked } from '../lib/pick.js';
 import { MAX_PASSES, MOVE_DELAY, OPEN_DELAY } from './config.js';
@@ -105,6 +105,7 @@ export const openNested = (
     opened.add(bag.serial);
     player.use(bag.serial);
     sleep(OPEN_DELAY);
+    forgetUnreadable(bag.serial);
     openedAny = true;
   }
 

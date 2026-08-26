@@ -17,6 +17,7 @@ interface Node {
   amount?: number;
   children?: Node[];
   open?: boolean;
+  throwsUntilOpened?: boolean;
 }
 
 let world: FakeWorld;
@@ -24,14 +25,26 @@ let nodes: Map<number, Node>;
 
 // A container answers `undefined` for its contents until it has been opened, so `children` is what
 // is inside and `open` is whether the client has been told
-const asItem = (node: Node): Item =>
-  ({
+const asItem = (node: Node): Item => {
+  const built = {
     serial: node.serial,
     graphic: node.graphic,
     hue: node.hue,
     amount: node.amount,
     contents: node.children && node.open ? node.children.map(asItem) : undefined,
-  }) as unknown as Item;
+  } as unknown as Item;
+
+  if (node.throwsUntilOpened && !node.open) {
+    Object.defineProperty(built, 'contents', {
+      configurable: true,
+      get: () => {
+        throw new SyntaxError('Unexpected end of JSON input');
+      },
+    });
+  }
+
+  return built;
+};
 
 const register = (node: Node): Node => {
   nodes.set(node.serial, node);
@@ -169,6 +182,27 @@ describe('transfer', () => {
 
     expect(transfer(1, 2, everything).outcome).toBe('emptied');
     expect(childrenOf(1)).toEqual([20]);
+    expect(childrenOf(2)).toEqual([21]);
+  });
+
+  // contentsOf stops asking a serial that threw, so opening one has to clear that or the bag is
+  // skipped for the rest of the run
+  it('reaches a bag that threw before it was opened', () => {
+    register({
+      serial: 1,
+      graphic: BAG,
+      children: [
+        {
+          serial: 20,
+          graphic: BAG,
+          throwsUntilOpened: true,
+          children: [{ serial: 21, graphic: INGOT }],
+        },
+      ],
+    });
+    destination();
+
+    expect(transfer(1, 2, everything).outcome).toBe('emptied');
     expect(childrenOf(2)).toEqual([21]);
   });
 

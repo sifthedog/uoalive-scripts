@@ -285,6 +285,20 @@ read the journal after a save and correct it. Harmless in itself; the run carrie
 answering. Said once, and that pile keeps its metal unread; three in a row and the run falls back to
 the refusal-driven grouping for good. Harmless on its own — before it was caught, it ended the run.
 
+**`contents: 0x… 0x… '…' would not answer`.** The client threw out of the `contents` read instead of
+answering it — "Exception executing 'itemGetContents': Unexpected end of JSON input". That item is
+read as an unopened container and then **skipped for the rest of the run**, so the line is said once
+per item rather than once per pack scan; re-asking it was costing hundreds of failed calls between
+one swing and the next. Opening the container clears the skip. The line names the graphic and the
+name so you can tell what it was.
+
+**`You cannot combine ores of different metals`, a few every cycle.** The pile the swing just landed
+had no tooltip yet, so it was paired on a guess. A pile whose metal is not known is now held back for
+up to `METAL_ASKS` passes rather than being tried against whatever has not yet been proven different;
+it grouped on the pass its tooltip arrives. Raise `METAL_ASKS` or `OPL_TIMEOUT` if any survive. Note
+this only applies once a tooltip has answered at least once — on a shard with no OPL nothing is held
+back, and the refusal carries the run as it always did.
+
 **`the shard refused two piles both read as 'x'`.** The line being read as the metal is not the
 metal. Those piles go back to the refusal-driven grouping; correct `ORE_METAL_LINE` or
 `NOT_METAL_TEXT` against what the tooltip actually shows.

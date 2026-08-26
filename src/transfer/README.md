@@ -85,6 +85,10 @@ Every remaining item was told to move and none of them did. The destination is f
 out of range, or the shard is refusing in silence. It says nothing about *why* because the client
 does not: `moveItem` reports only that the packet went out.
 
+**`contents: 0x… 0x… '…' would not answer`.** The client failed the `contents` read rather than
+answering it. That bag is treated as one that has not been opened, and skipped until something opens
+it — which `openNested` does on the next pass, so a nested bag still gets emptied.
+
 **A bag came across whole instead of being emptied**
 
 Its art is not in `CONTAINER_GRAPHICS` in [`lib/containers.ts`](../lib/containers.ts) and the client

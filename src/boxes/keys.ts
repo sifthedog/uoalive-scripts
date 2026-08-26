@@ -1,4 +1,4 @@
-import { collectIn } from '../lib/containers.js';
+import { collectIn, packContents } from '../lib/containers.js';
 import { die } from '../lib/die.js';
 import { dumpPack, hex, isKey } from './boxes.js';
 import { LOG_EVERY_KEY, MAX_STUCK } from './config.js';
@@ -9,7 +9,7 @@ import { dropToGround } from './drop.js';
 const backpack = player.backpack ?? die('keys: no backpack');
 
 // collectIn recurses, so this takes keys out of bags and out of any box still holding one
-const keys = collectIn(player.backpack?.contents, isKey);
+const keys = collectIn(packContents(), isKey);
 
 if (keys.length === 0) {
   log('keys: nothing in the pack looks like a key.');

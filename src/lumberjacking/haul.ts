@@ -1,4 +1,4 @@
-import { collectIn, type ItemPredicate } from '../lib/containers.js';
+import { collectIn, packContents, type ItemPredicate } from '../lib/containers.js';
 import { approach, distanceTo, hex, isMobile, nameOf } from '../lib/entity.js';
 import { pickMany } from '../lib/pick.js';
 import { overweight } from '../lib/weight.js';
@@ -23,7 +23,7 @@ import { stepToward } from './walk.js';
 const isCargo = (item: Item): boolean => isBoard(item) || (isLog(item) && unconvertible.has(item.hue ?? 0));
 
 const writtenOffLogs = (): Item[] =>
-  collectIn(player.backpack?.contents, (item) => isLog(item) && unconvertible.has(item.hue ?? 0));
+  collectIn(packContents(), (item) => isLog(item) && unconvertible.has(item.hue ?? 0));
 
 let reported = false;
 
@@ -144,7 +144,7 @@ const moveAll = (packSerial: number, matches: ItemPredicate): void => {
   let previousStacks = Infinity;
 
   while (true) {
-    const stacks = collectIn(player.backpack?.contents, matches);
+    const stacks = collectIn(packContents(), matches);
 
     if (stacks.length === 0 || stacks.length >= previousStacks) {
       return;
@@ -164,7 +164,7 @@ const unloadTo = (animals: Mobile[], matches: ItemPredicate): boolean => {
   let moved = false;
 
   for (const animal of animals) {
-    const before = collectIn(player.backpack?.contents, matches).length;
+    const before = collectIn(packContents(), matches).length;
     if (before === 0) {
       break;
     }
@@ -181,7 +181,7 @@ const unloadTo = (animals: Mobile[], matches: ItemPredicate): boolean => {
 
     moveAll(pack.serial, matches);
 
-    const after = collectIn(player.backpack?.contents, matches).length;
+    const after = collectIn(packContents(), matches).length;
     if (after < before) {
       moved = true;
     }
@@ -214,7 +214,7 @@ export const unload = (): boolean => {
   // Only asked once every animal has had a turn at the boards - a full first animal is no evidence
   // the conversion fell behind.
   if (overweight(HAUL_BUFFER)) {
-    const logs = collectIn(player.backpack?.contents, isLog);
+    const logs = collectIn(packContents(), isLog);
 
     if (logs.length > 0) {
       // Both, rather than the retry gating the conversion: a makeBoards cut short by a save or the
@@ -223,7 +223,7 @@ export const unload = (): boolean => {
       retryUnconvertible();
       makeBoards();
 
-      if (collectIn(player.backpack?.contents, isLog).length === 0) {
+      if (collectIn(packContents(), isLog).length === 0) {
         return unloadTo(animals, isCargo) || moved;
       }
 

@@ -1,4 +1,4 @@
-import { collectIn, openContainers } from '../lib/containers.js';
+import { collectIn, openContainers, packContents } from '../lib/containers.js';
 import { hex } from '../lib/entity.js';
 import {
   BOX_GRAPHICS,
@@ -61,14 +61,14 @@ export const rememberBox = (item: Item | undefined): boolean => {
 // collectIn recurses, but a container's contents stay undefined until it has been opened - so an
 // unopened bag hides everything in it, which one pass of double-clicks rules out.
 export const findBoxes = (): Item[] => {
-  let boxes = collectIn(player.backpack?.contents, isBox);
+  let boxes = collectIn(packContents(), isBox);
 
   if (boxes.length === 0 && openContainers()) {
-    boxes = collectIn(player.backpack?.contents, isBox);
+    boxes = collectIn(packContents(), isBox);
   }
 
   if (rememberBox(boxes[0])) {
-    boxes = collectIn(player.backpack?.contents, isBox);
+    boxes = collectIn(packContents(), isBox);
   }
 
   return boxes;
@@ -98,7 +98,7 @@ export const closeEverything = (): void => {
 export const dumpPack = (): void => {
   log('boxes: pack contents (graphic / hue / amount / name)');
 
-  for (const item of player.backpack?.contents ?? []) {
+  for (const item of packContents() ?? []) {
     log(
       `boxes:   ${hex(item.graphic)} hue ${item.hue ?? 0} x${item.amount ?? 1} "${item.name ?? ''}"`,
     );
