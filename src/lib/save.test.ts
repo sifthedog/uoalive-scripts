@@ -36,6 +36,21 @@ beforeEach(() => {
   onDone = vi.fn();
 });
 
+// A journal that behaves like the client's - lines accumulate, clear() empties it. The shared fake's
+// clear() is inert, which is why the race these cover went unnoticed.
+const liveJournal = () => {
+  let lines: string[] = [];
+
+  world.journal.containsText.mockImplementation((text: string) =>
+    lines.some((line) => line.includes(text)),
+  );
+  world.journal.clear.mockImplementation(() => {
+    lines = [];
+  });
+
+  return { say: (...said: string[]) => lines.push(...said) };
+};
+
 describe('isSaving', () => {
   it('recognises the shard writing its world file', () => {
     journalSays('The world is saving, please wait.');
@@ -58,11 +73,19 @@ describe('waitOutSave', () => {
   });
 
   it('stops as soon as the shard says the save is done', () => {
-    journalSays('World save complete');
+    const shard = liveJournal();
+    shard.say('The world is saving, please wait.');
+
+    let slept = 0;
+    world.sleep.mockImplementation(() => {
+      if (++slept === 3) {
+        shard.say('World save complete');
+      }
+    });
 
     watch().waitOutSave();
 
-    expect(world.sleep).toHaveBeenCalledTimes(1);
+    expect(world.sleep).toHaveBeenCalledTimes(3);
   });
 
   // The fallback for a shard whose completion wording doneText does not have. Standing still for
@@ -94,5 +117,53 @@ describe('waitOutSave', () => {
     stopReason = () => 'you are dead';
     watch().waitOutSave();
     expect(onDone).toHaveBeenCalledTimes(1);
+  });
+});
+
+// A save can start and finish inside one swing - a dig alone waits up to DIG_TIMEOUT - so by the time
+// the loop reads the journal both lines are usually already in it.
+describe('a save that finished before the wait began', () => {
+  it('does not stand there waiting for a line that has already been said', () => {
+    const shard = liveJournal();
+    shard.say('The world is saving, please wait.', 'World save complete');
+
+    watch().waitOutSave();
+
+    expect(world.sleep).not.toHaveBeenCalled();
+  });
+
+  it('leaves the journal clear, so the next cycle does not read the save as still running', () => {
+    const shard = liveJournal();
+    shard.say('The world is saving, please wait.', 'World save complete');
+    const save = watch();
+
+    save.waitOutSave();
+
+    expect(save.isSaving()).toBe(false);
+  });
+
+  it('still waits out a save the shard has not finished', () => {
+    const shard = liveJournal();
+    shard.say('The world is saving, please wait.');
+
+    watch().waitOutSave();
+
+    expect(world.sleep).toHaveBeenCalledTimes(SLICES);
+  });
+
+  // The reason the journal is cleared at all: without it the last save's completion would end the
+  // next save's wait before the shard had even started writing.
+  it("does not let the last save's completion end the next one", () => {
+    const shard = liveJournal();
+    const save = watch();
+
+    shard.say('The world is saving, please wait.', 'World save complete');
+    save.waitOutSave();
+
+    shard.say('The world is saving, please wait.');
+    world.sleep.mockClear();
+    save.waitOutSave();
+
+    expect(world.sleep).toHaveBeenCalledTimes(SLICES);
   });
 });

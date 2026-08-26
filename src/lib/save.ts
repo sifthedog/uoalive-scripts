@@ -22,25 +22,33 @@ export const createSaveWatch = (options: {
   waitOutSave: () => {
     log('save: the world is saving, waiting it out');
 
-    // Cleared so the completion line has to arrive *after* this point: the message that got us here
-    // is still in the journal, and on a shard that words both ends of the save alike a stale line
-    // would end the wait before the save did.
+    const said = (texts: string[]): boolean => texts.some((text) => journal.containsText(text));
+
+    // Read *before* the clear. A save can start and finish inside one swing - a dig alone waits up
+    // to DIG_TIMEOUT - so by the time this runs the completion is usually already in the journal.
+    // Clearing first threw it away and then stood still for the whole of waitMs, once per save.
+    let ended = said(options.doneText) ? 'the shard had already finished' : undefined;
+
+    // Cleared so a completion has to arrive after this point: the line that got us here is still in
+    // the journal, and the last save's completion would otherwise end this one's wait.
     journal.clear();
 
     // Sliced rather than slept through, so the client stays responsive and the guards get a look in.
     // The timeout is the fallback for a shard whose completion wording doneText does not have.
-    for (let waited = 0; waited < options.waitMs; waited += options.pollMs) {
+    for (let waited = 0; !ended && waited < options.waitMs; waited += options.pollMs) {
       sleep(options.pollMs);
 
-      if (options.doneText.some((text) => journal.containsText(text))) {
-        break;
-      }
-
-      // Left to the caller to report and act on, so the wait has one way out and the run has one
-      if (options.stopReason()) {
-        break;
+      if (said(options.doneText)) {
+        ended = 'the shard says it is done';
+      } else if (options.stopReason()) {
+        // Left to the caller to report and act on, so the wait has one way out and the run has one
+        ended = 'the run has a reason to stop';
       }
     }
+
+    // Always said: without a closing line the run goes quiet at 'waiting it out' and there is no way
+    // to tell a save that ended from one that was never noticed.
+    log(`save: ${ended ?? `nothing said in ${Math.round(options.waitMs / 1000)}s`}, carrying on`);
 
     options.onDone();
   },
