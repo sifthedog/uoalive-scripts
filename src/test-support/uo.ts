@@ -301,6 +301,7 @@ export interface FakeClient {
   findObject: ReturnType<typeof vi.fn>;
   selectEntity: ReturnType<typeof vi.fn>;
   findType: ReturnType<typeof vi.fn>;
+  findAllItemsOfType: ReturnType<typeof vi.fn>;
   findAllMobilesOfType: ReturnType<typeof vi.fn>;
   findItemOnLayer: ReturnType<typeof vi.fn>;
   getTerrainList: ReturnType<typeof vi.fn>;
@@ -397,6 +398,7 @@ const defaults = (): FakeWorld => {
       findObject: vi.fn(() => undefined),
       selectEntity: vi.fn(() => undefined),
       findType: vi.fn(() => undefined),
+      findAllItemsOfType: vi.fn(() => []),
       findAllMobilesOfType: vi.fn(() => []),
       findItemOnLayer: vi.fn(() => undefined),
       getTerrainList: vi.fn(() => []),
