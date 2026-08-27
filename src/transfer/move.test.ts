@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { installGlobals, type FakeWorld } from '../test-support/uo.js';
-import { artKey, movables, transfer, wantedFrom } from './move.js';
+import { transfer, wantedFrom } from './move.js';
 
 const BAG = 0x0e76;
 const INGOT = 0x1bf2;
@@ -96,60 +96,6 @@ beforeEach(() => {
 const destination = () => register({ serial: 2, graphic: BAG, children: [], open: true });
 
 const everything = wantedFrom([]);
-
-describe('artKey', () => {
-  it('reads a missing hue as the shard reads it, which is uncoloured', () => {
-    expect(artKey({ graphic: INGOT })).toBe(artKey({ graphic: INGOT, hue: 0 }));
-  });
-
-  it('tells two colours of the same art apart', () => {
-    expect(artKey({ graphic: INGOT, hue: VALORITE })).not.toBe(artKey({ graphic: INGOT, hue: 0 }));
-  });
-});
-
-describe('wantedFrom', () => {
-  it('matches everything when nothing was picked', () => {
-    expect(everything.has({ graphic: GEM } as Item)).toBe(true);
-  });
-
-  it('matches the art and the hue together', () => {
-    const wanted = wantedFrom([{ serial: 1, name: '', graphic: INGOT, hue: VALORITE }]);
-
-    expect(wanted.has({ graphic: INGOT, hue: VALORITE } as Item)).toBe(true);
-    expect(wanted.has({ graphic: INGOT, hue: 0 } as Item)).toBe(false);
-    expect(wanted.has({ graphic: GEM, hue: VALORITE } as Item)).toBe(false);
-  });
-});
-
-describe('movables', () => {
-  it('takes the loose items and leaves the bags they are in', () => {
-    register({
-      serial: 1,
-      graphic: BAG,
-      open: true,
-      children: [
-        { serial: 10, graphic: INGOT },
-        { serial: 20, graphic: BAG, open: true, children: [{ serial: 21, graphic: GEM }] },
-      ],
-    });
-
-    expect(movables(1, 2, everything).map((item) => item.serial)).toEqual([10, 21]);
-  });
-
-  it('leaves the destination and everything under it alone', () => {
-    register({
-      serial: 1,
-      graphic: BAG,
-      open: true,
-      children: [
-        { serial: 2, graphic: BAG, open: true, children: [{ serial: 30, graphic: INGOT }] },
-        { serial: 31, graphic: INGOT },
-      ],
-    });
-
-    expect(movables(1, 2, everything).map((item) => item.serial)).toEqual([31]);
-  });
-});
 
 describe('transfer', () => {
   it('empties a flat container and counts what it sent', () => {

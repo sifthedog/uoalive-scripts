@@ -94,6 +94,7 @@ pack        counting and diffing what the backpack holds
 pick        the target cursor as a prompt: one click, or click-until-ESC
 retry       issue, poll for the proof, reissue
 save        sitting out a world save
+sift        a container tree walked to any depth, split into loose items and bags
 skill       every read of getSkill, and what a client that has not answered means
 stages      the skill-stage table, and which band a value falls in
 store       state parked on globalThis so it outlives the run
