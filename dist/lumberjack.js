@@ -261,14 +261,18 @@
   var withinZOf = (z, allowed) => Math.abs(z - player.z) <= allowed;
   var createScan = (options) => {
     const reported2 = /* @__PURE__ */ new Set();
-    return (radius = options.radius) => {
+    const at = options.terrain ?? ((x, y) => client.getTerrainList(x, y) ?? []);
+    let skipped = 0;
+    const run = (radius = options.radius) => {
       const blocked = options.blocked();
       const time = now();
       let best;
+      let bestWalk = Infinity;
       let readyAt;
+      skipped = 0;
       for (let dx = -radius; dx <= radius; dx++) {
         for (let dy = -radius; dy <= radius; dy++) {
-          for (const tile of client.getTerrainList(player.x + dx, player.y + dy) ?? []) {
+          for (const tile of at(player.x + dx, player.y + dy)) {
             if (options.skipLand && tile.isLand) {
               continue;
             }
@@ -276,9 +280,6 @@
               continue;
             }
             if (!options.matches(tile.graphic, tile.isLand)) {
-              continue;
-            }
-            if (options.reachable && !options.reachable(tile.x, tile.y)) {
               continue;
             }
             const candidate = {
@@ -300,8 +301,14 @@
               }
               blocked.delete(key);
             }
-            if (!best || candidate.distance < best.distance) {
+            const walk = options.reach ? options.reach(candidate) : 0;
+            if (walk === void 0) {
+              skipped++;
+              continue;
+            }
+            if (!best || walk < bestWalk || walk === bestWalk && candidate.distance < best.distance) {
               best = candidate;
+              bestWalk = walk;
             }
           }
         }
@@ -312,6 +319,7 @@
       }
       return { found: best, readyAt };
     };
+    return Object.assign(run, { skipped: () => skipped });
   };
   var createApproach = (options) => {
     let walkingTo;
@@ -1117,36 +1125,60 @@
     return picks;
   };
 
+  // src/lib/grid.ts
+  var STEPS = [
+    [0, -1],
+    [1, -1],
+    [1, 0],
+    [1, 1],
+    [0, 1],
+    [-1, 1],
+    [-1, 0],
+    [-1, -1]
+  ];
+
   // src/lib/walk.ts
-  var DIRECTION_BY_STEP = /* @__PURE__ */ new Map([
-    ["0,-1", Directions.North],
-    ["1,-1", Directions.Right],
-    ["1,0", Directions.East],
-    ["1,1", Directions.Down],
-    ["0,1", Directions.South],
-    ["-1,1", Directions.Left],
-    ["-1,0", Directions.West],
-    ["-1,-1", Directions.Up]
-  ]);
+  var DIRECTIONS = [
+    Directions.North,
+    Directions.Right,
+    Directions.East,
+    Directions.Down,
+    Directions.South,
+    Directions.Left,
+    Directions.West,
+    Directions.Up
+  ];
+  var indexOf = (step) => STEPS.findIndex(([x, y]) => x === step[0] && y === step[1]);
   var createStepToward = (options) => {
-    return (spot) => {
-      const wantX = Math.sign(spot.x - player.x);
-      const wantY = Math.sign(spot.y - player.y);
-      const step = options.constrain ? options.constrain(wantX, wantY) : wantX === 0 && wantY === 0 ? void 0 : [wantX, wantY];
-      if (step === void 0) {
+    const take = (step) => {
+      const allowed = options.constrain ? options.constrain(step[0], step[1]) : step;
+      if (allowed === void 0) {
         return false;
       }
-      const direction = DIRECTION_BY_STEP.get(`${step[0]},${step[1]}`);
-      if (direction === void 0) {
+      const at = indexOf(allowed);
+      if (at < 0) {
         return false;
       }
       const beforeX = player.x;
       const beforeY = player.y;
-      player.run(direction);
+      player.run(DIRECTIONS[at]);
       sleep(options.delayMs);
-      player.run(direction);
+      player.run(DIRECTIONS[at]);
       sleep(options.delayMs);
       return player.x !== beforeX || player.y !== beforeY;
+    };
+    return (spot) => {
+      const wantX = Math.sign(spot.x - player.x);
+      const wantY = Math.sign(spot.y - player.y);
+      const wanted = options.route?.(spot) ?? (wantX === 0 && wantY === 0 ? void 0 : [wantX, wantY]);
+      if (wanted === void 0) {
+        return false;
+      }
+      if (take(wanted)) {
+        return true;
+      }
+      const at = indexOf(wanted);
+      return at >= 0 && [STEPS[(at + 1) % STEPS.length], STEPS[(at + 7) % STEPS.length]].some(take);
     };
   };
 
@@ -1528,7 +1560,7 @@
     matches: (graphic) => isTree(graphic),
     // Trees outside the box are still fair game when a legal standing tile is within CHOP_RANGE;
     // filtered here rather than picked, walked at, refused and written off MAX_STEPS later.
-    reachable: (x, y) => reachableFromBounds(x, y, CHOP_RANGE),
+    reach: (tree) => reachableFromBounds(tree.x, tree.y, CHOP_RANGE) ? 0 : void 0,
     describe: (tree) => `'${client.getStatic(tree.graphic)?.name ?? "?"}'`
   });
   var scanForTree = () => {

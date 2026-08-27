@@ -189,6 +189,7 @@
   };
 
   // src/lib/timings.ts
+  var SCAN_RADIUS = 12;
   var UNREACHABLE_DELAY = 5 * 60 * 1e3;
   var STEP_DELAY = 300;
   var TARGET_TIMEOUT = 2e3;
@@ -253,6 +254,7 @@
     ...range(1361, 1383),
     ...range(1386, 1394)
   ]);
+  var ROUTE_RADIUS = SCAN_RADIUS + 4;
   var RESPAWN_DELAY = 25 * 60 * 1e3;
   var DIG_TIMEOUT = 8e3;
   var DIG_TARGET_TIMEOUT = 4e3;
@@ -1088,16 +1090,16 @@
   };
 
   // src/lib/walk.ts
-  var DIRECTION_BY_STEP = /* @__PURE__ */ new Map([
-    ["0,-1", Directions.North],
-    ["1,-1", Directions.Right],
-    ["1,0", Directions.East],
-    ["1,1", Directions.Down],
-    ["0,1", Directions.South],
-    ["-1,1", Directions.Left],
-    ["-1,0", Directions.West],
-    ["-1,-1", Directions.Up]
-  ]);
+  var DIRECTIONS = [
+    Directions.North,
+    Directions.Right,
+    Directions.East,
+    Directions.Down,
+    Directions.South,
+    Directions.Left,
+    Directions.West,
+    Directions.Up
+  ];
 
   // src/mining/smelt.ts
   var beetleSerial = FIRE_BEETLE_SERIAL;

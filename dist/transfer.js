@@ -158,7 +158,7 @@
   };
   var isContainer = (item) => (contentsOf(item)?.length ?? 0) > 0 || CONTAINER_GRAPHICS.has(item.graphic);
 
-  // src/transfer/move.ts
+  // src/lib/sift.ts
   var artKey = (item) => `${hex(item.graphic)}/${item.hue ?? 0}`;
   var wantedFrom = (picks2) => {
     if (picks2.length === 0) {
@@ -172,45 +172,52 @@
     return found && !isMobile(found) ? found : void 0;
   };
   var holdsThings = (item, opened) => opened.has(item.serial) || isContainer(item);
-  var walk = (contents, destSerial, opened, into) => {
+  var walk = (contents, options, into) => {
     for (const item of contents ?? []) {
-      if (item.serial === destSerial) {
+      if (item.serial === options.skipSerial) {
         continue;
       }
-      if (holdsThings(item, opened)) {
+      if (options.isLoose?.(item)) {
+        into.loose.push(item);
+        continue;
+      }
+      if (holdsThings(item, options.opened)) {
         into.containers.push(item);
-        walk(contentsOf(item), destSerial, opened, into);
+        walk(contentsOf(item), options, into);
         continue;
       }
       into.loose.push(item);
     }
   };
-  var survey = (sourceSerial, destSerial, opened) => {
-    const contents = contentsOf(resolveItem(sourceSerial));
+  var siftContents = (contents, options) => {
     const found = { loose: [], containers: [], readable: contents !== void 0 };
-    walk(contents, destSerial, opened, found);
+    walk(contents, options, found);
     return found;
   };
-  var movables = (sourceSerial, destSerial, wanted2, opened = /* @__PURE__ */ new Set()) => survey(sourceSerial, destSerial, opened).loose.filter((item) => wanted2.has(item));
-  var openNested = (sourceSerial, destSerial, opened) => {
+  var sift = (rootSerial, options) => siftContents(contentsOf(resolveItem(rootSerial)), options);
+  var movables = (found, wanted2) => found.loose.filter((item) => wanted2.has(item));
+  var openNested = (bags, opened, openDelay) => {
     let openedAny = false;
-    for (const bag of survey(sourceSerial, destSerial, opened).containers) {
+    for (const bag of bags) {
       if (opened.has(bag.serial)) {
         continue;
       }
       opened.add(bag.serial);
       player.use(bag.serial);
-      sleep(OPEN_DELAY);
+      sleep(openDelay);
       forgetUnreadable(bag.serial);
       openedAny = true;
     }
     return openedAny;
   };
+
+  // src/transfer/move.ts
   var transfer = (sourceSerial, destSerial, wanted2, onMove) => {
     player.use(sourceSerial);
     sleep(OPEN_DELAY);
     const sent = /* @__PURE__ */ new Map();
     const opened = /* @__PURE__ */ new Set();
+    const look = () => sift(sourceSerial, { skipSerial: destSerial, opened });
     const result = (outcome2, left2) => ({
       outcome: outcome2,
       stacks: sent.size,
@@ -219,14 +226,15 @@
     });
     let previous = Infinity;
     for (let pass = 0; pass < MAX_PASSES; pass++) {
-      if (!survey(sourceSerial, destSerial, opened).readable) {
+      const found = look();
+      if (!found.readable) {
         return result("unopened", 0);
       }
-      if (openNested(sourceSerial, destSerial, opened)) {
+      if (openNested(found.containers, opened, OPEN_DELAY)) {
         previous = Infinity;
         continue;
       }
-      const todo = movables(sourceSerial, destSerial, wanted2, opened);
+      const todo = movables(found, wanted2);
       if (todo.length === 0) {
         return result("emptied", 0);
       }
@@ -241,7 +249,7 @@
         sleep(MOVE_DELAY);
       }
     }
-    return result("stalled", movables(sourceSerial, destSerial, wanted2, opened).length);
+    return result("stalled", movables(look(), wanted2).length);
   };
 
   // src/transfer/index.ts

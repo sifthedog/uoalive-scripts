@@ -261,14 +261,18 @@
   var withinZOf = (z, allowed) => Math.abs(z - player.z) <= allowed;
   var createScan = (options) => {
     const reported2 = /* @__PURE__ */ new Set();
-    return (radius = options.radius) => {
+    const at = options.terrain ?? ((x, y) => client.getTerrainList(x, y) ?? []);
+    let skipped2 = 0;
+    const run = (radius = options.radius) => {
       const blocked = options.blocked();
       const time = now();
       let best;
+      let bestWalk = Infinity;
       let readyAt;
+      skipped2 = 0;
       for (let dx = -radius; dx <= radius; dx++) {
         for (let dy = -radius; dy <= radius; dy++) {
-          for (const tile of client.getTerrainList(player.x + dx, player.y + dy) ?? []) {
+          for (const tile of at(player.x + dx, player.y + dy)) {
             if (options.skipLand && tile.isLand) {
               continue;
             }
@@ -276,9 +280,6 @@
               continue;
             }
             if (!options.matches(tile.graphic, tile.isLand)) {
-              continue;
-            }
-            if (options.reachable && !options.reachable(tile.x, tile.y)) {
               continue;
             }
             const candidate = {
@@ -300,8 +301,14 @@
               }
               blocked.delete(key);
             }
-            if (!best || candidate.distance < best.distance) {
+            const walk = options.reach ? options.reach(candidate) : 0;
+            if (walk === void 0) {
+              skipped2++;
+              continue;
+            }
+            if (!best || walk < bestWalk || walk === bestWalk && candidate.distance < best.distance) {
               best = candidate;
+              bestWalk = walk;
             }
           }
         }
@@ -312,6 +319,7 @@
       }
       return { found: best, readyAt };
     };
+    return Object.assign(run, { skipped: () => skipped2 });
   };
   var createApproach = (options) => {
     let walkingTo;
@@ -363,7 +371,6 @@
   var MAX_UNKNOWN = 5;
   var MAX_NO_CURSOR = 20;
   var NO_CURSOR_READ = 500;
-  var MAX_STEPS = 20;
   var PACK_LIMIT = 120;
   var LOG_EVERY = 25;
   var SAVE_WAIT = 6e4;
@@ -416,6 +423,13 @@
   var ORE_STATIC_NAME = /cave|rock|mountain|ore/i;
   var MINE_RANGE = 2;
   var MINE_Z_RANGE = 20;
+  var MAX_VEIN_STEPS = 40;
+  var ROUTE_RADIUS = SCAN_RADIUS + 4;
+  var MAX_ROUTE_NODES = 1500;
+  var MAX_ROUTE_CELLS = 2e4;
+  var MAX_CLIMB = 2;
+  var PLAYER_HEIGHT = 16;
+  var STEP_HEADROOM = 2;
   var RESPAWN_DELAY = 25 * 60 * 1e3;
   var DIG_TIMEOUT = 8e3;
   var DIG_TARGET_TIMEOUT = 4e3;
@@ -921,6 +935,254 @@
     return matched ? outcomeFor(matched) : silentOutcome(serial, oreBefore2);
   };
 
+  // src/lib/flags.ts
+  var WALL = 16;
+  var IMPASSABLE = 64;
+  var WET = 128;
+  var SURFACE = 512;
+  var BRIDGE = 1024;
+  var describeFlags = (flags) => {
+    const named = [
+      [IMPASSABLE, "impassable"],
+      [WET, "wet"],
+      [SURFACE, "surface"],
+      [BRIDGE, "bridge"],
+      [WALL, "wall"]
+    ];
+    const set = named.filter(([bit]) => (flags & bit) !== 0).map(([, name]) => name);
+    return set.length > 0 ? set.join(" ") : "-";
+  };
+
+  // src/lib/grid.ts
+  var STEPS = [
+    [0, -1],
+    [1, -1],
+    [1, 0],
+    [1, 1],
+    [0, 1],
+    [-1, 1],
+    [-1, 0],
+    [-1, -1]
+  ];
+  var UNKNOWN = null;
+  var createGrid = (options) => {
+    const cells = /* @__PURE__ */ new Map();
+    let unknowns = 0;
+    let open = false;
+    let saidOpen = false;
+    const terrainAt = (x, y) => client.getTerrainList(x, y) ?? [];
+    const standable = (entry) => (entry.flags & (IMPASSABLE | WET)) === 0 && (entry.isLand || (entry.flags & (SURFACE | BRIDGE)) !== 0);
+    const floorAt = (x, y) => {
+      const key = `${x},${y}`;
+      if (cells.has(key)) {
+        return cells.get(key);
+      }
+      const entries = terrainAt(x, y);
+      if (entries.length === 0) {
+        unknowns++;
+        return UNKNOWN;
+      }
+      let best;
+      for (const entry of entries) {
+        if (!standable(entry) || best !== void 0 && entry.z <= best) {
+          continue;
+        }
+        const buried = entries.some(
+          (other) => other !== entry && (other.flags & IMPASSABLE) !== 0 && other.z > entry.z - options.headroom && other.z < entry.z + options.height
+        );
+        if (!buried) {
+          best = entry.z;
+        }
+      }
+      if (cells.size >= options.maxCells) {
+        cells.clear();
+      }
+      cells.set(key, best);
+      return best;
+    };
+    const stepZ = (x, y, fromZ) => {
+      const z = floorAt(x, y);
+      if (z === UNKNOWN) {
+        return fromZ;
+      }
+      return z !== void 0 && Math.abs(z - fromZ) <= options.climb ? z : void 0;
+    };
+    const cornerOpen = (x, y, z, dx, dy) => dx === 0 || dy === 0 || stepZ(x + dx, y, z) !== void 0 && stepZ(x, y + dy, z) !== void 0;
+    const inRange = (x, y) => Math.abs(x - player.x) <= options.radius && Math.abs(y - player.y) <= options.radius;
+    const flood = (seeds) => {
+      const cost = /* @__PURE__ */ new Map();
+      const queue = [...seeds];
+      for (const seed of seeds) {
+        cost.set(`${seed.x},${seed.y}`, 0);
+      }
+      for (let head = 0; head < queue.length && cost.size < options.maxNodes; head++) {
+        const from2 = queue[head];
+        const steps = cost.get(`${from2.x},${from2.y}`);
+        if (steps >= options.maxSteps) {
+          continue;
+        }
+        for (const [dx, dy] of STEPS) {
+          const x = from2.x + dx;
+          const y = from2.y + dy;
+          const key = `${x},${y}`;
+          if (!inRange(x, y) || cost.has(key)) {
+            continue;
+          }
+          const z = stepZ(x, y, from2.z);
+          if (z === void 0 || !cornerOpen(from2.x, from2.y, from2.z, dx, dy)) {
+            continue;
+          }
+          cost.set(key, steps + 1);
+          queue.push({ x, y, z });
+        }
+      }
+      return cost;
+    };
+    const spotsAround = (spot, range2) => {
+      const found = [];
+      for (let dx = -range2; dx <= range2; dx++) {
+        for (let dy = -range2; dy <= range2; dy++) {
+          const x = spot.x + dx;
+          const y = spot.y + dy;
+          if (!inRange(x, y)) {
+            continue;
+          }
+          const z = floorAt(x, y);
+          if (z !== void 0) {
+            found.push({ x, y, z: z === UNKNOWN ? player.z : z });
+          }
+        }
+      }
+      return found;
+    };
+    const failedOpen = () => {
+      if (!open && floorAt(player.x, player.y) === void 0) {
+        open = true;
+        if (!saidOpen) {
+          saidOpen = true;
+          log(
+            "grid: the tile under your feet reads as impassable, so the walkability filter is off for this run - the flag values in lib/flags.ts are wrong for this shard"
+          );
+        }
+      }
+      return open;
+    };
+    let from;
+    let reach = /* @__PURE__ */ new Map();
+    let costs = /* @__PURE__ */ new Map();
+    const plan = () => {
+      const here = `${player.x},${player.y},${player.z}`;
+      if (from === here) {
+        return reach;
+      }
+      from = here;
+      costs = /* @__PURE__ */ new Map();
+      reach = flood([{ x: player.x, y: player.y, z: player.z }]);
+      return reach;
+    };
+    const nearest = (spot, range2) => {
+      const reached = plan();
+      let best;
+      for (let dx = -range2; dx <= range2; dx++) {
+        for (let dy = -range2; dy <= range2; dy++) {
+          const found = reached.get(`${spot.x + dx},${spot.y + dy}`);
+          if (found !== void 0 && (best === void 0 || found < best)) {
+            best = found;
+          }
+        }
+      }
+      return best;
+    };
+    return {
+      terrainAt,
+      stepsTo: (spot, range2) => {
+        if (failedOpen()) {
+          return distanceTo(spot);
+        }
+        plan();
+        const key = `${spot.x},${spot.y},${range2}`;
+        if (!costs.has(key)) {
+          costs.set(key, nearest(spot, range2));
+        }
+        return costs.get(key);
+      },
+      // Flooded from the goal rather than from the character, and read as a gradient: a breadth-first
+      // walk out from the player reaches an open-ground tile by any of a dozen equal paths, and which
+      // one it records decides the first step - so the character drifts diagonally down a corridor it
+      // should walk straight along.
+      routeTo: (spot, range2) => {
+        if (failedOpen()) {
+          return void 0;
+        }
+        const seeds = spotsAround(spot, range2);
+        if (seeds.length === 0) {
+          return void 0;
+        }
+        const cost = flood(seeds);
+        let best;
+        let bestCost = cost.get(`${player.x},${player.y}`) ?? Infinity;
+        if (bestCost === 0) {
+          return void 0;
+        }
+        const wanted = [Math.sign(spot.x - player.x), Math.sign(spot.y - player.y)];
+        const order = [wanted, ...STEPS];
+        for (const [dx, dy] of order) {
+          if (dx === 0 && dy === 0) {
+            continue;
+          }
+          const found = cost.get(`${player.x + dx},${player.y + dy}`);
+          if (found === void 0 || found >= bestCost) {
+            continue;
+          }
+          if (stepZ(player.x + dx, player.y + dy, player.z) === void 0 || !cornerOpen(player.x, player.y, player.z, dx, dy)) {
+            continue;
+          }
+          best = [dx, dy];
+          bestCost = found;
+        }
+        return best;
+      },
+      describe: (radius) => {
+        const reached = plan();
+        unknowns = 0;
+        let standing = 0;
+        let blocked = 0;
+        for (let dx = -radius; dx <= radius; dx++) {
+          for (let dy = -radius; dy <= radius; dy++) {
+            const z = floorAt(player.x + dx, player.y + dy);
+            if (z === void 0) {
+              blocked++;
+            } else if (z !== UNKNOWN) {
+              standing++;
+            }
+          }
+        }
+        const under = floorAt(player.x, player.y);
+        return `grid: within ${radius}, ${standing} tiles can be stood on and ${blocked} cannot, ${unknowns} the client had no terrain for; ${reached.size} are walkable from here; under your feet ${under === UNKNOWN ? "no terrain" : under === void 0 ? "IMPASSABLE - check lib/flags.ts" : `z ${under}`}`;
+      },
+      forget: () => {
+        cells.clear();
+        from = void 0;
+        reach = /* @__PURE__ */ new Map();
+        costs = /* @__PURE__ */ new Map();
+        unknowns = 0;
+        open = false;
+        saidOpen = false;
+      }
+    };
+  };
+
+  // src/mining/grid.ts
+  var grid = /* @__PURE__ */ createGrid({
+    radius: ROUTE_RADIUS,
+    maxSteps: MAX_VEIN_STEPS,
+    maxNodes: MAX_ROUTE_NODES,
+    maxCells: MAX_ROUTE_CELLS,
+    climb: MAX_CLIMB,
+    height: PLAYER_HEIGHT,
+    headroom: STEP_HEADROOM
+  });
+
   // src/lib/vitals.ts
   var hitsCeiling = () => player.maxHits > 0 ? player.maxHits : void 0;
 
@@ -1254,40 +1516,55 @@
   };
 
   // src/lib/walk.ts
-  var DIRECTION_BY_STEP = /* @__PURE__ */ new Map([
-    ["0,-1", Directions.North],
-    ["1,-1", Directions.Right],
-    ["1,0", Directions.East],
-    ["1,1", Directions.Down],
-    ["0,1", Directions.South],
-    ["-1,1", Directions.Left],
-    ["-1,0", Directions.West],
-    ["-1,-1", Directions.Up]
-  ]);
+  var DIRECTIONS = [
+    Directions.North,
+    Directions.Right,
+    Directions.East,
+    Directions.Down,
+    Directions.South,
+    Directions.Left,
+    Directions.West,
+    Directions.Up
+  ];
+  var indexOf = (step) => STEPS.findIndex(([x, y]) => x === step[0] && y === step[1]);
   var createStepToward = (options) => {
-    return (spot) => {
-      const wantX = Math.sign(spot.x - player.x);
-      const wantY = Math.sign(spot.y - player.y);
-      const step = options.constrain ? options.constrain(wantX, wantY) : wantX === 0 && wantY === 0 ? void 0 : [wantX, wantY];
-      if (step === void 0) {
+    const take = (step) => {
+      const allowed = options.constrain ? options.constrain(step[0], step[1]) : step;
+      if (allowed === void 0) {
         return false;
       }
-      const direction = DIRECTION_BY_STEP.get(`${step[0]},${step[1]}`);
-      if (direction === void 0) {
+      const at = indexOf(allowed);
+      if (at < 0) {
         return false;
       }
       const beforeX = player.x;
       const beforeY = player.y;
-      player.run(direction);
+      player.run(DIRECTIONS[at]);
       sleep(options.delayMs);
-      player.run(direction);
+      player.run(DIRECTIONS[at]);
       sleep(options.delayMs);
       return player.x !== beforeX || player.y !== beforeY;
+    };
+    return (spot) => {
+      const wantX = Math.sign(spot.x - player.x);
+      const wantY = Math.sign(spot.y - player.y);
+      const wanted = options.route?.(spot) ?? (wantX === 0 && wantY === 0 ? void 0 : [wantX, wantY]);
+      if (wanted === void 0) {
+        return false;
+      }
+      if (take(wanted)) {
+        return true;
+      }
+      const at = indexOf(wanted);
+      return at >= 0 && [STEPS[(at + 1) % STEPS.length], STEPS[(at + 7) % STEPS.length]].some(take);
     };
   };
 
   // src/mining/walk.ts
-  var stepToward = /* @__PURE__ */ createStepToward({ delayMs: WALK_DELAY });
+  var stepToward = /* @__PURE__ */ createStepToward({
+    delayMs: WALK_DELAY,
+    route: (spot) => grid.routeTo(spot, MINE_RANGE)
+  });
 
   // src/mining/smelt.ts
   var beetleSerial = FIRE_BEETLE_SERIAL;
@@ -1557,7 +1834,7 @@
     let parked = 0;
     for (let dx = -range2; dx <= range2; dx++) {
       for (let dy = -range2; dy <= range2; dy++) {
-        for (const tile of client.getTerrainList(player.x + dx, player.y + dy) ?? []) {
+        for (const tile of grid.terrainAt(player.x + dx, player.y + dy)) {
           if (!withinZOf(tile.z, MINE_Z_RANGE) || !isOre(tile.graphic, tile.isLand)) {
             continue;
           }
@@ -1589,10 +1866,15 @@
     blocked: () => memory().blocked,
     matches: isOre,
     withinZ: MINE_Z_RANGE,
+    // A vein is only somewhere to stand next to, so what settles both questions - is it worth picking
+    // at all, and which of two is nearer - is the length of the walk rather than the straight line
+    reach: (vein) => grid.stepsTo(vein, MINE_RANGE),
+    terrain: grid.terrainAt,
     // Land is not skipped the way lumberjacking skips it - a mountainside *is* land, and it is the
     // ordinary case rather than the exception
     describe: (vein) => `'${vein.isLand ? "land" : client.getStatic(vein.graphic)?.name ?? "?"}'`
   });
+  var skippedAsUnreachable = () => scan.skipped();
   var current;
   var stillOre = (vein) => {
     const until = store2.blockedUntil(vein);
@@ -1602,7 +1884,7 @@
     if (!withinZOf(vein.z, MINE_Z_RANGE)) {
       return void 0;
     }
-    for (const tile of client.getTerrainList(vein.x, vein.y) ?? []) {
+    for (const tile of grid.terrainAt(vein.x, vein.y)) {
       if (tile.z === vein.z && tile.graphic === vein.graphic && tile.isLand === vein.isLand) {
         return isOre(tile.graphic, tile.isLand) ? { ...vein, distance: distanceTo(vein) } : void 0;
       }
@@ -1654,7 +1936,7 @@
   var describeArt = (art) => {
     const kind = art.isLand ? "land" : `static '${art.name}'`;
     const mark = art.matches ? "MATCHES" : "-";
-    return `${art.graphic} (0x${art.graphic.toString(16)}) ${kind}, flags 0x${art.flags.toString(16)}, ${art.tiles} tiles, ${mark}`;
+    return `${art.graphic} (0x${art.graphic.toString(16)}) ${kind}, flags 0x${art.flags.toString(16)} (${describeFlags(art.flags)}), ${art.tiles} tiles, ${mark}`;
   };
   var reportTerrain = (radius, limit = Infinity) => {
     const found = surveyTerrain(radius);
@@ -1911,13 +2193,20 @@
         return { found: vein, readyAt: respawnsAt };
       },
       range: MINE_RANGE,
-      maxSteps: MAX_STEPS,
+      maxSteps: MAX_VEIN_STEPS,
       step: stepToward,
       markUnreachable,
       idleUntil,
       isSaving,
       nothingFound: () => {
+        const walled = skippedAsUnreachable();
+        if (walled > 0) {
+          log(
+            `mining: ${walled} vein(s) matched but had no walkable route within ${MAX_VEIN_STEPS} steps`
+          );
+        }
         log(`mining: nothing within ${MINE_Z_RANGE}z of ${player.z} matched, here is what is around`);
+        log(grid.describe(SCAN_RADIUS));
         reportTerrain(SCAN_RADIUS, SURVEY_ARTS);
         return "no ore in range";
       }
