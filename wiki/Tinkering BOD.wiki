@@ -1,0 +1,265 @@
+{{tocright}} 
+'''Tinkering Bulk Order Deeds''' were introduced in November of 2016 via [[Publish 95]] expanding the [[Bulk Order Deed]] system to include 6 extra [[crafting]] skills on top of the existing [[Blacksmithy]] and [[Tailoring]] bods. The system also revamped how bod rewards work with a point system enabling you to bank your points to save up for a certain reward or to claim straight away for any item in the rewards list worth up to that amount points.
+
+==Notes==
+*Banked points are worth 2% of the value for Small Bulk Order Deeds and 20% of the value for Larger Bulk Order Deeds.
+*Banked points do not stack with points you claim straight away.
+*If you claim a reward that is worth less then your total claimed or total banked points then the remaining balance of your points will be forfeit.
+*if you accidentally close the reward window with out claiming a reward you can open the context menu on the NPC again to pick from the reward list. You will not be able to hand in another BOD until you claim a reward.
+
+==Completing a BOD==
+*[[Tinkering]] Bods are given and received by Tinker NPCs that are normally found in Britannian Tinker Shops.
+==BOD Point Turn-in Table==
+
+*There are 4 different [[Tinkering]] Large Bulk Order Deeds as shown by the table below with the items listed to fill each of these.
+*You require 70 skill in Tinkering to have a chance at receiving Large Bulk Order Deeds.
+
+
+{| class="wikitable" defaultleft style=text-align:center
+!colspan="3" rowspan=2| Tinkering Bulk Order Deeds
+!colspan="2"|Small Bulk Order Deeds
+!colspan="8"|Large Bulk Order Deeds
+|-
+!colspan="2" style="text-align:left;"|'''Any Small Bulk Order Deed'''
+!colspan="2" style="text-align:left;"|
+'''Jewelry:'''
+*[[Ring]]
+*[[Bracelet]]
+*[[Earring_Slot|Earrings (gemmed)]]
+
+! colspan=2 style="text-align:left;" |'''Keyring, Globe:'''
+*[[Key Ring]]
+*[[Iron Key]]
+*[[Globe]]
+*[[Spyglass]]
+! colspan=2 style="text-align:left;"|'''Tools:'''
+*[[Mortar and Pestle]]
+*[[Smith's Hammer]]
+*[[Skillet]]
+*[[Sewing Kit]]
+*[[Fletcher's Tools]]
+! colspan=2 style="text-align:left;"| '''Dining Set:'''
+*[[Butcher Knife]]
+*[[Spoon]]
+*[[Fork]]
+*[[Plate]]
+*[[Knife]]
+*[[Goblet]]
+|-
+!| Material||Quality||Quantity||Banked Points||Claimed Points||Banked Points||Claimed Points||Banked Points||Claimed Points||Banked Points||Claimed Points||Banked Points||Claimed Points
+|-
+! rowspan="6"|[[Image:Ingots.png]]'''iron'''||rowspan="3"|Normal
+|10||0.2||10||42||210||62||310||72||360||82||410
+|-
+| |15||0.5||25||45||225||65||325||75||375||85||425
+|-
+| |20||1||50||50||250||70||350||80||400||90||450
+|-
+!rowspan="3"|Exceptional
+|10||4.2||210||82||410||102||510||112||560||122||610
+|-
+| |15||4.5||225||85||425||105||525||115||575||125||625
+|-
+| |20||5||250||90||450||110||550||120||600||130||650
+|-
+! colspan=13 |
+|-
+! rowspan="6"|[[Image:Ingots_(Dull_Copper).png]]'''Dull Copper'''
+! rowspan="3"|Normal
+|10||4.2||210||82||410||102||510||112||560||122||610
+|-
+| |15||4.5||225||85||425||105||525||115||575||125||625
+|-
+| |20||5||250||90||450||110||550||120||600||130||650
+|-
+! rowspan="3"|Exceptional
+|10||8.2||410||122||610||142||710||152||760||162||810
+|-
+| |15||8.5||425||125||625||145||725||155||775||165||825
+|-
+| |20||9||450||130||650||150||750||160||800||170||850
+|-
+! colspan=13 |
+|-
+! rowspan="6"|[[Image:Ingots_(Shadow Iron).png]]'''Shadow'''
+! rowspan="3"|Normal
+|10||5.2||260||92||460||112||560||122||610||132||660
+|-
+| |15||5.5||275||95||475||115||575||125||625||135||675
+|-
+| |20||6||300||100||500||120||600||130||650||140||700
+|-
+!rowspan="3"|Exceptional
+|10||9.2||460||132||660||152||760||162||810||172||860
+|-
+| |15||9.5||475||135||675||155||775||165||825||175||875
+|-
+| |20||10||500||140||700||160||800||170||850||180||900
+|-
+! colspan=13 |
+|-
+! rowspan="6"|[[Image:Ingots_(Copper).png]]'''Copper'''
+! rowspan="3"|Normal
+| 10||6.2||310||102||510||122||610||132||660||142||710
+|-
+| |15||6.5||325||105||525||125||625||135||675||145||725
+|-
+| |20||7||350||110||550||130||650||140||700||150||750
+|-
+! rowspan="3"|Exceptional
+| 10||10.2||510||142||710||162||810||172||860||182||910
+|-
+| |15||10.5||525||145||725||165||825||175||875||185||925
+|-
+| |20||11||550||150||750||170||850||180||900||190||950
+|-
+! colspan=13 |
+|-
+! rowspan="6"|[[Image:Ingots_(Bronze).png]]'''Bronze'''
+! rowspan="3"|Normal
+|10||7.2||360||112||560||132||660||142||710||152||760
+|-
+| |15||7.5||375||115||575||135||675||145||725||155||775
+|-
+| |20||8||400||120||600||140||700||150||750||160||800
+|-
+!rowspan="3"|Exceptional
+|10||11.2||560||152||760||172||860||182||910||192||960
+|-
+| |15||11.5||575||155||775||175||875||185||925||195||975
+|-
+| |20||12||600||160||800||180||900||190||950||200||1000
+|-
+! colspan=13 |
+|-
+! rowspan="6"|[[Image:Ingots_(Golden).png]]'''Golden'''
+! rowspan="3"|Normal
+|10||8.2||410||122||610||142||710||152||760||162||810
+|-
+| |15||8.5||425||125||625||145||725||155||775||165||825
+|-
+| |20||9||450||130||650||150||750||160||800||170||850
+|-
+! rowspan="3"|Exceptional
+|10||12.2||610||162||810||182||910||192||960||202||1010
+|-
+| |15||12.5||625||165||825||185||925||195||975||205||1025
+|-
+| |20||13||650||170||850||190||950||200||1000||210||1050
+|-
+! colspan=13 |
+|-
+! rowspan="6"|[[Image:Ingots_(Agapite).png]]'''Agapite'''
+! rowspan="3"|Normal
+|10||9.2||460||132||660||152||760||162||810||172||860
+|-
+| |15||9.5||475||135||675||155||775||165||825||175||875
+|-
+| |20||10||500||140||700||160||800||170||850||180||900
+|-
+!rowspan="3"|Exceptional
+|10||13.2||660||172||860||192||960||202||1010||212||1060
+|-
+| |15||13.5||675||175||875||195||975||205||1025||215||1075
+|-
+| |20||14||700||180||900||200||1000||210||1050||220||1100
+|-
+! colspan=13 |
+|-
+! rowspan="6"|[[Image:Ingots_(Verite).png]]'''Verite'''
+!rowspan="3"|Normal 
+|10||10.2||510||142||710||162||810||172||860||182||910
+|-
+| |15||10.5||525||145||725||165||825||175||875||185||925
+|-
+| |20||11||550||150||750||170||850||180||900||190||950
+|-
+!rowspan="3"|Exceptional
+| 10||14.2||710||182||910||202||1010||212||1060||222||1110
+|-
+| |15||14.5||725||185||925||205||1025||215||1075||225||1125
+|-
+| |20||15||750||190||950||210||1050||220||1100||230||1150
+|-
+! colspan=13 |
+|-
+!rowspan="6"|[[Image:Ingots_(Valorite).png]]'''Valorite'''
+!rowspan="3"|Normal
+|10||11.2||560||152||760||172||860||182||910||192||960
+|-
+| |15||11.5||575||155||775||175||875||185||925||195||975
+|-
+| |20||12||600||160||800||180||900||190||950||200||1000
+|-
+!rowspan="3"|Exceptional
+|10||15.2||760||192||960||212||1060||222||1110||232||1160
+|-
+| |15||15.5||775||195||975||215||1075||225||1125||235||1175
+|-
+| |20||16||800||200||1000||220||1100||230||1150||240||1200
+|-
+|}
+==BOD Rewards Table==
+*There are 25 rewards to choose from for [[Tinkering]] Bods
+*The Smelter's Talismans and Miner's Maps are the same as the ones obtained from [[Covetous Void Pool reward]]s
+{| class="wikitable leftalign"
+!|'''Point Cost'''
+!|'''Picture'''
+!|'''Item'''
+|-
+| 10||[[Image:Tinker's_Tools_(Crafted).png]]||[[Tinker%27s_Tools|Tinker Tool Kit]] - (250 charges)
+|-
+| 25||[[image:Deed.png]]||[[Reward Title]] - Metallurgist
+|-
+| 50||[[image:Deed.png]]||[[Reward Title]] - Dabbler
+|-
+| 210||[[image:Deed.png]]||[[Reward Title]] - Fixer
+|-
+| 225||[[image:Recipe.png]]||[[Recipe]] - Kotl Black Rod
+|-
+| 250||[[image:Deed.png]]||[[Reward Title]] - Clockmaker
+|-
+| 310||[[image:Recipe.png]]||[[Recipe]] - Dr Spector’s Lenses
+|-
+| 325||[[image:Deed.png]]||[[Reward Title]] - Mechanic
+|-
+| 350||[[image:Recipe.png]]||[[Recipe]] - Kotl Automaton
+|-
+| 400||[[image:Master_Craftsman_Tinker.png]]||[[Master Craftsman Talisman]] - (10 charges)
+|-
+| 450||[[image:Smelter's golden talisman.png]]||[[Smelter's Golden Talisman]] - (Use within 24 hours)
+|-
+| 500||[[image:Miner's golden map.png]]||[[Miner%27s Golden Map]] - (Use within 24 hours)
+|-
+| 550||[[image:Master_Craftsman_Tinker.png]]||[[Master Craftsman Talisman]] - (25 charges)
+|-
+| 600||[[image:Smelter's agapite talisman.png]]||[[Smelter%27s_Agapite_Talisman|Smelter’s Agapite Talisman]] - (Use within 24 hours)
+|-
+| 650||[[image:Miner's agapite map.png]]||[[Miner%27s Agapite Map]] - (Use within 24 hours)
+|-
+| 700||[[image:Potion_Keg.gif]]||[[Powder of Fortification|A Specially Lined Keg for Powder of Fortification]] (Holds up to 250 charges) 
+|-
+| 750||[[image:Automaton-Actuator.gif]]||[[Automaton Actuator]] - Ingredient needed to craft a Kotl Automaton 
+|-
+| 800||[[image:Smelter's verite talisman.png]]||[[Smelter%27s Verite Talisman]] - (Use within 24 hours)
+|-
+| 850||[[image:Miner's verite map.png]]||[[Miner%27s Verite Map]] - (Use within 24 hours)
+|-
+| 900||[[image:Master_Craftsman_Tinker.png]]||[[Master Craftsman Talisman]] - (50 charges)
+|-
+| 950||[[image:Rock_Hammer.png]]||[[Rock_Hammer|Rock Hammer]]
+|-
+| 1000||[[image:Black_Moonstone.png]]||[[Black_Moonstone|Blackrock Moonstone]] - Ingredient used to craft Dr. Spector’s Lenses or Kotl Black Rod 
+|-
+| 1050||[[image:Smelter's valorite talisman.png]]||[[Smelter%27s Valorite Talisman]] - (Use within 24 hours)
+|-
+| 1100||[[image:Miner's valorite map.png]]||[[Miner%27s Valorite Map]] - (Use within 24 hours)
+|-
+| 1200||[[image:Automaton-head.png]]||[[Inoperative_Automaton_Head|Blackrock Automaton Head]]
+|-
+|}
+
+{{BOD nav}}
+
+[[Category:Tinkering|Bulk Order Deeds]]
+[[Category:Bulk Order Deeds]]
