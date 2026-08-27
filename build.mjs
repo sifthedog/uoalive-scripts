@@ -13,6 +13,7 @@ const ENTRIES = [
   { in: 'src/necromancy/index.ts', out: 'necro' },
   { in: 'src/selling/index.ts', out: 'sell' },
   { in: 'src/selling/watch.ts', out: 'sell-watch' },
+  { in: 'src/stow/index.ts', out: 'stow' },
   { in: 'src/training/index.ts', out: 'train' },
   { in: 'src/transfer/index.ts', out: 'transfer' },
 ];

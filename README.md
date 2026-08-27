@@ -24,6 +24,7 @@ one, and what to set. Start there.
 | `dist/lockpick-training.js` | Target a locked container, pick it until the lockpicks run out or Lockpicking is capped | [src/lockpicking](src/lockpicking/README.md) |
 | `dist/hiding.js` | Stand still, hide, and spam Stealth until one fails - then hide again | [src/hiding](src/hiding/README.md) |
 | `dist/transfer.js` | Target a container to empty and one to fill, move everything across | [src/transfer](src/transfer/README.md) |
+| `dist/stow.js` | Target items and a container, then move every one of them out of your pack as it turns up | [src/stow](src/stow/README.md) |
 
 ## Why a build step
 
@@ -58,6 +59,7 @@ src/magery/        train Magery on the spells that gain without a victim, on the
 src/mining/        mine the nearest vein, smelt the ore on a fire beetle (+ a stand-still variant)
 src/necromancy/    train Necromancy through its five bands, on the same loop as src/training/
 src/selling/       sell-to-vendor: target items until ESC, sell every stack of them
+src/stow/          watch the pack and stow the items you picked into the container you picked
 src/training/      train a skill by casting the ability that still gains at the level it is at
 src/transfer/      move everything out of one container and into another
 types/             the client's TypeScript definitions (see below)
