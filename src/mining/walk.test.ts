@@ -9,7 +9,10 @@ let world: FakeWorld;
 
 const loadWalk = async () => {
   vi.resetModules();
-  vi.doMock('./config.js', () => ({ WALK_DELAY: 0 }));
+  vi.doMock('./config.js', async () => ({
+    ...(await vi.importActual<object>('./config.js')),
+    WALK_DELAY: 0,
+  }));
   return import('./walk.js');
 };
 

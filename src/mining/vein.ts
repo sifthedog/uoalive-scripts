@@ -6,6 +6,7 @@ import {
   withinZOf,
   type Tile as BlockedTile,
 } from '../lib/tiles.js';
+import { grid } from './grid.js';
 import {
   MINE_RANGE,
   MINE_Z_RANGE,
@@ -94,7 +95,7 @@ export const markAreaDepleted = (range: number): number => {
 
   for (let dx = -range; dx <= range; dx++) {
     for (let dy = -range; dy <= range; dy++) {
-      for (const tile of client.getTerrainList(player.x + dx, player.y + dy) ?? []) {
+      for (const tile of grid.terrainAt(player.x + dx, player.y + dy)) {
         // The shard's sentence is about what *it* can reach. Parking a tile 60 z up would record a
         // claim it never made, and hide that tile for RESPAWN_DELAY if the character climbs to it.
         if (!withinZOf(tile.z, MINE_Z_RANGE) || !isOre(tile.graphic, tile.isLand)) {
@@ -140,10 +141,18 @@ const scan = /* @__PURE__ */ createScan<Tile>({
   matches: isOre,
   withinZ: MINE_Z_RANGE,
 
+  // A vein is only somewhere to stand next to, so what settles both questions - is it worth picking
+  // at all, and which of two is nearer - is the length of the walk rather than the straight line
+  reach: (vein) => grid.stepsTo(vein, MINE_RANGE),
+  terrain: grid.terrainAt,
+
   // Land is not skipped the way lumberjacking skips it - a mountainside *is* land, and it is the
   // ordinary case rather than the exception
   describe: (vein) => `'${vein.isLand ? 'land' : (client.getStatic(vein.graphic)?.name ?? '?')}'`,
 });
+
+// Veins the last full sweep dropped for having no route to them
+export const skippedAsUnreachable = (): number => scan.skipped();
 
 // The tile the loop is working, kept across cycles so the swing is not preceded by a box scan
 let current: Vein | undefined;
@@ -163,7 +172,7 @@ const stillOre = (vein: Vein): Vein | undefined => {
     return undefined;
   }
 
-  for (const tile of client.getTerrainList(vein.x, vein.y) ?? []) {
+  for (const tile of grid.terrainAt(vein.x, vein.y)) {
     if (tile.z === vein.z && tile.graphic === vein.graphic && tile.isLand === vein.isLand) {
       return isOre(tile.graphic, tile.isLand) ? { ...vein, distance: distanceTo(vein) } : undefined;
     }

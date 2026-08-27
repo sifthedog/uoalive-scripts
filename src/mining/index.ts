@@ -8,9 +8,9 @@ import {
   LOG_EVERY,
   MAX_CYCLES,
   MAX_NO_CURSOR,
-  MAX_STEPS,
   MAX_THROTTLED,
   MAX_UNKNOWN,
+  MAX_VEIN_STEPS,
   MINE_RANGE,
   MINE_Z_RANGE,
   NOTHING_NEARBY_HINT,
@@ -24,6 +24,7 @@ import {
   THROTTLE_BACKOFF_MAX,
 } from './config.js';
 import { digOnce } from './dig.js';
+import { grid } from './grid.js';
 import { stopReason } from './guards.js';
 import { heartbeat, resetBeat } from './heartbeat.js';
 import { dismount } from './mount.js';
@@ -41,6 +42,7 @@ import {
   markUnreachable,
   markUnusable,
   scanForVein,
+  skippedAsUnreachable,
   type Vein,
 } from './vein.js';
 import { stepToward } from './walk.js';
@@ -198,18 +200,30 @@ runHarvest<Vein>({
     },
 
     range: MINE_RANGE,
-    maxSteps: MAX_STEPS,
+    maxSteps: MAX_VEIN_STEPS,
     step: stepToward,
     markUnreachable,
     idleUntil,
     isSaving,
 
     nothingFound: () => {
+      const walled = skippedAsUnreachable();
+
+      // Said first because it is the one cause the survey below cannot show: ore that matched
+      // everything and had no way to walk to it
+      if (walled > 0) {
+        log(
+          `mining: ${walled} vein(s) matched but had no walkable route ` +
+            `within ${MAX_VEIN_STEPS} steps`,
+        );
+      }
+
       // The likeliest way a run ends on a shard whose tile numbering ORE_TILE_GRAPHICS does not
       // match, and 'no ore in range' says nothing you can act on - so name what the scan rejected.
       // The z is named because the survey below does not filter by it: without this the run says
       // nothing matched and then prints the mountain art with MATCHES beside it.
       log(`mining: nothing within ${MINE_Z_RANGE}z of ${player.z} matched, here is what is around`);
+      log(grid.describe(SCAN_RADIUS));
       reportTerrain(SCAN_RADIUS, SURVEY_ARTS);
 
       return 'no ore in range';

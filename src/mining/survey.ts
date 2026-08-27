@@ -1,3 +1,4 @@
+import { describeFlags } from '../lib/flags.js';
 import { isOre } from './vein.js';
 
 // What is actually on the ground around you, and which of it the config matches. A run that exits
@@ -52,7 +53,7 @@ export const describeArt = (art: Art): string => {
 
   return (
     `${art.graphic} (0x${art.graphic.toString(16)}) ${kind}, ` +
-    `flags 0x${art.flags.toString(16)}, ${art.tiles} tiles, ${mark}`
+    `flags 0x${art.flags.toString(16)} (${describeFlags(art.flags)}), ${art.tiles} tiles, ${mark}`
   );
 };
 

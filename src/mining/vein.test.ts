@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { installGlobals, tile, type FakeWorld } from '../test-support/uo.js';
+import { installGlobals, terrainMap, tile, type FakeWorld } from '../test-support/uo.js';
+import { IMPASSABLE } from '../lib/flags.js';
 import { RESPAWN_DELAY, UNREACHABLE_DELAY } from './config.js';
 
 // A land graphic inside the seeded RunUO bands, and one well outside them
@@ -57,6 +58,76 @@ beforeEach(() => {
         graphic === CAVE ? { name: 'cave floor' } : { name: 'a wooden chair' },
       ),
     } as never,
+  });
+});
+
+// A vein is only somewhere to stand next to, so ore behind a wall is ore the run cannot have. The
+// flood is squeezed down to the size of the picture, or a route slips out through the unloaded
+// terrain around it - which is passable on purpose, see lib/grid.ts.
+describe('ore the character cannot walk to', () => {
+  const WALLED = { ROUTE_RADIUS: 4, SCAN_RADIUS: 4 };
+
+  const drawn = (rows: string[]) => {
+    world.client.getTerrainList = terrainMap([96, 96], rows, {
+      '#': { isLand: true, flags: IMPASSABLE },
+      M: { isLand: true, graphic: MOUNTAIN },
+    });
+  };
+
+  it('picks the vein on this side of a wall over the nearer one behind it', async () => {
+    drawn([
+      '.....#...',
+      '.....#...',
+      '.....#...',
+      '.....#...',
+      '.M...#.M.',
+      '.....#...',
+      '.....#...',
+      '.....#...',
+      '.....#...',
+    ]);
+
+    const { scanForVein } = await loadVein(WALLED);
+
+    expect(scanForVein().vein).toMatchObject({ x: 97, y: 100 });
+  });
+
+  it('counts what it dropped, so a run walled in can say why it found nothing', async () => {
+    drawn([
+      '.....#...',
+      '.....#...',
+      '.....#...',
+      '.....#...',
+      '.....#.M.',
+      '.....#...',
+      '.....#...',
+      '.....#...',
+      '.....#...',
+    ]);
+
+    const { scanForVein, skippedAsUnreachable } = await loadVein(WALLED);
+
+    expect(scanForVein().vein).toBeUndefined();
+    expect(skippedAsUnreachable()).toBe(1);
+  });
+
+  // The straight line says the walled vein is nearer; the walk round through the gap says it is not
+  it('measures nearest by the length of the walk, not by the straight line', async () => {
+    drawn([
+      '....M#...',
+      '.....#...',
+      '.....#...',
+      '.....#...',
+      '.....#.M.',
+      '.....#...',
+      '.....#...',
+      '.....#...',
+      '.........',
+    ]);
+
+    const { scanForVein } = await loadVein(WALLED);
+
+    expect(scanForVein().vein).toMatchObject({ x: 100, y: 96, distance: 4 });
   });
 });
 
@@ -230,11 +301,11 @@ describe('scanForVein', () => {
 
   it('trusts the tile its own coordinates rather than the ones it scanned with', async () => {
     world.client.getTerrainList = vi.fn((x: number, y: number) =>
-      x === 101 && y === 100 ? [land({ x: 55, y: 66, z: 7 })] : [],
+      x === 101 && y === 100 ? [land({ x: 105, y: 106, z: 7 })] : [],
     );
     const { scanForVein } = await loadVein();
 
-    expect(scanForVein().vein).toMatchObject({ x: 55, y: 66, z: 7 });
+    expect(scanForVein().vein).toMatchObject({ x: 105, y: 106, z: 7 });
   });
 
   it('finds nothing beyond the scan radius', async () => {

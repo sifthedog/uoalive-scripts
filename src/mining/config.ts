@@ -17,7 +17,6 @@ export {
   LOG_EVERY,
   MAX_CYCLES,
   MAX_NO_CURSOR,
-  MAX_STEPS,
   MAX_THROTTLED,
   MAX_UNKNOWN,
   NO_CURSOR_READ,
@@ -46,6 +45,7 @@ export {
 // while the smelt has no outcomes at all and checks the same wordings directly.
 import {
   SAVING_TEXT,
+  SCAN_RADIUS as SHARED_SCAN_RADIUS,
   THROTTLED_TEXT as SHARED_THROTTLED_TEXT,
   UNSKILLED_TEXT as SHARED_UNSKILLED_TEXT,
 } from '../lib/timings.js';
@@ -88,6 +88,28 @@ export const MINE_RANGE = 2;
 // A guess. The shard lets a character climb about 2 z a step, so 12 tiles of walkable ground is ~24;
 // a mountain 12 tiles off is +60 and the walk at it never closes. Too tight ends a run on 'no ore'.
 export const MINE_Z_RANGE = 20;
+
+// The walk, as lib/grid.ts works it out. Longer than the shared MAX_STEPS of 20, which was a budget
+// for a straight line: a route around a wall is legitimately longer, and a vein whose route runs
+// past this is refused before the walk starts rather than abandoned three quarters of the way along.
+export const MAX_VEIN_STEPS = 40;
+
+// Wider than SCAN_RADIUS, so a route may go around a wall that bulges outside the scan box
+export const ROUTE_RADIUS = SHARED_SCAN_RADIUS + 4;
+
+// Backstops on the search and on the terrain cache, not limits anything sensible reaches
+export const MAX_ROUTE_NODES = 1500;
+export const MAX_ROUTE_CELLS = 20_000;
+
+// The stock climb rule, which is also where MINE_Z_RANGE's 20 comes from. PLAYER_HEIGHT and
+// STEP_HEADROOM are how far above and below a standing spot a solid art still counts as being in
+// the way - the whole of the approximation, since the typings carry no static height.
+//
+// STEP_HEADROOM is deliberately small: under-blocking leaves today's behaviour with markUnreachable
+// as the backstop, where over-blocking refuses good veins and reports an empty mountain.
+export const MAX_CLIMB = 2;
+export const PLAYER_HEIGHT = 16;
+export const STEP_HEADROOM = 2;
 
 // How long before a tile that answered "there is no ore here" is worth returning to
 export const RESPAWN_DELAY = 25 * 60 * 1000;

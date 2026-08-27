@@ -1,5 +1,7 @@
 import { vi } from 'vitest';
 
+import { IMPASSABLE } from '../lib/flags.js';
+
 // A fake of the ClassicUO scripting environment, good enough to run the scripts' logic without a
 // client. The real globals are ambient `declare const`s, so everything here goes on globalThis by
 // assignment - see installGlobals for why that rather than vi.stubGlobal.
@@ -19,7 +21,30 @@ export const tile = (fields: {
   z?: number;
   graphic: number;
   isLand?: boolean;
-}) => ({ z: 0, isLand: false, ...fields });
+  flags?: number;
+}) => ({ z: 0, isLand: false, flags: 0, ...fields });
+
+// A getTerrainList fake drawn as a picture, because a walkability fixture written as a list of
+// coordinates cannot be read back as the wall it describes. A space, and anything off the map, is a
+// coordinate the client has no terrain for at all.
+export const terrainMap = (
+  at: [number, number],
+  rows: string[],
+  legend: Record<string, Partial<Parameters<typeof tile>[0]> | null> = {},
+) => {
+  const all: Record<string, Partial<Parameters<typeof tile>[0]> | null> = {
+    '.': { isLand: true },
+    '#': { isLand: true, flags: IMPASSABLE },
+    ' ': null,
+    ...legend,
+  };
+
+  return vi.fn((x: number, y: number) => {
+    const spec = all[rows[y - at[1]]?.[x - at[0]] ?? ' '];
+
+    return spec ? [tile({ graphic: 3, ...spec, x, y })] : [];
+  });
+};
 
 // Real values, copied from types/classicuo.d.ts. walk.ts builds its direction table from Directions
 // at import time and haul.ts reads Layers.Backpack, so wrong values would fail silently rather than

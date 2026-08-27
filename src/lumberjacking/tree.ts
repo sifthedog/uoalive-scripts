@@ -87,7 +87,7 @@ const scan = /* @__PURE__ */ createScan<Tile>({
 
   // Trees outside the box are still fair game when a legal standing tile is within CHOP_RANGE;
   // filtered here rather than picked, walked at, refused and written off MAX_STEPS later.
-  reachable: (x, y) => reachableFromBounds(x, y, CHOP_RANGE),
+  reach: (tree) => (reachableFromBounds(tree.x, tree.y, CHOP_RANGE) ? 0 : undefined),
 
   describe: (tree) => `'${client.getStatic(tree.graphic)?.name ?? '?'}'`,
 });

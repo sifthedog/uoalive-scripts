@@ -38,16 +38,19 @@ Every cycle:
    `equippedItems.mount` until it clears.
 4. **Equip a pickaxe.** Also every cycle. Spares are found in the pack, one level of bags down.
 5. **The weight backstop.** If the pack is genuinely over the limit, smelt now.
-6. **Scan for a vein** within `SCAN_RADIUS` *and* `MINE_Z_RANGE` of your own elevation, nearest
-   first, skipping tiles the run has parked.
-7. **Walk to it** if it is further than `MINE_RANGE`. One naive `Math.sign` step per cycle; there is
-   no pathfinding API. A vein that takes more than `MAX_STEPS` is marked unreachable for
+6. **Scan for a vein** within `SCAN_RADIUS` *and* `MINE_Z_RANGE` of your own elevation, skipping
+   tiles the run has parked and tiles with nowhere walkable to stand beside them. Nearest means the
+   shortest *walk*, not the shortest straight line.
+7. **Walk to it** if it is further than `MINE_RANGE`, one step per cycle, following the route
+   [`lib/grid.ts`](../lib/grid.ts) worked out. A step that does not move the character tries either
+   side of itself first; a vein that takes more than `MAX_VEIN_STEPS` is marked unreachable for
    `UNREACHABLE_DELAY`.
 8. **Swing**, and branch on what the shard says.
 
 Steps 1-5 and 8, along with the counters that end a run, are
 [`lib/harvest.ts`](../lib/harvest.js)'s `runHarvest` — the same loop `dist/mine-here.js` and
-`dist/lumberjack.js` run. Steps 6 and 7 are `createApproach` in [`lib/tiles.ts`](../lib/tiles.ts).
+`dist/lumberjack.js` run. Steps 6 and 7 are `createApproach` in [`lib/tiles.ts`](../lib/tiles.ts),
+over the walkability grid in [`lib/grid.ts`](../lib/grid.ts).
 What this folder supplies is the wordings, the tool, the smelt, and the outcomes in the table below.
 
 | Outcome | What the loop does |
@@ -129,8 +132,8 @@ has to be standing next to you*, call the beetle over and paste it again.
   were in the wrong place.
 - **The fire beetle within `SMELT_RANGE`**, and yours. Further off and the ore stays ore.
 - A pickaxe in hand, spares in the pack. Being mounted is fine.
-- `ORE_TILE_GRAPHICS`, `SCAN_RADIUS`, `MINE_RANGE`, `MINE_Z_RANGE`, `RESPAWN_DELAY`, `MAX_STEPS`
-  and `NOTHING_NEARBY_HINT` are not read by this script at all.
+- `ORE_TILE_GRAPHICS`, `SCAN_RADIUS`, `MINE_RANGE`, `MINE_Z_RANGE`, `RESPAWN_DELAY`, the walkability
+  grid and `NOTHING_NEARBY_HINT` are not read by this script at all — it never moves.
 
 Heartbeat and world-save lines still say `mining:` — those modules are shared. The loop's own lines
 say `mine-here:`.
@@ -172,6 +175,9 @@ mining its own, delete it from the re-export list and declare it below.
 | `MINE_RANGE` | 2. Where walking stops and swinging starts — not a range the shard enforces, since the swing names no tile |
 | `MINE_Z_RANGE` | 20. How far above or below you a tile may sit and still be worth walking to. A mountain face 40 z up passes the 2D distance test and the walk at it never closes |
 | `SCAN_RADIUS`, `SURVEY_ARTS` | How far the loop looks, and how many arts it lists on a dead end |
+| `MAX_VEIN_STEPS` | 40. The longest walk a vein is worth. Longer than the shared `MAX_STEPS` of 20, which was a budget for a straight line — a route around a wall is legitimately longer |
+| `ROUTE_RADIUS`, `MAX_ROUTE_NODES`, `MAX_ROUTE_CELLS` | How far the walkability flood spreads, and the backstops on it. Wider than `SCAN_RADIUS`, so a route may go around a wall that bulges outside the scan box |
+| `MAX_CLIMB`, `PLAYER_HEIGHT`, `STEP_HEADROOM` | 2, 16 and 2. What a step may climb, and how far above and below a standing spot a solid art still counts as being in the way. The typings carry no static height, so these three are the whole approximation |
 | `RESPAWN_DELAY` | 25 minutes. The knob to turn if the script comes back to a vein that is still empty |
 
 ### The tool
@@ -251,6 +257,16 @@ whether the character parks a tile or walks away.
 **`no ore in range` while standing on a mountain.** The likeliest failure: `ORE_TILE_GRAPHICS` does
 not match this shard's tile numbering. The stop prints the commonest arts under your feet with
 `MATCHES` against the ones the config accepts.
+
+**`n vein(s) matched but had no walkable route`.** Ore the scan recognised and the walkability grid
+could find no way to. A few is ordinary — a mountain has two sides. All of them, in a spot you can
+plainly walk out of, means the tile flags in [`lib/flags.ts`](../lib/flags.ts) are wrong for this
+shard: the `grid:` line printed beside it counts what can and cannot be stood on, and the survey
+under it decodes the flags of every art it saw.
+
+**`the tile under your feet reads as impassable`.** Proof of the same thing, and the run says it
+once and then stops filtering rather than reporting a world with nowhere to stand — so a wrong
+constant costs you the routing, not the run.
 
 **Five spots in a row with nothing to harvest.** Same cause, caught earlier.
 
@@ -359,6 +375,9 @@ Written against UOAlive.
 - **The vein scan is `(2 * SCAN_RADIUS + 1)` squared `getTerrainList` calls** — 625 at the shipped
   radius — and it used to run immediately before every swing. `scanForVein` now keeps the tile it is
   working and re-reads that one tile, falling back to a `MINE_RANGE` box and only then the full one.
+  The full box is also cheaper than it looks now: land and statics do not change during a session,
+  so every terrain read goes through `lib/grid.ts`'s cache and a coordinate costs one call for the
+  whole run. That is what makes flooding the walkability grid every cycle affordable.
 - **Trees can be identified by name and ore cannot.** `client.getStatic` reads the *static* tiledata;
   a mountainside is a land tile, and `client.getTile` answers with flags and no name. Hence a graphic
   table rather than a name match.
@@ -435,6 +454,16 @@ Written against UOAlive.
   ore here to mine'` are close enough that a hybrid wording lands in whichever key `Object.keys`
   reaches first.
 - `RESPAWN_DELAY`. 25 minutes, chosen to match lumberjacking's `REGROW_DELAY` and not measured.
+- **The tile flags in [`lib/flags.ts`](../lib/flags.ts)**, on the same footing as
+  `ORE_TILE_GRAPHICS`: the client's typings hand `flags` back as a bare number with no enum, so
+  `IMPASSABLE`, `WET`, `SURFACE` and `BRIDGE` are the stock RunUO bits and a guess about this shard.
+  A dead-end survey prints every art's flags decoded, which is what settles them. Wrong, and the
+  grid says so under your feet and turns itself off.
+- **The no-height approximation in [`lib/grid.ts`](../lib/grid.ts).** Nothing answers how tall a
+  static is, so a solid art within `STEP_HEADROOM` below or `PLAYER_HEIGHT` above a standing spot is
+  read as being in the way rather than measured. A tall art based well below a floor therefore reads
+  as passable — under-blocking, which costs a walk that today's `markUnreachable` already handles,
+  where over-blocking would refuse good veins silently.
 - **`MINE_Z_RANGE`**, on the same footing as `ORE_TILE_GRAPHICS`. 20 comes from the stock climb rule
   of about 2 z a step over `SCAN_RADIUS`, not from this shard. Too tight ends a run on `no ore in
   range` with the survey printing the mountain art beside `MATCHES`.

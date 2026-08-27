@@ -1,5 +1,6 @@
 import { now } from './clock.js';
 import { distanceTo, hex } from './entity.js';
+import type { Terrain } from './grid.js';
 import type { Approach } from './harvest.js';
 
 // Finding a tile, walking to it, and remembering what the shard said about it. What the harvest
@@ -96,9 +97,16 @@ export const createScan = <T extends Tile>(options: {
   // land, and it is the ordinary case rather than the exception.
   skipLand?: boolean;
 
-  // Lumberjacking filters out tiles no legal standing spot can reach, so a tree outside the box is
-  // never picked, walked at, refused and only then written off. Mining has no box.
-  reachable?: (x: number, y: number) => boolean;
+  // How far the walk to a tile is, or undefined for one there is no walk to at all. Filters and
+  // ranks in one hook, so the two can never disagree. Lumberjacking answers 0 or undefined against
+  // its bounds box, which leaves the ranking to `distance` the way it always was; mining answers
+  // lib/grid.ts's step count, so a vein six tiles off through a doorway loses to one eight tiles off
+  // across open ground.
+  reach?: (tile: T & { distance: number }) => number | undefined;
+
+  // Where the terrain comes from, when the caller has a cache of it. Land and statics do not change
+  // during a session, so mining reads the box through lib/grid.ts and pays for it once.
+  terrain?: (x: number, y: number) => Terrain;
 
   // Mining only: a mountain face 40 z above you passes the 2D distance test and the walk never closes
   withinZ?: number;
@@ -106,17 +114,25 @@ export const createScan = <T extends Tile>(options: {
   describe: (tile: T & { distance: number }) => string;
 }) => {
   const reported = new Set<number>();
+  const at = options.terrain ?? ((x: number, y: number) => client.getTerrainList(x, y) ?? []);
 
-  return (radius = options.radius): Found<T> => {
+  // Candidates the last sweep dropped for having no route. A dead end that says only 'no ore in
+  // range' while a mountain fills the screen tells you nothing you can act on.
+  let skipped = 0;
+
+  const run = (radius = options.radius): Found<T> => {
     const blocked = options.blocked();
     const time = now();
 
     let best: (T & { distance: number }) | undefined;
+    let bestWalk = Infinity;
     let readyAt: number | undefined;
+
+    skipped = 0;
 
     for (let dx = -radius; dx <= radius; dx++) {
       for (let dy = -radius; dy <= radius; dy++) {
-        for (const tile of client.getTerrainList(player.x + dx, player.y + dy) ?? []) {
+        for (const tile of at(player.x + dx, player.y + dy)) {
           if (options.skipLand && tile.isLand) {
             continue;
           }
@@ -127,10 +143,6 @@ export const createScan = <T extends Tile>(options: {
           }
 
           if (!options.matches(tile.graphic, tile.isLand)) {
-            continue;
-          }
-
-          if (options.reachable && !options.reachable(tile.x, tile.y)) {
             continue;
           }
 
@@ -162,8 +174,21 @@ export const createScan = <T extends Tile>(options: {
             blocked.delete(key);
           }
 
-          if (!best || candidate.distance < best.distance) {
+          // After the block map, so a tile that is on cooldown anyway never costs a route lookup
+          const walk = options.reach ? options.reach(candidate) : 0;
+
+          if (walk === undefined) {
+            skipped++;
+            continue;
+          }
+
+          if (
+            !best ||
+            walk < bestWalk ||
+            (walk === bestWalk && candidate.distance < best.distance)
+          ) {
             best = candidate;
+            bestWalk = walk;
           }
         }
       }
@@ -177,6 +202,8 @@ export const createScan = <T extends Tile>(options: {
 
     return { found: best, readyAt };
   };
+
+  return Object.assign(run, { skipped: () => skipped });
 };
 
 // Scan, then either swing at what was found, take a step toward it, or wait for it to come back.

@@ -81,6 +81,8 @@ containers  container detection, opening, and depth-first search
 convert     resource -> product, judged by pack diff, with per-hue write-off
 die         exit() that the compiler will narrow on
 entity      hex, Chebyshev distance, item-vs-mobile, name-or-serial, walk-to-a-mobile
+flags       the tiledata bits, which the client's typings hand back as a bare number
+grid        what can be stood on, and the shortest way there
 guards      the stop conditions, composed per folder
 harvest     the swing loop all three harvest scripts run
 heal        bandaging the character, proved by the health going up
@@ -102,7 +104,7 @@ tool        find it, learn its graphic, equip it, notice it break
 trainer     the training loop both trainers run
 vendor      sell gumps
 vitals      the one place player.maxMana and player.maxHits are read
-walk        one naive step, optionally inside a box
+walk        one step, routed by grid or straight at the spot, optionally inside a box
 gear        taking the kit off for a trance and putting the same pieces back, by serial
 weapon      drawing what is in hand by graphic - gear's fallback, and the noWeapon recovery
 weight      the one place player.weightMax is read
@@ -233,3 +235,10 @@ ones that bit more than one of them.
   far side of the mountain reads as one standing next to you.
 - **Serials come back as signed 32-bit ints**, so one prints as `0x-3266af2f` unless run through
   `>>> 0`. `hex()` in `src/lib/entity.ts` does the shift.
+- **There is no pathfinding, no line of sight, and no static height.** `player.run` takes one
+  direction at a time, and nothing answers whether a tile can be stood on. What there is instead is
+  `flags` on every `getTerrainList` entry — handed back as a bare `number`, with no enum anywhere in
+  the typings to read it by. `src/lib/flags.ts` writes the stock RunUO bits out by hand, and
+  `src/lib/grid.ts` builds a walkability map and a route out of them. Both are a hypothesis about
+  this shard rather than a fact about it, which is why the grid turns itself off and says so if the
+  tile under the character's own feet comes back impassable.

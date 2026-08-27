@@ -34,8 +34,13 @@ describe('stepToward', () => {
   }
 
   // The first packet in a new direction only turns the character, so a single run() would leave it
-  // facing the spot without having moved
+  // facing the spot without having moved. The step has to land, or the sidestep below adds its own
+  // calls to the tally.
   it('issues the direction twice, because the first one only turns', () => {
+    world.player.run.mockImplementation(() => {
+      world.player.x += 1;
+    });
+
     stepToward({ x: 60, y: 50 });
 
     expect(world.player.run).toHaveBeenCalledTimes(2);
@@ -58,6 +63,52 @@ describe('stepToward', () => {
   it('does not move at all when standing on the spot', () => {
     expect(stepToward({ x: 50, y: 50 })).toBe(false);
     expect(world.player.run).not.toHaveBeenCalled();
+  });
+
+  describe('with a route', () => {
+    it('takes the step the router hands back rather than the straight line', () => {
+      const routed = createStepToward({ delayMs: 0, route: () => [0, 1] });
+
+      routed({ x: 60, y: 50 });
+
+      expect(world.player.run).toHaveBeenCalledWith(Directions.South);
+    });
+
+    // Undefined is 'nothing to say', not 'nowhere to go': the fire beetle stands further off than
+    // the grid is flooded, and a walk that gave up there would never reach it
+    it('falls back to the straight line when the router has nothing', () => {
+      const routed = createStepToward({ delayMs: 0, route: () => undefined });
+
+      routed({ x: 60, y: 50 });
+
+      expect(world.player.run).toHaveBeenCalledWith(Directions.East);
+    });
+  });
+
+  // A pet or another player parked in the gap is not in the terrain the router reads
+  describe('a step that did not move the character', () => {
+    it('tries either side of it before reporting a wall', () => {
+      expect(stepToward({ x: 60, y: 50 })).toBe(false);
+      expect(world.player.run.mock.calls.map(([direction]) => direction)).toEqual([
+        Directions.East,
+        Directions.East,
+        Directions.Down,
+        Directions.Down,
+        Directions.Right,
+        Directions.Right,
+      ]);
+    });
+
+    it('stops at the first one that lands', () => {
+      world.player.run.mockImplementation((direction: number) => {
+        if (direction === Directions.Down) {
+          world.player.y += 1;
+        }
+      });
+
+      expect(stepToward({ x: 60, y: 50 })).toBe(true);
+      expect(world.player.run).not.toHaveBeenCalledWith(Directions.Right);
+    });
   });
 
   describe('with a constraint', () => {

@@ -248,7 +248,9 @@ confirmed comes from mining runs that exercise the same shared code.
   answers the land tile as mining rather than chopping. The chop therefore always passes the tree's
   graphic. (Mining goes the other way and names no tile at all.)
 - There is no pathfinding API — `player.walk`/`run` take one direction at a time. The direction is
-  issued twice because the first packet in a new direction only turns the character.
+  issued twice because the first packet in a new direction only turns the character. Lumberjacking
+  steps straight at the tree; the route-finding in `lib/grid.ts` is mining's, since a box already
+  keeps this run somewhere sensible.
 - **`BOUNDS` is enforced in one place.** `stepToward` is the only thing that ever moves the character;
   `guards.ts` also stops the run if the character is outside the box, which catches a teleporter, a
   boat, or a run started from the wrong place. A diagonal step that would leave the box falls back to
