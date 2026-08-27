@@ -1,6 +1,7 @@
 import * as esbuild from 'esbuild';
 
 const ENTRIES = [
+  { in: 'src/animallore/index.ts', out: 'animal-lore' },
   { in: 'src/boxes/index.ts', out: 'boxes' },
   { in: 'src/boxes/keys.ts', out: 'keys' },
   { in: 'src/chivalry/index.ts', out: 'chivalry' },

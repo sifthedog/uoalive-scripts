@@ -23,6 +23,7 @@ one, and what to set. Start there.
 | `dist/chivalry.js` | The same run for Chivalry, which spends tithing points as well as mana | [src/chivalry](src/chivalry/README.md) |
 | `dist/lockpick-training.js` | Target a locked container, pick it until the lockpicks run out or Lockpicking is capped | [src/lockpicking](src/lockpicking/README.md) |
 | `dist/hiding.js` | Stand still, hide, and spam Stealth until one fails - then hide again | [src/hiding](src/hiding/README.md) |
+| `dist/animal-lore.js` | Target a creature, read it over and over until Animal Lore caps | [src/animallore](src/animallore/README.md) |
 | `dist/transfer.js` | Target a container to empty and one to fill, move everything across | [src/transfer](src/transfer/README.md) |
 | `dist/stow.js` | Target items and a container, then move every one of them out of your pack as it turns up | [src/stow](src/stow/README.md) |
 
@@ -50,6 +51,7 @@ identifier*.
 
 ```
 src/lib/           everything more than one script does (see below)
+src/animallore/    read one creature over and over to train Animal Lore
 src/boxes/         empty the crafted wooden boxes, keys on the floor (+ a key dump)
 src/chivalry/      train Chivalry through its five bands, on the same loop as src/training/
 src/hiding/        train Hiding and Stealth standing still, hiding and stealthing in turn
