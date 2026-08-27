@@ -5,6 +5,7 @@ const ENTRIES = [
   { in: 'src/arrows/index.ts', out: 'arrows' },
   { in: 'src/boxes/index.ts', out: 'boxes' },
   { in: 'src/boxes/keys.ts', out: 'keys' },
+  { in: 'src/carving/index.ts', out: 'carve' },
   { in: 'src/chivalry/index.ts', out: 'chivalry' },
   { in: 'src/hiding/index.ts', out: 'hiding' },
   { in: 'src/lockpicking/index.ts', out: 'lockpick-training' },

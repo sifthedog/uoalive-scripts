@@ -27,6 +27,7 @@ one, and what to set. Start there.
 | `dist/transfer.js` | Target a container to empty and one to fill, move everything across | [src/transfer](src/transfer/README.md) |
 | `dist/stow.js` | Target items and a container, then move every one of them out of your pack as it turns up | [src/stow](src/stow/README.md) |
 | `dist/arrows.js` | Moves every arrow and crossbow bolt within reach off the floor and into your pack | [src/arrows](src/arrows/README.md) |
+| `dist/carve.js` | Uses a butcher knife on every corpse within reach and takes the feathers | [src/carving](src/carving/README.md) |
 
 ## Why a build step
 
@@ -55,6 +56,7 @@ src/lib/           everything more than one script does (see below)
 src/animallore/    read one creature over and over to train Animal Lore
 src/arrows/        sweep spent arrows and bolts off the ground into the pack
 src/boxes/         empty the crafted wooden boxes, keys on the floor (+ a key dump)
+src/carving/       carve every corpse in reach with a butcher knife, take the feathers
 src/chivalry/      train Chivalry through its five bands, on the same loop as src/training/
 src/hiding/        train Hiding and Stealth standing still, hiding and stealthing in turn
 src/lumberjacking/ chop the nearest tree, make boards, load the pack animals
