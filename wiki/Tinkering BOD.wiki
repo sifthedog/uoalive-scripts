@@ -2,9 +2,10 @@
 '''Tinkering Bulk Order Deeds''' were introduced in November of 2016 via [[Publish 95]] expanding the [[Bulk Order Deed]] system to include 6 extra [[crafting]] skills on top of the existing [[Blacksmithy]] and [[Tailoring]] bods. The system also revamped how bod rewards work with a point system enabling you to bank your points to save up for a certain reward or to claim straight away for any item in the rewards list worth up to that amount points.
 
 ==Notes==
-*Banked points are worth 2% of the value for Small Bulk Order Deeds and 20% of the value for Larger Bulk Order Deeds.
+*Banked points are worth 5% of the value for Small Bulk Order Deeds and 50% of the value for Larger Bulk Order Deeds.
 *Banked points do not stack with points you claim straight away.
 *If you claim a reward that is worth less then your total claimed or total banked points then the remaining balance of your points will be forfeit.
+*A [[Reward title|Reward Title]] is a deed you double-click to learn the title. To wear it, open the titles menu from your character's context menu and set it in the subtitle section, where it appears below your character's overhead name. The Tinkering titles are Metallurgist, Dabbler, Fixer, Clockmaker and Mechanic.
 *if you accidentally close the reward window with out claiming a reward you can open the context menu on the NPC again to pick from the reward list. You will not be able to hand in another BOD until you claim a reward.
 
 ==Completing a BOD==
@@ -49,213 +50,227 @@
 !| Material||Quality||Quantity||Banked Points||Claimed Points||Banked Points||Claimed Points||Banked Points||Claimed Points||Banked Points||Claimed Points||Banked Points||Claimed Points
 |-
 ! rowspan="6"|[[Image:Ingots.png]]'''iron'''||rowspan="3"|Normal
-|10||0.2||10||42||210||62||310||72||360||82||410
+|10||0.5||10||105||210||155||310||180||360||205||410
 |-
-| |15||0.5||25||45||225||65||325||75||375||85||425
+| |15||1.25||25||112.5||225||162.5||325||187.5||375||212.5||425
 |-
-| |20||1||50||50||250||70||350||80||400||90||450
+| |20||2.5||50||125||250||175||350||200||400||225||450
 |-
 !rowspan="3"|Exceptional
-|10||4.2||210||82||410||102||510||112||560||122||610
+|10||10.5||210||205||410||255||510||280||560||305||610
 |-
-| |15||4.5||225||85||425||105||525||115||575||125||625
+| |15||11.25||225||212.5||425||262.5||525||287.5||575||312.5||625
 |-
-| |20||5||250||90||450||110||550||120||600||130||650
+| |20||12.5||250||225||450||275||550||300||600||325||650
 |-
 ! colspan=13 |
 |-
-! rowspan="6"|[[Image:Ingots_(Dull_Copper).png]]'''Dull Copper'''
+! rowspan="6"|[[Image:Ingots Dull Copper.png]]'''Dull Copper'''
 ! rowspan="3"|Normal
-|10||4.2||210||82||410||102||510||112||560||122||610
+|10||10.5||210||205||410||255||510||280||560||305||610
 |-
-| |15||4.5||225||85||425||105||525||115||575||125||625
+| |15||11.25||225||212.5||425||262.5||525||287.5||575||312.5||625
 |-
-| |20||5||250||90||450||110||550||120||600||130||650
+| |20||12.5||250||225||450||275||550||300||600||325||650
 |-
 ! rowspan="3"|Exceptional
-|10||8.2||410||122||610||142||710||152||760||162||810
+|10||20.5||410||305||610||355||710||380||760||405||810
 |-
-| |15||8.5||425||125||625||145||725||155||775||165||825
+| |15||21.25||425||312.5||625||362.5||725||387.5||775||412.5||825
 |-
-| |20||9||450||130||650||150||750||160||800||170||850
+| |20||22.5||450||325||650||375||750||400||800||425||850
 |-
 ! colspan=13 |
 |-
-! rowspan="6"|[[Image:Ingots_(Shadow Iron).png]]'''Shadow'''
+! rowspan="6"|[[Image:Ingots Shadow Iron.png]]'''Shadow'''
 ! rowspan="3"|Normal
-|10||5.2||260||92||460||112||560||122||610||132||660
+|10||13||260||230||460||280||560||305||610||330||660
 |-
-| |15||5.5||275||95||475||115||575||125||625||135||675
+| |15||13.75||275||237.5||475||287.5||575||312.5||625||337.5||675
 |-
-| |20||6||300||100||500||120||600||130||650||140||700
+| |20||15||300||250||500||300||600||325||650||350||700
 |-
 !rowspan="3"|Exceptional
-|10||9.2||460||132||660||152||760||162||810||172||860
+|10||23||460||330||660||380||760||405||810||430||860
 |-
-| |15||9.5||475||135||675||155||775||165||825||175||875
+| |15||23.75||475||337.5||675||387.5||775||412.5||825||437.5||875
 |-
-| |20||10||500||140||700||160||800||170||850||180||900
+| |20||25||500||350||700||400||800||425||850||450||900
 |-
 ! colspan=13 |
 |-
-! rowspan="6"|[[Image:Ingots_(Copper).png]]'''Copper'''
+! rowspan="6"|[[Image:Ingots Copper.png]]'''Copper'''
 ! rowspan="3"|Normal
-| 10||6.2||310||102||510||122||610||132||660||142||710
+| 10||15.5||310||255||510||305||610||330||660||355||710
 |-
-| |15||6.5||325||105||525||125||625||135||675||145||725
+| |15||16.25||325||262.5||525||312.5||625||337.5||675||362.5||725
 |-
-| |20||7||350||110||550||130||650||140||700||150||750
+| |20||17.5||350||275||550||325||650||350||700||375||750
 |-
 ! rowspan="3"|Exceptional
-| 10||10.2||510||142||710||162||810||172||860||182||910
+| 10||25.5||510||355||710||405||810||430||860||455||910
 |-
-| |15||10.5||525||145||725||165||825||175||875||185||925
+| |15||26.25||525||362.5||725||412.5||825||437.5||875||462.5||925
 |-
-| |20||11||550||150||750||170||850||180||900||190||950
+| |20||27.5||550||375||750||425||850||450||900||475||950
 |-
 ! colspan=13 |
 |-
-! rowspan="6"|[[Image:Ingots_(Bronze).png]]'''Bronze'''
+! rowspan="6"|[[Image:Ingots Bronze.png]]'''Bronze'''
 ! rowspan="3"|Normal
-|10||7.2||360||112||560||132||660||142||710||152||760
+|10||18||360||280||560||330||660||355||710||380||760
 |-
-| |15||7.5||375||115||575||135||675||145||725||155||775
+| |15||18.75||375||287.5||575||337.5||675||362.5||725||387.5||775
 |-
-| |20||8||400||120||600||140||700||150||750||160||800
+| |20||20||400||300||600||350||700||375||750||400||800
 |-
 !rowspan="3"|Exceptional
-|10||11.2||560||152||760||172||860||182||910||192||960
+|10||28||560||380||760||430||860||455||910||480||960
 |-
-| |15||11.5||575||155||775||175||875||185||925||195||975
+| |15||28.75||575||387.5||775||437.5||875||462.5||925||487.5||975
 |-
-| |20||12||600||160||800||180||900||190||950||200||1000
+| |20||30||600||400||800||450||900||475||950||500||1000
 |-
 ! colspan=13 |
 |-
-! rowspan="6"|[[Image:Ingots_(Golden).png]]'''Golden'''
+! rowspan="6"|[[Image:Ingots Golden.png]]'''Golden'''
 ! rowspan="3"|Normal
-|10||8.2||410||122||610||142||710||152||760||162||810
+|10||20.5||410||305||610||355||710||380||760||405||810
 |-
-| |15||8.5||425||125||625||145||725||155||775||165||825
+| |15||21.25||425||312.5||625||362.5||725||387.5||775||412.5||825
 |-
-| |20||9||450||130||650||150||750||160||800||170||850
+| |20||22.5||450||325||650||375||750||400||800||425||850
 |-
 ! rowspan="3"|Exceptional
-|10||12.2||610||162||810||182||910||192||960||202||1010
+|10||30.5||610||405||810||455||910||480||960||505||1010
 |-
-| |15||12.5||625||165||825||185||925||195||975||205||1025
+| |15||31.25||625||412.5||825||462.5||925||487.5||975||512.5||1025
 |-
-| |20||13||650||170||850||190||950||200||1000||210||1050
+| |20||32.5||650||425||850||475||950||500||1000||525||1050
 |-
 ! colspan=13 |
 |-
-! rowspan="6"|[[Image:Ingots_(Agapite).png]]'''Agapite'''
+! rowspan="6"|[[Image:Ingots Agapite.png]]'''Agapite'''
 ! rowspan="3"|Normal
-|10||9.2||460||132||660||152||760||162||810||172||860
+|10||23||460||330||660||380||760||405||810||430||860
 |-
-| |15||9.5||475||135||675||155||775||165||825||175||875
+| |15||23.75||475||337.5||675||387.5||775||412.5||825||437.5||875
 |-
-| |20||10||500||140||700||160||800||170||850||180||900
+| |20||25||500||350||700||400||800||425||850||450||900
 |-
 !rowspan="3"|Exceptional
-|10||13.2||660||172||860||192||960||202||1010||212||1060
+|10||33||660||430||860||480||960||505||1010||530||1060
 |-
-| |15||13.5||675||175||875||195||975||205||1025||215||1075
+| |15||33.75||675||437.5||875||487.5||975||512.5||1025||537.5||1075
 |-
-| |20||14||700||180||900||200||1000||210||1050||220||1100
+| |20||35||700||450||900||500||1000||525||1050||550||1100
 |-
 ! colspan=13 |
 |-
-! rowspan="6"|[[Image:Ingots_(Verite).png]]'''Verite'''
+! rowspan="6"|[[Image:Ingots Verite.png]]'''Verite'''
 !rowspan="3"|Normal 
-|10||10.2||510||142||710||162||810||172||860||182||910
+|10||25.5||510||355||710||405||810||430||860||455||910
 |-
-| |15||10.5||525||145||725||165||825||175||875||185||925
+| |15||26.25||525||362.5||725||412.5||825||437.5||875||462.5||925
 |-
-| |20||11||550||150||750||170||850||180||900||190||950
+| |20||27.5||550||375||750||425||850||450||900||475||950
 |-
 !rowspan="3"|Exceptional
-| 10||14.2||710||182||910||202||1010||212||1060||222||1110
+| 10||35.5||710||455||910||505||1010||530||1060||555||1110
 |-
-| |15||14.5||725||185||925||205||1025||215||1075||225||1125
+| |15||36.25||725||462.5||925||512.5||1025||537.5||1075||562.5||1125
 |-
-| |20||15||750||190||950||210||1050||220||1100||230||1150
+| |20||37.5||750||475||950||525||1050||550||1100||575||1150
 |-
 ! colspan=13 |
 |-
-!rowspan="6"|[[Image:Ingots_(Valorite).png]]'''Valorite'''
+!rowspan="6"|[[Image:Ingots Valorite.png]]'''Valorite'''
 !rowspan="3"|Normal
-|10||11.2||560||152||760||172||860||182||910||192||960
+|10||28||560||380||760||430||860||455||910||480||960
 |-
-| |15||11.5||575||155||775||175||875||185||925||195||975
+| |15||28.75||575||387.5||775||437.5||875||462.5||925||487.5||975
 |-
-| |20||12||600||160||800||180||900||190||950||200||1000
+| |20||30||600||400||800||450||900||475||950||500||1000
 |-
 !rowspan="3"|Exceptional
-|10||15.2||760||192||960||212||1060||222||1110||232||1160
+|10||38||760||480||960||530||1060||555||1110||580||1160
 |-
-| |15||15.5||775||195||975||215||1075||225||1125||235||1175
+| |15||38.75||775||487.5||975||537.5||1075||562.5||1125||587.5||1175
 |-
-| |20||16||800||200||1000||220||1100||230||1150||240||1200
+| |20||40||800||500||1000||550||1100||575||1150||600||1200
 |-
 |}
 ==BOD Rewards Table==
-*There are 25 rewards to choose from for [[Tinkering]] Bods
+*There are 32 rewards to choose from for [[Tinkering]] Bods
 *The Smelter's Talismans and Miner's Maps are the same as the ones obtained from [[Covetous Void Pool reward]]s
 {| class="wikitable leftalign"
 !|'''Point Cost'''
 !|'''Picture'''
 !|'''Item'''
 |-
-| 10||[[Image:Tinker's_Tools_(Crafted).png]]||[[Tinker%27s_Tools|Tinker Tool Kit]] - (250 charges)
+| 10||[[Image:Tinkers Tools Crafted.png]]||[[Tinker%27s_Tools|Tinker Tool Kit]] - (250 charges)
 |-
-| 25||[[image:Deed.png]]||[[Reward Title]] - Metallurgist
+| 25||[[image:Deed.png]]||[[Reward title|Reward Title]] - Metallurgist
 |-
-| 50||[[image:Deed.png]]||[[Reward Title]] - Dabbler
+| 50||[[image:Deed.png]]||[[Reward title|Reward Title]] - Dabbler
 |-
-| 210||[[image:Deed.png]]||[[Reward Title]] - Fixer
+| 210||[[image:Deed.png]]||[[Reward title|Reward Title]] - Fixer
 |-
 | 225||[[image:Recipe.png]]||[[Recipe]] - Kotl Black Rod
 |-
-| 250||[[image:Deed.png]]||[[Reward Title]] - Clockmaker
+| 250||[[image:Deed.png]]||[[Reward title|Reward Title]] - Clockmaker
 |-
 | 310||[[image:Recipe.png]]||[[Recipe]] - Dr Spector’s Lenses
 |-
-| 325||[[image:Deed.png]]||[[Reward Title]] - Mechanic
+| 325||[[image:Deed.png]]||[[Reward title|Reward Title]] - Mechanic
 |-
 | 350||[[image:Recipe.png]]||[[Recipe]] - Kotl Automaton
 |-
 | 400||[[image:Master_Craftsman_Tinker.png]]||[[Master Craftsman Talisman]] - (10 charges)
 |-
-| 450||[[image:Smelter's golden talisman.png]]||[[Smelter's Golden Talisman]] - (Use within 24 hours)
+| 450||[[image:Smelters_golden_talisman.png]]||[[Smelter's Golden Talisman]] - (Use within 24 hours)
 |-
-| 500||[[image:Miner's golden map.png]]||[[Miner%27s Golden Map]] - (Use within 24 hours)
+| 500||[[image:Miners_golden_map.png]]||[[Miner%27s Golden Map]] - (Use within 24 hours)
 |-
 | 550||[[image:Master_Craftsman_Tinker.png]]||[[Master Craftsman Talisman]] - (25 charges)
 |-
-| 600||[[image:Smelter's agapite talisman.png]]||[[Smelter%27s_Agapite_Talisman|Smelter’s Agapite Talisman]] - (Use within 24 hours)
+| 550||[[image:Powerscroll.png]]||[[Power Scrolls|A Wondrous Scroll of Tinkering]] - (105 Tinkering)
 |-
-| 650||[[image:Miner's agapite map.png]]||[[Miner%27s Agapite Map]] - (Use within 24 hours)
+| 600||[[image:Smelters_agapite_talisman.png]]||[[Smelter%27s_Agapite_Talisman|Smelter’s Agapite Talisman]] - (Use within 24 hours)
 |-
-| 700||[[image:Potion_Keg.gif]]||[[Powder of Fortification|A Specially Lined Keg for Powder of Fortification]] (Holds up to 250 charges) 
+| 650||[[image:Miners_agapite_map.png]]||[[Miner%27s Agapite Map]] - (Use within 24 hours)
+|-
+| 700||[[image:Potion_Keg.gif]]||[[Powder of Fortifying|A Specially Lined Keg for Powder of Fortification]] - A keg that holds Powder of Fortifying as charges instead of loose powder in your pack (Holds up to 250 charges). The powder restores maximum durability points an item has lost to repairs.
+|-
+| 700||[[image:Powerscroll.png]]||[[Power Scrolls|An Exalted Scroll of Tinkering]] - (110 Tinkering)
 |-
 | 750||[[image:Automaton-Actuator.gif]]||[[Automaton Actuator]] - Ingredient needed to craft a Kotl Automaton 
 |-
-| 800||[[image:Smelter's verite talisman.png]]||[[Smelter%27s Verite Talisman]] - (Use within 24 hours)
+| 800||[[image:Smelters_verite_talisman.png]]||[[Smelter%27s Verite Talisman]] - (Use within 24 hours)
 |-
-| 850||[[image:Miner's verite map.png]]||[[Miner%27s Verite Map]] - (Use within 24 hours)
+| 850||[[image:Miners_verite_map.png]]||[[Miner%27s Verite Map]] - (Use within 24 hours)
 |-
 | 900||[[image:Master_Craftsman_Tinker.png]]||[[Master Craftsman Talisman]] - (50 charges)
+|-
+| 900||[[image:Powerscroll.png]]||[[Power Scrolls|A Mythical Scroll of Tinkering]] - (115 Tinkering)
 |-
 | 950||[[image:Rock_Hammer.png]]||[[Rock_Hammer|Rock Hammer]]
 |-
 | 1000||[[image:Black_Moonstone.png]]||[[Black_Moonstone|Blackrock Moonstone]] - Ingredient used to craft Dr. Spector’s Lenses or Kotl Black Rod 
 |-
-| 1050||[[image:Smelter's valorite talisman.png]]||[[Smelter%27s Valorite Talisman]] - (Use within 24 hours)
+| 1050||[[image:Smelters_valorite_talisman.png]]||[[Smelter%27s Valorite Talisman]] - (Use within 24 hours)
 |-
-| 1100||[[image:Miner's valorite map.png]]||[[Miner%27s Valorite Map]] - (Use within 24 hours)
+| 1100||[[image:Miners_valorite_map.png]]||[[Miner%27s Valorite Map]] - (Use within 24 hours)
 |-
 | 1200||[[image:Automaton-head.png]]||[[Inoperative_Automaton_Head|Blackrock Automaton Head]]
+|-
+| 1200||[[image:Powerscroll.png]]||[[Power Scrolls|A Legendary Scroll of Tinkering]] - (120 Tinkering)
+|-
+| 1200||[[image:Recipe.png]]||[[Recipe]] - Barbed Whip
+|-
+| 1200||[[image:Recipe.png]]||[[Recipe]] - Bladed Whip
+|-
+| 1200||[[image:Recipe.png]]||[[Recipe]] - Spiked Whip
 |-
 |}
 

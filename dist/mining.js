@@ -104,129 +104,145 @@
     let reported2 = 0;
     let throttled = 0;
     let noCursor = 0;
+    let noTool = 0;
+    let idled = 0;
     const endCycle = (phase, cycle) => {
       stall.endCycle(phase, cycle, tally);
       stop ?? (stop = stall.reason());
     };
-    for (let cycle = 0; cycle < timings.maxCycles && !stop; cycle++) {
-      stop = stopReason2();
-      if (stop) {
-        break;
-      }
-      if (isSaving2()) {
-        waitOutSave2();
-        unknown = 0;
-        throttled = 0;
-        stall.progressed();
-        endCycle("saving", cycle);
-        continue;
-      }
-      watch2?.();
-      stop = ready?.();
-      if (stop) {
-        break;
-      }
-      if (!equipTool()) {
-        stop = `no ${toolName}`;
-        break;
-      }
-      const relieved = relieve?.();
-      if (relieved) {
-        if ("stop" in relieved) {
-          stop = relieved.stop;
+    try {
+      for (let cycle = 0; cycle - idled < timings.maxCycles && !stop; cycle++) {
+        stop = stopReason2();
+        if (stop) {
           break;
         }
-        endCycle(relieved.phase, cycle);
-        sleep(timings.stepDelay);
-        continue;
-      }
-      let target2;
-      if (approach2) {
-        const found = approach2();
-        if ("stop" in found) {
-          stop = found.stop;
+        if (isSaving2()) {
+          waitOutSave2();
+          unknown = 0;
+          throttled = 0;
+          stall.progressed();
+          endCycle("saving", cycle);
+          continue;
+        }
+        watch2?.();
+        stop = ready?.();
+        if (stop) {
           break;
         }
-        if ("waited" in found) {
-          continue;
-        }
-        if ("walked" in found) {
-          endCycle("walking", cycle);
-          continue;
-        }
-        target2 = found.target;
-      }
-      const outcome = harvest(target2);
-      if (outcome === landed) {
-        tally++;
-        unknown = 0;
-        throttled = 0;
-        stall.progressed();
-        onLanded?.();
-      } else {
-        switch (outcome) {
-          case "wornOut":
-            log(`${prefix}: ${toolName} worn out, swapping`);
-            unknown = 0;
+        if (!equipTool()) {
+          noTool++;
+          if (noTool >= timings.maxNoTool) {
+            stop = `no ${toolName}`;
             break;
-          // The counters are reset rather than left alone, because whatever they had accumulated was
-          // measured against a server that was not answering. The stall watchdog goes with them: a
-          // shard that saves often would otherwise walk a run to its stop a save at a time.
-          case "saving":
-            waitOutSave2();
-            unknown = 0;
-            throttled = 0;
+          }
+          log(`${prefix}: no ${toolName} (${noTool}/${timings.maxNoTool}), looking again`);
+          endCycle("no tool", cycle);
+          sleep(backoffFor(noTool, timings.throttleBackoff, timings.throttleBackoffMax));
+          continue;
+        }
+        noTool = 0;
+        const relieved = relieve?.();
+        if (relieved) {
+          if ("stop" in relieved) {
+            stop = relieved.stop;
+            break;
+          }
+          endCycle(relieved.phase, cycle);
+          sleep(timings.stepDelay);
+          continue;
+        }
+        let target2;
+        if (approach2) {
+          const found = approach2();
+          if ("stop" in found) {
+            stop = found.stop;
+            break;
+          }
+          if ("waited" in found) {
+            idled++;
             stall.progressed();
-            break;
-          case "throttled":
-            throttled++;
-            unknown = 0;
-            log(`${prefix}: shard says wait (${throttled}/${timings.maxThrottled}), backing off`);
-            sleep(backoffFor(throttled, timings.throttleBackoff, timings.throttleBackoffMax));
-            if (throttled >= timings.maxThrottled) {
-              stop = "the shard kept refusing the swing";
-            }
-            break;
-          // With a tool demonstrably in hand this is the shard declining to start the swing, which on
-          // a live run was a third of them. The swing has already looked for a reason, so this is a
-          // refusal with nothing said about it - backed off like one, on a budget of its own.
-          case "noCursor":
-            noCursor++;
-            log(`${prefix}: no target cursor (${noCursor}/${timings.maxNoCursor}), backing off`);
-            sleep(backoffFor(noCursor, timings.throttleBackoff, timings.throttleBackoffMax));
-            if (noCursor >= timings.maxNoCursor) {
-              stop = "the shard never opened a target cursor";
-            }
-            break;
-          default: {
-            const handled = outcome === void 0 ? void 0 : handle2(outcome, target2);
-            if (handled) {
+            continue;
+          }
+          if ("walked" in found) {
+            endCycle("walking", cycle);
+            continue;
+          }
+          target2 = found.target;
+        }
+        const outcome = harvest(target2);
+        if (outcome === landed) {
+          tally++;
+          unknown = 0;
+          throttled = 0;
+          stall.progressed();
+          onLanded?.();
+        } else {
+          switch (outcome) {
+            case "wornOut":
+              log(`${prefix}: ${toolName} worn out, swapping`);
               unknown = 0;
-              stop ?? (stop = handled.stop);
-            } else {
-              unknown++;
-              log(
-                `${prefix}: unreadable outcome (${unknown}/${timings.maxUnknown}), check OUTCOME_TEXT`
-              );
+              break;
+            // The counters are reset rather than left alone, because whatever they had accumulated was
+            // measured against a server that was not answering. The stall watchdog goes with them: a
+            // shard that saves often would otherwise walk a run to its stop a save at a time.
+            case "saving":
+              waitOutSave2();
+              unknown = 0;
+              throttled = 0;
+              stall.progressed();
+              break;
+            case "throttled":
+              throttled++;
+              unknown = 0;
+              log(`${prefix}: shard says wait (${throttled}/${timings.maxThrottled}), backing off`);
+              sleep(backoffFor(throttled, timings.throttleBackoff, timings.throttleBackoffMax));
+              if (throttled >= timings.maxThrottled) {
+                stop = "the shard kept refusing the swing";
+              }
+              break;
+            // With a tool demonstrably in hand this is the shard declining to start the swing, which on
+            // a live run was a third of them. The swing has already looked for a reason, so this is a
+            // refusal with nothing said about it - backed off like one, on a budget of its own.
+            case "noCursor":
+              noCursor++;
+              log(`${prefix}: no target cursor (${noCursor}/${timings.maxNoCursor}), backing off`);
+              sleep(backoffFor(noCursor, timings.throttleBackoff, timings.throttleBackoffMax));
+              if (noCursor >= timings.maxNoCursor) {
+                stop = "the shard never opened a target cursor";
+              }
+              break;
+            default: {
+              const handled = outcome === void 0 ? void 0 : handle2(outcome, target2);
+              if (handled) {
+                unknown = 0;
+                stop ?? (stop = handled.stop);
+              } else {
+                unknown++;
+                log(
+                  `${prefix}: unreadable outcome (${unknown}/${timings.maxUnknown}), check OUTCOME_TEXT`
+                );
+              }
             }
           }
         }
+        if (outcome !== "noCursor") {
+          noCursor = 0;
+        }
+        if (unknown >= timings.maxUnknown) {
+          stop = `${timings.maxUnknown} unreadable outcomes in a row`;
+          break;
+        }
+        if (tally >= reported2 + timings.logEvery) {
+          reported2 = tally;
+          log(`${prefix}: ${progress(tally)}, ${player.weight}/${player.weightMax}`);
+        }
+        endCycle(outcome ?? "unknown", cycle);
+        sleep(timings.stepDelay);
       }
-      if (outcome !== "noCursor") {
-        noCursor = 0;
-      }
-      if (unknown >= timings.maxUnknown) {
-        stop = `${timings.maxUnknown} unreadable outcomes in a row`;
-        break;
-      }
-      if (tally >= reported2 + timings.logEvery) {
-        reported2 = tally;
-        log(`${prefix}: ${progress(tally)}, ${player.weight}/${player.weightMax}`);
-      }
-      endCycle(outcome ?? "unknown", cycle);
-      sleep(timings.stepDelay);
+    } catch (error) {
+      stop ?? (stop = `threw - ${String(error)}`);
     }
-    const reason = stop ?? `hit the ${timings.maxCycles} cycle backstop`;
+    const reason = stop ?? `hit the ${timings.maxCycles} working cycle backstop`;
     finish?.(tally, reason);
     log(`${prefix}: stopping - ${reason}`);
     exit(`${prefix}: ${reason}`);
@@ -263,6 +279,8 @@
     const reported2 = /* @__PURE__ */ new Set();
     const at = options.terrain ?? ((x, y) => client.getTerrainList(x, y) ?? []);
     let skipped2 = 0;
+    let cooling = 0;
+    let banned = 0;
     const run = (radius = options.radius) => {
       const blocked = options.blocked();
       const time = now();
@@ -270,6 +288,8 @@
       let bestWalk = Infinity;
       let readyAt;
       skipped2 = 0;
+      cooling = 0;
+      banned = 0;
       for (let dx = -radius; dx <= radius; dx++) {
         for (let dy = -radius; dy <= radius; dy++) {
           for (const tile of at(player.x + dx, player.y + dy)) {
@@ -294,8 +314,13 @@
             const until = blocked.get(key);
             if (until !== void 0) {
               if (time < until) {
-                if (Number.isFinite(until) && (readyAt === void 0 || until < readyAt)) {
-                  readyAt = until;
+                if (Number.isFinite(until)) {
+                  cooling++;
+                  if (readyAt === void 0 || until < readyAt) {
+                    readyAt = until;
+                  }
+                } else {
+                  banned++;
                 }
                 continue;
               }
@@ -319,7 +344,10 @@
       }
       return { found: best, readyAt };
     };
-    return Object.assign(run, { skipped: () => skipped2 });
+    return Object.assign(run, {
+      skipped: () => skipped2,
+      holding: () => ({ cooling, banned, skipped: skipped2 })
+    });
   };
   var createApproach = (options) => {
     let walkingTo;
@@ -371,6 +399,7 @@
   var MAX_UNKNOWN = 5;
   var MAX_NO_CURSOR = 20;
   var NO_CURSOR_READ = 500;
+  var MAX_NO_TOOL = 10;
   var PACK_LIMIT = 120;
   var LOG_EVERY = 25;
   var SAVE_WAIT = 6e4;
@@ -1001,6 +1030,9 @@
       return best;
     };
     const stepZ = (x, y, fromZ) => {
+      if (options.passable && !options.passable(x, y)) {
+        return void 0;
+      }
       const z = floorAt(x, y);
       if (z === UNKNOWN) {
         return fromZ;
@@ -1044,7 +1076,7 @@
         for (let dy = -range2; dy <= range2; dy++) {
           const x = spot.x + dx;
           const y = spot.y + dy;
-          if (!inRange(x, y)) {
+          if (!inRange(x, y) || options.passable && !options.passable(x, y)) {
             continue;
           }
           const z = floorAt(x, y);
@@ -1502,8 +1534,8 @@
         log(`${options.label}: hit the ${options.maxPasses} pass backstop`);
         return false;
       },
-      retry: () => {
-        if (writtenOff.size === 0 || !progressed) {
+      retry: (force = false) => {
+        if (writtenOff.size === 0 || !progressed && !force) {
           return false;
         }
         progressed = false;
@@ -1757,6 +1789,51 @@
     };
   };
 
+  // src/lib/survey.ts
+  var describeArt = (art) => {
+    const kind = art.isLand ? "land" : `static '${art.name}'`;
+    const mark = art.matches ? "MATCHES" : "-";
+    return `${art.graphic} (0x${art.graphic.toString(16)}) ${kind}, flags 0x${art.flags.toString(16)} (${describeFlags(art.flags)}), ${art.tiles} tiles, ${mark}`;
+  };
+  var createSurvey = (options) => {
+    const surveyTerrain2 = (radius) => {
+      const seen = /* @__PURE__ */ new Map();
+      for (let dx = -radius; dx <= radius; dx++) {
+        for (let dy = -radius; dy <= radius; dy++) {
+          for (const tile of client.getTerrainList(player.x + dx, player.y + dy) ?? []) {
+            const key = `${tile.graphic}/${tile.isLand}`;
+            const already = seen.get(key);
+            if (already) {
+              already.tiles++;
+              continue;
+            }
+            seen.set(key, {
+              graphic: tile.graphic,
+              isLand: tile.isLand,
+              flags: tile.flags,
+              tiles: 1,
+              name: tile.isLand ? "" : client.getStatic(tile.graphic)?.name ?? "?",
+              matches: options.matches(tile.graphic, tile.isLand)
+            });
+          }
+        }
+      }
+      return [...seen.values()].sort((a, b) => b.tiles - a.tiles);
+    };
+    const reportTerrain2 = (radius, limit = Infinity) => {
+      const found = surveyTerrain2(radius);
+      log(`${options.label}: ${found.length} distinct arts within ${radius} tiles of ${player.x},${player.y}`);
+      for (const art of found.slice(0, limit)) {
+        log(`${options.label}: ${describeArt(art)}`);
+      }
+      if (found.length > limit) {
+        log(`${options.label}: ${found.length - limit} rarer arts not shown`);
+      }
+      return found;
+    };
+    return { surveyTerrain: surveyTerrain2, reportTerrain: reportTerrain2 };
+  };
+
   // src/lib/store.ts
   var scope = globalThis;
   var createStore = (options) => {
@@ -1779,8 +1856,8 @@
       // forget: a module-scope `const memory = load()` would give every importer a reference that
       // outlives it.
       read: () => held ?? (held = load()),
-      // Tests only. vi.resetModules() gives each test a fresh module registry but leaves globalThis
-      // alone, which is precisely what this store is designed to survive.
+      // vi.resetModules() gives each test a fresh module registry but leaves globalThis alone, which
+      // is precisely what this store is designed to survive.
       forget: () => {
         delete scope[options.key];
         held = void 0;
@@ -1909,46 +1986,10 @@
   };
 
   // src/mining/survey.ts
-  var surveyTerrain = (radius) => {
-    const seen = /* @__PURE__ */ new Map();
-    for (let dx = -radius; dx <= radius; dx++) {
-      for (let dy = -radius; dy <= radius; dy++) {
-        for (const tile of client.getTerrainList(player.x + dx, player.y + dy) ?? []) {
-          const key = `${tile.graphic}/${tile.isLand}`;
-          const already = seen.get(key);
-          if (already) {
-            already.tiles++;
-            continue;
-          }
-          seen.set(key, {
-            graphic: tile.graphic,
-            isLand: tile.isLand,
-            flags: tile.flags,
-            tiles: 1,
-            name: tile.isLand ? "" : client.getStatic(tile.graphic)?.name ?? "?",
-            matches: isOre(tile.graphic, tile.isLand)
-          });
-        }
-      }
-    }
-    return [...seen.values()].sort((a, b) => b.tiles - a.tiles);
-  };
-  var describeArt = (art) => {
-    const kind = art.isLand ? "land" : `static '${art.name}'`;
-    const mark = art.matches ? "MATCHES" : "-";
-    return `${art.graphic} (0x${art.graphic.toString(16)}) ${kind}, flags 0x${art.flags.toString(16)} (${describeFlags(art.flags)}), ${art.tiles} tiles, ${mark}`;
-  };
-  var reportTerrain = (radius, limit = Infinity) => {
-    const found = surveyTerrain(radius);
-    log(`survey: ${found.length} distinct arts within ${radius} tiles of ${player.x},${player.y}`);
-    for (const art of found.slice(0, limit)) {
-      log(`survey: ${describeArt(art)}`);
-    }
-    if (found.length > limit) {
-      log(`survey: ${found.length - limit} rarer arts not shown`);
-    }
-    return found;
-  };
+  var { surveyTerrain, reportTerrain } = /* @__PURE__ */ createSurvey({
+    label: "survey",
+    matches: isOre
+  });
 
   // src/lib/threat.ts
   var NOTORIETY = [
@@ -2248,6 +2289,7 @@
       maxUnknown: MAX_UNKNOWN,
       maxThrottled: MAX_THROTTLED,
       maxNoCursor: MAX_NO_CURSOR,
+      maxNoTool: MAX_NO_TOOL,
       logEvery: LOG_EVERY,
       throttleBackoff: THROTTLE_BACKOFF,
       throttleBackoffMax: THROTTLE_BACKOFF_MAX

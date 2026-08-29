@@ -51,8 +51,8 @@ export const createStore = <T extends object>(options: {
     // outlives it.
     read: () => (held ??= load()),
 
-    // Tests only. vi.resetModules() gives each test a fresh module registry but leaves globalThis
-    // alone, which is precisely what this store is designed to survive.
+    // vi.resetModules() gives each test a fresh module registry but leaves globalThis alone, which
+    // is precisely what this store is designed to survive.
     forget: () => {
       delete scope[options.key];
       held = undefined;

@@ -1,13 +1,15 @@
 import { collectIn, contentsOf, forgetUnreadable } from '../lib/containers.js';
 import { hex, isMobile } from '../lib/entity.js';
 import {
+  BLOCKED_DELAY,
   MOVE_DELAY,
   OPEN_DELAY,
   SETTLE_POLL,
   SETTLE_TIMEOUT,
   TAKE_GRAPHICS,
 } from './config.js';
-import { memory } from './memory.js';
+import { isBlocked } from './corpses.js';
+import { memory, now } from './memory.js';
 
 export interface Taken {
   stacks: number;
@@ -52,7 +54,10 @@ const settle = (serial: number, moved: Item[]): Taken => {
 export const pending = (corpses: Item[]): Item | undefined => {
   const { done, emptied } = memory();
 
-  return corpses.find((corpse) => done.has(corpse.serial) && !emptied.has(corpse.serial));
+  return corpses.find(
+    (corpse) =>
+      done.has(corpse.serial) && !emptied.has(corpse.serial) && !isBlocked(corpse.serial),
+  );
 };
 
 export const take = (corpse: Item, packSerial: number): Taken => {
@@ -93,6 +98,14 @@ export const take = (corpse: Item, packSerial: number): Taken => {
 
   if (took.stacks === stacks.length) {
     emptied.add(corpse.serial);
+  } else {
+    // Still pending, so without this the next cycle reopens the same corpse - which walked a run to
+    // the stall watchdog's stop a 'looting' cycle at a time
+    memory().blocked.set(corpse.serial, now() + BLOCKED_DELAY);
+    log(
+      `carve: ${hex(corpse.serial)} kept ${stacks.length - took.stacks} of them, ` +
+        `leaving it for ${BLOCKED_DELAY / 1000}s`,
+    );
   }
 
   return took;

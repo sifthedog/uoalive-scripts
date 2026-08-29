@@ -62,6 +62,10 @@ export const MAX_NO_CURSOR = 20;
 // immediately before the swing - so this is a short window for wording that lands a moment late.
 export const NO_CURSOR_READ = 500;
 
+// The tool search reads the pack, and packContents answers undefined for a read that threw. One of
+// those used to end the run outright, with the knife plainly in the pack.
+export const MAX_NO_TOOL = 10;
+
 export const MAX_STEPS = 20;
 
 // The container's item cap

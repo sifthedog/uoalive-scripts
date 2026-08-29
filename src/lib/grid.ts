@@ -55,6 +55,10 @@ export const createGrid = (options: {
   // typings carry no static height, so this is the whole of the approximation.
   height: number;
   headroom: number;
+
+  // Where the character may put its feet at all, over and above the terrain: lumberjacking passes
+  // its bounds box, so a route can never plan the step allowedStep would then refuse.
+  passable?: (x: number, y: number) => boolean;
 }): Grid => {
   // Land and statics do not change during a session, so a coordinate costs one getTerrainList for
   // the whole run - which is what makes a flood every cycle affordable next to the scan's own sweep
@@ -122,6 +126,10 @@ export const createGrid = (options: {
 
   // The z the character would arrive at, or undefined for a step it cannot take
   const stepZ = (x: number, y: number, fromZ: number): number | undefined => {
+    if (options.passable && !options.passable(x, y)) {
+      return undefined;
+    }
+
     const z = floorAt(x, y);
 
     if (z === UNKNOWN) {
@@ -191,7 +199,7 @@ export const createGrid = (options: {
         const x = spot.x + dx;
         const y = spot.y + dy;
 
-        if (!inRange(x, y)) {
+        if (!inRange(x, y) || (options.passable && !options.passable(x, y))) {
           continue;
         }
 

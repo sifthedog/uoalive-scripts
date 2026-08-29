@@ -9,8 +9,7 @@ const ANIMAL_PACK = 0x50000000;
 
 let world: FakeWorld;
 
-// haul.ts latches "already reported the animals" after the first search, and it reads the
-// unconvertible hues out of boards.ts, so both modules start clean each test.
+// haul.ts latches "already reported the animals" after the first search, so it is imported fresh
 const loadHaul = async (config: Record<string, unknown> = {}) => {
   vi.doMock('./config.js', async () => ({
     ...(await vi.importActual<object>('./config.js')),
@@ -231,11 +230,26 @@ describe('unload', () => {
     world.client.findObject.mockImplementation((serial: number) => beetle(serial));
   };
 
+  const overweight = () => {
+    world.player.weight = 390;
+    world.player.weightMax = 400;
+  };
+
   it('says so when there is no animal', async () => {
     const { unload } = await loadHaul();
 
     expect(unload()).toBe(false);
-    expect(world.log).toHaveBeenCalledWith(expect.stringContaining('no pack animal nearby'));
+    expect(said('no pack animal nearby')).toBe(true);
+  });
+
+  // An animal that takes nothing is full rather than missing, and only a missing one is worth
+  // giving up the search for
+  it('reports the animal even when it takes nothing', async () => {
+    oneAnimalNearby();
+    packAcceptsEverything([]);
+    const { unload } = await loadHaul();
+
+    expect(unload()).toBe(true);
   });
 
   it('moves boards onto the animal', async () => {
@@ -247,8 +261,6 @@ describe('unload', () => {
     expect(world.player.moveItem).toHaveBeenCalledWith(5, ANIMAL_PACK);
   });
 
-  // A log merely waiting its turn stays in the pack: it is worth more as boards, and the next
-  // haul retries it
   it('leaves a log that has not been given up on', async () => {
     oneAnimalNearby();
     packAcceptsEverything([item({ serial: 5, graphic: LOG, amount: 20, hue: 0 })]);
@@ -259,71 +271,41 @@ describe('unload', () => {
     expect(world.player.moveItem).not.toHaveBeenCalled();
   });
 
-  it('moves the logs of a hue the conversion gave up on', async () => {
+  // A log that leaves as a log never comes back as a board, and the verdict may only have been a
+  // throttle or a lost cursor - so it stays in the pack for the next haul's conversion instead
+  it('leaves the logs of a hue the conversion gave up on', async () => {
     oneAnimalNearby();
     packAcceptsEverything([item({ serial: 5, graphic: LOG, amount: 20, hue: 0x4a8 })]);
+    overweight();
     const { unload } = await loadHaul();
     const { unconvertible } = await import('./boards.js');
     unconvertible.add(0x4a8);
-
-    expect(unload()).toBe(true);
-    expect(world.player.moveItem).toHaveBeenCalledWith(5, ANIMAL_PACK);
-  });
-
-  // The verdict may have been reached during a throttle or against a cursor the conversion lost, and
-  // once these leave as logs they never come back as boards
-  it('reconsiders a given-up-on hue before shipping it', async () => {
-    oneAnimalNearby();
-    packAcceptsEverything([item({ serial: 5, graphic: LOG, amount: 20, hue: 0x4a8 })]);
-    const { unload } = await loadHaul();
-    const { unconvertible } = await import('./boards.js');
-    unconvertible.add(0x4a8);
-
-    unload();
-
-    expect(world.log).toHaveBeenCalledWith(expect.stringContaining('another go'));
-  });
-
-  // A makeBoards cut short by a save or the pass backstop writes nothing off, so retryUnconvertible
-  // declines - and gating the conversion on it shipped every log raw without ever trying
-  it('still converts when there is no verdict to reconsider', async () => {
-    oneAnimalNearby();
-    packAcceptsEverything([item({ serial: 5, graphic: LOG, amount: 20, hue: 0 })]);
-    world.player.weight = 390;
-    world.player.weightMax = 400;
-    const { unload } = await loadHaul();
-
-    unload();
-
-    expect(world.player.useItemInHand).toHaveBeenCalled();
-  });
-
-  // A frozen shard converts nothing, so the verdict is worthless and the logs keep
-  it('keeps the logs rather than shipping them raw during a save', async () => {
-    oneAnimalNearby();
-    packAcceptsEverything([item({ serial: 5, graphic: LOG, amount: 20, hue: 0 })]);
-    world.player.weight = 390;
-    world.player.weightMax = 400;
-    world.journal.containsText.mockReturnValue(true);
-    const { unload } = await loadHaul();
 
     unload();
 
     expect(world.player.moveItem).not.toHaveBeenCalled();
-    expect(world.log).toHaveBeenCalledWith(expect.stringContaining('keeping the logs'));
   });
 
-  // Ending the run overweight would be worse than carrying logs across
-  it('moves the leftover logs anyway when still overweight afterwards', async () => {
+  // Otherwise a pack that stops shedding weight says nothing about why
+  it('says the logs are staying when it is still overweight', async () => {
     oneAnimalNearby();
     packAcceptsEverything([item({ serial: 5, graphic: LOG, amount: 20, hue: 0 })]);
-    world.player.weight = 390;
-    world.player.weightMax = 400;
+    overweight();
     const { unload } = await loadHaul();
 
-    expect(unload()).toBe(true);
-    expect(world.player.moveItem).toHaveBeenCalledWith(5, ANIMAL_PACK);
-    expect(world.log).toHaveBeenCalledWith(expect.stringContaining('would not convert in time'));
+    unload();
+
+    expect(said('20 logs would not convert, keeping them in the pack')).toBe(true);
+  });
+
+  it('says nothing about the logs while there is still room to carry them', async () => {
+    oneAnimalNearby();
+    packAcceptsEverything([item({ serial: 5, graphic: LOG, amount: 20, hue: 0 })]);
+    const { unload } = await loadHaul();
+
+    unload();
+
+    expect(said('keeping them in the pack')).toBe(false);
   });
 
   // A giant beetle is rideable, so the double-click would mount you instead of opening the pack
@@ -347,7 +329,7 @@ describe('unload', () => {
     unload();
 
     expect(world.player.use).toHaveBeenCalledWith(1);
-    expect(world.log).toHaveBeenCalledWith(expect.stringContaining('no reachable backpack'));
+    expect(said('no reachable backpack')).toBe(true);
   });
 
   // An animal that stops accepting is full rather than broken, so what is left goes to the next
@@ -383,6 +365,6 @@ describe('unload', () => {
 
     expect(unload()).toBe(true);
     expect(world.player.moveItem).toHaveBeenCalledWith(6, ANIMAL_PACK + 1);
-    expect(world.log).toHaveBeenCalledWith(expect.stringContaining('trying the next'));
+    expect(said('trying the next')).toBe(true);
   });
 });

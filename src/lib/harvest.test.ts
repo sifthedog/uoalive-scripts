@@ -16,6 +16,7 @@ const TIMINGS: HarvestTimings = {
   maxUnknown: 5,
   maxThrottled: 4,
   maxNoCursor: 6,
+  maxNoTool: 3,
   logEvery: 25,
   throttleBackoff: 1,
   throttleBackoffMax: 1,
@@ -85,13 +86,56 @@ describe('runHarvest', () => {
     run({ harvest });
 
     expect(harvest).toHaveBeenCalledTimes(TIMINGS.maxCycles);
-    expect(ending()).toContain(`hit the ${TIMINGS.maxCycles} cycle backstop`);
+    expect(ending()).toContain(`hit the ${TIMINGS.maxCycles} working cycle backstop`);
   });
 
   it('names the tool it could not equip', () => {
     run({ equipTool: () => false });
 
     expect(ending()).toContain('no pickaxe');
+  });
+
+  // The tool search reads the pack, and packContents answers undefined for a read that threw
+  it('looks for the tool again before giving up on it', () => {
+    const equipTool = vi.fn(() => false);
+
+    run({ equipTool });
+
+    expect(equipTool).toHaveBeenCalledTimes(TIMINGS.maxNoTool);
+  });
+
+  it('carries on when the tool turns up again inside the budget', () => {
+    const found = swings(...Array(TIMINGS.maxNoTool - 1).fill(''), 'here');
+    const harvest = vi.fn(() => 'dug');
+
+    run({ equipTool: () => found() === 'here', harvest });
+
+    expect(harvest).toHaveBeenCalled();
+    expect(ending()).not.toContain('no pickaxe');
+  });
+
+  // A watcher polling an empty field used to spend the whole backstop standing still
+  it('does not spend the backstop on cycles that only waited', () => {
+    const harvest = vi.fn(() => 'dug');
+    let waits = 0;
+
+    run({
+      approach: () => (waits++ < TIMINGS.maxCycles * 3 ? { waited: true } : { target: 'tile' }),
+      harvest,
+    });
+
+    expect(harvest).toHaveBeenCalledTimes(TIMINGS.maxCycles);
+  });
+
+  it('says why it stopped when a client call throws', () => {
+    run({
+      harvest: () => {
+        throw new Error('Unexpected end of JSON input');
+      },
+    });
+
+    expect(ending()).toContain('threw - Error: Unexpected end of JSON input');
+    expect(said('test: stopping - threw')).toBe(true);
   });
 
   it('stops on the guards before it swings', () => {
@@ -338,13 +382,33 @@ describe('runHarvest', () => {
       expect(stall.ended).toEqual(['walking', 'walking']);
     });
 
-    // Waiting for a resource to come back is the script working, not stuck, which is the one path
-    // that must not walk the run toward its stall stop
-    it('leaves the watchdog alone while it waits for a respawn', () => {
-      run({ approach: () => ({ waited: true }), timings: { ...TIMINGS, maxCycles: 3 } });
+    // Waiting for a resource to come back is the script working, not stuck, so it walks the run
+    // neither toward its stall stop nor toward its backstop - only a guard ends a waiting run
+    it('leaves the watchdog and the backstop alone while it waits for a respawn', () => {
+      let waits = 0;
+
+      run({
+        approach: () => ({ waited: true }),
+        stopReason: () => (waits++ > TIMINGS.maxCycles * 3 ? 'you are dead' : undefined),
+        timings: { ...TIMINGS, maxCycles: 3 },
+      });
 
       expect(stall.ended).toEqual([]);
-      expect(ending()).toContain('cycle backstop');
+      expect(ending()).toContain('you are dead');
+    });
+
+    // Frozen rather than cleared without this, so a run that idled at 299 cycles without a swing
+    // stopped on 'no progress in 300' the moment it came back to a forest that had regrown
+    it('clears the watchdog count as it waits', () => {
+      let waits = 0;
+
+      run({
+        approach: () => ({ waited: true }),
+        stopReason: () => (waits++ > 2 ? 'you are dead' : undefined),
+        timings: { ...TIMINGS, maxCycles: 3 },
+      });
+
+      expect(stall.progress).toBe(3);
     });
 
     it('ends the run when there is nothing left to approach', () => {

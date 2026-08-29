@@ -2,7 +2,7 @@ import { collectIn, packContents, type ItemPredicate } from '../lib/containers.j
 import { approach, distanceTo, hex, isMobile, nameOf } from '../lib/entity.js';
 import { pickMany } from '../lib/pick.js';
 import { overweight } from '../lib/weight.js';
-import { isBoard, makeBoards, retryUnconvertible, unconvertible } from './boards.js';
+import { isBoard } from './boards.js';
 import { isLog } from './chop.js';
 import {
   HAUL_BUFFER,
@@ -17,13 +17,6 @@ import {
 } from './config.js';
 import { isSaving } from './save.js';
 import { stepToward } from './walk.js';
-
-// Boards, plus the logs of a wood this run has given up on converting. A log that is merely
-// waiting its turn stays in the pack: it is worth more as boards, and the next haul retries it.
-const isCargo = (item: Item): boolean => isBoard(item) || (isLog(item) && unconvertible.has(item.hue ?? 0));
-
-const writtenOffLogs = (): Item[] =>
-  collectIn(packContents(), (item) => isLog(item) && unconvertible.has(item.hue ?? 0));
 
 let reported = false;
 
@@ -194,50 +187,27 @@ const unloadTo = (animals: Mobile[], matches: ItemPredicate): boolean => {
   return moved;
 };
 
+// Answers whether an animal was found, not whether anything moved: one that is merely full is worth
+// walking to again next cycle, and only a missing animal is worth giving up the search for.
 export const unload = (): boolean => {
   const animals = findPackAnimals();
 
   if (animals.length === 0) {
     log('haul: no pack animal nearby');
+
     return false;
   }
 
-  // isCargo is about to ship these as logs, and three silent passes is a thin basis for it: a
-  // throttled run of attempts and an axe that broke mid-conversion look exactly like a wood that
-  // cannot be worked. Returns false once there is nothing left to reconsider, so this cannot loop.
-  if (writtenOffLogs().length > 0 && retryUnconvertible()) {
-    makeBoards();
+  unloadTo(animals, isBoard);
+
+  // A log that leaves as a log never comes back as a board, so what would not convert waits for the
+  // next haul to try it again. Asked once every animal has had its turn at the boards.
+  const logs = overweight(HAUL_BUFFER) ? collectIn(packContents(), isLog) : [];
+
+  if (logs.length > 0) {
+    const total = logs.reduce((sum, item) => sum + (item.amount ?? 1), 0);
+    log(`haul: ${total} logs would not convert, keeping them in the pack`);
   }
 
-  const moved = unloadTo(animals, isCargo);
-
-  // Only asked once every animal has had a turn at the boards - a full first animal is no evidence
-  // the conversion fell behind.
-  if (overweight(HAUL_BUFFER)) {
-    const logs = collectIn(packContents(), isLog);
-
-    if (logs.length > 0) {
-      // Both, rather than the retry gating the conversion: a makeBoards cut short by a save or the
-      // pass backstop writes nothing off, so the retry declines - and skipping the conversion with
-      // it shipped every log raw under a line saying they would not convert in time.
-      retryUnconvertible();
-      makeBoards();
-
-      if (collectIn(packContents(), isLog).length === 0) {
-        return unloadTo(animals, isCargo) || moved;
-      }
-
-      // A frozen shard converts nothing, and a log that leaves as a log never comes back as a board
-      if (isSaving()) {
-        log('haul: the world is saving, keeping the logs for the next haul');
-        return moved;
-      }
-
-      const total = logs.reduce((sum, item) => sum + (item.amount ?? 1), 0);
-      log(`haul: ${total} logs would not convert in time, moving them as logs`);
-      return unloadTo(animals, isLog) || moved;
-    }
-  }
-
-  return moved;
+  return true;
 };

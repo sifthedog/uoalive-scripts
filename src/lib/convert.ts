@@ -6,7 +6,7 @@ import { countsByGraphic, diffCounts, type Change, type Counts } from './pack.js
 // that same diff names the output's art whatever this shard numbers it.
 
 export interface Converter {
-  // Hues this run has given up on. Lumberjacking's haul reads it to decide which logs travel as logs.
+  // Hues given up on, which is what keeps `nextStack`'s candidates shrinking and the pass count down
   writtenOff: Set<number>;
 
   // Returns whether the pack is clear of everything convertible. False means it stopped early - a
@@ -14,10 +14,10 @@ export interface Converter {
   run: () => boolean;
 
   // Written off is not the same as impossible: a target that stepped out of range, a run of throttled
-  // attempts and a stack that was briefly too small all look alike. When the alternative is ending the
-  // run overweight, this clears the verdicts for one more go. False once there is nothing left to
-  // reconsider, and once a retry has already been spent without anything converting since.
-  retry: () => boolean;
+  // attempts and a stack that was briefly too small all look alike. Declines once a retry has been
+  // spent with nothing converting since, which is what stops a caller that hauls the leftovers from
+  // looping - `force` is for a caller that never ships the input raw and so must always reconsider.
+  retry: (force?: boolean) => boolean;
 }
 
 export const createConverter = (options: {
@@ -218,8 +218,8 @@ export const createConverter = (options: {
       return false;
     },
 
-    retry: () => {
-      if (writtenOff.size === 0 || !progressed) {
+    retry: (force = false) => {
+      if (writtenOff.size === 0 || (!progressed && !force)) {
         return false;
       }
       progressed = false;

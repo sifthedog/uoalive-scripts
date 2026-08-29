@@ -16,7 +16,7 @@ const OPTIONS = {
   headroom: 2,
 };
 
-const grid = (overrides: Partial<typeof OPTIONS> = {}) =>
+const grid = (overrides: Partial<Parameters<typeof createGrid>[0]> = {}) =>
   createGrid({ ...OPTIONS, ...overrides });
 
 // The character stands at the map's origin, so a picture reads as what is around them
@@ -202,6 +202,33 @@ describe('routes', () => {
     world.client.getTerrainList = terrainMap(AT, ['.....']);
 
     expect(grid().routeTo({ x: 2, y: 0 }, 2)).toBeUndefined();
+  });
+});
+
+describe('the box a run is confined to', () => {
+  const OPEN = rows('.........');
+
+  // Lumberjacking passes its bounds box here: a route planned through ground outside it would be
+  // refused a step at a time by allowedStep and the tree written off as unreachable
+  const west = (x: number) => x <= 2;
+
+  it('refuses a goal there is no legal spot beside', () => {
+    world.client.getTerrainList = terrainMap(BOX, OPEN);
+
+    expect(grid({ passable: west }).stepsTo({ x: 4, y: 0 }, 0)).toBeUndefined();
+    expect(grid({ passable: west }).routeTo({ x: 4, y: 0 }, 0)).toBeUndefined();
+  });
+
+  it('will not plan the way round through ground outside it', () => {
+    world.client.getTerrainList = terrainMap(BOX, [...rows('.....#...').slice(0, 8), '.........']);
+
+    expect(grid({ radius: 4, passable: (_x, y) => y <= 3 }).stepsTo({ x: 3, y: 0 }, 0)).toBeUndefined();
+  });
+
+  it('is absent for a run that roams', () => {
+    world.client.getTerrainList = terrainMap(BOX, OPEN);
+
+    expect(grid().stepsTo({ x: 4, y: 0 }, 0)).toBe(4);
   });
 });
 

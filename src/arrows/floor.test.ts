@@ -1,10 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type FakeWorld, installGlobals, item } from '../test-support/uo.js';
-import { AMMO_GRAPHICS, GRAB_RANGE } from './config.js';
-import { describeFloor, inReach, nearest, onFloor } from './floor.js';
+import { AMMO_GRAPHICS, BLOCKED_DELAY, GRAB_RANGE } from './config.js';
+import { describeFloor, inReach, isBlocked, nearest, onFloor, prune, setAside } from './floor.js';
+import { forget, memory } from './memory.js';
 
 const [ARROW, BOLT] = AMMO_GRAPHICS;
+
+const START = 1_700_000_000_000;
 
 let world: FakeWorld;
 
@@ -12,7 +15,14 @@ let world: FakeWorld;
 const answering = (byGraphic: Record<number, Item[]>) =>
   vi.fn((graphic: number) => byGraphic[graphic] ?? []);
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(START);
+  forget();
   world = installGlobals();
 });
 
@@ -96,6 +106,36 @@ describe('inReach', () => {
 
   it('drops what is a tile past it', () => {
     expect(inReach([at(100, 100 + GRAB_RANGE + 1)], GRAB_RANGE)).toEqual([]);
+  });
+
+  it('drops what a sweep already found the server would not move', () => {
+    const stack = at(100, 100);
+
+    setAside([stack]);
+
+    expect(inReach([stack], GRAB_RANGE)).toEqual([]);
+  });
+});
+
+describe('setAside', () => {
+  const stack = () => item({ serial: 1, graphic: ARROW, x: 100, y: 100 });
+
+  it('lets a stack back in once its delay is up', () => {
+    setAside([stack()]);
+    expect(isBlocked(1)).toBe(true);
+
+    vi.setSystemTime(START + BLOCKED_DELAY);
+
+    expect(isBlocked(1)).toBe(false);
+  });
+
+  it('forgets a stack the client can no longer resolve', () => {
+    setAside([stack()]);
+    world.client.findObject = vi.fn(() => undefined);
+
+    prune();
+
+    expect(memory().blocked.size).toBe(0);
   });
 });
 

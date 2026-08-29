@@ -7,18 +7,18 @@
   });
 
   // src/lib/cast.ts
-  var buffUp = (stage) => stage.buff !== void 0 && player.hasBuffDebuff(stage.buff);
-  var issue = (stage) => {
-    if (stage.target === "self") {
-      player.castTo(stage.spell, player);
+  var buffUp = (cast) => cast.buff !== void 0 && player.hasBuffDebuff(cast.buff);
+  var issue = (cast) => {
+    if (cast.target === "self") {
+      player.castTo(cast.spell, player);
       return;
     }
-    player.cast(stage.spell);
+    player.cast(cast.spell);
   };
   var createCaster = ({ outcomeText, timeoutMs, skipWhenBuffed }) => {
     const { all, outcomeFor } = outcomeVocabulary(outcomeText);
-    const silentOutcome = (stage, upBefore, manaBefore) => {
-      if (!upBefore && buffUp(stage)) {
+    const silentOutcome = (cast, upBefore, manaBefore) => {
+      if (!upBefore && buffUp(cast)) {
         return "cast";
       }
       if (player.mana < manaBefore) {
@@ -31,20 +31,20 @@
       outcomeFor,
       // outcomeFor cannot actually miss - waitForTextAny hands back one of the strings it was given -
       // but the caller's switch has a default for it, so the maybe is kept rather than asserted away.
-      castOnce: (stage) => {
-        const upBefore = buffUp(stage);
+      castOnce: (cast) => {
+        const upBefore = buffUp(cast);
         if (skipWhenBuffed && upBefore) {
           return "alreadyUp";
         }
         const manaBefore = player.mana;
         target.cancel();
         journal.clear();
-        issue(stage);
-        const matched = journal.waitForTextAny(all, void 0, stage.castTimeout ?? timeoutMs);
+        issue(cast);
+        const matched = journal.waitForTextAny(all, void 0, cast.castTimeout ?? timeoutMs);
         if (matched) {
           return outcomeFor(matched);
         }
-        return silentOutcome(stage, upBefore, manaBefore);
+        return silentOutcome(cast, upBefore, manaBefore);
       }
     };
   };

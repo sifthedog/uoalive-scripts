@@ -79,129 +79,145 @@
     let reported2 = 0;
     let throttled = 0;
     let noCursor = 0;
+    let noTool = 0;
+    let idled = 0;
     const endCycle = (phase, cycle) => {
       stall.endCycle(phase, cycle, tally);
       stop ?? (stop = stall.reason());
     };
-    for (let cycle = 0; cycle < timings.maxCycles && !stop; cycle++) {
-      stop = stopReason2();
-      if (stop) {
-        break;
-      }
-      if (isSaving2()) {
-        waitOutSave2();
-        unknown = 0;
-        throttled = 0;
-        stall.progressed();
-        endCycle("saving", cycle);
-        continue;
-      }
-      watch?.();
-      stop = ready?.();
-      if (stop) {
-        break;
-      }
-      if (!equipTool()) {
-        stop = `no ${toolName}`;
-        break;
-      }
-      const relieved = relieve?.();
-      if (relieved) {
-        if ("stop" in relieved) {
-          stop = relieved.stop;
+    try {
+      for (let cycle = 0; cycle - idled < timings.maxCycles && !stop; cycle++) {
+        stop = stopReason2();
+        if (stop) {
           break;
         }
-        endCycle(relieved.phase, cycle);
-        sleep(timings.stepDelay);
-        continue;
-      }
-      let target2;
-      if (approach2) {
-        const found = approach2();
-        if ("stop" in found) {
-          stop = found.stop;
+        if (isSaving2()) {
+          waitOutSave2();
+          unknown = 0;
+          throttled = 0;
+          stall.progressed();
+          endCycle("saving", cycle);
+          continue;
+        }
+        watch?.();
+        stop = ready?.();
+        if (stop) {
           break;
         }
-        if ("waited" in found) {
-          continue;
-        }
-        if ("walked" in found) {
-          endCycle("walking", cycle);
-          continue;
-        }
-        target2 = found.target;
-      }
-      const outcome = harvest(target2);
-      if (outcome === landed) {
-        tally++;
-        unknown = 0;
-        throttled = 0;
-        stall.progressed();
-        onLanded?.();
-      } else {
-        switch (outcome) {
-          case "wornOut":
-            log(`${prefix}: ${toolName} worn out, swapping`);
-            unknown = 0;
+        if (!equipTool()) {
+          noTool++;
+          if (noTool >= timings.maxNoTool) {
+            stop = `no ${toolName}`;
             break;
-          // The counters are reset rather than left alone, because whatever they had accumulated was
-          // measured against a server that was not answering. The stall watchdog goes with them: a
-          // shard that saves often would otherwise walk a run to its stop a save at a time.
-          case "saving":
-            waitOutSave2();
-            unknown = 0;
-            throttled = 0;
+          }
+          log(`${prefix}: no ${toolName} (${noTool}/${timings.maxNoTool}), looking again`);
+          endCycle("no tool", cycle);
+          sleep(backoffFor(noTool, timings.throttleBackoff, timings.throttleBackoffMax));
+          continue;
+        }
+        noTool = 0;
+        const relieved = relieve?.();
+        if (relieved) {
+          if ("stop" in relieved) {
+            stop = relieved.stop;
+            break;
+          }
+          endCycle(relieved.phase, cycle);
+          sleep(timings.stepDelay);
+          continue;
+        }
+        let target2;
+        if (approach2) {
+          const found = approach2();
+          if ("stop" in found) {
+            stop = found.stop;
+            break;
+          }
+          if ("waited" in found) {
+            idled++;
             stall.progressed();
-            break;
-          case "throttled":
-            throttled++;
-            unknown = 0;
-            log(`${prefix}: shard says wait (${throttled}/${timings.maxThrottled}), backing off`);
-            sleep(backoffFor(throttled, timings.throttleBackoff, timings.throttleBackoffMax));
-            if (throttled >= timings.maxThrottled) {
-              stop = "the shard kept refusing the swing";
-            }
-            break;
-          // With a tool demonstrably in hand this is the shard declining to start the swing, which on
-          // a live run was a third of them. The swing has already looked for a reason, so this is a
-          // refusal with nothing said about it - backed off like one, on a budget of its own.
-          case "noCursor":
-            noCursor++;
-            log(`${prefix}: no target cursor (${noCursor}/${timings.maxNoCursor}), backing off`);
-            sleep(backoffFor(noCursor, timings.throttleBackoff, timings.throttleBackoffMax));
-            if (noCursor >= timings.maxNoCursor) {
-              stop = "the shard never opened a target cursor";
-            }
-            break;
-          default: {
-            const handled = outcome === void 0 ? void 0 : handle2(outcome, target2);
-            if (handled) {
+            continue;
+          }
+          if ("walked" in found) {
+            endCycle("walking", cycle);
+            continue;
+          }
+          target2 = found.target;
+        }
+        const outcome = harvest(target2);
+        if (outcome === landed) {
+          tally++;
+          unknown = 0;
+          throttled = 0;
+          stall.progressed();
+          onLanded?.();
+        } else {
+          switch (outcome) {
+            case "wornOut":
+              log(`${prefix}: ${toolName} worn out, swapping`);
               unknown = 0;
-              stop ?? (stop = handled.stop);
-            } else {
-              unknown++;
-              log(
-                `${prefix}: unreadable outcome (${unknown}/${timings.maxUnknown}), check OUTCOME_TEXT`
-              );
+              break;
+            // The counters are reset rather than left alone, because whatever they had accumulated was
+            // measured against a server that was not answering. The stall watchdog goes with them: a
+            // shard that saves often would otherwise walk a run to its stop a save at a time.
+            case "saving":
+              waitOutSave2();
+              unknown = 0;
+              throttled = 0;
+              stall.progressed();
+              break;
+            case "throttled":
+              throttled++;
+              unknown = 0;
+              log(`${prefix}: shard says wait (${throttled}/${timings.maxThrottled}), backing off`);
+              sleep(backoffFor(throttled, timings.throttleBackoff, timings.throttleBackoffMax));
+              if (throttled >= timings.maxThrottled) {
+                stop = "the shard kept refusing the swing";
+              }
+              break;
+            // With a tool demonstrably in hand this is the shard declining to start the swing, which on
+            // a live run was a third of them. The swing has already looked for a reason, so this is a
+            // refusal with nothing said about it - backed off like one, on a budget of its own.
+            case "noCursor":
+              noCursor++;
+              log(`${prefix}: no target cursor (${noCursor}/${timings.maxNoCursor}), backing off`);
+              sleep(backoffFor(noCursor, timings.throttleBackoff, timings.throttleBackoffMax));
+              if (noCursor >= timings.maxNoCursor) {
+                stop = "the shard never opened a target cursor";
+              }
+              break;
+            default: {
+              const handled = outcome === void 0 ? void 0 : handle2(outcome, target2);
+              if (handled) {
+                unknown = 0;
+                stop ?? (stop = handled.stop);
+              } else {
+                unknown++;
+                log(
+                  `${prefix}: unreadable outcome (${unknown}/${timings.maxUnknown}), check OUTCOME_TEXT`
+                );
+              }
             }
           }
         }
+        if (outcome !== "noCursor") {
+          noCursor = 0;
+        }
+        if (unknown >= timings.maxUnknown) {
+          stop = `${timings.maxUnknown} unreadable outcomes in a row`;
+          break;
+        }
+        if (tally >= reported2 + timings.logEvery) {
+          reported2 = tally;
+          log(`${prefix}: ${progress(tally)}, ${player.weight}/${player.weightMax}`);
+        }
+        endCycle(outcome ?? "unknown", cycle);
+        sleep(timings.stepDelay);
       }
-      if (outcome !== "noCursor") {
-        noCursor = 0;
-      }
-      if (unknown >= timings.maxUnknown) {
-        stop = `${timings.maxUnknown} unreadable outcomes in a row`;
-        break;
-      }
-      if (tally >= reported2 + timings.logEvery) {
-        reported2 = tally;
-        log(`${prefix}: ${progress(tally)}, ${player.weight}/${player.weightMax}`);
-      }
-      endCycle(outcome ?? "unknown", cycle);
-      sleep(timings.stepDelay);
+    } catch (error) {
+      stop ?? (stop = `threw - ${String(error)}`);
     }
-    const reason = stop ?? `hit the ${timings.maxCycles} cycle backstop`;
+    const reason = stop ?? `hit the ${timings.maxCycles} working cycle backstop`;
     finish?.(tally, reason);
     log(`${prefix}: stopping - ${reason}`);
     exit(`${prefix}: ${reason}`);
@@ -263,6 +279,8 @@
     const reported2 = /* @__PURE__ */ new Set();
     const at = options.terrain ?? ((x, y) => client.getTerrainList(x, y) ?? []);
     let skipped = 0;
+    let cooling = 0;
+    let banned = 0;
     const run = (radius = options.radius) => {
       const blocked = options.blocked();
       const time = now();
@@ -270,6 +288,8 @@
       let bestWalk = Infinity;
       let readyAt;
       skipped = 0;
+      cooling = 0;
+      banned = 0;
       for (let dx = -radius; dx <= radius; dx++) {
         for (let dy = -radius; dy <= radius; dy++) {
           for (const tile of at(player.x + dx, player.y + dy)) {
@@ -294,8 +314,13 @@
             const until = blocked.get(key);
             if (until !== void 0) {
               if (time < until) {
-                if (Number.isFinite(until) && (readyAt === void 0 || until < readyAt)) {
-                  readyAt = until;
+                if (Number.isFinite(until)) {
+                  cooling++;
+                  if (readyAt === void 0 || until < readyAt) {
+                    readyAt = until;
+                  }
+                } else {
+                  banned++;
                 }
                 continue;
               }
@@ -319,7 +344,10 @@
       }
       return { found: best, readyAt };
     };
-    return Object.assign(run, { skipped: () => skipped });
+    return Object.assign(run, {
+      skipped: () => skipped,
+      holding: () => ({ cooling, banned, skipped })
+    });
   };
   var createApproach = (options) => {
     let walkingTo;
@@ -578,6 +606,7 @@
   var MAX_UNKNOWN = 5;
   var MAX_NO_CURSOR = 20;
   var NO_CURSOR_READ = 500;
+  var MAX_NO_TOOL = 10;
   var MAX_STEPS = 20;
   var PACK_LIMIT = 120;
   var LOG_EVERY = 25;
@@ -620,7 +649,17 @@
   var TREE_GRAPHICS = /* @__PURE__ */ new Set();
   var NOT_TREE_GRAPHICS = /* @__PURE__ */ new Set();
   var BOUNDS = { minX: 2400, maxX: 2580, minY: 400, maxY: 600 };
+  var RESET_MEMORY = false;
   var CHOP_RANGE = 2;
+  var ROAM_RADIUS = 24;
+  var ROUTE_RADIUS = ROAM_RADIUS + 4;
+  var MAX_ROUTE_NODES = 4e3;
+  var MAX_TREE_STEPS = 40;
+  var MAX_ROUTE_CELLS = 4e4;
+  var MAX_CLIMB = 2;
+  var PLAYER_HEIGHT = 16;
+  var STEP_HEADROOM = 2;
+  var SURVEY_ARTS = 15;
   var LOG_GRAPHICS = /* @__PURE__ */ new Set([7133, 7136, 7134, 7135]);
   var BOARD_GRAPHICS = /* @__PURE__ */ new Set([7127, 7129, 7130, 7131]);
   var REGROW_DELAY = 25 * 60 * 1e3;
@@ -819,8 +858,8 @@
         log(`${options.label}: hit the ${options.maxPasses} pass backstop`);
         return false;
       },
-      retry: () => {
-        if (writtenOff.size === 0 || !progressed) {
+      retry: (force = false) => {
+        if (writtenOff.size === 0 || !progressed && !force) {
           return false;
         }
         progressed = false;
@@ -1045,8 +1084,264 @@
     learned: "board graphic"
   });
   var unconvertible = converter.writtenOff;
-  var makeBoards = converter.run;
-  var retryUnconvertible = converter.retry;
+  var makeBoards = () => {
+    converter.retry(true);
+    return converter.run();
+  };
+
+  // src/lib/flags.ts
+  var WALL = 16;
+  var IMPASSABLE = 64;
+  var WET = 128;
+  var SURFACE = 512;
+  var BRIDGE = 1024;
+  var describeFlags = (flags) => {
+    const named = [
+      [IMPASSABLE, "impassable"],
+      [WET, "wet"],
+      [SURFACE, "surface"],
+      [BRIDGE, "bridge"],
+      [WALL, "wall"]
+    ];
+    const set = named.filter(([bit]) => (flags & bit) !== 0).map(([, name]) => name);
+    return set.length > 0 ? set.join(" ") : "-";
+  };
+
+  // src/lib/grid.ts
+  var STEPS = [
+    [0, -1],
+    [1, -1],
+    [1, 0],
+    [1, 1],
+    [0, 1],
+    [-1, 1],
+    [-1, 0],
+    [-1, -1]
+  ];
+  var UNKNOWN = null;
+  var createGrid = (options) => {
+    const cells = /* @__PURE__ */ new Map();
+    let unknowns = 0;
+    let open = false;
+    let saidOpen = false;
+    const terrainAt = (x, y) => client.getTerrainList(x, y) ?? [];
+    const standable = (entry) => (entry.flags & (IMPASSABLE | WET)) === 0 && (entry.isLand || (entry.flags & (SURFACE | BRIDGE)) !== 0);
+    const floorAt = (x, y) => {
+      const key = `${x},${y}`;
+      if (cells.has(key)) {
+        return cells.get(key);
+      }
+      const entries = terrainAt(x, y);
+      if (entries.length === 0) {
+        unknowns++;
+        return UNKNOWN;
+      }
+      let best;
+      for (const entry of entries) {
+        if (!standable(entry) || best !== void 0 && entry.z <= best) {
+          continue;
+        }
+        const buried = entries.some(
+          (other) => other !== entry && (other.flags & IMPASSABLE) !== 0 && other.z > entry.z - options.headroom && other.z < entry.z + options.height
+        );
+        if (!buried) {
+          best = entry.z;
+        }
+      }
+      if (cells.size >= options.maxCells) {
+        cells.clear();
+      }
+      cells.set(key, best);
+      return best;
+    };
+    const stepZ = (x, y, fromZ) => {
+      if (options.passable && !options.passable(x, y)) {
+        return void 0;
+      }
+      const z = floorAt(x, y);
+      if (z === UNKNOWN) {
+        return fromZ;
+      }
+      return z !== void 0 && Math.abs(z - fromZ) <= options.climb ? z : void 0;
+    };
+    const cornerOpen = (x, y, z, dx, dy) => dx === 0 || dy === 0 || stepZ(x + dx, y, z) !== void 0 && stepZ(x, y + dy, z) !== void 0;
+    const inRange = (x, y) => Math.abs(x - player.x) <= options.radius && Math.abs(y - player.y) <= options.radius;
+    const flood = (seeds) => {
+      const cost = /* @__PURE__ */ new Map();
+      const queue = [...seeds];
+      for (const seed of seeds) {
+        cost.set(`${seed.x},${seed.y}`, 0);
+      }
+      for (let head = 0; head < queue.length && cost.size < options.maxNodes; head++) {
+        const from2 = queue[head];
+        const steps = cost.get(`${from2.x},${from2.y}`);
+        if (steps >= options.maxSteps) {
+          continue;
+        }
+        for (const [dx, dy] of STEPS) {
+          const x = from2.x + dx;
+          const y = from2.y + dy;
+          const key = `${x},${y}`;
+          if (!inRange(x, y) || cost.has(key)) {
+            continue;
+          }
+          const z = stepZ(x, y, from2.z);
+          if (z === void 0 || !cornerOpen(from2.x, from2.y, from2.z, dx, dy)) {
+            continue;
+          }
+          cost.set(key, steps + 1);
+          queue.push({ x, y, z });
+        }
+      }
+      return cost;
+    };
+    const spotsAround = (spot, range) => {
+      const found = [];
+      for (let dx = -range; dx <= range; dx++) {
+        for (let dy = -range; dy <= range; dy++) {
+          const x = spot.x + dx;
+          const y = spot.y + dy;
+          if (!inRange(x, y) || options.passable && !options.passable(x, y)) {
+            continue;
+          }
+          const z = floorAt(x, y);
+          if (z !== void 0) {
+            found.push({ x, y, z: z === UNKNOWN ? player.z : z });
+          }
+        }
+      }
+      return found;
+    };
+    const failedOpen = () => {
+      if (!open && floorAt(player.x, player.y) === void 0) {
+        open = true;
+        if (!saidOpen) {
+          saidOpen = true;
+          log(
+            "grid: the tile under your feet reads as impassable, so the walkability filter is off for this run - the flag values in lib/flags.ts are wrong for this shard"
+          );
+        }
+      }
+      return open;
+    };
+    let from;
+    let reach = /* @__PURE__ */ new Map();
+    let costs = /* @__PURE__ */ new Map();
+    const plan = () => {
+      const here = `${player.x},${player.y},${player.z}`;
+      if (from === here) {
+        return reach;
+      }
+      from = here;
+      costs = /* @__PURE__ */ new Map();
+      reach = flood([{ x: player.x, y: player.y, z: player.z }]);
+      return reach;
+    };
+    const nearest = (spot, range) => {
+      const reached = plan();
+      let best;
+      for (let dx = -range; dx <= range; dx++) {
+        for (let dy = -range; dy <= range; dy++) {
+          const found = reached.get(`${spot.x + dx},${spot.y + dy}`);
+          if (found !== void 0 && (best === void 0 || found < best)) {
+            best = found;
+          }
+        }
+      }
+      return best;
+    };
+    return {
+      terrainAt,
+      stepsTo: (spot, range) => {
+        if (failedOpen()) {
+          return distanceTo(spot);
+        }
+        plan();
+        const key = `${spot.x},${spot.y},${range}`;
+        if (!costs.has(key)) {
+          costs.set(key, nearest(spot, range));
+        }
+        return costs.get(key);
+      },
+      // Flooded from the goal rather than from the character, and read as a gradient: a breadth-first
+      // walk out from the player reaches an open-ground tile by any of a dozen equal paths, and which
+      // one it records decides the first step - so the character drifts diagonally down a corridor it
+      // should walk straight along.
+      routeTo: (spot, range) => {
+        if (failedOpen()) {
+          return void 0;
+        }
+        const seeds = spotsAround(spot, range);
+        if (seeds.length === 0) {
+          return void 0;
+        }
+        const cost = flood(seeds);
+        let best;
+        let bestCost = cost.get(`${player.x},${player.y}`) ?? Infinity;
+        if (bestCost === 0) {
+          return void 0;
+        }
+        const wanted = [Math.sign(spot.x - player.x), Math.sign(spot.y - player.y)];
+        const order = [wanted, ...STEPS];
+        for (const [dx, dy] of order) {
+          if (dx === 0 && dy === 0) {
+            continue;
+          }
+          const found = cost.get(`${player.x + dx},${player.y + dy}`);
+          if (found === void 0 || found >= bestCost) {
+            continue;
+          }
+          if (stepZ(player.x + dx, player.y + dy, player.z) === void 0 || !cornerOpen(player.x, player.y, player.z, dx, dy)) {
+            continue;
+          }
+          best = [dx, dy];
+          bestCost = found;
+        }
+        return best;
+      },
+      describe: (radius) => {
+        const reached = plan();
+        unknowns = 0;
+        let standing = 0;
+        let blocked = 0;
+        for (let dx = -radius; dx <= radius; dx++) {
+          for (let dy = -radius; dy <= radius; dy++) {
+            const z = floorAt(player.x + dx, player.y + dy);
+            if (z === void 0) {
+              blocked++;
+            } else if (z !== UNKNOWN) {
+              standing++;
+            }
+          }
+        }
+        const under = floorAt(player.x, player.y);
+        return `grid: within ${radius}, ${standing} tiles can be stood on and ${blocked} cannot, ${unknowns} the client had no terrain for; ${reached.size} are walkable from here; under your feet ${under === UNKNOWN ? "no terrain" : under === void 0 ? "IMPASSABLE - check lib/flags.ts" : `z ${under}`}`;
+      },
+      forget: () => {
+        cells.clear();
+        from = void 0;
+        reach = /* @__PURE__ */ new Map();
+        costs = /* @__PURE__ */ new Map();
+        unknowns = 0;
+        open = false;
+        saidOpen = false;
+      }
+    };
+  };
+
+  // src/lumberjacking/grid.ts
+  var grid = /* @__PURE__ */ createGrid({
+    radius: ROUTE_RADIUS,
+    maxSteps: MAX_TREE_STEPS,
+    maxNodes: MAX_ROUTE_NODES,
+    maxCells: MAX_ROUTE_CELLS,
+    climb: MAX_CLIMB,
+    height: PLAYER_HEIGHT,
+    headroom: STEP_HEADROOM,
+    // Mining roams and passes nothing here; a route that left the box would be refused a step at a
+    // time by allowedStep and the tree written off as unreachable.
+    passable: inBounds
+  });
 
   // src/lib/opl.ts
   var threw = false;
@@ -1125,18 +1420,6 @@
     return picks;
   };
 
-  // src/lib/grid.ts
-  var STEPS = [
-    [0, -1],
-    [1, -1],
-    [1, 0],
-    [1, 1],
-    [0, 1],
-    [-1, 1],
-    [-1, 0],
-    [-1, -1]
-  ];
-
   // src/lib/walk.ts
   var DIRECTIONS = [
     Directions.North,
@@ -1183,11 +1466,14 @@
   };
 
   // src/lumberjacking/walk.ts
-  var stepToward = /* @__PURE__ */ createStepToward({ delayMs: WALK_DELAY, constrain: allowedStep });
+  var stepToward = /* @__PURE__ */ createStepToward({
+    delayMs: WALK_DELAY,
+    route: (spot) => grid.routeTo(spot, CHOP_RANGE),
+    // Kept behind the route as a backstop: grid's passable already keeps the plan inside the box
+    constrain: allowedStep
+  });
 
   // src/lumberjacking/haul.ts
-  var isCargo = (item) => isBoard(item) || isLog(item) && unconvertible.has(item.hue ?? 0);
-  var writtenOffLogs = () => collectIn(packContents(), (item) => isLog(item) && unconvertible.has(item.hue ?? 0));
   var reported = false;
   var pinnedSerials = [...PACK_ANIMAL_SERIALS];
   var pickPackAnimals = () => {
@@ -1305,29 +1591,173 @@
       log("haul: no pack animal nearby");
       return false;
     }
-    if (writtenOffLogs().length > 0 && retryUnconvertible()) {
-      makeBoards();
+    unloadTo(animals, isBoard);
+    const logs = overweight(HAUL_BUFFER) ? collectIn(packContents(), isLog) : [];
+    if (logs.length > 0) {
+      const total = logs.reduce((sum, item) => sum + (item.amount ?? 1), 0);
+      log(`haul: ${total} logs would not convert, keeping them in the pack`);
     }
-    const moved = unloadTo(animals, isCargo);
-    if (overweight(HAUL_BUFFER)) {
-      const logs = collectIn(packContents(), isLog);
-      if (logs.length > 0) {
-        retryUnconvertible();
-        makeBoards();
-        if (collectIn(packContents(), isLog).length === 0) {
-          return unloadTo(animals, isCargo) || moved;
-        }
-        if (isSaving()) {
-          log("haul: the world is saving, keeping the logs for the next haul");
-          return moved;
-        }
-        const total = logs.reduce((sum, item) => sum + (item.amount ?? 1), 0);
-        log(`haul: ${total} logs would not convert in time, moving them as logs`);
-        return unloadTo(animals, isLog) || moved;
-      }
-    }
-    return moved;
+    return true;
   };
+
+  // src/lib/store.ts
+  var scope = globalThis;
+  var createStore = (options) => {
+    let held;
+    const load = () => {
+      const found = scope[options.key];
+      if (found?.version === options.version) {
+        const described = options.describe?.(found);
+        if (described) {
+          log(described);
+        }
+        return found;
+      }
+      const fresh = { ...options.seed(), version: options.version };
+      scope[options.key] = fresh;
+      return fresh;
+    };
+    return {
+      // Read through a call rather than handed out as the object itself, so forget() can actually
+      // forget: a module-scope `const memory = load()` would give every importer a reference that
+      // outlives it.
+      read: () => held ?? (held = load()),
+      // vi.resetModules() gives each test a fresh module registry but leaves globalThis alone, which
+      // is precisely what this store is designed to survive.
+      forget: () => {
+        delete scope[options.key];
+        held = void 0;
+      }
+    };
+  };
+
+  // src/lumberjacking/memory.ts
+  var KEY = "__lumberjack_memory";
+  var VERSION = 1;
+  var store = /* @__PURE__ */ createStore({
+    key: KEY,
+    version: VERSION,
+    seed: () => ({ blocked: /* @__PURE__ */ new Map(), notTree: /* @__PURE__ */ new Set() }),
+    describe: (found) => found.blocked.size > 0 || found.notTree.size > 0 ? `memory: resuming with ${found.blocked.size} blocked tiles, ${found.notTree.size} arts` : void 0
+  });
+  var memory = store.read;
+  var forget = store.forget;
+
+  // src/lib/survey.ts
+  var describeArt = (art) => {
+    const kind = art.isLand ? "land" : `static '${art.name}'`;
+    const mark = art.matches ? "MATCHES" : "-";
+    return `${art.graphic} (0x${art.graphic.toString(16)}) ${kind}, flags 0x${art.flags.toString(16)} (${describeFlags(art.flags)}), ${art.tiles} tiles, ${mark}`;
+  };
+  var createSurvey = (options) => {
+    const surveyTerrain = (radius) => {
+      const seen = /* @__PURE__ */ new Map();
+      for (let dx = -radius; dx <= radius; dx++) {
+        for (let dy = -radius; dy <= radius; dy++) {
+          for (const tile of client.getTerrainList(player.x + dx, player.y + dy) ?? []) {
+            const key = `${tile.graphic}/${tile.isLand}`;
+            const already = seen.get(key);
+            if (already) {
+              already.tiles++;
+              continue;
+            }
+            seen.set(key, {
+              graphic: tile.graphic,
+              isLand: tile.isLand,
+              flags: tile.flags,
+              tiles: 1,
+              name: tile.isLand ? "" : client.getStatic(tile.graphic)?.name ?? "?",
+              matches: options.matches(tile.graphic, tile.isLand)
+            });
+          }
+        }
+      }
+      return [...seen.values()].sort((a, b) => b.tiles - a.tiles);
+    };
+    const reportTerrain2 = (radius, limit = Infinity) => {
+      const found = surveyTerrain(radius);
+      log(`${options.label}: ${found.length} distinct arts within ${radius} tiles of ${player.x},${player.y}`);
+      for (const art of found.slice(0, limit)) {
+        log(`${options.label}: ${describeArt(art)}`);
+      }
+      if (found.length > limit) {
+        log(`${options.label}: ${found.length - limit} rarer arts not shown`);
+      }
+      return found;
+    };
+    return { surveyTerrain, reportTerrain: reportTerrain2 };
+  };
+
+  // src/lumberjacking/tree.ts
+  var known = /* @__PURE__ */ new Map();
+  var isTree = (graphic) => {
+    if (TREE_GRAPHICS.has(graphic)) {
+      return true;
+    }
+    if (NOT_TREE_GRAPHICS.has(graphic) || memory().notTree.has(graphic)) {
+      return false;
+    }
+    const remembered = known.get(graphic);
+    if (remembered !== void 0) {
+      return remembered;
+    }
+    const name = client.getStatic(graphic)?.name ?? "";
+    const matches2 = /tree/i.test(name);
+    known.set(graphic, matches2);
+    return matches2;
+  };
+  var store2 = /* @__PURE__ */ createTileStore({
+    label: "tree",
+    blocked: () => memory().blocked,
+    depletedFor: REGROW_DELAY,
+    unreachableFor: UNREACHABLE_DELAY,
+    depleted: "is out of wood"
+  });
+  var markDepleted = store2.markDepleted;
+  var markUnreachable = store2.markUnreachable;
+  var markUnusable = store2.markUnusable;
+  var markNotHarvestable = (graphic) => {
+    const { notTree } = memory();
+    if (notTree.has(graphic)) {
+      return;
+    }
+    notTree.add(graphic);
+    log(`tree: ${hex(graphic)} cannot be chopped, skipping that art from here on`);
+  };
+  var scan = /* @__PURE__ */ createScan({
+    label: "scanForTree",
+    radius: SCAN_RADIUS,
+    blocked: () => memory().blocked,
+    // A tree is a static, so land is skipped outright rather than asked about
+    skipLand: true,
+    matches: (graphic) => isTree(graphic),
+    // Trees outside the box are still fair game when a legal standing tile is within CHOP_RANGE. The
+    // step count ranks them too, so one six tiles off through a gap beats one four behind a thicket -
+    // and a tree with no route is dropped here rather than walked at and written off for five minutes.
+    reach: (tree) => reachableFromBounds(tree.x, tree.y, CHOP_RANGE) ? grid.stepsTo(tree, CHOP_RANGE) : void 0,
+    describe: (tree) => `'${client.getStatic(tree.graphic)?.name ?? "?"}'`
+  });
+  var scanForTree = () => {
+    const near = scan();
+    if (near.found) {
+      return { tree: near.found };
+    }
+    const far = scan(ROAM_RADIUS);
+    if (far.found) {
+      return { tree: far.found };
+    }
+    const { cooling, banned, skipped } = scan.holding();
+    log(
+      `tree: nothing choppable within ${ROAM_RADIUS} - ${cooling} regrowing, ${banned} written off for good, ${skipped} with no route`
+    );
+    return { tree: void 0, regrowsAt: far.readyAt ?? near.readyAt };
+  };
+
+  // src/lumberjacking/survey.ts
+  var { reportTerrain } = /* @__PURE__ */ createSurvey({
+    label: "survey",
+    matches: (graphic, isLand) => !isLand && isTree(graphic)
+  });
 
   // src/lib/threat.ts
   var NOTORIETY = [
@@ -1472,103 +1902,12 @@
     unguardedText: UNGUARDED_TEXT
   }).check : void 0;
 
-  // src/lib/store.ts
-  var scope = globalThis;
-  var createStore = (options) => {
-    let held;
-    const load = () => {
-      const found = scope[options.key];
-      if (found?.version === options.version) {
-        const described = options.describe?.(found);
-        if (described) {
-          log(described);
-        }
-        return found;
-      }
-      const fresh = { ...options.seed(), version: options.version };
-      scope[options.key] = fresh;
-      return fresh;
-    };
-    return {
-      // Read through a call rather than handed out as the object itself, so forget() can actually
-      // forget: a module-scope `const memory = load()` would give every importer a reference that
-      // outlives it.
-      read: () => held ?? (held = load()),
-      // Tests only. vi.resetModules() gives each test a fresh module registry but leaves globalThis
-      // alone, which is precisely what this store is designed to survive.
-      forget: () => {
-        delete scope[options.key];
-        held = void 0;
-      }
-    };
-  };
-
-  // src/lumberjacking/memory.ts
-  var KEY = "__lumberjack_memory";
-  var VERSION = 1;
-  var store = /* @__PURE__ */ createStore({
-    key: KEY,
-    version: VERSION,
-    seed: () => ({ blocked: /* @__PURE__ */ new Map(), notTree: /* @__PURE__ */ new Set() }),
-    describe: (found) => found.blocked.size > 0 || found.notTree.size > 0 ? `memory: resuming with ${found.blocked.size} blocked tiles, ${found.notTree.size} arts` : void 0
-  });
-  var memory = store.read;
-  var forget = store.forget;
-
-  // src/lumberjacking/tree.ts
-  var known = /* @__PURE__ */ new Map();
-  var isTree = (graphic) => {
-    if (TREE_GRAPHICS.has(graphic)) {
-      return true;
-    }
-    if (NOT_TREE_GRAPHICS.has(graphic) || memory().notTree.has(graphic)) {
-      return false;
-    }
-    const remembered = known.get(graphic);
-    if (remembered !== void 0) {
-      return remembered;
-    }
-    const name = client.getStatic(graphic)?.name ?? "";
-    const matches2 = /tree/i.test(name);
-    known.set(graphic, matches2);
-    return matches2;
-  };
-  var store2 = /* @__PURE__ */ createTileStore({
-    label: "tree",
-    blocked: () => memory().blocked,
-    depletedFor: REGROW_DELAY,
-    unreachableFor: UNREACHABLE_DELAY,
-    depleted: "is out of wood"
-  });
-  var markDepleted = store2.markDepleted;
-  var markUnreachable = store2.markUnreachable;
-  var markUnusable = store2.markUnusable;
-  var markNotHarvestable = (graphic) => {
-    const { notTree } = memory();
-    if (notTree.has(graphic)) {
-      return;
-    }
-    notTree.add(graphic);
-    log(`tree: ${hex(graphic)} cannot be chopped, skipping that art from here on`);
-  };
-  var scan = /* @__PURE__ */ createScan({
-    label: "scanForTree",
-    radius: SCAN_RADIUS,
-    blocked: () => memory().blocked,
-    // A tree is a static, so land is skipped outright rather than asked about
-    skipLand: true,
-    matches: (graphic) => isTree(graphic),
-    // Trees outside the box are still fair game when a legal standing tile is within CHOP_RANGE;
-    // filtered here rather than picked, walked at, refused and written off MAX_STEPS later.
-    reach: (tree) => reachableFromBounds(tree.x, tree.y, CHOP_RANGE) ? 0 : void 0,
-    describe: (tree) => `'${client.getStatic(tree.graphic)?.name ?? "?"}'`
-  });
-  var scanForTree = () => {
-    const { found, readyAt } = scan();
-    return { tree: found, regrowsAt: readyAt };
-  };
-
   // src/lumberjacking/index.ts
+  if (RESET_MEMORY) {
+    const { blocked, notTree } = memory();
+    log(`lumberjack: dropping ${blocked.size} blocked tiles and ${notTree.size} banned arts`);
+    forget();
+  }
   rememberAxe(player.equippedItems.twoHanded ?? player.equippedItems.oneHanded);
   var idleUntil = createIdleWait({
     prefix: "lumberjack",
@@ -1589,12 +1928,12 @@
       return void 0;
     }
     makeBoards();
-    const moved = unload();
+    const sawAnimal = unload();
     if (isSaving()) {
       waitOutSave();
-    } else if (!moved) {
+    } else if (!sawAnimal) {
       hauling = false;
-      log("lumberjack: hauling freed nothing, carrying on until overweight");
+      log("lumberjack: no pack animal found, carrying on until overweight");
     }
     return { phase: "hauling" };
   };
@@ -1644,12 +1983,19 @@
         return { found: tree, readyAt: regrowsAt };
       },
       range: CHOP_RANGE,
-      maxSteps: MAX_STEPS,
+      maxSteps: MAX_TREE_STEPS,
       step: stepToward,
       markUnreachable,
       idleUntil,
       isSaving,
-      nothingFound: () => "no tree in range"
+      // 'no tree in range' says nothing you can act on while a forest fills the screen, and a shard
+      // whose tiledata does not name its trees is the likeliest way a run ends here.
+      nothingFound: () => {
+        log(`lumberjack: nothing within ${ROAM_RADIUS} tiles matched, here is what is around`);
+        log(grid.describe(SCAN_RADIUS));
+        reportTerrain(SCAN_RADIUS, SURVEY_ARTS);
+        return "no tree in range";
+      }
     }),
     harvest: (tree) => tree ? chopOnce(tree, axeSerial()) : void 0,
     handle,
@@ -1674,6 +2020,7 @@
       maxUnknown: MAX_UNKNOWN,
       maxThrottled: MAX_THROTTLED,
       maxNoCursor: MAX_NO_CURSOR,
+      maxNoTool: MAX_NO_TOOL,
       logEvery: LOG_EVERY,
       throttleBackoff: THROTTLE_BACKOFF,
       throttleBackoffMax: THROTTLE_BACKOFF_MAX

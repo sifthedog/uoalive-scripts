@@ -19,7 +19,8 @@ Per cycle:
 5. **Otherwise carve** the nearest corpse in reach that has not been dealt with — double-click the
    knife, answer the cursor with the corpse, read the journal.
 6. **Nothing in reach** → heartbeat and poll again. This is the script waiting for you to kill
-   something, so it is never counted as a stall.
+   something, so it counts neither as a stall nor against the cycle backstop — a run left watching an
+   empty field does not end on its own.
 
 Outcomes and what each one costs the corpse:
 
@@ -69,7 +70,8 @@ Everything lives in [`config.ts`](config.ts).
 | `WATCH_POLL` | `400` | Between scans that found nothing in reach |
 | `OPEN_DELAY` / `MOVE_DELAY` | `800` / `250` | After opening a corpse, and between one move and the next |
 | `SETTLE_TIMEOUT` / `SETTLE_POLL` | `2000` / `100` | How long to wait for the stacks to leave the corpse |
-| `BLOCKED_DELAY` | `60_000` | How long a corpse that was out of reach or out of sight is left alone |
+| `BLOCKED_DELAY` | `60_000` | How long a corpse that was out of reach, out of sight, or that kept its feathers is left alone |
+| `MAX_CYCLES` | `100_000` | Carves and loots before the run stops. Idle polls do not count |
 | `PRUNE_EVERY` | `50` | Idle passes between sweeps of the memory for corpses that have decayed |
 | `WEIGHT_BUFFER` | `20` | Stones kept clear of the limit, so the stop lands before the shard refuses |
 | `OUTCOME_TEXT` | guesses | The journal phrases. Correct these first when anything goes wrong |
@@ -82,8 +84,9 @@ shard. Hover one and read its art.
 **`unreadable outcome (n/5), check OUTCOME_TEXT`** — the shard words carving differently. Carve one
 by hand, read what it says, and put that wording in the right bucket.
 
-**`no butcher knife`** — the pack line printed just above it lists what the pack actually holds. If
-the knives are in a bag inside a bag, pin it as `SPARE_BAG_SERIAL`.
+**`no butcher knife`** — said only after `MAX_NO_TOOL` cycles found none, since the search reads the
+pack and a read that threw is not a pack with no knife in it. The pack line printed just above lists
+what the pack actually holds. If the knives are in a bag inside a bag, pin it as `SPARE_BAG_SERIAL`.
 
 **`n corpses about, nearest N tiles away`** — they are further out than `CARVE_RANGE`. Said once per
 run, because a field of out-of-reach corpses logs identically to an empty one. Nothing here walks.

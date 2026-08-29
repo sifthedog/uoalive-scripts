@@ -246,7 +246,8 @@ describe('makeBoards', () => {
       expect(unconvertible.has(0)).toBe(false);
     });
 
-    it('stops trying a hue it has given up on', async () => {
+    // Within the pass only: the haul never carries logs across as logs, so the next call reconsiders
+    it('takes a given-up-on hue up again on the next call', async () => {
       pack(item({ serial: 5, graphic: LOG, amount: 10, hue: 0 }));
       const { makeBoards, unconvertible } = await loadBoards();
 
@@ -254,8 +255,9 @@ describe('makeBoards', () => {
       expect(unconvertible.has(0)).toBe(true);
 
       world.player.useItemInHand.mockClear();
-      expect(makeBoards()).toBe(true);
-      expect(world.player.useItemInHand).not.toHaveBeenCalled();
+      makeBoards();
+      expect(world.player.useItemInHand.mock.calls.length).toBe(CONVERT_ATTEMPTS);
+      expect(world.log).toHaveBeenCalledWith(expect.stringContaining('another go'));
     });
   });
 });

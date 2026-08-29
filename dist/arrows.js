@@ -14,7 +14,6 @@
 
   // src/lib/timings.ts
   var UNREACHABLE_DELAY = 5 * 60 * 1e3;
-  var MAX_CYCLES = 5e3;
   var HEARTBEAT_EVERY = 3e4;
   var PACK_LIMIT = 120;
   var SAVE_WAIT = 6e4;
@@ -33,10 +32,13 @@
   ];
   var GRAB_RANGE = 2;
   var MOVE_DELAY = 250;
-  var WATCH_POLL = 100;
+  var WATCH_POLL = 400;
+  var MAX_CYCLES = 1e5;
   var SETTLE_TIMEOUT = 2e3;
   var SETTLE_POLL = 100;
   var MAX_QUIET_SWEEPS = 5;
+  var BLOCKED_DELAY = 6e4;
+  var PRUNE_EVERY = 50;
   var SWEEP_BACKOFF = 1e3;
   var SWEEP_BACKOFF_MAX = 8e3;
   var WEIGHT_BUFFER = 20;
@@ -44,6 +46,48 @@
   // src/lib/entity.ts
   var hex = (value) => `0x${(value >>> 0).toString(16)}`;
   var distanceTo = (spot) => Math.max(Math.abs(spot.x - player.x), Math.abs(spot.y - player.y));
+
+  // src/lib/store.ts
+  var scope = globalThis;
+  var createStore = (options) => {
+    let held;
+    const load = () => {
+      const found = scope[options.key];
+      if (found?.version === options.version) {
+        const described = options.describe?.(found);
+        if (described) {
+          log(described);
+        }
+        return found;
+      }
+      const fresh = { ...options.seed(), version: options.version };
+      scope[options.key] = fresh;
+      return fresh;
+    };
+    return {
+      // Read through a call rather than handed out as the object itself, so forget() can actually
+      // forget: a module-scope `const memory = load()` would give every importer a reference that
+      // outlives it.
+      read: () => held ?? (held = load()),
+      // vi.resetModules() gives each test a fresh module registry but leaves globalThis alone, which
+      // is precisely what this store is designed to survive.
+      forget: () => {
+        delete scope[options.key];
+        held = void 0;
+      }
+    };
+  };
+
+  // src/arrows/memory.ts
+  var KEY = "__arrows_memory";
+  var VERSION = 1;
+  var store = /* @__PURE__ */ createStore({
+    key: KEY,
+    version: VERSION,
+    seed: () => ({ blocked: /* @__PURE__ */ new Map() })
+  });
+  var memory = store.read;
+  var forget = store.forget;
 
   // src/arrows/floor.ts
   var GROUND = /* @__PURE__ */ new Set([0, 4294967295]);
@@ -61,7 +105,27 @@
     }
     return [...found.values()];
   };
-  var inReach = (items2, range) => items2.filter((item) => distanceTo(item) <= range);
+  var inReach = (items2, range) => items2.filter((item) => distanceTo(item) <= range && !isBlocked(item.serial));
+  var isBlocked = (serial) => {
+    const until = memory().blocked.get(serial);
+    return until !== void 0 && now() < until;
+  };
+  var setAside = (items2) => {
+    const { blocked } = memory();
+    const until = now() + BLOCKED_DELAY;
+    for (const item of items2) {
+      blocked.set(item.serial, until);
+    }
+  };
+  var prune = () => {
+    const { blocked } = memory();
+    const time = now();
+    for (const [serial, until] of blocked) {
+      if (time >= until || !client.findObject(serial)) {
+        blocked.delete(serial);
+      }
+    }
+  };
   var describeFloor = () => AMMO_GRAPHICS.map((graphic) => {
     const found = ofType(graphic);
     if (found.length === 0) {
@@ -242,53 +306,66 @@
   var stacks = 0;
   var items = 0;
   var quiet = 0;
+  var waits = 0;
   var saidOutOfReach = false;
   var stop;
-  for (let cycle = 0; cycle < MAX_CYCLES && !stop; cycle++) {
-    stop = stopReason();
-    if (stop) {
-      break;
-    }
-    if (isSaving()) {
-      waitOutSave();
-      quiet = 0;
-      continue;
-    }
-    const reachable = inReach(onFloor(), GRAB_RANGE);
-    if (reachable.length === 0) {
-      const floor = onFloor();
-      const closest = nearest(floor);
-      if (closest !== void 0 && !saidOutOfReach) {
-        saidOutOfReach = true;
-        log(
-          `arrows: ${floor.length} on the floor, nearest ${closest} tiles away - nothing within ${GRAB_RANGE}, so nothing to take`
-        );
+  var idled = 0;
+  try {
+    for (let cycle = 0; cycle - idled < MAX_CYCLES && !stop; cycle++) {
+      stop = stopReason();
+      if (stop) {
+        break;
       }
-      beat("watching", cycle, items);
-      sleep(WATCH_POLL);
-      continue;
-    }
-    sweep(packSerial, reachable);
-    const took = settle(reachable, onFloor);
-    stacks += took.stacks;
-    items += took.items;
-    if (took.stacks > 0) {
-      quiet = 0;
+      if (isSaving()) {
+        waitOutSave();
+        quiet = 0;
+        continue;
+      }
+      const floor = onFloor();
+      const reachable = inReach(floor, GRAB_RANGE);
+      if (reachable.length === 0) {
+        const closest = nearest(floor);
+        if (closest !== void 0 && !saidOutOfReach) {
+          saidOutOfReach = true;
+          log(
+            `arrows: ${floor.length} on the floor, nearest ${closest} tiles away - nothing within ${GRAB_RANGE}, so nothing to take`
+          );
+        }
+        if (++waits % PRUNE_EVERY === 0) {
+          prune();
+        }
+        idled++;
+        quiet = 0;
+        beat("watching", cycle, items);
+        sleep(WATCH_POLL);
+        continue;
+      }
+      saidOutOfReach = false;
+      sweep(packSerial, reachable);
+      const took = settle(reachable, onFloor);
+      stacks += took.stacks;
+      items += took.items;
+      if (took.stacks > 0) {
+        quiet = 0;
+        heartbeat.resetBeat();
+        log(`arrows: took ${took.items} in ${took.stacks} stacks, ${items} in total`);
+        continue;
+      }
+      quiet++;
+      setAside(reachable);
+      if (quiet >= MAX_QUIET_SWEEPS) {
+        stop = `${MAX_QUIET_SWEEPS} sweeps in a row moved nothing, with ${reachable.length} in reach`;
+        break;
+      }
+      const backoff = backoffFor(quiet, SWEEP_BACKOFF, SWEEP_BACKOFF_MAX);
+      log(`arrows: nothing moved (${quiet}/${MAX_QUIET_SWEEPS}), waiting ${backoff / 1e3}s`);
       heartbeat.resetBeat();
-      log(`arrows: took ${took.items} in ${took.stacks} stacks, ${items} in total`);
-      continue;
+      sleep(backoff);
     }
-    quiet++;
-    if (quiet >= MAX_QUIET_SWEEPS) {
-      stop = `${MAX_QUIET_SWEEPS} sweeps in a row moved nothing, with ${reachable.length} in reach`;
-      break;
-    }
-    const backoff = backoffFor(quiet, SWEEP_BACKOFF, SWEEP_BACKOFF_MAX);
-    log(`arrows: nothing moved (${quiet}/${MAX_QUIET_SWEEPS}), waiting ${backoff / 1e3}s`);
-    heartbeat.resetBeat();
-    sleep(backoff);
+  } catch (error) {
+    stop ?? (stop = `threw - ${String(error)}`);
   }
-  var reason = stop ?? `hit the ${MAX_CYCLES} cycle backstop`;
+  var reason = stop ?? `hit the ${MAX_CYCLES} working cycle backstop`;
   log(`arrows: ${items} picked up in ${stacks} stacks`);
   log(`arrows: stopping - ${reason}`);
   exit(`arrows: ${reason}`);

@@ -27,7 +27,6 @@ const store = /* @__PURE__ */ createStore<Memory>({
 
 export const memory = store.read;
 
-// Tests only
 export const forget = store.forget;
 
 export { now } from '../lib/clock.js';

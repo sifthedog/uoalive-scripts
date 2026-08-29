@@ -2,7 +2,6 @@
 // folder's OUTCOME_TEXT happens to have, because the loop that switches on them is shared.
 
 import { outcomeVocabulary } from './outcomes.js';
-import type { Stage } from './stages.js';
 
 export type CastOutcome =
   // Read from the words, or - more reliably - from the mana and the buff. See silentOutcome.
@@ -53,6 +52,23 @@ export type CastOutcome =
 // `throttled` wins that tie the way it means to.
 export type OutcomeText = Partial<Record<CastOutcome, string[]>>;
 
+// The casting half of a Stage, so a loop with no skill table to work through can be cast for too.
+export interface Castable {
+  spell: Spells;
+
+  // Where the shard publishes one: it stops a cast that is already standing, and is the proof a cast
+  // landed that does not depend on how this shard words its journal.
+  buff?: BuffDebuffs;
+
+  // 'self' is player.castTo(spell, player). Absent is the ordinary case: a weapon ability, a
+  // self-transformation and an area attack are all cast at nobody.
+  target?: 'self';
+
+  // Doubles as how long a cast the shard says nothing about has to show the mana leaving the pool, so
+  // below the spell's cast time every success reads as unreadable.
+  castTimeout?: number;
+}
+
 export interface CasterOptions {
   outcomeText: OutcomeText;
 
@@ -67,22 +83,22 @@ export interface CasterOptions {
 export interface Caster {
   allText: string[];
   outcomeFor: (matched: string) => CastOutcome | undefined;
-  castOnce: (stage: Stage) => CastOutcome | undefined;
+  castOnce: (cast: Castable) => CastOutcome | undefined;
 }
 
-const buffUp = (stage: Stage): boolean =>
-  stage.buff !== undefined && player.hasBuffDebuff(stage.buff);
+const buffUp = (cast: Castable): boolean =>
+  cast.buff !== undefined && player.hasBuffDebuff(cast.buff);
 
 // Nothing here opens a cursor and leaves it open: an unanswered target cursor is the state that
 // makes every later action in the run fail.
-const issue = (stage: Stage): void => {
-  if (stage.target === 'self') {
-    player.castTo(stage.spell, player);
+const issue = (cast: Castable): void => {
+  if (cast.target === 'self') {
+    player.castTo(cast.spell, player);
 
     return;
   }
 
-  player.cast(stage.spell);
+  player.cast(cast.spell);
 };
 
 export const createCaster = ({ outcomeText, timeoutMs, skipWhenBuffed }: CasterOptions): Caster => {
@@ -95,11 +111,11 @@ export const createCaster = ({ outcomeText, timeoutMs, skipWhenBuffed }: CasterO
   // nothing about this cast, so what counts is the transition, while mana can only fall by being
   // spent - which is the only proof a stage with no buff of its own has.
   const silentOutcome = (
-    stage: Stage,
+    cast: Castable,
     upBefore: boolean,
     manaBefore: number,
   ): CastOutcome | undefined => {
-    if (!upBefore && buffUp(stage)) {
+    if (!upBefore && buffUp(cast)) {
       return 'cast';
     }
 
@@ -116,8 +132,8 @@ export const createCaster = ({ outcomeText, timeoutMs, skipWhenBuffed }: CasterO
 
     // outcomeFor cannot actually miss - waitForTextAny hands back one of the strings it was given -
     // but the caller's switch has a default for it, so the maybe is kept rather than asserted away.
-    castOnce: (stage) => {
-      const upBefore = buffUp(stage);
+    castOnce: (cast) => {
+      const upBefore = buffUp(cast);
 
       if (skipWhenBuffed && upBefore) {
         return 'alreadyUp';
@@ -130,17 +146,17 @@ export const createCaster = ({ outcomeText, timeoutMs, skipWhenBuffed }: CasterO
       target.cancel();
 
       journal.clear();
-      issue(stage);
+      issue(cast);
 
       // author is left undefined on purpose: a shard may route spell text as object text rather than
       // as System, and a wrong author turns every wait into a timeout.
-      const matched = journal.waitForTextAny(all, undefined, stage.castTimeout ?? timeoutMs);
+      const matched = journal.waitForTextAny(all, undefined, cast.castTimeout ?? timeoutMs);
 
       if (matched) {
         return outcomeFor(matched);
       }
 
-      return silentOutcome(stage, upBefore, manaBefore);
+      return silentOutcome(cast, upBefore, manaBefore);
     },
   };
 };

@@ -14,20 +14,28 @@ import {
   LOG_EVERY,
   MAX_CYCLES,
   MAX_NO_CURSOR,
-  MAX_STEPS,
+  MAX_NO_TOOL,
   MAX_THROTTLED,
+  MAX_TREE_STEPS,
   MAX_UNKNOWN,
   PICK_PACK_ANIMALS,
+  RESET_MEMORY,
+  ROAM_RADIUS,
+  SCAN_RADIUS,
   STALL_STOP,
   STALL_WARN,
   STEP_DELAY,
+  SURVEY_ARTS,
   THROTTLE_BACKOFF,
   THROTTLE_BACKOFF_MAX,
 } from './config.js';
+import { grid } from './grid.js';
 import { stopReason } from './guards.js';
 import { pickPackAnimals, unload } from './haul.js';
 import { heartbeat, resetBeat } from './heartbeat.js';
+import { forget, memory } from './memory.js';
 import { isSaving, waitOutSave } from './save.js';
+import { reportTerrain } from './survey.js';
 import { watchForTrouble } from './threat.js';
 import {
   markDepleted,
@@ -38,6 +46,15 @@ import {
   type Tree,
 } from './tree.js';
 import { stepToward } from './walk.js';
+
+// Before anything reads the store: a run that wrote a stand of trees off for good stays blind to it
+// until the client is reloaded, and only this drops those bans without one.
+if (RESET_MEMORY) {
+  const { blocked, notTree } = memory();
+
+  log(`lumberjack: dropping ${blocked.size} blocked tiles and ${notTree.size} banned arts`);
+  forget();
+}
 
 rememberAxe(player.equippedItems.twoHanded ?? player.equippedItems.oneHanded);
 
@@ -57,12 +74,12 @@ if (PICK_PACK_ANIMALS) {
   pickPackAnimals();
 }
 
-// Latched off the first time a haul frees nothing, so a missing animal costs one search rather than
-// one per cycle for the rest of the run
+// Latched off the first time no animal is found, so a missing one costs one search rather than one
+// per cycle for the rest of the run
 let hauling = true;
 
-// Fires below the guards' overweight threshold, so there is still room to work in. The boards are
-// made first: an unconvertible hue still gets hauled, but a convertible one travels lighter.
+// Fires below the guards' overweight threshold, so there is still room to work in. Only boards go on
+// the animal, so the logs are converted first and whatever will not convert stays in the pack.
 const haulForRoom = (): Interlude => {
   if (!hauling || !overweight(HAUL_BUFFER)) {
     return undefined;
@@ -70,17 +87,15 @@ const haulForRoom = (): Interlude => {
 
   makeBoards();
 
-  // Stacks leaving the pack is the proof, not the weight going down: the client can still report its
-  // pre-haul figure over a move the pack diff has confirmed, which is what ended live mining runs.
-  const moved = unload();
+  const sawAnimal = unload();
 
   // A save freezes every part of a haul at once, and read as an ordinary result it latches hauling
   // off for the rest of the run.
   if (isSaving()) {
     waitOutSave();
-  } else if (!moved) {
+  } else if (!sawAnimal) {
     hauling = false;
-    log('lumberjack: hauling freed nothing, carrying on until overweight');
+    log('lumberjack: no pack animal found, carrying on until overweight');
   }
 
   return { phase: 'hauling' };
@@ -146,12 +161,21 @@ runHarvest<Tree & { distance: number }>({
     },
 
     range: CHOP_RANGE,
-    maxSteps: MAX_STEPS,
+    maxSteps: MAX_TREE_STEPS,
     step: stepToward,
     markUnreachable,
     idleUntil,
     isSaving,
-    nothingFound: () => 'no tree in range',
+
+    // 'no tree in range' says nothing you can act on while a forest fills the screen, and a shard
+    // whose tiledata does not name its trees is the likeliest way a run ends here.
+    nothingFound: () => {
+      log(`lumberjack: nothing within ${ROAM_RADIUS} tiles matched, here is what is around`);
+      log(grid.describe(SCAN_RADIUS));
+      reportTerrain(SCAN_RADIUS, SURVEY_ARTS);
+
+      return 'no tree in range';
+    },
   }),
 
   harvest: (tree) => (tree ? chopOnce(tree, axeSerial()) : undefined),
@@ -187,6 +211,7 @@ runHarvest<Tree & { distance: number }>({
     maxUnknown: MAX_UNKNOWN,
     maxThrottled: MAX_THROTTLED,
     maxNoCursor: MAX_NO_CURSOR,
+    maxNoTool: MAX_NO_TOOL,
     logEvery: LOG_EVERY,
     throttleBackoff: THROTTLE_BACKOFF,
     throttleBackoffMax: THROTTLE_BACKOFF_MAX,

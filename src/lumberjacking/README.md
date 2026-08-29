@@ -24,13 +24,13 @@ the first falls back to `PACK_ANIMAL_SERIALS`, and then to the body search. Then
 1. **Check the stop conditions** — dead, outside `BOUNDS`, overweight, or the pack at its item cap.
 2. **Equip an axe.** Axes are two-handed and hatchets one-handed, so it reads
    `equippedItems.twoHanded ?? equippedItems.oneHanded`.
-3. **Haul, if the weight is over `HAUL_BUFFER`.** Boards are made first — an unconvertible wood still
-   gets hauled, but a convertible one travels lighter — then every pack animal in range is walked to
-   and filled, nearest first.
-4. **Scan for a tree** within `SCAN_RADIUS`, nearest first, skipping tiles the run has parked and
-   trees no legal standing tile could reach.
-5. **Walk to it** if it is further than `CHOP_RANGE`. One naive `Math.sign` step per cycle, and a
-   step that would leave the box falls back to whichever cardinal half stays inside.
+3. **Haul, if the weight is over `HAUL_BUFFER`.** Boards are made first — only boards ever go on an
+   animal — then every pack animal in range is walked to and filled, nearest first. Logs that would
+   not convert stay in the pack and are tried again on the next haul.
+4. **Scan for a tree** within `SCAN_RADIUS`, shortest walk first, skipping tiles the run has parked
+   and trees there is no route to. If that box is dry, sweep again out to `ROAM_RADIUS`.
+5. **Walk to it** if it is further than `CHOP_RANGE`. One routed step per cycle, planned over the
+   walkability map in [`lib/grid.ts`](../lib/grid.ts) and confined to the box.
 6. **Chop**, and branch on what the shard says.
 
 Steps 1-3 and 6, along with the counters that end a run, are
@@ -51,8 +51,8 @@ What this folder supplies is the wordings, the axe, the haul, and the outcomes i
 | `noCursor` | No cursor, and the journal explained nothing. Backed off like a throttle, stops after `MAX_NO_CURSOR` |
 | anything else | Unreadable. `MAX_UNKNOWN` in a row ends the run — check `OUTCOME_TEXT` |
 
-When nothing in reach is choppable but something is regrowing, the loop **idles until the soonest one
-is due** rather than ending the run — sliced into `IDLE_POLL` sleeps, because one blocking sleep of
+When nothing within `ROAM_RADIUS` is choppable but something is regrowing, the loop **idles until the
+soonest one is due** rather than ending the run — sliced into `IDLE_POLL` sleeps, because one blocking sleep of
 twenty minutes leaves the client unresponsive with no way to stop the script.
 
 However the run ends, it makes boards and unloads one last time.
@@ -106,8 +106,13 @@ lumberjacking its own, delete it from the re-export list and declare it below.
 | Setting | What it is for |
 | --- | --- |
 | `BOUNDS` | **Set this first.** The box the character never steps outside, corners included. `undefined` roams. Trees outside it are still fair game as long as one can be reached from a tile inside it |
-| `SCAN_RADIUS` | How far to look for a tree |
+| `SCAN_RADIUS` | 12. How far to look for a tree on an ordinary cycle |
+| `ROAM_RADIUS` | 24. Swept only when the `SCAN_RADIUS` box is dry, so its terrain reads are paid on the cycle that would otherwise stand still |
 | `CHOP_RANGE` | 2. How close you have to be to hit one |
+| `RESET_MEMORY` | `false`. Turn it on for one run to drop the blocked tiles and banned arts a previous one left on `globalThis` |
+| `ROUTE_RADIUS`, `MAX_ROUTE_NODES`, `MAX_ROUTE_CELLS` | The route flood's box, its node cap and its terrain cache. `ROUTE_RADIUS` has to cover `ROAM_RADIUS` or `stepsTo` clips the far trees back out |
+| `MAX_CLIMB`, `PLAYER_HEIGHT`, `STEP_HEADROOM` | What a step may climb, and how far above and below a standing spot a solid art still counts as being in the way |
+| `SURVEY_ARTS` | 15. Arts named when a sweep comes up empty, commonest first |
 
 ### Finding the trees
 
@@ -174,7 +179,7 @@ has no outcomes of its own.
 | `MAX_UNKNOWN` | | Unreadable outcomes in a row before stopping |
 | `MAX_THROTTLED` | | Refusals in a row before stopping |
 | `MAX_NO_CURSOR` | 20 | Swings the shard opened no cursor for, in a row, before stopping |
-| `MAX_STEPS` | | Steps spent walking to one tree before writing it off |
+| `MAX_TREE_STEPS` | 40 | Steps spent walking to one tree before writing it off. Has to reach across `ROAM_RADIUS`; the shared `MAX_STEPS` of 20 is the haul's |
 | `STALL_WARN` / `STALL_STOP` | | Cycles without a chop before it warns, then stops |
 | `WEIGHT_BUFFER`, `PACK_LIMIT` | 40 / 120 | The overweight and item-cap guards |
 | `HEARTBEAT_EVERY`, `LOG_EVERY`, `IDLE_LOG_EVERY` | | How often it says it is still alive |
@@ -183,8 +188,20 @@ has no outcomes of its own.
 
 **The run ends on cycle zero saying `outside (…)-(…)`.** You are not inside `BOUNDS`.
 
-**`no tree in range` in a forest.** Nothing matched the tiledata name and nothing is on cooldown. Put
-a graphic into `TREE_GRAPHICS`.
+**`no tree in range` in a forest.** Nothing matched the tiledata name and nothing is on cooldown. The
+run prints what the walkability map and the survey saw before it exits; put a graphic that reads
+`MATCHES` into `TREE_GRAPHICS`.
+
+**It chops a tree out, then stands still counting down `Nm to go`.** Everything within `ROAM_RADIUS`
+is parked. The line above it names which kind:
+
+- *regrowing* — the stand really is stumps. `ROAM_RADIUS` is too small for the forest, or
+  `REGROW_DELAY` is longer than the shard's own timer.
+- *with no route* — the trees are there and the walk cannot reach them. Check `BOUNDS` is not
+  penning the character in, and `lib/flags.ts` against the `grid:` line, which says so outright when
+  the tile under your feet reads as impassable.
+- *written off for good* — line-of-sight and unchoppable-art bans, which live on `globalThis` and
+  outlive a restart of the script. Run once with `RESET_MEMORY = true` to drop them.
 
 **`unreadable outcome, check OUTCOME_TEXT`.** The expected case on a first run, since the phrasings
 are guesses. Read the journal after a chop and correct them.
@@ -199,26 +216,17 @@ with an unconditional `target.cancel()`, which left `target.open` false for the 
 followed. It now cancels only when there is a cursor to cancel, the same fix
 [`mining/dig.ts`](../mining/dig.ts) carries.
 
-**`hauling freed nothing, carrying on until overweight`.** No animal found, or the one found will
-take no more. Latched off after one failure so a missing animal costs one search rather than one per
-cycle — click the animals at startup, check `PACK_ANIMAL_GRAPHICS`, or pin `PACK_ANIMAL_SERIALS`.
-The verdict is drawn from stacks leaving the pack, not from the weight: the client can report a
-stale figure over a move that landed.
+**`no pack animal found, carrying on until overweight`.** Latched off after one failed search, so a
+missing animal costs one search rather than one per cycle — click the animals at startup, check
+`PACK_ANIMAL_GRAPHICS`, or pin `PACK_ANIMAL_SERIALS`. An animal that is merely full does not latch
+it: it is walked to again next cycle.
 
-**It hauls plain logs.** Three causes, all fixed, all worth recognising if they come back:
-
-- The conversion opened with an unconditional `target.cancel()`, which swallowed the cursor it was
-  about to ask for. A lost cursor counts against the wood, and three write hue 0 off — *every*
-  normal log — after which `isCargo` ships them raw and silently. Same fault as
-  [`mining/dig.ts`](../mining/dig.ts) and [`chop.ts`](chop.ts).
-- `THROTTLED_TEXT` was never passed to the converter, so the shard saying it was busy read as a
-  verdict on the wood. `smelt.ts` had always passed it.
-- The haul gated its conversion on `retryUnconvertible()`, which declines when nothing was written
-  off — exactly the case when `makeBoards` was cut short by a save or the pass backstop. Every log
-  then travelled raw under a line claiming they would not convert in time.
-
-If the line still appears, check the journal is not saying you are unskilled, and confirm
-`BOARD_GRAPHICS` against the shard before raising `CONVERT_ATTEMPTS`.
+**`N logs would not convert, keeping them in the pack`.** The wood is never hauled as logs, so the
+weight stays and the run ends on the stall watch if it never converts. Check the journal is not
+saying you are unskilled, and confirm `BOARD_GRAPHICS` against the shard before raising
+`CONVERT_ATTEMPTS`. Two faults that used to cause it, both fixed: the conversion opened with an
+unconditional `target.cancel()` that swallowed its own cursor, and `THROTTLED_TEXT` was never passed
+to the converter, so the shard saying it was busy read as a verdict on the wood.
 
 ## Notes on the shard
 
@@ -248,14 +256,17 @@ confirmed comes from mining runs that exercise the same shared code.
   answers the land tile as mining rather than chopping. The chop therefore always passes the tree's
   graphic. (Mining goes the other way and names no tile at all.)
 - There is no pathfinding API — `player.walk`/`run` take one direction at a time. The direction is
-  issued twice because the first packet in a new direction only turns the character. Lumberjacking
-  steps straight at the tree; the route-finding in `lib/grid.ts` is mining's, since a box already
-  keeps this run somewhere sensible.
+  issued twice because the first packet in a new direction only turns the character. The route is
+  planned over `getTerrainList`'s flags in [`lib/grid.ts`](../lib/grid.ts), the same map mining uses:
+  **trees are the impassable statics a walk to a tree has to get around**, so a straight `Math.sign`
+  line shuffled into one until it was written off for `UNREACHABLE_DELAY`, a tile at a time, until
+  the whole box was on a cooldown and the character stood still.
 - **`BOUNDS` is enforced in one place.** `stepToward` is the only thing that ever moves the character;
   `guards.ts` also stops the run if the character is outside the box, which catches a teleporter, a
   boat, or a run started from the wrong place. A diagonal step that would leave the box falls back to
-  whichever cardinal half stays inside, since a box is mostly edge. Trees no legal tile can reach are
-  filtered out of the scan rather than picked, walked at, refused and written off `MAX_STEPS` later.
+  whichever cardinal half stays inside, since a box is mostly edge. The box is also passed to the
+  route flood, so a plan can never leave it and then be refused a step at a time. Trees with no route
+  are filtered out of the scan rather than picked, walked at, refused and written off later.
 - **Logs become boards by using the axe and targeting the log stack** — the inverse of smelting.
   Stock RunUO answers with a sound and no message, so the conversion is read from a pack diff
   ([`lib/pack.ts`](../lib/pack.ts)). That diff also *names* the board graphic, so `BOARD_GRAPHICS` is
@@ -267,16 +278,14 @@ confirmed comes from mining runs that exercise the same shared code.
   nothing either — both look exactly like a wood that cannot be worked. Giving up there and then is
   what put ordinary logs on the pack animal: hue 0 is *every* normal log, so one hiccup disabled
   conversion for the whole run.
-- A given-up-on hue is reconsidered once more before its logs are shipped, since the verdict may
-  have been reached during a throttle or against a lost cursor.
-- Only boards and the logs of a given-up-on hue go onto the animal; a log still waiting its turn
-  stays in the pack. The exception is a pack still over the haul threshold once the boards have gone:
-  those logs travel as logs rather than ending the run overweight.
+- **Only boards go onto the animal, never logs.** A log that leaves as a log never comes back as a
+  board, so a wood given up on stays in the pack and every `makeBoards` reconsiders it — the verdict
+  is a backstop for one pass, not for the run. Mining keeps the converter's progress gate, which is
+  why `retry` takes a `force`.
 - Pack animals are found by body graphic, keeping the ones whose `isRenamable` is true — only your
   own pets can be renamed. Their packs come from `client.findItemOnLayer(serial, Layers.Backpack)`.
 - **All of them get loaded, not just the nearest.** One that stops accepting is full rather than
-  broken, so what is left goes to the next. The leftover-logs fallback is asked only once every animal
-  has had its turn — asking per animal would read a full first horse as the conversion falling behind.
+  broken, so what is left goes to the next.
 - **Do not double-click the animal to find its pack if you can avoid it.** A giant beetle is
   rideable, so the double-click mounts you. [`haul.ts`](haul.ts) only falls back to it when the
   backpack layer comes back empty.

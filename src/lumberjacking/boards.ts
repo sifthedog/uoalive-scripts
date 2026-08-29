@@ -60,11 +60,13 @@ const converter = /* @__PURE__ */ createConverter({
   learned: 'board graphic',
 });
 
-// The only logs the haul is allowed to put on the animal: everything else should still become a board.
+// A backstop for one pass, not a verdict for the run: the haul never carries logs across as logs.
 export const unconvertible = converter.writtenOff;
 
-export const makeBoards = converter.run;
+// Forced, because nothing else ever clears the verdicts now: a wood given up on to a lost cursor, a
+// throttle or an axe that broke gets another go on every haul rather than riding out the run as logs.
+export const makeBoards = (): boolean => {
+  converter.retry(true);
 
-// Asked by the haul before it carries logs across as logs, not by the main loop: a wood written off
-// here still gets hauled rather than ending the run.
-export const retryUnconvertible = converter.retry;
+  return converter.run();
+};

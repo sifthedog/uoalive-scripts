@@ -17,6 +17,7 @@ export {
   LOG_EVERY,
   MAX_CYCLES,
   MAX_NO_CURSOR,
+  MAX_NO_TOOL,
   MAX_STEPS,
   MAX_THROTTLED,
   MAX_UNKNOWN,
@@ -63,7 +64,31 @@ export type Bounds = { minX: number; maxX: number; minY: number; maxY: number };
 // outside it are still fair game as long as one can be reached from a tile inside it.
 export const BOUNDS: Bounds | undefined = { minX: 2400, maxX: 2580, minY: 400, maxY: 600 };
 
+// The block map and the art bans live on globalThis, so they outlive a restart of the script but not
+// of the client. Turn this on for one run to drop what a bad one wrote off for good.
+export const RESET_MEMORY = false;
+
 export const CHOP_RANGE = 2;
+
+// Swept only on the cycle the SCAN_RADIUS box comes back dry, which is the one that used to idle
+export const ROAM_RADIUS = 24;
+
+// The three below have to reach across ROAM_RADIUS, or the far trees it exists to find are clipped
+// back out by stepsTo, by the flood running out of nodes, or by the walk being written off short.
+export const ROUTE_RADIUS = ROAM_RADIUS + 4;
+export const MAX_ROUTE_NODES = 4000;
+export const MAX_TREE_STEPS = 40;
+
+// Above the tiles a BOUNDS-sized box holds, so a run works the whole of it on one read per coordinate
+export const MAX_ROUTE_CELLS = 40_000;
+
+// The stock climb rule. PLAYER_HEIGHT and STEP_HEADROOM are how far above and below a standing spot
+// a solid art still counts as being in the way; the typings carry no static height.
+export const MAX_CLIMB = 2;
+export const PLAYER_HEIGHT = 16;
+export const STEP_HEADROOM = 2;
+
+export const SURVEY_ARTS = 15;
 
 // A stack's graphic changes with its size, so match a set rather than one graphic. Hue is
 // deliberately not part of the match: a shard with special woods hues its logs, and those still

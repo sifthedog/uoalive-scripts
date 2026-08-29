@@ -135,5 +135,24 @@ describe('createConverter', () => {
 
       expect(converter.retry()).toBe(false);
     });
+
+    // Lumberjacking never ships logs raw, so its every conversion has to reconsider the verdicts;
+    // the loop that gate exists to stop is bounded there by the stall watch instead
+    it('is granted again when forced', () => {
+      const converter = make();
+
+      converter.run();
+      converter.retry();
+      converter.run();
+
+      expect(converter.retry(true)).toBe(true);
+      expect(converter.writtenOff.size).toBe(0);
+    });
+
+    it('has nothing to force when nothing was given up on', () => {
+      const converter = make();
+
+      expect(converter.retry(true)).toBe(false);
+    });
   });
 });

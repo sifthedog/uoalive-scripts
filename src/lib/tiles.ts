@@ -120,6 +120,10 @@ export const createScan = <T extends Tile>(options: {
   // range' while a mountain fills the screen tells you nothing you can act on.
   let skipped = 0;
 
+  // Why a sweep came back empty, which 'everything in reach is regrowing' does not distinguish
+  let cooling = 0;
+  let banned = 0;
+
   const run = (radius = options.radius): Found<T> => {
     const blocked = options.blocked();
     const time = now();
@@ -129,6 +133,8 @@ export const createScan = <T extends Tile>(options: {
     let readyAt: number | undefined;
 
     skipped = 0;
+    cooling = 0;
+    banned = 0;
 
     for (let dx = -radius; dx <= radius; dx++) {
       for (let dy = -radius; dy <= radius; dy++) {
@@ -164,8 +170,14 @@ export const createScan = <T extends Tile>(options: {
           if (until !== undefined) {
             if (time < until) {
               // Infinity never arrives, so only a tile genuinely coming back is worth waiting for
-              if (Number.isFinite(until) && (readyAt === undefined || until < readyAt)) {
-                readyAt = until;
+              if (Number.isFinite(until)) {
+                cooling++;
+
+                if (readyAt === undefined || until < readyAt) {
+                  readyAt = until;
+                }
+              } else {
+                banned++;
               }
               continue;
             }
@@ -203,7 +215,10 @@ export const createScan = <T extends Tile>(options: {
     return { found: best, readyAt };
   };
 
-  return Object.assign(run, { skipped: () => skipped });
+  return Object.assign(run, {
+    skipped: () => skipped,
+    holding: () => ({ cooling, banned, skipped }),
+  });
 };
 
 // Scan, then either swing at what was found, take a step toward it, or wait for it to come back.

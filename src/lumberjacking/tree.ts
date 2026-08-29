@@ -5,10 +5,12 @@ import {
   CHOP_RANGE,
   NOT_TREE_GRAPHICS,
   REGROW_DELAY,
+  ROAM_RADIUS,
   SCAN_RADIUS,
   TREE_GRAPHICS,
   UNREACHABLE_DELAY,
 } from './config.js';
+import { grid } from './grid.js';
 import { memory } from './memory.js';
 
 export type { Tile };
@@ -85,15 +87,38 @@ const scan = /* @__PURE__ */ createScan<Tile>({
   skipLand: true,
   matches: (graphic) => isTree(graphic),
 
-  // Trees outside the box are still fair game when a legal standing tile is within CHOP_RANGE;
-  // filtered here rather than picked, walked at, refused and written off MAX_STEPS later.
-  reach: (tree) => (reachableFromBounds(tree.x, tree.y, CHOP_RANGE) ? 0 : undefined),
+  // Trees outside the box are still fair game when a legal standing tile is within CHOP_RANGE. The
+  // step count ranks them too, so one six tiles off through a gap beats one four behind a thicket -
+  // and a tree with no route is dropped here rather than walked at and written off for five minutes.
+  reach: (tree) =>
+    reachableFromBounds(tree.x, tree.y, CHOP_RANGE) ? grid.stepsTo(tree, CHOP_RANGE) : undefined,
 
   describe: (tree) => `'${client.getStatic(tree.graphic)?.name ?? '?'}'`,
 });
 
+// Widened rather than swept wide every cycle: the near box is the ordinary case, and the far one is
+// only worth its terrain reads on the cycle that would otherwise stand still.
 export const scanForTree = (): Scan => {
-  const { found, readyAt } = scan();
+  const near = scan();
 
-  return { tree: found, regrowsAt: readyAt };
+  if (near.found) {
+    return { tree: near.found };
+  }
+
+  const far = scan(ROAM_RADIUS);
+
+  if (far.found) {
+    return { tree: far.found };
+  }
+
+  // 'everything in reach is regrowing' cannot tell a stand of stumps from one the walk never
+  // reached from one this run banned for good, and the three want different things done about them.
+  const { cooling, banned, skipped } = scan.holding();
+
+  log(
+    `tree: nothing choppable within ${ROAM_RADIUS} - ${cooling} regrowing, ` +
+      `${banned} written off for good, ${skipped} with no route`,
+  );
+
+  return { tree: undefined, regrowsAt: far.readyAt ?? near.readyAt };
 };

@@ -21,15 +21,17 @@ Per cycle:
    five of those in a row would otherwise end the run on the quiet counter below.
 3. **Scan the ground** for every graphic in `AMMO_GRAPHICS` and keep what is within `GRAB_RANGE`.
 4. **Nothing in reach** → heartbeat and poll again. This is the script waiting for you to shoot, so
-   it is never counted as a stall.
+   it counts neither as a stall nor against the cycle backstop — a run left watching an empty floor
+   does not end on its own.
 5. **Otherwise sweep** — one `moveItem` per stack, `MOVE_DELAY` apart.
 6. **Poll until the stacks leave the floor.** `moveItem` returns before the server has answered, so
    a stack still on the floor is simply not counted — and polling for the proof means a move that
    lands in 100ms costs 100ms instead of the worst case.
 
-A sweep that moved nothing backs off and is counted; `MAX_QUIET_SWEEPS` of them in a row ends the
-run. That is the pack being full in a way the guard did not catch, or the client thinking a stack is
-closer than the server does.
+A sweep that moved nothing backs off, sets those stacks aside for `BLOCKED_DELAY` and is counted;
+`MAX_QUIET_SWEEPS` of them in a row ends the run. That is the pack being full in a way the guard did
+not catch, or the client thinking a stack is closer than the server does. The counter is cleared
+whenever there is nothing in reach, so it means sweeps in a row and not sweeps in a session.
 
 ### Before you paste it
 
@@ -61,6 +63,9 @@ Everything lives in [`config.ts`](config.ts).
 | `WATCH_POLL` | `400` | Between scans that found nothing in reach. A client-side scan, so it costs no packets |
 | `SETTLE_TIMEOUT` / `SETTLE_POLL` | `2000` / `100` | How long a sweep waits for the stacks to leave the floor, and how often it looks |
 | `MAX_QUIET_SWEEPS` | `5` | Sweeps in a row that issued moves and shifted nothing, before the run stops |
+| `BLOCKED_DELAY` | `60_000` | How long a stack the server would not move is left alone |
+| `PRUNE_EVERY` | `50` | Idle passes between sweeps of the blocked map for stacks that have gone |
+| `MAX_CYCLES` | `100_000` | Sweeps before the run stops. Idle polls do not count |
 | `SWEEP_BACKOFF` / `SWEEP_BACKOFF_MAX` | `1000` / `8000` | How far a quiet sweep backs off, and the ceiling |
 | `WEIGHT_BUFFER` | `20` | Stones kept clear of the limit, so the stop lands before the shard starts refusing |
 | `PACK_LIMIT` | shared | Top-level pack slots before the run stops |
@@ -78,7 +83,8 @@ convention this script does not know, and belongs in `GROUND` in [`floor.ts`](fl
 run, because a floor of out-of-reach stacks logs identically to an empty one otherwise.
 
 **`nothing moved (n/5)`** — the stacks are in reach as far as the client is concerned but the server
-disagrees, or the pack will not take them. Stand directly on the pile.
+disagrees, or the pack will not take them. Stand directly on the pile. Each of those stacks is then
+left alone for `BLOCKED_DELAY`, so one arrow the server will not move cannot end the run.
 
 **`pack is full (120 items at the top level)`** — the pack's item cap, not its weight. Bag the arrows
 or empty it.

@@ -21,6 +21,7 @@ one, and what to set. Start there.
 | `dist/necro.js` | The same run for Necromancy: Pain Spike, the forms, and Wither, bandaging itself at a health floor | [src/necromancy](src/necromancy/README.md) |
 | `dist/magery.js` | The same run for Magery, on the spells that gain without something to hit | [src/magery](src/magery/README.md) |
 | `dist/chivalry.js` | The same run for Chivalry, which spends tithing points as well as mana | [src/chivalry](src/chivalry/README.md) |
+| `dist/buffs.js` | Keeps Consecrate Weapon and Divine Fury standing, recasting each as it lapses | [src/buffs](src/buffs/README.md) |
 | `dist/lockpick-training.js` | Target a locked container, pick it until the lockpicks run out or Lockpicking is capped | [src/lockpicking](src/lockpicking/README.md) |
 | `dist/hiding.js` | Stand still, hide, and spam Stealth until one fails - then hide again | [src/hiding](src/hiding/README.md) |
 | `dist/animal-lore.js` | Target a creature, read it over and over until Animal Lore caps | [src/animallore](src/animallore/README.md) |
@@ -56,6 +57,7 @@ src/lib/           everything more than one script does (see below)
 src/animallore/    read one creature over and over to train Animal Lore
 src/arrows/        sweep spent arrows and bolts off the ground into the pack
 src/boxes/         empty the crafted wooden boxes, keys on the floor (+ a key dump)
+src/buffs/         keep the Chivalry self-buffs standing, recasting each as it lapses
 src/carving/       carve every corpse in reach with a butcher knife, take the feathers
 src/chivalry/      train Chivalry through its five bands, on the same loop as src/training/
 src/hiding/        train Hiding and Stealth standing still, hiding and stealthing in turn

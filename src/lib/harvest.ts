@@ -18,6 +18,10 @@ export interface HarvestTimings {
   // fifteen seconds with a pickaxe plainly in hand.
   maxNoCursor: number;
 
+  // Budgeted like maxNoCursor rather than fatal: the tool search reads the pack, and one read that
+  // threw is not a pack with no tool in it.
+  maxNoTool: number;
+
   logEvery: number;
   throttleBackoff: number;
   throttleBackoffMax: number;
@@ -114,170 +118,193 @@ export const runHarvest = <T>({
   // failed to read, and spending that budget on one ended a live run in fifteen seconds with a tool
   // plainly in hand.
   let noCursor = 0;
+  let noTool = 0;
+
+  // Discounted from the backstop below, which bounds swings: a watcher polling an empty field at
+  // 400ms used to spend the whole budget standing still, and stop after half an hour of working.
+  let idled = 0;
 
   const endCycle = (phase: string, cycle: number): void => {
     stall.endCycle(phase, cycle, tally);
     stop ??= stall.reason();
   };
 
-  for (let cycle = 0; cycle < timings.maxCycles && !stop; cycle++) {
-    stop = stopReason();
-    if (stop) {
-      break;
-    }
-
-    // Everything before the swing reads a frozen shard as its own failure: a step that does not
-    // move is a wall, a smelt that converts nothing is ore that cannot be worked.
-    if (isSaving()) {
-      waitOutSave();
-      unknown = 0;
-      throttled = 0;
-      stall.progressed();
-      endCycle('saving', cycle);
-      continue;
-    }
-
-    watch?.();
-
-    // Asked every cycle rather than once at the start, so a remount or a broken tool costs a single
-    // cycle instead of the rest of the run.
-    stop = ready?.();
-    if (stop) {
-      break;
-    }
-
-    if (!equipTool()) {
-      stop = `no ${toolName}`;
-      break;
-    }
-
-    const relieved = relieve?.();
-
-    if (relieved) {
-      if ('stop' in relieved) {
-        stop = relieved.stop;
+  try {
+    for (let cycle = 0; cycle - idled < timings.maxCycles && !stop; cycle++) {
+      stop = stopReason();
+      if (stop) {
         break;
       }
 
-      endCycle(relieved.phase, cycle);
-      sleep(timings.stepDelay);
-      continue;
-    }
+      // Everything before the swing reads a frozen shard as its own failure: a step that does not
+      // move is a wall, a smelt that converts nothing is ore that cannot be worked.
+      if (isSaving()) {
+        waitOutSave();
+        unknown = 0;
+        throttled = 0;
+        stall.progressed();
+        endCycle('saving', cycle);
+        continue;
+      }
 
-    let target: T | undefined;
+      watch?.();
 
-    if (approach) {
-      const found = approach();
-
-      if ('stop' in found) {
-        stop = found.stop;
+      // Asked every cycle rather than once at the start, so a remount or a broken tool costs a single
+      // cycle instead of the rest of the run.
+      stop = ready?.();
+      if (stop) {
         break;
       }
 
-      // Walking sleeps inside the step rather than here, where a resource coming back has already
-      // waited out its own clock
-      if ('waited' in found) {
-        continue;
-      }
+      if (!equipTool()) {
+        noTool++;
 
-      if ('walked' in found) {
-        endCycle('walking', cycle);
-        continue;
-      }
-
-      target = found.target;
-    }
-
-    const outcome = harvest(target);
-
-    if (outcome === landed) {
-      tally++;
-      unknown = 0;
-      throttled = 0;
-      stall.progressed();
-      onLanded?.();
-    } else {
-      switch (outcome) {
-        case 'wornOut':
-          log(`${prefix}: ${toolName} worn out, swapping`);
-          unknown = 0;
+        if (noTool >= timings.maxNoTool) {
+          stop = `no ${toolName}`;
           break;
+        }
 
-        // The counters are reset rather than left alone, because whatever they had accumulated was
-        // measured against a server that was not answering. The stall watchdog goes with them: a
-        // shard that saves often would otherwise walk a run to its stop a save at a time.
-        case 'saving':
-          waitOutSave();
-          unknown = 0;
-          throttled = 0;
+        log(`${prefix}: no ${toolName} (${noTool}/${timings.maxNoTool}), looking again`);
+        endCycle('no tool', cycle);
+        sleep(backoffFor(noTool, timings.throttleBackoff, timings.throttleBackoffMax));
+        continue;
+      }
+
+      noTool = 0;
+
+      const relieved = relieve?.();
+
+      if (relieved) {
+        if ('stop' in relieved) {
+          stop = relieved.stop;
+          break;
+        }
+
+        endCycle(relieved.phase, cycle);
+        sleep(timings.stepDelay);
+        continue;
+      }
+
+      let target: T | undefined;
+
+      if (approach) {
+        const found = approach();
+
+        if ('stop' in found) {
+          stop = found.stop;
+          break;
+        }
+
+        // No sleep: a resource coming back has already waited out its own clock. progressed()
+        // because a wait is the script working - a run that idled at 299 stopped as it came back.
+        if ('waited' in found) {
+          idled++;
           stall.progressed();
-          break;
+          continue;
+        }
 
-        case 'throttled':
-          throttled++;
+        if ('walked' in found) {
+          endCycle('walking', cycle);
+          continue;
+        }
 
-          // A refusal is a read outcome, so it clears the unreadable count: left standing, a shard
-          // alternating refusals with silence ends the run on maxUnknown without ever producing five
-          // unreadable cycles in a row.
-          unknown = 0;
-          log(`${prefix}: shard says wait (${throttled}/${timings.maxThrottled}), backing off`);
-          sleep(backoffFor(throttled, timings.throttleBackoff, timings.throttleBackoffMax));
+        target = found.target;
+      }
 
-          if (throttled >= timings.maxThrottled) {
-            stop = 'the shard kept refusing the swing';
-          }
-          break;
+      const outcome = harvest(target);
 
-        // With a tool demonstrably in hand this is the shard declining to start the swing, which on
-        // a live run was a third of them. The swing has already looked for a reason, so this is a
-        // refusal with nothing said about it - backed off like one, on a budget of its own.
-        case 'noCursor':
-          noCursor++;
-          log(`${prefix}: no target cursor (${noCursor}/${timings.maxNoCursor}), backing off`);
-          sleep(backoffFor(noCursor, timings.throttleBackoff, timings.throttleBackoffMax));
-
-          if (noCursor >= timings.maxNoCursor) {
-            stop = 'the shard never opened a target cursor';
-          }
-          break;
-
-        default: {
-          const handled = outcome === undefined ? undefined : handle(outcome, target);
-
-          if (handled) {
+      if (outcome === landed) {
+        tally++;
+        unknown = 0;
+        throttled = 0;
+        stall.progressed();
+        onLanded?.();
+      } else {
+        switch (outcome) {
+          case 'wornOut':
+            log(`${prefix}: ${toolName} worn out, swapping`);
             unknown = 0;
-            stop ??= handled.stop;
-          } else {
-            unknown++;
-            log(
-              `${prefix}: unreadable outcome (${unknown}/${timings.maxUnknown}), check OUTCOME_TEXT`,
-            );
+            break;
+
+          // The counters are reset rather than left alone, because whatever they had accumulated was
+          // measured against a server that was not answering. The stall watchdog goes with them: a
+          // shard that saves often would otherwise walk a run to its stop a save at a time.
+          case 'saving':
+            waitOutSave();
+            unknown = 0;
+            throttled = 0;
+            stall.progressed();
+            break;
+
+          case 'throttled':
+            throttled++;
+
+            // A refusal is a read outcome, so it clears the unreadable count: left standing, a shard
+            // alternating refusals with silence ends the run on maxUnknown without ever producing five
+            // unreadable cycles in a row.
+            unknown = 0;
+            log(`${prefix}: shard says wait (${throttled}/${timings.maxThrottled}), backing off`);
+            sleep(backoffFor(throttled, timings.throttleBackoff, timings.throttleBackoffMax));
+
+            if (throttled >= timings.maxThrottled) {
+              stop = 'the shard kept refusing the swing';
+            }
+            break;
+
+          // With a tool demonstrably in hand this is the shard declining to start the swing, which on
+          // a live run was a third of them. The swing has already looked for a reason, so this is a
+          // refusal with nothing said about it - backed off like one, on a budget of its own.
+          case 'noCursor':
+            noCursor++;
+            log(`${prefix}: no target cursor (${noCursor}/${timings.maxNoCursor}), backing off`);
+            sleep(backoffFor(noCursor, timings.throttleBackoff, timings.throttleBackoffMax));
+
+            if (noCursor >= timings.maxNoCursor) {
+              stop = 'the shard never opened a target cursor';
+            }
+            break;
+
+          default: {
+            const handled = outcome === undefined ? undefined : handle(outcome, target);
+
+            if (handled) {
+              unknown = 0;
+              stop ??= handled.stop;
+            } else {
+              unknown++;
+              log(
+                `${prefix}: unreadable outcome (${unknown}/${timings.maxUnknown}), check OUTCOME_TEXT`,
+              );
+            }
           }
         }
       }
-    }
 
-    // Done here rather than inside each branch the way `unknown` is: every branch but one clears it,
-    // and one added later would have to remember to.
-    if (outcome !== 'noCursor') {
-      noCursor = 0;
-    }
+      // Done here rather than inside each branch the way `unknown` is: every branch but one clears it,
+      // and one added later would have to remember to.
+      if (outcome !== 'noCursor') {
+        noCursor = 0;
+      }
 
-    if (unknown >= timings.maxUnknown) {
-      stop = `${timings.maxUnknown} unreadable outcomes in a row`;
-      break;
-    }
+      if (unknown >= timings.maxUnknown) {
+        stop = `${timings.maxUnknown} unreadable outcomes in a row`;
+        break;
+      }
 
-    if (tally >= reported + timings.logEvery) {
-      reported = tally;
-      log(`${prefix}: ${progress(tally)}, ${player.weight}/${player.weightMax}`);
-    }
+      if (tally >= reported + timings.logEvery) {
+        reported = tally;
+        log(`${prefix}: ${progress(tally)}, ${player.weight}/${player.weightMax}`);
+      }
 
-    endCycle(outcome ?? 'unknown', cycle);
-    sleep(timings.stepDelay);
+      endCycle(outcome ?? 'unknown', cycle);
+      sleep(timings.stepDelay);
+    }
+  } catch (error) {
+    // Nothing else catches: a throw out of a client call used to end the run with no line at all
+    stop ??= `threw - ${String(error)}`;
   }
 
-  const reason = stop ?? `hit the ${timings.maxCycles} cycle backstop`;
+  const reason = stop ?? `hit the ${timings.maxCycles} working cycle backstop`;
 
   finish?.(tally, reason);
 

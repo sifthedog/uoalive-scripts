@@ -4,8 +4,8 @@ export {
   EQUIP_TIMEOUT,
   HEARTBEAT_EVERY,
   LOG_EVERY,
-  MAX_CYCLES,
   MAX_NO_CURSOR,
+  MAX_NO_TOOL,
   MAX_THROTTLED,
   MAX_UNKNOWN,
   NO_CURSOR_READ,
@@ -24,6 +24,9 @@ export {
 import { SAVING_TEXT, THROTTLED_TEXT } from '../lib/timings.js';
 
 export { SAVING_TEXT };
+
+// Bounds carves and loots, not the idle polls between them, so a quiet field costs nothing
+export const MAX_CYCLES = 100_000;
 
 // Every corpse in the game is this art; what died is carried in the hue and the name.
 export const CORPSE_GRAPHIC = 0x2006;

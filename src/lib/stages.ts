@@ -2,36 +2,19 @@
 // the loop asks are answered off one table - which ability now, and whether there is anything left -
 // so a separate target constant cannot disagree with the last band.
 
-export interface Stage {
+import type { Castable } from './cast.js';
+
+export interface Stage extends Castable {
   // In the tenths getSkill reports: 74.6 arrives as 746, so 600 is 60.0. Exclusive, so a skill
   // sitting exactly on a bound has finished that band and belongs to the next one.
   upTo: number;
 
-  spell: Spells;
-
   // What the shard charges, and so the figure the loop gathers mana up to before it casts
   mana: number;
 
-  // Where the shard publishes one. It stops the run re-issuing an ability that is already standing,
-  // and is the proof a cast landed that does not depend on how this shard words its journal.
-  buff?: BuffDebuffs;
-
-  // 'self' is player.castTo(spell, player). Absent is the ordinary case: a weapon ability, a
-  // self-transformation and an area attack are all cast at nobody.
-  target?: 'self';
-
-  // Both default to the folder's figure, and both are here for the same reason: a table whose rows
-  // are seconds apart in cast time cannot be paced by one number without the fast rows paying the
-  // slow row's bill. A folder whose rows are all alike sets neither.
-  //
-  // How long to wait after a cast that has already been read. Not cover for the incantation -
-  // castTimeout has stood through that by the time this is slept.
+  // Pacing after a cast that has already been read, so a table whose rows are seconds apart in cast
+  // time is not paced by one number. Not cover for the incantation - castTimeout stood through that.
   castDelay?: number;
-
-  // How long the shard is given to say something about this row's cast. Doubles as how long a cast
-  // the shard says nothing about has to show the mana leaving the pool, which is the only proof a
-  // row with no buff has - so below this row's cast time every success reads as unreadable.
-  castTimeout?: number;
 }
 
 // The client's enums are real TypeScript enums, so they carry the reverse mapping. The fallback is

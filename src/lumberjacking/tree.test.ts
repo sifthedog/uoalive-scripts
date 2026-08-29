@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { IMPASSABLE } from '../lib/flags.js';
 import { installGlobals, tile, type FakeWorld } from '../test-support/uo.js';
-import { REGROW_DELAY, UNREACHABLE_DELAY } from './config.js';
+import { REGROW_DELAY, ROAM_RADIUS, UNREACHABLE_DELAY } from './config.js';
 
 const OAK = 0x0ce0;
 const ROCK = 0x1771;
@@ -236,18 +237,71 @@ describe('scanForTree', () => {
 
   it('trusts the tile its own coordinates rather than the ones it scanned with', async () => {
     world.client.getTerrainList = vi.fn((x: number, y: number) =>
-      x === 101 && y === 100 ? [tile({ x: 55, y: 66, z: 7, graphic: OAK })] : [],
+      x === 101 && y === 100 ? [tile({ x: 95, y: 96, z: 7, graphic: OAK })] : [],
     );
     const { scanForTree } = await loadTree();
 
-    expect(scanForTree().tree).toMatchObject({ x: 55, y: 66, z: 7 });
+    expect(scanForTree().tree).toMatchObject({ x: 95, y: 96, z: 7 });
   });
 
-  it('finds nothing beyond the scan radius', async () => {
+  it('finds nothing beyond the roam radius', async () => {
     world.client.getTerrainList = terrainFrom([tile({ x: 500, y: 500, graphic: OAK })]);
     const { scanForTree } = await loadTree();
 
     expect(scanForTree().tree).toBeUndefined();
+  });
+
+  // A stand chopped to stumps used to leave the character standing in it for REGROW_DELAY. The wide
+  // sweep is what walks it to the next stand instead.
+  it('widens past the scan radius once the near box is dry', async () => {
+    world.client.getTerrainList = terrainFrom([tile({ x: 118, y: 100, graphic: OAK })]);
+    const { scanForTree } = await loadTree();
+
+    expect(scanForTree().tree?.x).toBe(118);
+  });
+
+  it('spends the wide sweep only when the near box has nothing', async () => {
+    world.client.getTerrainList = terrainFrom([
+      tile({ x: 105, y: 100, graphic: OAK }),
+      tile({ x: 118, y: 100, graphic: OAK }),
+    ]);
+    const { scanForTree } = await loadTree();
+
+    expect(scanForTree().tree?.x).toBe(105);
+  });
+
+  // The reported bug: trees are the impassable statics the walk has to cross, so the nearest one was
+  // picked, shuffled at, and written off for five minutes - over and over, until the box was empty
+  it('drops a tree there is no route to rather than picking it', async () => {
+    world.client.getTerrainList = vi.fn((x: number, y: number) => {
+      if (x === 105 && y === 100) {
+        return [tile({ x, y, graphic: OAK })];
+      }
+
+      return [tile({ x, y, graphic: 3, isLand: true, flags: x === 103 ? IMPASSABLE : 0 })];
+    });
+    const { scanForTree } = await loadTree();
+
+    expect(scanForTree()).toEqual({ tree: undefined, regrowsAt: undefined });
+  });
+
+  it('names what is holding it back when both sweeps come up empty', async () => {
+    world.client.getTerrainList = terrainFrom([
+      tile({ x: 102, y: 100, graphic: OAK }),
+      tile({ x: 106, y: 100, graphic: OAK }),
+    ]);
+    const { markDepleted, markUnusable, scanForTree } = await loadTree();
+
+    markDepleted(scanForTree().tree!);
+    markUnusable(scanForTree().tree!, 'is not in line of sight');
+    world.log.mockClear();
+
+    scanForTree();
+
+    expect(world.log).toHaveBeenCalledWith(
+      `tree: nothing choppable within ${ROAM_RADIUS} - 1 regrowing, 1 written off for good, ` +
+        '0 with no route',
+    );
   });
 
   describe('depleted tiles', () => {
