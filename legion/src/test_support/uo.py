@@ -41,11 +41,16 @@ class FakeMobile(object):
         self.IsRenamable = fields.get("is_renamable", False)
         self.Notoriety = fields.get("notoriety", 1)
         self.Backpack = fields.get("backpack", None)
+        self.IsDestroyed = fields.get("is_destroyed", False)
         self.Hits = fields.get("hits", 100)
         self.HitsMax = fields.get("hits_max", 100)
         self.X = fields.get("x", 0)
         self.Y = fields.get("y", 0)
         self.Z = fields.get("z", 0)
+        self.props = fields.get("props", "")
+
+    def NameAndProps(self, force=False, timeout=None):
+        return self.props
 
 
 class FakePlayer(object):
@@ -102,6 +107,15 @@ class FakeAPI(object):
         self.pre_targeted = []
         self.cancelled_pre_targets = 0
         self.moved = []
+        self.renamed = []
+        self.menu_entries = set()
+        self.menus = []
+        self.gump = 0
+        self.gump_text = []
+        self.replies = []
+        self.closed_gumps = 0
+        self.pathfound = []
+        self.reachable = False
 
     def SysMsg(self, text, hue=None):
         self.messages.append(text)
@@ -203,6 +217,41 @@ class FakeAPI(object):
         self.moved.append((serial, container, amount))
 
         return True
+
+    def GetAllMobiles(self, graphic=None, distance=None):
+        return [m for m in self.mobiles.values()
+                if (graphic is None or m.Graphic == graphic)
+                and (distance is None or m.Distance <= distance)]
+
+    def PathfindEntity(self, serial, within, wait=False, timeout=None, run=False):
+        self.pathfound.append((serial, within))
+
+        return self.reachable
+
+    def ContextMenu(self, serial, text, timeout=None):
+        self.menus.append((serial, text))
+
+        return text in self.menu_entries
+
+    def HasGump(self):
+        return self.gump
+
+    def GumpContains(self, text, gump=None):
+        return any(text.lower() in line.lower() for line in self.gump_text)
+
+    def ReplyGump(self, button, gump=None):
+        self.replies.append((button, gump))
+
+    def CloseGump(self, gump=None):
+        self.closed_gumps += 1
+        self.gump = 0
+
+    def Rename(self, serial, name):
+        self.renamed.append((serial, name))
+
+    def see(self, *mobiles):
+        for seen in mobiles:
+            self.mobiles[seen.Serial] = seen
 
     def hear(self, *lines):
         self.journal.extend(lines)

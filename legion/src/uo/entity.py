@@ -23,3 +23,15 @@ def chebyshev(x, y, unknown):
         return unknown
 
     return max(abs(me.X - x), abs(me.Y - y))
+
+
+def find_mobile(serial):
+    found = API.FindMobile(serial)
+
+    return None if found is None or found.IsDestroyed else found
+
+
+def distance_of(serial):
+    found = find_mobile(serial)
+
+    return None if found is None else found.Distance

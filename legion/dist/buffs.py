@@ -22,7 +22,7 @@ def matched_bucket(buckets):
     return None
 
 
-def read_outcome(buckets, budget, poll):
+def read_outcome(buckets, budget, poll, between=None):
     waited = 0.0
 
     while True:
@@ -33,6 +33,10 @@ def read_outcome(buckets, budget, poll):
 
         if waited >= budget:
             return None
+
+        # Between the slices rather than around the wait: a mobile walks while its attempt resolves
+        if between is not None:
+            between()
 
         API.Pause(poll)
         waited += poll

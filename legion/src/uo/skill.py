@@ -1,6 +1,10 @@
 import API
 
 
+def reading(value):
+    return "unknown" if value is None else "%.1f" % value
+
+
 def skill_value(name):
     skill = API.GetSkill(name)
 
