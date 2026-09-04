@@ -19,6 +19,7 @@ ENTRIES = [
     {"in": "src/taming/index.py", "out": "tame"},
     {"in": "src/mining/index.py", "out": "mining"},
     {"in": "src/mining/here.py", "out": "mine-here"},
+    {"in": "src/lumberjacking/index.py", "out": "lumberjack"},
 ]
 
 # Legion strips these from the script it loads and injects API as a builtin, so the artifact

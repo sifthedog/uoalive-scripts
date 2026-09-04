@@ -233,6 +233,15 @@ class FakeAPI(object):
     def GetStaticsAt(self, x, y):
         return list(self.statics.get((x, y), []))
 
+    def GetStaticsInArea(self, x1, y1, x2, y2):
+        found = []
+
+        for (x, y), here in self.statics.items():
+            if x1 <= x <= x2 and y1 <= y <= y2:
+                found.extend(here)
+
+        return found
+
     def GetPath(self, x, y, z, within=0):
         return self.paths.get((x, y))
 
@@ -330,15 +339,23 @@ def skill(value=0.0, cap=100.0):
     return FakeSkill(value, cap)
 
 
+def static(x=0, y=0, z=0, graphic=0, name="", is_tree=False, is_vegetation=False):
+    return FakeStatic(x, y, z, graphic, name, is_tree, is_vegetation)
+
+
 def tile(x, y, z=0, graphic=0, is_land=True, name=""):
     return {"x": x, "y": y, "z": z, "graphic": graphic, "is_land": is_land, "name": name}
 
 
 class FakeStatic(object):
-    def __init__(self, z=0, graphic=0, name=""):
+    def __init__(self, x=0, y=0, z=0, graphic=0, name="", is_tree=False, is_vegetation=False):
+        self.X = x
+        self.Y = y
         self.Z = z
         self.Graphic = graphic
         self.Name = name
+        self.IsTree = is_tree
+        self.IsVegetation = is_vegetation
 
 
 class FakeLand(object):

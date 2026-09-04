@@ -8,7 +8,7 @@ class ToolTest(unittest.TestCase):
     def setUp(self):
         self.api = install()
         self.said = []
-        self.tool = Tool("pickaxe", ["onehanded"], None, 3, 1.0, 0.25, self.said.append)
+        self.tool = Tool("pickaxe", ["pickaxe"], [], ["onehanded"], None, 3, 1.0, 0.25, self.said.append)
 
     def _hold(self, held):
         self.api.layers["onehanded"] = held
@@ -41,7 +41,9 @@ class ToolTest(unittest.TestCase):
         self.api.hold(item(serial=7, graphic=0x1BDD, name="a log"))
 
         self.assertIsNone(self.tool.find())
-        self.assertEqual(self.said, ["no pickaxe found. Pack holds: 0x1bdd"])
+        self.assertEqual(self.said,
+                         ["no pickaxe found - nothing named pickaxe in the pack. "
+                          "It holds: 0x1bdd"])
 
     def test_says_so_once_per_dry_stretch(self):
         self.tool.find()
@@ -50,7 +52,7 @@ class ToolTest(unittest.TestCase):
         self.assertEqual(len(self.said), 1)
 
     def test_reaches_into_the_spare_bag(self):
-        spare = Tool("pickaxe", ["onehanded"], 0x50000000, 3, 1.0, 0.25, self.said.append)
+        spare = Tool("pickaxe", ["pickaxe"], [], ["onehanded"], 0x50000000, 3, 1.0, 0.25, self.said.append)
         self.api.containers[0x50000000] = [item(serial=9, name="a pickaxe")]
 
         self.assertEqual(spare.find().Serial, 9)
@@ -94,12 +96,13 @@ class ToolTest(unittest.TestCase):
     def test_reads_either_hand_when_told_to(self):
         axe = item(serial=7, name="an axe")
         self.api.layers["twohanded"] = axe
-        both = Tool("axe", ["twohanded", "onehanded"], None, 3, 1.0, 0.25, self.said.append)
+        both = Tool("axe", ["axe"], ["pickaxe"], ["twohanded", "onehanded"], None, 3, 1.0, 0.25,
+                    self.said.append)
 
         self.assertIs(both.held(), axe)
 
     def test_two_tools_do_not_share_the_learned_graphic(self):
         self.tool.learn(item(graphic=0x0E86))
-        other = Tool("pickaxe", ["onehanded"], None, 3, 1.0, 0.25, self.said.append)
+        other = Tool("pickaxe", ["pickaxe"], [], ["onehanded"], None, 3, 1.0, 0.25, self.said.append)
 
         self.assertFalse(other.is_tool(item(graphic=0x0E86, name="")))

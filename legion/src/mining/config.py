@@ -4,7 +4,8 @@ from uo.phrases import (ATTACK_TEXT, GUARD_ZONE_TEXT, NO_GUARDS_TEXT, SAVE_DONE_
 from uo.timings import (HEARTBEAT_EVERY, LOG_EVERY, PACK_LIMIT, SAVE_POLL, SAVE_WAIT, STALL_STOP,
                         STALL_WARN, STEP_DELAY, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX)
 
-PICKAXE_NAME = "pickaxe"
+# Whole words and a list, so a plural still matches
+PICKAXE_NAMES = ["pickaxe", "pickaxes"]
 
 # Worth setting only if the spares are somewhere ItemsInContainer's recursive read does not reach
 SPARE_BAG_SERIAL = None

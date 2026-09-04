@@ -9,12 +9,12 @@ from mining.config import (LOG_EVERY, MAX_CYCLES, MAX_NO_CURSOR, MAX_NO_TOOL, MA
                            UNREACHABLE_DELAY, IDLE_LOG_EVERY, IDLE_POLL)
 from mining.dig import Digger
 from mining.relieve import Relief
-from mining.roam import Roam
 from mining.run import (DIG_CONFIG, beetle, combiner, get_off_the_mount, heartbeat, log, ore,
                         pickaxe, say_where_we_stand, saves, smelter, stall,
                         stop_reason, threat)
 from mining.vein import Veins
 from uo.loop import backoff_for
+from uo.roam import Roam
 from uo.tiles import TileMemory
 from uo.terrain import Terrain
 from uo.weight import too_heavy
@@ -31,6 +31,9 @@ veins = Veins(Terrain(), memory, {
     "respawn_delay": RESPAWN_DELAY,
 }, log)
 roam = Roam(veins, memory, saves, threat, {
+    "noun": "vein",
+    "idle_message": "everything in reach is worked out, waiting for a vein to come back",
+    "none_left": "no ore in range",
     "range": MINE_RANGE,
     "scan_radius": SCAN_RADIUS,
     "z_range": MINE_Z_RANGE,

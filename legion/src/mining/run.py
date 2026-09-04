@@ -12,7 +12,7 @@ from mining.config import (ATTACK_TEXT, BEETLE_SCAN_RADIUS, COMBINE_DELAY, COMBI
                            MAX_COMBINE_ATTEMPTS, MAX_SMELT_PASSES, METAL_ASKS, METAL_LINE_EXTRA,
                            METAL_MISSES, MIN_SMELT_AMOUNT, NO_CURSOR_READ, NO_GUARDS_TEXT,
                            NOT_METAL_WORDS, OPL_TIMEOUT, ORE_GRAPHICS, ORE_METALS, ORE_NAME_WORD,
-                           OUTCOME_TEXT, PACK_LIMIT, PATHFIND_TIMEOUT, PICK_TIMEOUT, PICKAXE_NAME,
+                           OUTCOME_TEXT, PACK_LIMIT, PATHFIND_TIMEOUT, PICK_TIMEOUT, PICKAXE_NAMES,
                            PLAIN_METAL, SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT, SAVING_TEXT,
                            SMELT_ATTEMPTS, SMELT_DELAY, SMELT_POLL, SMELT_RANGE, SMELT_TIMEOUT,
                            SMELT_UNSKILLED_TEXT, SPARE_BAG_SERIAL, STALL_STOP, STALL_WARN, STOPPED,
@@ -43,8 +43,8 @@ def stop_reason():
 
 saves = SaveWatch(SAVING_TEXT, SAVE_DONE_TEXT, SAVE_WAIT, SAVE_POLL, log, heartbeat, stop_reason)
 
-pickaxe = Tool(PICKAXE_NAME, ["onehanded"], SPARE_BAG_SERIAL, EQUIP_ATTEMPTS, EQUIP_TIMEOUT,
-               EQUIP_POLL, log)
+pickaxe = Tool("pickaxe", PICKAXE_NAMES, [], ["onehanded"], SPARE_BAG_SERIAL,
+               EQUIP_ATTEMPTS, EQUIP_TIMEOUT, EQUIP_POLL, log)
 ore = OrePack(ORE_GRAPHICS, ORE_NAME_WORD, MIN_SMELT_AMOUNT, log)
 metals = MetalBook({
     "metals": ORE_METALS,
@@ -66,7 +66,7 @@ combiner = Combiner(ore, metals, {
 }, log)
 beetle = Beetle(FIRE_BEETLE_GRAPHICS, FIRE_BEETLE_SERIAL, BEETLE_SCAN_RADIUS, SMELT_RANGE,
                 PATHFIND_TIMEOUT, PICK_TIMEOUT, log)
-smelter = Smelter(ore, beetle, combiner, saves, {
+smelter = Smelter(ore, beetle, saves, {
     "attempts": SMELT_ATTEMPTS,
     "passes": MAX_SMELT_PASSES,
     "delay": SMELT_DELAY,

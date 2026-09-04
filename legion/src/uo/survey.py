@@ -2,7 +2,7 @@ from uo.entity import hex_of
 
 
 # The dead-end report: what the run actually saw, so a wrong art table can be corrected from it
-def survey(tiles, radius, limit, matches, log):
+def survey(tiles, radius, limit, matches, log, extra_marks=None):
     seen = {}
 
     for tile in tiles:
@@ -26,6 +26,9 @@ def survey(tiles, radius, limit, matches, log):
 
         if not tile["is_land"]:
             marks.append("'%s'" % (tile["name"] or "?"))
+
+        if extra_marks is not None:
+            marks.extend(extra_marks(tile))
 
         # Decimal as well as hex: the RunUO tables the art sets are seeded from are decimal
         log("  %s %s (%d) x%d z%d %s"

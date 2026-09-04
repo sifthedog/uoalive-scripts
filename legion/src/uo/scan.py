@@ -15,7 +15,7 @@ def steps_to(tile, within):
 
 # GetPath costs a call per candidate, where the web client's flood fill answered every tile at once,
 # so only the nearest `probes` matches are asked for a route
-def pick_nearest(candidates, memory, probes, within):
+def pick_nearest(candidates, memory, probes, within, in_reach_is_free=False):
     """(the shortest route in reach, when the soonest cooling tile is back, how many were walled)"""
     live = []
     cooling = None
@@ -38,7 +38,11 @@ def pick_nearest(candidates, memory, probes, within):
     walled = 0
 
     for tile in live[:probes]:
-        steps = steps_to(tile, within)
+        # Already in reach, so there is nothing to route and no probe worth paying for
+        if in_reach_is_free and chebyshev_to(tile) <= within:
+            steps = 0
+        else:
+            steps = steps_to(tile, within)
 
         if steps is None:
             walled += 1
