@@ -32,92 +32,110 @@ from uo.threat import ThreatWatch
 from uo.tool import Tool
 from uo.vitals import position_and_weight
 
-log = make_log("mining")
-heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "swings", position_and_weight)
-stall = StallWatch("cycles without a swing landing", STALL_WARN, STALL_STOP, heartbeat, log)
+class Run(object):
+    """Everything both mining entries wire up alike. The prefix is what they differ on."""
+
+    def __init__(self, prefix):
+        log = make_log(prefix)
+        heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "swings", position_and_weight)
+        stall = StallWatch("cycles without a swing landing", STALL_WARN, STALL_STOP, heartbeat, log)
 
 
-def stop_reason():
-    return first_reason([stopped(STOPPED), dead(), pack_full(PACK_LIMIT)])
+        def stop_reason():
+            return first_reason([stopped(STOPPED), dead(), pack_full(PACK_LIMIT)])
 
 
-saves = SaveWatch(SAVING_TEXT, SAVE_DONE_TEXT, SAVE_WAIT, SAVE_POLL, log, heartbeat, stop_reason)
+        saves = SaveWatch(SAVING_TEXT, SAVE_DONE_TEXT, SAVE_WAIT, SAVE_POLL, log, heartbeat, stop_reason)
 
-pickaxe = Tool("pickaxe", PICKAXE_NAMES, [], ["onehanded"], SPARE_BAG_SERIAL,
-               EQUIP_ATTEMPTS, EQUIP_TIMEOUT, EQUIP_POLL, log)
-ore = OrePack(ORE_GRAPHICS, ORE_NAME_WORD, MIN_SMELT_AMOUNT, log)
-metals = MetalBook({
-    "metals": ORE_METALS,
-    "plain": PLAIN_METAL,
-    "line_extra": METAL_LINE_EXTRA,
-    "not_metal_words": NOT_METAL_WORDS,
-    "asks": METAL_ASKS,
-    "misses": METAL_MISSES,
-    "opl_timeout": OPL_TIMEOUT,
-}, log)
-combiner = Combiner(ore, metals, {
-    "attempts": MAX_COMBINE_ATTEMPTS,
-    "delay": COMBINE_DELAY,
-    "timeout": COMBINE_TIMEOUT,
-    "poll": COMBINE_POLL,
-    "target_timeout": TARGET_TIMEOUT,
-    "different_text": DIFFERENT_ORE_TEXT,
-    "throttled_text": THROTTLED_TEXT,
-}, log)
-beetle = Beetle(FIRE_BEETLE_GRAPHICS, FIRE_BEETLE_SERIAL, BEETLE_SCAN_RADIUS, SMELT_RANGE,
-                PATHFIND_TIMEOUT, PICK_TIMEOUT, log)
-smelter = Smelter(ore, beetle, saves, {
-    "attempts": SMELT_ATTEMPTS,
-    "passes": MAX_SMELT_PASSES,
-    "delay": SMELT_DELAY,
-    "timeout": SMELT_TIMEOUT,
-    "poll": SMELT_POLL,
-    "range": SMELT_RANGE,
-    "target_timeout": TARGET_TIMEOUT,
-    "ore_graphics": ORE_GRAPHICS,
-    "ingot_graphics": INGOT_GRAPHICS,
-    "throttled_text": THROTTLED_TEXT,
-    "unskilled_text": SMELT_UNSKILLED_TEXT,
-}, log)
-threat = ThreatWatch({
-    "watch": WATCH_FOR_TROUBLE,
-    "range": THREAT_RANGE,
-    "call": GUARD_CALL,
-    "calls": GUARD_CALLS,
-    "call_delay": GUARD_CALL_DELAY,
-    "reply_wait": GUARD_REPLY_WAIT,
-    "no_guards_text": NO_GUARDS_TEXT,
-    "zone_text": GUARD_ZONE_TEXT,
-    "unguarded_text": UNGUARDED_TEXT,
-    "attack_text": ATTACK_TEXT,
-}, log, beetle.find, "beetle")
+        pickaxe = Tool("pickaxe", PICKAXE_NAMES, [], ["onehanded"], SPARE_BAG_SERIAL,
+                       EQUIP_ATTEMPTS, EQUIP_TIMEOUT, EQUIP_POLL, log)
+        ore = OrePack(ORE_GRAPHICS, ORE_NAME_WORD, MIN_SMELT_AMOUNT, log)
+        metals = MetalBook({
+            "metals": ORE_METALS,
+            "plain": PLAIN_METAL,
+            "line_extra": METAL_LINE_EXTRA,
+            "not_metal_words": NOT_METAL_WORDS,
+            "asks": METAL_ASKS,
+            "misses": METAL_MISSES,
+            "opl_timeout": OPL_TIMEOUT,
+        }, log)
+        combiner = Combiner(ore, metals, {
+            "attempts": MAX_COMBINE_ATTEMPTS,
+            "delay": COMBINE_DELAY,
+            "timeout": COMBINE_TIMEOUT,
+            "poll": COMBINE_POLL,
+            "target_timeout": TARGET_TIMEOUT,
+            "different_text": DIFFERENT_ORE_TEXT,
+            "throttled_text": THROTTLED_TEXT,
+        }, log)
+        beetle = Beetle(FIRE_BEETLE_GRAPHICS, FIRE_BEETLE_SERIAL, BEETLE_SCAN_RADIUS, SMELT_RANGE,
+                        PATHFIND_TIMEOUT, PICK_TIMEOUT, log)
+        smelter = Smelter(ore, beetle, saves, {
+            "attempts": SMELT_ATTEMPTS,
+            "passes": MAX_SMELT_PASSES,
+            "delay": SMELT_DELAY,
+            "timeout": SMELT_TIMEOUT,
+            "poll": SMELT_POLL,
+            "range": SMELT_RANGE,
+            "target_timeout": TARGET_TIMEOUT,
+            "ore_graphics": ORE_GRAPHICS,
+            "ingot_graphics": INGOT_GRAPHICS,
+            "throttled_text": THROTTLED_TEXT,
+            "unskilled_text": SMELT_UNSKILLED_TEXT,
+        }, log)
+        threat = ThreatWatch({
+            "watch": WATCH_FOR_TROUBLE,
+            "range": THREAT_RANGE,
+            "call": GUARD_CALL,
+            "calls": GUARD_CALLS,
+            "call_delay": GUARD_CALL_DELAY,
+            "reply_wait": GUARD_REPLY_WAIT,
+            "no_guards_text": NO_GUARDS_TEXT,
+            "zone_text": GUARD_ZONE_TEXT,
+            "unguarded_text": UNGUARDED_TEXT,
+            "attack_text": ATTACK_TEXT,
+        }, log, beetle.find, "beetle")
 
-DIG_CONFIG = {
-    "cursor_timeout": DIG_TARGET_TIMEOUT,
-    "cursor_poll": DIG_TARGET_POLL,
-    "prompt_text": DIG_PROMPT_TEXT,
-    "no_cursor_read": NO_CURSOR_READ,
-    "dig_timeout": DIG_TIMEOUT,
-}
-
-
-def get_off_the_mount():
-    return dismount(DISMOUNT_ATTEMPTS, DISMOUNT_TIMEOUT, DISMOUNT_POLL)
+        DIG_CONFIG = {
+            "cursor_timeout": DIG_TARGET_TIMEOUT,
+            "cursor_poll": DIG_TARGET_POLL,
+            "prompt_text": DIG_PROMPT_TEXT,
+            "no_cursor_read": NO_CURSOR_READ,
+            "dig_timeout": DIG_TIMEOUT,
+        }
 
 
-# Read before the dismount, or the mounted half of it always answers no. A run that stops on its
-# first cycle otherwise looks exactly like a script that never started.
-def say_where_we_stand():
-    pickaxe.learn(pickaxe.held())
-    log("%d ore in the pack to start, at %d,%d" % (ore.total(), API.Player.X, API.Player.Y))
-    held = pickaxe.held()
-    log(
-        "mounted %s, hand %s, weight %d/%d"
-        % (
-            "yes" if API.Player.IsMounted else "no",
-            (held.Name or hex_of(held.Graphic)) if held is not None else "empty",
-            API.Player.Weight,
-            API.Player.WeightMax,
-        )
-    )
+        def get_off_the_mount():
+            return dismount(DISMOUNT_ATTEMPTS, DISMOUNT_TIMEOUT, DISMOUNT_POLL)
 
+
+        # Read before the dismount, or the mounted half of it always answers no. A run that stops on its
+        # first cycle otherwise looks exactly like a script that never started.
+        def say_where_we_stand():
+            pickaxe.learn(pickaxe.held())
+            log("%d ore in the pack to start, at %d,%d" % (ore.total(), API.Player.X, API.Player.Y))
+            held = pickaxe.held()
+            log(
+                "mounted %s, hand %s, weight %d/%d"
+                % (
+                    "yes" if API.Player.IsMounted else "no",
+                    (held.Name or hex_of(held.Graphic)) if held is not None else "empty",
+                    API.Player.Weight,
+                    API.Player.WeightMax,
+                )
+            )
+
+        self.log = log
+        self.heartbeat = heartbeat
+        self.stall = stall
+        self.stop_reason = stop_reason
+        self.saves = saves
+        self.pickaxe = pickaxe
+        self.ore = ore
+        self.combiner = combiner
+        self.beetle = beetle
+        self.smelter = smelter
+        self.threat = threat
+        self.dig_config = DIG_CONFIG
+        self.get_off_the_mount = get_off_the_mount
+        self.say_where_we_stand = say_where_we_stand

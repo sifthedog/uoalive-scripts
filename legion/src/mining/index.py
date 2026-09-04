@@ -9,9 +9,7 @@ from mining.config import (LOG_EVERY, MAX_CYCLES, MAX_NO_CURSOR, MAX_NO_TOOL, MA
                            UNREACHABLE_DELAY, IDLE_LOG_EVERY, IDLE_POLL)
 from mining.dig import Digger
 from mining.relieve import Relief
-from mining.run import (DIG_CONFIG, beetle, combiner, get_off_the_mount, heartbeat, log, ore,
-                        pickaxe, say_where_we_stand, saves, smelter, stall,
-                        stop_reason, threat)
+from mining.run import Run
 from mining.vein import Veins
 from uo.loop import backoff_for
 from uo.roam import Roam
@@ -19,7 +17,23 @@ from uo.tiles import TileMemory
 from uo.terrain import Terrain
 from uo.weight import too_heavy
 
-memory = TileMemory(RESPAWN_DELAY, UNREACHABLE_DELAY, "vein", log)
+run = Run("mining")
+
+log = run.log
+heartbeat = run.heartbeat
+stall = run.stall
+stop_reason = run.stop_reason
+saves = run.saves
+pickaxe = run.pickaxe
+ore = run.ore
+combiner = run.combiner
+beetle = run.beetle
+smelter = run.smelter
+threat = run.threat
+get_off_the_mount = run.get_off_the_mount
+say_where_we_stand = run.say_where_we_stand
+
+memory = TileMemory(RESPAWN_DELAY, UNREACHABLE_DELAY, "vein", "mined", log)
 veins = Veins(Terrain(), memory, {
     "tile_graphics": ORE_TILE_GRAPHICS,
     "not_ore_graphics": NOT_ORE_GRAPHICS,
@@ -43,7 +57,7 @@ roam = Roam(veins, memory, saves, threat, {
     "idle_poll": IDLE_POLL,
     "idle_log_every": IDLE_LOG_EVERY,
 }, log, heartbeat, stop_reason)
-digger = Digger(ore, OUTCOME_TEXT, DIG_CONFIG, log, True)
+digger = Digger(ore, OUTCOME_TEXT, run.dig_config, log, True)
 relief = Relief(ore, combiner, smelter, saves, beetle.walk_to, "", log)
 
 say_where_we_stand()

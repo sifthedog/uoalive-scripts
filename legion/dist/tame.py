@@ -829,7 +829,7 @@ log = make_log("tame")
 skill = SkillReader(SKILL_NAME)
 pace = Pace(TAME_DELAY, PACE_STEP, PACE_MAX, PACE_EASE_AFTER)
 heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "attempts", position_and_weight)
-stall = StallWatch("cycles without an attempt landing", STALL_WARN, STALL_STOP, heartbeat, log)
+stall = StallWatch("cycles without an attempt", STALL_WARN, STALL_STOP, heartbeat, log)
 
 
 def stop_reason():

@@ -2,7 +2,7 @@
 
 Python scripts for [TazUO](https://tazuo.org)'s Legion Scripting engine. Everything else in this
 repo targets the **ClassicUO web client** (TypeScript in `src/`, bundled into `dist/`); these are a
-different client with a different language and a different API, so nothing is shared between them.
+different client with a different language and a different API, so no code is shared between them.
 
 | Script | What it does |
 | --- | --- |
@@ -17,7 +17,8 @@ different client with a different language and a different API, so nothing is sh
 
 ## How to run it
 
-1. Drop the `.py` file in TazUO's `LegionScripts` folder.
+1. Drop the file from **`legion/dist/`** in TazUO's `LegionScripts` folder. Each one is
+   self-contained; nothing else has to go with it.
 2. Open **Legion Script** from the top menu, and run it from the Script Manager.
 3. Answer the cursor each script raises. `tame.py` wants an animal, and another after each tame;
    `mining.py` and `mine-here.py` want your fire beetle; `lumberjack.py` wants your pack animals,
@@ -25,14 +26,83 @@ different client with a different language and a different API, so nothing is sh
    or pack animal holding logs or boards, and none at all if you are carrying the wood already.
    `magery.py` and `buffs.py` raise none. ESC declines, and each script says what it does instead.
 
-There is no build step — the `.py` is the deliverable. `import API` at the top is what gives an
-external editor autocomplete; run `-updateapi` in game to refresh the local `API.py` stub.
+## How it is built
+
+The sources are in `legion/src/`, and `python3 legion/build.py` inlines each entry and everything it
+imports into one file in `legion/dist/`. `dist/` is committed, because that is what gets pasted.
+`--watch` rebuilds on change.
+
+```
+src/uo/            the shared library, one concept per file
+src/<script>/      index.py, config.py, and that script's own decisions
+src/test_support/  the fake client the suite runs against
+```
+
+`python3 legion/run-tests.py` runs the suite. It needs neither the game nor a shard: `test_support/uo.py`
+is a fake `API`, installed both ways the real one is reachable — as a builtin, and as `import API`.
+It is deliberately inert, so a test that wants an outcome has to say so.
+
+- **Nothing in `src/uo/` imports a script folder's `config.py`.** The parameters come in through
+  the call.
+- **Nothing in `src/uo/` holds mutable module state.** State lives on an object, so the bundled
+  artifact and the same module imported under test behave identically — `global` binds to the
+  defining module, and a flat bundle would hide the difference.
+- **The bundle is one flat namespace.** Two modules defining the same top-level name is a build
+  error, as is `import x as y`, `import *`, an import below the top level, and importing a name its
+  module does not define.
+- **`import API` at the top of a source file is what gives an editor autocomplete.** The bundler
+  strips it and emits one for the artifact; Legion then strips that and injects the real `API` as a
+  builtin. Run `-updateapi` in game to refresh the local `API.py` stub.
+- **Sibling imports at runtime would work, and are deliberately not used.** `LegionScripts/` is on
+  `sys.path`, and a folder whose name starts with `_` is skipped by the Script Manager, so a package
+  could live there. Two things make bundling the better answer: the module cache is on by default,
+  so an edited shared module needs a client restart, and a module reached by IronPython's real
+  import machinery cannot carry `import API` — `LegionScripts/API.py` is the autocomplete stub, and
+  importing it shadows the injected builtin with something whose every call returns `None`.
 
 **Legion runs IronPython 3.4.2, so the language level is Python 3.4.** Anything newer is a
-`SyntaxError` at load. In practice that rules out f-strings, variable annotations, the walrus
-operator, PEP 448 unpacking — and numeric underscores, so `100000`, never `100_000`. Use `%`
-formatting. A script that runs under CPython can still fail here; `python3 -m py_compile` proves
-nothing about these.
+`SyntaxError` at load: f-strings, variable annotations, the walrus operator, PEP 448 unpacking, and
+numeric underscores, so `100000`, never `100_000`. Use `%` formatting. `python3 -m py_compile`
+proves nothing about this, so `build.py` walks the AST of every source and refuses all of it.
+
+## The shared library
+
+```
+buffbar     the buff bar, re-read every time because ApiBuff never refreshes
+clock       the one time.time(), so tests have one thing to fake
+convert     resource -> product, judged by the pack diff, with a per-hue write-off
+entity      hex, the guarded player read, Chebyshev, find-a-mobile
+gear        what is in either hand
+guards      the stop conditions, composed per script
+gump        waiting for a gump, and reading what it says
+heartbeat   'still here', on the clock rather than per cycle
+journal     the phrase table, the reverse lookup off it, and the tail of what was said
+log         the script's own prefix
+loop        the throttle backoff and the stall watchdog
+menu        a context menu entry, matched by its text
+mount       getting off the mount, proved by the flag
+notoriety   the values the threat scans are handed
+pace        the shard's skill timer, learned from its refusals rather than configured
+pack        counting and diffing what the backpack holds
+phrases     the shard's own wordings, as far as they do not depend on the script
+retry       act, poll for the proof
+roam        walking to the next spot, and waiting where there is nothing but a clock
+save        sitting out a world save
+scan        the crow-flight sort, the route probe, and the shortest way in
+skill       every read of GetSkill, and what a client that has not answered means
+survey      the dead-end report: what the run actually saw
+terrain     the land and statics cache, one pair of calls per coordinate for the run
+threat      noticing trouble and calling the guards, without ending the run over it
+tiles       what is worked out, unreachable, or not the resource at all
+timings     the constants the scripts agreed on
+tool        find it, learn its graphic, equip it, notice it break
+travel      chasing a mobile, and following one between the slices of a wait
+vitals      position, weight and mana, as one phrase
+weight      the one place WeightMax is read
+```
+
+`probe-target.py` sits outside all of this: it is the throwaway diagnostic that answered how this
+shard takes a self-target, and its own header says to delete it once the answer is known.
 
 ## tame.py
 
@@ -603,9 +673,10 @@ metal. Correct `METAL_LINE_EXTRA` or `NOT_METAL_WORDS` against what the tooltip 
 - **`API.Notoriety` members are passed through to the scans, never compared or OR-ed.** The `API.py`
   stub lists every one as `= 1`, which is a stub-generation artifact; only the runtime knows their
   real values.
-- **`re` is deliberately not imported.** The IronPython standard library ships in TazUO's `iplib/`,
-  but nothing proves it is on the path for Legion scripts, and the shipped examples import only
-  `time` and `API`. The three config regexes are plain-string tests instead.
+- **`re` is deliberately not imported, though it would now work.** `ScriptFile.SetupPythonEngine`
+  puts `iplib/`, `LegionScripts/` and the script's own folder on `sys.path`, so the standard library
+  is genuinely there. The three config regexes stay plain-string tests because they are clearer that
+  way, not because the import would fail.
 - **The tile memory is per-run.** `src/lib/store.ts` parked it on `globalThis` because the QuickJS
   context survives a restart; nothing here does, so a restarted run re-learns every ban.
   `API.SavePersistentVar` exists and is deliberately not used.

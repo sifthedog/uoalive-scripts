@@ -5,15 +5,30 @@ from mining.config import (LOG_EVERY, MAX_CYCLES, MAX_NO_CURSOR, MAX_NO_TOOL, MA
                            PICK_BEETLE, STEP_DELAY, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX)
 from mining.dig import Digger
 from mining.relieve import Relief
-from mining.run import (DIG_CONFIG, beetle, combiner, get_off_the_mount, log, ore, pickaxe,
-                        say_where_we_stand, saves, smelter, stall, stop_reason, threat)
+from mining.run import Run
 from uo.loop import backoff_for
 from uo.weight import too_heavy
+
+run = Run("mine-here")
+
+log = run.log
+heartbeat = run.heartbeat
+stall = run.stall
+stop_reason = run.stop_reason
+saves = run.saves
+pickaxe = run.pickaxe
+ore = run.ore
+combiner = run.combiner
+beetle = run.beetle
+smelter = run.smelter
+threat = run.threat
+get_off_the_mount = run.get_off_the_mount
+say_where_we_stand = run.say_where_we_stand
 
 WORKED_OUT = "the spot is worked out"
 
 # No pathfind to cancel: this run never walks, so a cancel here would only fight the player
-digger = Digger(ore, OUTCOME_TEXT, DIG_CONFIG, log, False)
+digger = Digger(ore, OUTCOME_TEXT, run.dig_config, log, False)
 relief = Relief(ore, combiner, smelter, saves, beetle.in_range,
                 " - the beetle has to be standing next to you", log)
 

@@ -25,11 +25,11 @@ def hostiles_near(notoriety, within):
 
 
 class ThreatWatch(object):
-    def __init__(self, config, log, companion, friend_noun):
+    def __init__(self, config, log, companion, friend_label):
         self._config = config
         self._log = log
         self._companion = companion
-        self._friend_noun = friend_noun
+        self._friend_label = friend_label
         self._last_hits = 0
         self._last_companion_hits = 0
         self._last_call = 0.0
@@ -106,7 +106,8 @@ class ThreatWatch(object):
         theirs = ""
 
         if friend is not None:
-            theirs = ", %s %d/%s" % (self._friend_noun, friend.Hits, friend.HitsMax or "?")
+            theirs = ", %s %d/%s" % (self._friend_label(friend), friend.Hits,
+                                     friend.HitsMax or "?")
 
         return "%s, %s%s" % (who, mine, theirs)
 

@@ -32,7 +32,7 @@ class PickNearestTest(unittest.TestCase):
         self.clock = Frozen(1000.0)
         self.saved = uo.clock.time
         uo.clock.time = self.clock
-        self.memory = TileMemory(1500.0, 300.0, "vein", [].append)
+        self.memory = TileMemory(1500.0, 300.0, "vein", "mined", [].append)
 
     def tearDown(self):
         uo.clock.time = self.saved

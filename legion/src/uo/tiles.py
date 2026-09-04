@@ -16,10 +16,11 @@ def tile_key(tile):
 class TileMemory(object):
     """What is worked out, what could not be reached, and which art is not the resource at all."""
 
-    def __init__(self, respawn_delay, unreachable_delay, noun, log):
+    def __init__(self, respawn_delay, unreachable_delay, noun, verb, log):
         self._respawn_delay = respawn_delay
         self._unreachable_delay = unreachable_delay
         self._noun = noun
+        self._verb = verb
         self._log = log
         self._blocked = {}
         self._banned_arts = set()
@@ -56,4 +57,5 @@ class TileMemory(object):
             return
 
         self._banned_arts.add(key)
-        self._log("%s cannot be worked, skipping that art from here on" % hex_of(tile["graphic"]))
+        self._log("%s cannot be %s, skipping that art from here on"
+                  % (hex_of(tile["graphic"]), self._verb))

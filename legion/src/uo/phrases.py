@@ -26,6 +26,7 @@ NO_GUARDS_TEXT = [
     "Guards cannot be called here",
     "There are no guards here",
     "guards cannot be summoned here",
+    "You are not in a guarded area",
 ]
 
 GUARD_ZONE_TEXT = ["under the protection of the town guards", "now under guard"]

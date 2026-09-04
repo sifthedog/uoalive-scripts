@@ -25,7 +25,7 @@ from uo.save import SaveWatch
 from uo.skill import SkillReader
 from uo.vitals import position_and_mana
 
-log = make_log("magery")
+log = make_log("mage")
 bar = BuffBar(log)
 skill = SkillReader(SKILL)
 heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "casts", position_and_mana)

@@ -40,7 +40,7 @@ from uo.vitals import position_and_weight
 
 log = make_log("lumberjack")
 heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "chops", position_and_weight)
-stall = StallWatch("cycles without a swing landing", STALL_WARN, STALL_STOP, heartbeat, log)
+stall = StallWatch("cycles without a chop", STALL_WARN, STALL_STOP, heartbeat, log)
 
 
 def stop_reason():
@@ -77,7 +77,7 @@ haul = Haul(wood, boards, saves, {
     "buffer": HAUL_BUFFER,
     "max_empty_hauls": MAX_EMPTY_HAULS,
 }, log)
-memory = TileMemory(REGROW_DELAY, UNREACHABLE_DELAY, "tree", log)
+memory = TileMemory(REGROW_DELAY, UNREACHABLE_DELAY, "tree", "chopped", log)
 trees = Trees(memory, {
     "graphics": TREE_GRAPHICS,
     "not_graphics": NOT_TREE_GRAPHICS,
@@ -100,7 +100,7 @@ threat = ThreatWatch({
     "zone_text": GUARD_ZONE_TEXT,
     "unguarded_text": UNGUARDED_TEXT,
     "attack_text": ATTACK_TEXT,
-}, log, haul.companion, "animal")
+}, log, haul.companion, lambda friend: "'%s'" % (friend.Name or "?"))
 roam = Roam(trees, memory, saves, threat, {
     "noun": "tree",
     "idle_message": "everything in reach is regrowing, waiting for the soonest one",

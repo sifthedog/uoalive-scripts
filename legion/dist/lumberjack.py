@@ -493,6 +493,7 @@ NO_GUARDS_TEXT = [
     "Guards cannot be called here",
     "There are no guards here",
     "guards cannot be summoned here",
+    "You are not in a guarded area",
 ]
 
 GUARD_ZONE_TEXT = ["under the protection of the town guards", "now under guard"]
@@ -1653,11 +1654,11 @@ def hostiles_near(notoriety, within):
 
 
 class ThreatWatch(object):
-    def __init__(self, config, log, companion, friend_noun):
+    def __init__(self, config, log, companion, friend_label):
         self._config = config
         self._log = log
         self._companion = companion
-        self._friend_noun = friend_noun
+        self._friend_label = friend_label
         self._last_hits = 0
         self._last_companion_hits = 0
         self._last_call = 0.0
@@ -1734,7 +1735,8 @@ class ThreatWatch(object):
         theirs = ""
 
         if friend is not None:
-            theirs = ", %s %d/%s" % (self._friend_noun, friend.Hits, friend.HitsMax or "?")
+            theirs = ", %s %d/%s" % (self._friend_label(friend), friend.Hits,
+                                     friend.HitsMax or "?")
 
         return "%s, %s%s" % (who, mine, theirs)
 
@@ -1796,10 +1798,11 @@ def tile_key(tile):
 class TileMemory(object):
     """What is worked out, what could not be reached, and which art is not the resource at all."""
 
-    def __init__(self, respawn_delay, unreachable_delay, noun, log):
+    def __init__(self, respawn_delay, unreachable_delay, noun, verb, log):
         self._respawn_delay = respawn_delay
         self._unreachable_delay = unreachable_delay
         self._noun = noun
+        self._verb = verb
         self._log = log
         self._blocked = {}
         self._banned_arts = set()
@@ -1836,7 +1839,8 @@ class TileMemory(object):
             return
 
         self._banned_arts.add(key)
-        self._log("%s cannot be worked, skipping that art from here on" % hex_of(tile["graphic"]))
+        self._log("%s cannot be %s, skipping that art from here on"
+                  % (hex_of(tile["graphic"]), self._verb))
 
 
 # src/uo/retry.py
@@ -1995,7 +1999,7 @@ def position_and_weight():
 # src/lumberjacking/index.py
 log = make_log("lumberjack")
 heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "chops", position_and_weight)
-stall = StallWatch("cycles without a swing landing", STALL_WARN, STALL_STOP, heartbeat, log)
+stall = StallWatch("cycles without a chop", STALL_WARN, STALL_STOP, heartbeat, log)
 
 
 def stop_reason():
@@ -2032,7 +2036,7 @@ haul = Haul(wood, boards, saves, {
     "buffer": HAUL_BUFFER,
     "max_empty_hauls": MAX_EMPTY_HAULS,
 }, log)
-memory = TileMemory(REGROW_DELAY, UNREACHABLE_DELAY, "tree", log)
+memory = TileMemory(REGROW_DELAY, UNREACHABLE_DELAY, "tree", "chopped", log)
 trees = Trees(memory, {
     "graphics": TREE_GRAPHICS,
     "not_graphics": NOT_TREE_GRAPHICS,
@@ -2055,7 +2059,7 @@ threat = ThreatWatch({
     "zone_text": GUARD_ZONE_TEXT,
     "unguarded_text": UNGUARDED_TEXT,
     "attack_text": ATTACK_TEXT,
-}, log, haul.companion, "animal")
+}, log, haul.companion, lambda friend: "'%s'" % (friend.Name or "?"))
 roam = Roam(trees, memory, saves, threat, {
     "noun": "tree",
     "idle_message": "everything in reach is regrowing, waiting for the soonest one",

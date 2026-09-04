@@ -40,7 +40,7 @@ from uo.weight import over_buffer
 
 log = make_log("bowcraft")
 heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "made", position_and_weight)
-stall = StallWatch("cycles without a craft landing", STALL_WARN, STALL_STOP, heartbeat, log)
+stall = StallWatch("cycles without a craft", STALL_WARN, STALL_STOP, heartbeat, log)
 
 if API.HasTarget():
     API.CancelTarget()

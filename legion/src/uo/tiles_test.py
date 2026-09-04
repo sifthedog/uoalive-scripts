@@ -32,7 +32,7 @@ class TileMemoryTest(unittest.TestCase):
         self.saved = uo.clock.time
         uo.clock.time = self.clock
         self.said = []
-        self.memory = TileMemory(1500.0, 300.0, "vein", self.said.append)
+        self.memory = TileMemory(1500.0, 300.0, "vein", "mined", self.said.append)
         self.tile = tile(1, 2, 3, 1339)
 
     def tearDown(self):
@@ -83,5 +83,5 @@ class TileMemoryTest(unittest.TestCase):
     def test_two_memories_do_not_share_what_is_blocked(self):
         self.memory.mark_depleted(self.tile)
 
-        self.assertFalse(TileMemory(1500.0, 300.0, "vein", self.said.append)
+        self.assertFalse(TileMemory(1500.0, 300.0, "vein", "mined", self.said.append)
                          .is_blocked(self.tile))
