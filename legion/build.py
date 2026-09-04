@@ -20,6 +20,7 @@ ENTRIES = [
     {"in": "src/mining/index.py", "out": "mining"},
     {"in": "src/mining/here.py", "out": "mine-here"},
     {"in": "src/lumberjacking/index.py", "out": "lumberjack"},
+    {"in": "src/bowcraft/index.py", "out": "bowcraft"},
 ]
 
 # Legion strips these from the script it loads and injects API as a builtin, so the artifact
@@ -60,45 +61,52 @@ def check_language_level(path, source, tree):
     def fail(node, what):
         bad.append((getattr(node, "lineno", 0), what))
 
+    def not_34(node, what):
+        fail(node, "%s is not Python 3.4" % what)
+
+    top = set(id(node) for node in tree.body)
+
     for node in ast.walk(tree):
-        if isinstance(node, ast.JoinedStr):
-            fail(node, "f-string")
+        if isinstance(node, (ast.Import, ast.ImportFrom)) and id(node) not in top:
+            fail(node, "an import below the top level, which the bundle cannot resolve")
+        elif isinstance(node, ast.JoinedStr):
+            not_34(node, "f-string")
         elif isinstance(node, ast.AnnAssign):
-            fail(node, "variable annotation")
+            not_34(node, "variable annotation")
         elif isinstance(node, ast.NamedExpr):
-            fail(node, "walrus operator")
+            not_34(node, "walrus operator")
         elif isinstance(node, (ast.AsyncFunctionDef, ast.Await, ast.AsyncFor, ast.AsyncWith)):
-            fail(node, "async/await")
+            not_34(node, "async/await")
         elif isinstance(node, ast.MatMult):
-            fail(node, "matrix multiply")
+            not_34(node, "matrix multiply")
         elif isinstance(node, ast.Match):
-            fail(node, "match statement")
+            not_34(node, "match statement")
         elif isinstance(node, ast.arg) and node.annotation is not None:
-            fail(node, "argument annotation")
+            not_34(node, "argument annotation")
         elif isinstance(node, (ast.FunctionDef, ast.Lambda)):
             if getattr(node, "returns", None) is not None:
-                fail(node, "return annotation")
+                not_34(node, "return annotation")
             if getattr(node.args, "posonlyargs", None):
-                fail(node, "positional-only argument")
+                not_34(node, "positional-only argument")
         elif isinstance(node, ast.Call):
             if len([a for a in node.args if isinstance(a, ast.Starred)]) > 1:
-                fail(node, "PEP 448 call unpacking")
+                not_34(node, "PEP 448 call unpacking")
             if len([k for k in node.keywords if k.arg is None]) > 1:
-                fail(node, "PEP 448 call unpacking")
+                not_34(node, "PEP 448 call unpacking")
         elif isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             if isinstance(getattr(node, "ctx", None), ast.Load):
                 if any(isinstance(e, ast.Starred) for e in node.elts):
-                    fail(node, "PEP 448 display unpacking")
+                    not_34(node, "PEP 448 display unpacking")
         elif isinstance(node, ast.Dict):
             if any(key is None for key in node.keys):
-                fail(node, "PEP 448 dict unpacking")
+                not_34(node, "PEP 448 dict unpacking")
 
     for token in tokenize.generate_tokens(io.StringIO(source).readline):
         if token.type == tokenize.NUMBER and "_" in token.string:
-            bad.append((token.start[0], "underscore in a numeric literal"))
+            bad.append((token.start[0], "underscore in a numeric literal is not Python 3.4"))
 
     if bad:
-        lines = ["%s:%d: %s is not Python 3.4" % (rel(path), line, what) for line, what in sorted(set(bad))]
+        lines = ["%s:%d: %s" % (rel(path), line, what) for line, what in sorted(set(bad))]
         raise BuildError("\n".join(lines))
 
 

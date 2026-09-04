@@ -9,6 +9,11 @@ import builtins
 import sys
 
 
+class FakeEntry(object):
+    def __init__(self, text):
+        self.Text = text
+
+
 class FakeSkill(object):
     def __init__(self, value=0.0, cap=100.0):
         self.Value = value
@@ -140,8 +145,8 @@ class FakeAPI(object):
         self.cleared += 1
         self.journal = []
 
-    def GetJournalEntries(self):
-        return list(self.journal)
+    def GetJournalEntries(self, seconds=None):
+        return [FakeEntry(line) for line in self.journal]
 
     def InJournal(self, text, clear_matches=False):
         low = text.lower()
