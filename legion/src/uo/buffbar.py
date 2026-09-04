@@ -8,23 +8,28 @@ class BuffBar(object):
         self._log = log
         self._dumped = False
 
-    def standing(self, entry):
+    def active(self):
         buffs = API.ActiveBuffs()
 
-        if buffs and not self._dumped:
+        if not buffs:
+            return []
+
+        if not self._dumped:
             self._dumped = True
             self._log("buff bar: " + ", ".join("%s/%s" % (b.Type, b.Title or "") for b in buffs))
 
-        for buff in buffs if buffs else []:
-            if str(buff.Type) == entry["buff"]:
+        return buffs
+
+    # title is the localized fallback for a shard whose BuffIconType member name does not match
+    def standing(self, kind, title=None):
+        if not kind:
+            return False
+
+        for buff in self.active():
+            if str(buff.Type) == kind:
                 return True
 
-            if entry["title"] and entry["title"].lower() in (buff.Title or "").lower():
+            if title and title.lower() in (buff.Title or "").lower():
                 return True
 
         return False
-
-
-# Either hand: a katana is one-handed and a no-dachi two-handed, and Consecrate Weapon takes both
-def armed():
-    return API.FindLayer("twohanded") is not None or API.FindLayer("onehanded") is not None

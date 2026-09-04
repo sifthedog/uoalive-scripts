@@ -1,0 +1,1081 @@
+# Built from src/magery/index.py by build.py - do not edit.
+
+import API
+import time
+
+
+# src/uo/journal.py
+def said(texts):
+    for text in texts:
+        if API.InJournal(text, False):
+            return True
+
+    return False
+
+
+def matched_bucket(buckets):
+    for name, phrases in buckets:
+        # clearMatches, or a line already read answers the next wait as well
+        if API.InJournalAny(phrases, True):
+            return name
+
+    return None
+
+
+def read_outcome(buckets, budget, poll):
+    waited = 0.0
+
+    while True:
+        hit = matched_bucket(buckets)
+
+        if hit is not None:
+            return hit
+
+        if waited >= budget:
+            return None
+
+        API.Pause(poll)
+        waited += poll
+
+
+# src/magery/cast.py
+class Caster(object):
+    def __init__(self, buckets, standing, self_target, skip_when_buffed, fallback_timeout,
+                 fallback_delay, wait_slice, proof_grace, log):
+        self._buckets = buckets
+        self._standing = standing
+        self._self_target = self_target
+        self._skip_when_buffed = skip_when_buffed
+        self._fallback_timeout = fallback_timeout
+        self._fallback_delay = fallback_delay
+        self._wait_slice = wait_slice
+        self._proof_grace = proof_grace
+        self._log = log
+
+    # The wording wins over the two silent proofs, so it is read first on every slice: a fizzle that
+    # somehow spent mana still reads as a fizzle. Giving up early once IsCasting has gone up and come
+    # back down saves the rest of the budget; a shard that publishes no flag spends all of it.
+    def _read_outcome(self, stage, up_before, mana_before):
+        budget = stage.get("cast_timeout", self._fallback_timeout)
+        wants_self = stage.get("target") == "self"
+        waited = 0.0
+        started = False
+        ended = None
+        answered = False
+
+        while True:
+            hit = matched_bucket(self._buckets)
+
+            if hit is not None:
+                return hit
+
+            # Answered here rather than in a blocking wait before the poll: the pre-target usually
+            # takes the cursor before the script sees one at all, and that wait was spent on every
+            # cast
+            if wants_self and not answered and API.HasTarget():
+                answered = self._self_target.answer()
+
+            # A transition, not a state: a buff already standing proves nothing, which is why
+            # up_before is read before the cast
+            if not up_before and self._standing(stage):
+                return "cast"
+
+            if API.Player.Mana < mana_before:
+                return "cast"
+
+            if API.Player.IsCasting:
+                started = True
+
+            elif started:
+                if ended is None:
+                    ended = waited
+
+                # Not while a self row still has a cursor to answer: the shard raises it as the
+                # incantation ends, so leaving on the flag falling walks out just before it appears
+                elif waited - ended >= self._proof_grace and (answered or not wants_self):
+                    return None
+
+            if waited >= budget:
+                return None
+
+            API.Pause(self._wait_slice)
+            waited += self._wait_slice
+
+    def cast_once(self, stage):
+        up_before = self._standing(stage)
+
+        if self._skip_when_buffed and up_before:
+            return "alreadyUp"
+
+        mana_before = API.Player.Mana
+
+        # Cancelled only when there is one to cancel: an unconditional cancel just before an action
+        # left the next cursor unusable in the run this was copied from
+        if API.HasTarget():
+            API.CancelTarget()
+
+        API.ClearJournal()
+
+        wants_self = stage.get("target") == "self"
+
+        # Queued before the cast, the order the client's own CastSpell example uses. The type has to
+        # be the one the shard raises: these cursors report as beneficial, and a pre-target set to
+        # neutral does not fire at all - it leaves the cursor standing and the cast unspent.
+        if wants_self:
+            try:
+                API.PreTarget(API.Player.Serial, "beneficial")
+            except Exception as error:
+                self._log("PreTarget threw - %s" % error)
+
+        API.CastSpell(stage["spell"])
+
+        outcome = self._read_outcome(stage, up_before, mana_before)
+
+        # Or a queued target the cast never used is still armed for whatever the next one raises
+        if wants_self:
+            API.CancelPreTarget()
+
+        return outcome
+
+    # The row's floor and nothing else. Waiting out IsRecovering as well made a Bless cycle several
+    # seconds of standing still, and it buys nothing the shard does not already say: a cast issued
+    # too early is refused in words, and that refusal costs one flat CASTING_WAIT.
+    def pace(self, stage):
+        API.Pause(stage.get("cast_delay", self._fallback_delay))
+
+
+# src/uo/phrases.py
+"""The shard's own wordings, as far as they are the same whatever the script is doing."""
+
+SAVING_TEXT = ["The world is saving", "Saving world", "World save started"]
+SAVE_DONE_TEXT = ["World save complete", "Save complete", "World save is complete"]
+
+# Ends in a bare 'You must wait', which longer refusals contain - so a bucket that has to be told
+# apart from a throttle is ordered before this one
+THROTTLED_TEXT = [
+    "You must wait to perform another action",
+    "You must wait a moment",
+    "You must wait",
+]
+
+UNSKILLED_TEXT = [
+    "You are not skilled enough",
+    "You lack the required skill",
+    "You do not have enough skill",
+]
+
+STOPPED = "stopped from the script manager"
+
+
+# src/uo/timings.py
+"""The constants the scripts agreed on. Every one is in seconds - API.Pause takes seconds."""
+
+SAVE_WAIT = 60.0
+SAVE_POLL = 1.0
+
+THROTTLE_BACKOFF = 1.0
+THROTTLE_BACKOFF_MAX = 8.0
+
+LOG_EVERY = 25
+HEARTBEAT_EVERY = 30.0
+
+STEP_DELAY = 0.3
+
+
+# src/magery/config.py
+# up_to is the skill value the row trains to, exclusive, so the bands butt together. These are the
+# spells the guides name as gaining without a victim: a punchbag has to be found, kept alive and in
+# range. `buff` is a BuffIconType member name matched against str(buff.Type); `title` is the
+# localized fallback. cast_timeout and cast_delay are per row because the circles are seconds
+# apart - a 3rd-circle cast answered at 1.8s here, and each timeout is that time with a margin.
+STAGES = [
+    # 3rd circle. Below about 30 the sensible thing is to buy the skill from an NPC trainer.
+    {
+        "up_to": 45.0,
+        "spell": "Bless",
+        "buff": "Bless",
+        "title": "Bless",
+        "mana": 9,
+        "target": "self",
+        "cast_timeout": 3.0,
+        "cast_delay": 0.3,
+    },
+    # 4th circle
+    {
+        "up_to": 60.0,
+        "spell": "Arch Protection",
+        "buff": "ArchProtection",
+        "title": "Arch Protection",
+        "mana": 11,
+        "target": "self",
+        "cast_timeout": 3.5,
+        "cast_delay": 0.35,
+    },
+    # 6th. The 5th and 7th circles are skipped because their spells want a cursor over ground or a
+    # gump answered, and neither is something this loop can do.
+    {
+        "up_to": 80.0,
+        "spell": "Invisibility",
+        "buff": "Invisibility",
+        "title": "Invisibility",
+        "mana": 20,
+        "target": "self",
+        "cast_timeout": 4.0,
+        "cast_delay": 0.4,
+    },
+    # 8th. An area attack that hits everything nearby, so this band belongs somewhere empty. The
+    # only row with no buff to prove itself by - the mana falling is the whole proof.
+    {
+        "up_to": 120.0,
+        "spell": "Earthquake",
+        "mana": 50,
+        "cast_timeout": 5.0,
+        "cast_delay": 0.6,
+    },
+]
+
+SKILL = "Magery"
+MEDITATION = "Meditation"
+
+# The BuffIconType the client publishes while a trance is running
+MEDITATION_BUFF = "ActiveMeditation"
+
+SKILL_TIMEOUT = 1.0
+SKILL_POLL = 0.5
+
+# Consecutive cycles the client answered nothing for the skill before the run gives up
+MAX_BLIND_READS = 5
+
+# The fallback for a row that names neither, and every row in STAGES names both
+CAST_TIMEOUT = 2.0
+CAST_DELAY = 0.75
+
+CAST_WAIT_SLICE = 0.2
+
+# How long the cursor is given to go down once it has been answered, which is what says whether the
+# shard took that answer
+SELF_TARGET_TIMEOUT = 1.0
+SELF_TARGET_POLL = 0.1
+
+# Fallbacks for a cursor the pre-target did not take, tried in this order until one brings it down
+SELF_ANSWERS = ["Target(player)", "TargetSelf", "Target(serial)"]
+
+# The mana leaves the pool a beat after the incantation ends, so IsCasting falling is not the end of
+# the read - it was measured landing 0.2s behind the flag
+PROOF_GRACE = 0.6
+
+# What a cast issued before the last one finished costs. Flat, and never counted towards a stop:
+# this is the pacing finding the shard's real cast time rather than anything going wrong. Short
+# because the refusal itself is read in one slice, so overshooting costs another cheap retry.
+CASTING_WAIT = 0.5
+
+BUFF_WAIT = 2.0
+
+# Gating on the buff would cap the run at one cast per buff duration
+SKIP_WHEN_BUFFED = False
+
+# A toggle the shard turned back off was still a cast it charged for and rolled the skill on
+DISABLED_IS_PROGRESS = True
+
+# Off waits for natural regeneration instead: slower, always available
+MEDITATE = True
+
+# The last band charges 50 a cast, so a pool topped right up pays for several
+MEDITATE_TO_FULL = True
+
+MEDITATE_TIMEOUT = 20.0
+MEDITATE_ATTEMPTS = 4
+MEDITATE_START_TIMEOUT = 2.0
+
+MANA_POLL = 0.5
+MANA_LOG_EVERY = 10.0
+
+REGEN_TIMEOUT = 120.0
+
+# Cycles that produced neither a readable cast nor any movement in the skill before the run gives
+# up. A dry mana stretch is charged what it cost in cycles, so this ceiling covers that case too.
+MAX_STALE = 500
+
+MAX_CYCLES = 5000
+
+MAX_THROTTLED = 20
+# Guesses - correct them against the real journal after the first run. Ordered, not a dict: the
+# first bucket holding a match wins, which is why alreadyCasting sits before throttled: the latter
+# ends in a bare 'You must wait' that the longer sentence contains.
+OUTCOME_TEXT = [
+    # Not depended on: the mana leaving the pool and the buff arriving are the proof
+    ("cast", ["You feel a surge of magic", "You are now protected"]),
+    ("fizzled", ["The spell fizzles", "You have failed to cast the spell"]),
+    (
+        "noReagents",
+        [
+            "You do not have enough reagents",
+            "More reagents are needed",
+            "You lack the required reagents",
+        ],
+    ),
+    ("noMana", ["You do not have enough mana", "Insufficient mana"]),
+    ("alreadyUp", ["You are already under the effect"]),
+    ("disabled", ["You are no longer", "You have dispelled"]),
+    ("unskilled", UNSKILLED_TEXT),
+    ("saving", SAVING_TEXT),
+    # The recovery wording is this shard's own, read off a live run; the other two are guesses
+    (
+        "alreadyCasting",
+        [
+            "You have not yet recovered from casting a spell",
+            "You are already casting a spell",
+            "You are already casting",
+        ],
+    ),
+    ("throttled", THROTTLED_TEXT),
+]
+
+# trance is the only wording here that is not a guess: it is the client's own documented example.
+MEDITATE_OUTCOME_TEXT = [
+    ("trance", ["You enter a meditative trance."]),
+    ("full", ["You are at peace"]),
+    # Before unfocused, whose trailing full stop is deliberate: without it 'You cannot focus your
+    # concentration' would also match the equipped-weapon sentence.
+    (
+        "blocked",
+        [
+            "You cannot focus your concentration with an equipped weapon",
+            "You cannot focus your concentration with an equipped shield",
+            "You are preoccupied with thoughts of battle",
+        ],
+    ),
+    ("unfocused", ["You cannot focus your concentration.", "You lose your concentration"]),
+    ("unskilled", UNSKILLED_TEXT),
+    ("saving", SAVING_TEXT),
+    ("throttled", ["You must wait a few moments to use another skill"] + THROTTLED_TEXT),
+]
+
+
+# src/magery/mana.py
+class ManaWatch(object):
+    def __init__(self, to_full, poll, log_every, log, stop_reason, meditating):
+        self._to_full = to_full
+        self._poll = poll
+        self._log_every = log_every
+        self._log = log
+        self._stop_reason = stop_reason
+        self._meditating = meditating
+
+    # Worked out on every read rather than once: ManaMax is 0 while the client refreshes stats, and
+    # a ceiling taken in that window would either end the wait as it started or never end it at all
+    def target(self, need):
+        ceiling = API.Player.ManaMax
+
+        if not self._to_full or ceiling <= 0:
+            return need
+
+        return max(need, ceiling)
+
+    # >= and never !=: a regenerating pool passes a figure as often as it lands on it
+    def enough(self, need):
+        return API.Player.Mana >= self.target(need)
+
+    # Sliced rather than slept through, so the guards get a look in and the pool is reported on
+    def watch(self, need, budget):
+        waited = 0.0
+        since = 0.0
+
+        while waited < budget:
+            if self.enough(need):
+                return True
+
+            if self._stop_reason() is not None:
+                return False
+
+            API.Pause(self._poll)
+            waited += self._poll
+            since += self._poll
+
+            if since >= self._log_every:
+                since = 0.0
+                self._log(
+                    "%d/%d mana%s"
+                    % (
+                        API.Player.Mana,
+                        self.target(need),
+                        ", meditating" if self._meditating() else "",
+                    )
+                )
+
+        return self.enough(need)
+
+
+# src/uo/retry.py
+def settled(timeout, poll, landed):
+    waited = 0.0
+
+    while waited < timeout:
+        API.Pause(poll)
+        waited += poll
+
+        if landed():
+            return True
+
+    return False
+
+
+# src/magery/meditate.py
+class Meditation(object):
+    def __init__(self, skill, buckets, mana, meditating, log, saves, attempts, timeout,
+                 start_timeout, wait_slice, regen_timeout):
+        self._skill = skill
+        self._buckets = buckets
+        self._mana = mana
+        self._meditating = meditating
+        self._log = log
+        self._saves = saves
+        self._attempts = attempts
+        self._timeout = timeout
+        self._start_timeout = start_timeout
+        self._wait_slice = wait_slice
+        self._regen_timeout = regen_timeout
+        self._refused = None
+
+    def refused(self):
+        return self._refused
+
+    def _start_outcome(self):
+        hit = read_outcome(self._buckets, self._start_timeout, self._wait_slice)
+
+        if hit is not None:
+            return hit
+
+        # Silence is what every use looks like on a shard whose wordings this table has wrong, so
+        # the buff is the proof that does not go through the journal at all
+        if self._meditating() or settled(self._start_timeout, self._wait_slice, self._meditating):
+            return "trance"
+
+        return "unknown"
+
+    def _for(self, need):
+        for attempt in range(1, self._attempts + 1):
+            # Using the skill again mid-trance is at best a wasted action and at worst the shard
+            # ending the very trance this attempt is waiting on
+            if not self._meditating():
+                API.ClearJournal()
+                API.UseSkill(self._skill)
+
+                outcome = self._start_outcome()
+
+                # Nothing here undresses the character, so a refusal is final for the run
+                if outcome == "blocked" or outcome == "unskilled":
+                    self._refused = "the shard refuses meditation (%s)" % outcome
+                    self._log("%s - empty your hands; falling back on natural regeneration"
+                              % self._refused)
+
+                    return self._mana.watch(need, self._regen_timeout)
+
+                # The shard knows the pool is full better than a stat read does
+                if outcome == "full":
+                    return True
+
+                # A pause and not a refusal: nothing about meditation is learned from it
+                if outcome == "saving":
+                    self._saves.wait_out()
+
+            if self._mana.watch(need, self._timeout):
+                return True
+
+            # Not 'gave up': a failed concentration roll, a trance broken by a hit and a use the
+            # shard threw away all look like this, and all are answered by using the skill again
+            self._log("meditation attempt %d did not fill the pool, using the skill again" % attempt)
+
+        return False
+
+    def regain(self, need, allowed):
+        if self._mana.enough(need):
+            return True
+
+        self._log("%d mana, waiting for %d" % (API.Player.Mana, self._mana.target(need)))
+
+        if allowed and self._refused is None:
+            return self._for(need)
+
+        return self._mana.watch(need, self._regen_timeout)
+
+
+# src/magery/stages.py
+def make_plan(stages):
+    return sorted(stages, key=lambda stage: stage["up_to"])
+
+
+def goal_of(plan):
+    return max([stage["up_to"] for stage in plan]) if plan else 0.0
+
+
+# The same table that picks the spell answers whether there is one left, so the two cannot disagree
+def stage_now(plan, value):
+    for stage in plan:
+        if value < stage["up_to"]:
+            return stage
+
+    return None
+
+
+def describe_plan(plan):
+    return ", ".join("%s to %.1f" % (stage["spell"], stage["up_to"]) for stage in plan)
+
+
+# What one casting cycle of a row costs in wall clock, and the denominator a dry mana stretch is
+# priced against
+def cycle_cost(stage, fallback_timeout, fallback_delay):
+    return max(0.1, stage.get("cast_timeout", fallback_timeout)
+               + stage.get("cast_delay", fallback_delay))
+
+
+# src/magery/target.py
+class SelfTarget(object):
+    """The fallback for a cursor the pre-target did not take."""
+
+    def __init__(self, answers, timeout, poll, log):
+        self._answers = answers
+        self._timeout = timeout
+        self._poll = poll
+        self._log = log
+        self._learned = None
+
+    # Target(player) is the one that worked on the probe run and is first for that reason; each is
+    # guarded on its own, because Target is an overloaded C# method and the wrong shape throws
+    def answer(self):
+        for how in [self._learned] if self._learned else self._answers:
+            try:
+                if how == "Target(player)":
+                    API.Target(API.Player)
+                elif how == "TargetSelf":
+                    API.TargetSelf()
+                else:
+                    API.Target(API.Player.Serial)
+            except Exception as error:
+                self._log("%s threw - %s" % (how, error))
+                continue
+
+            if settled(self._timeout, self._poll, lambda: not API.HasTarget()):
+                if self._learned is None:
+                    self._learned = how
+                    self._log("the cursor answers to %s" % how)
+
+                return True
+
+        self._log("the cursor would not take a self target")
+
+        return False
+
+
+# src/uo/buffbar.py
+class BuffBar(object):
+    """ApiBuff never refreshes after it is handed over, so the bar is re-read every time it matters."""
+
+    def __init__(self, log):
+        self._log = log
+        self._dumped = False
+
+    def active(self):
+        buffs = API.ActiveBuffs()
+
+        if not buffs:
+            return []
+
+        if not self._dumped:
+            self._dumped = True
+            self._log("buff bar: " + ", ".join("%s/%s" % (b.Type, b.Title or "") for b in buffs))
+
+        return buffs
+
+    # title is the localized fallback for a shard whose BuffIconType member name does not match
+    def standing(self, kind, title=None):
+        if not kind:
+            return False
+
+        for buff in self.active():
+            if str(buff.Type) == kind:
+                return True
+
+            if title and title.lower() in (buff.Title or "").lower():
+                return True
+
+        return False
+
+
+# src/uo/gear.py
+# Either hand: a katana is one-handed and a no-dachi two-handed, and meditation is refused while
+# anything at all is held
+def in_hand():
+    return API.FindLayer("onehanded") or API.FindLayer("twohanded")
+
+
+# src/uo/entity.py
+# API.Player is None whenever the client is between world states - a recall, a server line change,
+# the moment around a death - and reading through it threw a live restock away
+def player():
+    try:
+        return API.Player
+    except Exception:
+        return None
+
+
+# src/uo/guards.py
+def first_reason(clauses):
+    for clause in clauses:
+        reason = clause()
+
+        if reason is not None:
+            return reason
+
+    return None
+
+
+def stopped(text):
+    def clause():
+        return text if API.StopRequested else None
+
+    return clause
+
+
+def dead():
+    def clause():
+        me = player()
+
+        return "you are dead" if me is not None and me.IsDead else None
+
+    return clause
+
+
+# src/uo/clock.py
+def now():
+    return time.time()
+
+
+# src/uo/heartbeat.py
+class Heartbeat(object):
+    """Proof of life: a loop standing still in silence looks exactly like a hung one."""
+
+    def __init__(self, every, log, noun, vitals):
+        self._every = every
+        self._log = log
+        self._noun = noun
+        self._vitals = vitals
+        self._last = None
+
+    # The clock, not the cycle counter: a cycle can be 300ms or 8s depending on which waits it hit
+    def beat(self, phase, cycle, tally):
+        moment = now()
+
+        # The first call sets the clock rather than logging: the run has just said what it is doing
+        if self._last is None:
+            self._last = moment
+            return
+
+        if moment - self._last < self._every:
+            return
+
+        self._last = moment
+        self._log("still here - %s, cycle %d, %s, %d %s"
+                  % (phase, cycle, self._vitals(), tally, self._noun))
+
+    def reset(self):
+        self._last = now()
+
+
+# src/uo/log.py
+def make_log(prefix):
+    def log(message):
+        API.SysMsg(prefix + ": " + message)
+
+    return log
+
+
+# src/uo/loop.py
+def backoff_for(count, step, cap):
+    return min(step * count, cap)
+
+
+# src/uo/save.py
+class SaveWatch(object):
+    def __init__(self, saving_text, done_text, wait, poll, log, heartbeat, stop_reason):
+        self._saving_text = saving_text
+        self._done_text = done_text
+        self._wait = wait
+        self._poll = poll
+        self._log = log
+        self._heartbeat = heartbeat
+        self._stop_reason = stop_reason
+
+    def is_saving(self):
+        return said(self._saving_text)
+
+    def wait_out(self):
+        self._log("the world is saving, waiting it out")
+
+        # Read before the clear: a save can start and finish inside one cycle, and clearing first
+        # threw the completion away and then stood still for the whole of the wait
+        ended = "the shard had already finished" if said(self._done_text) else None
+
+        API.ClearJournal()
+
+        waited = 0.0
+
+        while ended is None and waited < self._wait:
+            API.Pause(self._poll)
+            waited += self._poll
+
+            if said(self._done_text):
+                ended = "the shard says it is done"
+            elif self._stop_reason() is not None:
+                ended = "the run has a reason to stop"
+
+        self._log("%s, carrying on" % (ended or "nothing said in %ds" % int(self._wait)))
+        self._heartbeat.reset()
+
+
+# src/uo/skill.py
+class SkillReader(object):
+    """Value reads 0.0 before the skill list arrives, which is also a real skill value."""
+
+    def __init__(self, name):
+        self._name = name
+        self._seen = False
+
+    def read(self):
+        skill = API.GetSkill(self._name)
+
+        if skill is None:
+            return None
+
+        value = skill.Value
+
+        if value <= 0.0 and not self._seen:
+            return None
+
+        self._seen = True
+
+        return value
+
+    def name(self):
+        skill = API.GetSkill(self._name)
+
+        return skill.Name if skill is not None and skill.Name else self._name
+
+    def cap(self):
+        skill = API.GetSkill(self._name)
+
+        return skill.Cap if skill is not None else None
+
+    def wait(self, timeout, poll):
+        waited = 0.0
+
+        while True:
+            value = self.read()
+
+            if value is not None:
+                return value
+
+            if waited >= timeout:
+                return None
+
+            API.Pause(poll)
+            waited += poll
+
+
+# src/uo/vitals.py
+def mana_reading():
+    me = player()
+
+    return "?/?" if me is None else "%d/%d mana" % (me.Mana, me.ManaMax)
+
+
+def where():
+    me = player()
+
+    return "somewhere" if me is None else "at %d,%d" % (me.X, me.Y)
+
+
+def position_and_mana():
+    return "%s, %s" % (where(), mana_reading())
+
+
+# src/magery/index.py
+log = make_log("magery")
+bar = BuffBar(log)
+skill = SkillReader(SKILL)
+heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "casts", position_and_mana)
+
+
+def stop_reason():
+    return first_reason([stopped(STOPPED), dead()])
+
+
+def standing(stage):
+    return bar.standing(stage.get("buff"), stage.get("title"))
+
+
+def meditating():
+    return bar.standing(MEDITATION_BUFF)
+
+
+saves = SaveWatch(SAVING_TEXT, SAVE_DONE_TEXT, SAVE_WAIT, SAVE_POLL, log, heartbeat, stop_reason)
+mana = ManaWatch(MEDITATE_TO_FULL, MANA_POLL, MANA_LOG_EVERY, log, stop_reason, meditating)
+trance = Meditation(MEDITATION, MEDITATE_OUTCOME_TEXT, mana, meditating, log, saves,
+                    MEDITATE_ATTEMPTS, MEDITATE_TIMEOUT, MEDITATE_START_TIMEOUT, CAST_WAIT_SLICE,
+                    REGEN_TIMEOUT)
+caster = Caster(OUTCOME_TEXT, standing, SelfTarget(SELF_ANSWERS, SELF_TARGET_TIMEOUT,
+                                                   SELF_TARGET_POLL, log),
+                SKIP_WHEN_BUFFED, CAST_TIMEOUT, CAST_DELAY, CAST_WAIT_SLICE, PROOF_GRACE, log)
+
+plan = make_plan(STAGES)
+goal = goal_of(plan)
+
+
+def regain_mana(need):
+    arrived = trance.regain(need, MEDITATE)
+
+    # This path has just spent up to a minute reporting on its own cadence
+    heartbeat.reset()
+
+    return arrived
+
+
+def stalled(idle):
+    if idle >= MAX_STALE:
+        return "%d cycles without a cast or a change in the skill" % MAX_STALE
+
+    return None
+
+
+casts = 0
+fizzled = 0
+throttled = 0
+blind = 0
+
+# Outcomes this loop could not read. Reported at the end so a wrong OUTCOME_TEXT is still obvious,
+# but never a reason to stop on its own.
+unread = 0
+
+# The ones since the skill last moved, credited to the tally when it does: a cast the loop could not
+# read is still a cast if the skill went up because of it
+unread_pending = 0
+
+# Said once per stretch rather than once per cast
+unread_said = False
+
+since_progress = 0
+reported = 0
+casting = None
+cycle = 0
+
+stop = None
+start = skill.wait(SKILL_TIMEOUT, SKILL_POLL)
+
+if start is None:
+    start = 0.0
+    stop = "the client is not reporting the skill"
+
+last_value = start
+
+if stop is None:
+    log("%s at %.1f/%.1f - %s" % (skill.name(), start, goal, describe_plan(plan)))
+    log("%d/%d mana" % (API.Player.Mana, API.Player.ManaMax))
+    if in_hand() is not None:
+        log("something is in hand - meditation is refused until you put it away")
+
+    cap = skill.cap()
+
+    # Said rather than corrected: a scroll may be on its way, and a run that quietly retargeted
+    # itself would be lying about its plan
+    if cap is not None and cap > 0 and goal > cap:
+        log(
+            "the last stage aims at %.1f and the shard caps %s at %.1f - it will not finish "
+            "without a power scroll" % (goal, skill.name(), cap)
+        )
+
+    if stage_now(plan, start) is None:
+        stop = "%s is already at %.1f" % (skill.name(), start)
+
+try:
+    while stop is None and cycle < MAX_CYCLES:
+        cycle += 1
+
+        stop = stop_reason()
+
+        if stop is not None:
+            break
+
+        value = skill.read()
+
+        # A client that has stopped answering is a blip, not an ending: read as 0 it trains a capped
+        # character, read as finished it ends a good run
+        if value is None:
+            blind += 1
+
+            if blind >= MAX_BLIND_READS:
+                stop = "the client stopped reporting the skill"
+                break
+
+            heartbeat.beat("unreadable skill", cycle, casts)
+            API.Pause(STEP_DELAY)
+            continue
+
+        blind = 0
+
+        # The proof that cannot be argued with: every other signal is circumstantial. Either
+        # direction counts - a skill falling because another is gaining is still the shard saying it
+        # is processing these casts.
+        if value != last_value:
+            last_value = value
+            since_progress = 0
+            casts += unread_pending
+            unread_pending = 0
+            unread_said = False
+
+        stage = stage_now(plan, value)
+
+        if stage is None:
+            stop = "the last stage is finished"
+            break
+
+        if stage is not casting:
+            casting = stage
+            log("%.1f - %s until %.1f" % (value, stage["spell"], stage["up_to"]))
+
+        if API.Player.Mana < stage["mana"]:
+            if not regain_mana(stage["mana"]):
+                # Weighted, because a dry stretch has just spent the whole REGEN_TIMEOUT standing
+                # still where a casting cycle costs cycle_cost. Counting both as one would either
+                # end a slow-gaining run in minutes or leave a starved one going for hours.
+                since_progress += max(1, int(round(
+                    REGEN_TIMEOUT / cycle_cost(stage, CAST_TIMEOUT, CAST_DELAY))))
+                log("mana did not come back (%d/%d idle)" % (since_progress, MAX_STALE))
+
+            stop = stalled(since_progress)
+
+            if stop is not None:
+                break
+
+            heartbeat.beat("recovering mana", cycle, casts)
+            API.Pause(STEP_DELAY)
+            continue
+
+        outcome = caster.cast_once(stage)
+
+        # Cleared here rather than in each branch that is not a throttle, because that is what the
+        # branches were doing and three of them forgot
+        if outcome != "throttled":
+            throttled = 0
+
+        if outcome == "cast":
+            casts += 1
+            since_progress = 0
+            unread_said = False
+
+        # Counted rather than tallied - the shard charged nothing for it - but the roll happened
+        elif outcome == "fizzled":
+            fizzled += 1
+            since_progress = 0
+            unread_said = False
+
+        elif outcome == "alreadyUp":
+            since_progress = 0
+            unread_said = False
+            API.Pause(BUFF_WAIT)
+
+        # Waited out flat rather than backed off: this is a spell that finishes on its own
+        elif outcome == "alreadyCasting":
+            since_progress = 0
+            unread_said = False
+            API.Pause(CASTING_WAIT)
+
+        elif outcome == "disabled":
+            since_progress = 0
+            unread_said = False
+
+            if DISABLED_IS_PROGRESS:
+                casts += 1
+            else:
+                log("the shard toggled %s off - check its buff in STAGES" % stage["spell"])
+
+        # The loop gathered mana before casting, so this row's mana figure understates the cost
+        elif outcome == "noMana":
+            since_progress = 0
+            unread_said = False
+            log(
+                "refused for mana at %d - raise %s's mana in STAGES"
+                % (API.Player.Mana, stage["spell"])
+            )
+            regain_mana(stage["mana"])
+
+        # Nothing waited for refills a pouch
+        elif outcome == "noReagents":
+            stop = "out of reagents for %s" % stage["spell"]
+
+        elif outcome == "unskilled":
+            stop = "the shard says this character cannot use %s" % stage["spell"]
+
+        elif outcome == "saving":
+            saves.wait_out()
+            since_progress = 0
+            unread_said = False
+
+        elif outcome == "throttled":
+            throttled += 1
+            since_progress = 0
+            unread_said = False
+            log("shard says wait (%d/%d), backing off" % (throttled, MAX_THROTTLED))
+            API.Pause(backoff_for(throttled, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX))
+
+            if throttled >= MAX_THROTTLED:
+                stop = "the shard kept refusing the cast"
+
+        # The commonest cause is a cast that worked: a stage whose buff was already standing has no
+        # transition to show, so only the mana can prove it, and a client that has not refreshed the
+        # figure leaves this loop nothing to read. The skill moving is what settles it, above.
+        else:
+            unread += 1
+            unread_pending += 1
+            since_progress += 1
+
+            if not unread_said:
+                unread_said = True
+                log("outcome unreadable - carrying on; check OUTCOME_TEXT if this run stalls")
+
+        stop = stop or stalled(since_progress)
+
+        if stop is not None:
+            break
+
+        if casts >= reported + LOG_EVERY:
+            reported = casts
+            log(
+                "%d casts, %d fizzles, %s at %.1f/%.1f, %d mana"
+                % (casts, fizzled, skill.name(), value, goal, API.Player.Mana)
+            )
+
+        heartbeat.beat(outcome or "unknown", cycle, casts)
+        caster.pace(stage)
+except Exception as error:
+    # Nothing else catches: a throw out of a client call used to end the run with no line at all
+    if stop is None:
+        stop = "threw - %s" % error
+
+if API.HasTarget():
+    API.CancelTarget()
+
+ended = skill.read()
+
+# A delta rather than a figure: a trainer that cast four hundred times and moved nothing has failed
+log(
+    "%d casts, %d fizzles, %s %.1f -> %s"
+    % (casts, fizzled, skill.name(), start, "unknown" if ended is None else "%.1f" % ended)
+)
+
+if unread > 0:
+    log("%d outcome(s) went unread - add the shard's wording to OUTCOME_TEXT" % unread)
+
+reason = stop or "hit the %d cycle backstop" % MAX_CYCLES
+
+log("stopping - %s" % reason)
+API.Stop()

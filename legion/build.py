@@ -15,6 +15,7 @@ DIST = os.path.join(ROOT, "dist")
 ENTRIES = [
     {"in": "src/armslore/index.py", "out": "arms-lore"},
     {"in": "src/buffs/index.py", "out": "buffs"},
+    {"in": "src/magery/index.py", "out": "magery"},
 ]
 
 # Legion strips these from the script it loads and injects API as a builtin, so the artifact

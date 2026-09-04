@@ -1,12 +1,13 @@
 import API
 
-from buffs.bar import BuffBar, armed
 from buffs.cast import cast_once
 from buffs.config import (CAST_DELAY, CAST_TIMEOUT, CAST_WAIT_SLICE, HEARTBEAT_EVERY, KEEP, KEEP_UP,
                           LOG_EVERY, MAX_CYCLES, MAX_MISSES, MAX_THROTTLED, OUTCOME_TEXT, POLL,
                           SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT, SAVING_TEXT, SET_ASIDE, STOPPED,
                           THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX)
 from buffs.schedule import due, make_table, retire, set_aside, settled, spent
+from uo.buffbar import BuffBar
+from uo.gear import in_hand
 from uo.guards import dead, first_reason, stopped
 from uo.heartbeat import Heartbeat
 from uo.log import make_log
@@ -16,6 +17,14 @@ from uo.vitals import position_and_mana
 
 log = make_log("buffs")
 bar = BuffBar(log)
+
+
+def standing(entry):
+    return bar.standing(entry["buff"], entry["title"])
+
+
+def armed():
+    return in_hand() is not None
 heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "casts", position_and_mana)
 
 
@@ -66,7 +75,7 @@ def back_off():
 def put_up(item):
     global casts, throttled
 
-    outcome = cast_once(item["entry"], bar, OUTCOME_TEXT, CAST_TIMEOUT, CAST_WAIT_SLICE)
+    outcome = cast_once(item["entry"], standing, OUTCOME_TEXT, CAST_TIMEOUT, CAST_WAIT_SLICE)
 
     if outcome == "cast":
         casts += 1
@@ -128,7 +137,7 @@ def one_pass():
         if stop is not None or not due(item):
             continue
 
-        if bar.standing(item["entry"]):
+        if standing(item["entry"]):
             item["misses"] = 0
             continue
 
@@ -200,7 +209,7 @@ for cycle in range(MAX_CYCLES):
         stop = "every buff was refused for good"
         break
 
-    if not KEEP_UP and settled(table, bar.standing):
+    if not KEEP_UP and settled(table, standing):
         stop = "everything that could go up is up"
         break
 

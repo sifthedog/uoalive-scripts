@@ -1,7 +1,7 @@
 import unittest
 
 from test_support.uo import install, skill
-from uo.skill import skill_value, wait_for_skill
+from uo.skill import SkillReader, skill_value, wait_for_skill
 
 
 class SkillValueTest(unittest.TestCase):
@@ -35,3 +35,57 @@ class WaitForSkillTest(unittest.TestCase):
         self.api.skills["Mining"] = skill(0.0)
 
         self.assertEqual(wait_for_skill("Mining", 1.0, 0.5).Value, 0.0)
+
+
+class SkillReaderTest(unittest.TestCase):
+    def setUp(self):
+        self.api = install()
+        self.reader = SkillReader("Magery")
+
+    def test_a_client_that_has_not_answered_reads_as_unknown(self):
+        self.api.skills["Magery"] = skill(0.0)
+
+        self.assertIsNone(self.reader.read())
+
+    def test_a_missing_skill_reads_as_unknown(self):
+        self.assertIsNone(self.reader.read())
+
+    def test_a_real_zero_reads_once_the_client_has_answered(self):
+        self.api.skills["Magery"] = skill(41.2)
+        self.reader.read()
+        self.api.skills["Magery"] = skill(0.0)
+
+        self.assertEqual(self.reader.read(), 0.0)
+
+    def test_falls_back_to_the_configured_name(self):
+        self.assertEqual(self.reader.name(), "Magery")
+
+    def test_prefers_the_name_the_client_gives(self):
+        answered = skill(41.2)
+        answered.Name = "Magery (Mage)"
+        self.api.skills["Magery"] = answered
+
+        self.assertEqual(self.reader.name(), "Magery (Mage)")
+
+    def test_waits_until_the_client_answers(self):
+        pauses = [0]
+
+        def pause(seconds):
+            pauses[0] += 1
+
+            if pauses[0] == 2:
+                self.api.skills["Magery"] = skill(41.2)
+
+        self.api.Pause = pause
+
+        self.assertEqual(self.reader.wait(5.0, 0.5), 41.2)
+
+    def test_gives_up_after_the_timeout(self):
+        self.assertIsNone(self.reader.wait(1.0, 0.5))
+
+    def test_two_readers_do_not_share_the_latch(self):
+        self.api.skills["Magery"] = skill(41.2)
+        self.reader.read()
+        self.api.skills["Magery"] = skill(0.0)
+
+        self.assertIsNone(SkillReader("Magery").read())

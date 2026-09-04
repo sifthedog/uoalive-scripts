@@ -4,36 +4,6 @@ import API
 import time
 
 
-# src/buffs/bar.py
-class BuffBar(object):
-    """ApiBuff never refreshes after it is handed over, so the bar is re-read every time it matters."""
-
-    def __init__(self, log):
-        self._log = log
-        self._dumped = False
-
-    def standing(self, entry):
-        buffs = API.ActiveBuffs()
-
-        if buffs and not self._dumped:
-            self._dumped = True
-            self._log("buff bar: " + ", ".join("%s/%s" % (b.Type, b.Title or "") for b in buffs))
-
-        for buff in buffs if buffs else []:
-            if str(buff.Type) == entry["buff"]:
-                return True
-
-            if entry["title"] and entry["title"].lower() in (buff.Title or "").lower():
-                return True
-
-        return False
-
-
-# Either hand: a katana is one-handed and a no-dachi two-handed, and Consecrate Weapon takes both
-def armed():
-    return API.FindLayer("twohanded") is not None or API.FindLayer("onehanded") is not None
-
-
 # src/uo/journal.py
 def said(texts):
     for text in texts:
@@ -69,8 +39,8 @@ def read_outcome(buckets, budget, poll):
 
 
 # src/buffs/cast.py
-def cast_once(entry, bar, buckets, timeout, wait_slice):
-    up_before = bar.standing(entry)
+def cast_once(entry, standing, buckets, timeout, wait_slice):
+    up_before = standing(entry)
 
     # Re-issuing a buff that is already standing is the one thing this script exists not to do
     if up_before:
@@ -93,7 +63,7 @@ def cast_once(entry, bar, buckets, timeout, wait_slice):
 
     # The proofs that do not go through the journal. A transition, not a state: one already standing
     # proves nothing, which is why up_before was read first.
-    if bar.standing(entry):
+    if standing(entry):
         return "cast"
 
     if API.Player.Mana < mana_before:
@@ -254,6 +224,48 @@ def settled(table, standing):
     return all(item["retired"] is not None or standing(item["entry"]) for item in table)
 
 
+# src/uo/buffbar.py
+class BuffBar(object):
+    """ApiBuff never refreshes after it is handed over, so the bar is re-read every time it matters."""
+
+    def __init__(self, log):
+        self._log = log
+        self._dumped = False
+
+    def active(self):
+        buffs = API.ActiveBuffs()
+
+        if not buffs:
+            return []
+
+        if not self._dumped:
+            self._dumped = True
+            self._log("buff bar: " + ", ".join("%s/%s" % (b.Type, b.Title or "") for b in buffs))
+
+        return buffs
+
+    # title is the localized fallback for a shard whose BuffIconType member name does not match
+    def standing(self, kind, title=None):
+        if not kind:
+            return False
+
+        for buff in self.active():
+            if str(buff.Type) == kind:
+                return True
+
+            if title and title.lower() in (buff.Title or "").lower():
+                return True
+
+        return False
+
+
+# src/uo/gear.py
+# Either hand: a katana is one-handed and a no-dachi two-handed, and meditation is refused while
+# anything at all is held
+def in_hand():
+    return API.FindLayer("onehanded") or API.FindLayer("twohanded")
+
+
 # src/uo/entity.py
 # API.Player is None whenever the client is between world states - a recall, a server line change,
 # the moment around a death - and reading through it threw a live restock away
@@ -393,6 +405,14 @@ def position_and_mana():
 # src/buffs/index.py
 log = make_log("buffs")
 bar = BuffBar(log)
+
+
+def standing(entry):
+    return bar.standing(entry["buff"], entry["title"])
+
+
+def armed():
+    return in_hand() is not None
 heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "casts", position_and_mana)
 
 
@@ -443,7 +463,7 @@ def back_off():
 def put_up(item):
     global casts, throttled
 
-    outcome = cast_once(item["entry"], bar, OUTCOME_TEXT, CAST_TIMEOUT, CAST_WAIT_SLICE)
+    outcome = cast_once(item["entry"], standing, OUTCOME_TEXT, CAST_TIMEOUT, CAST_WAIT_SLICE)
 
     if outcome == "cast":
         casts += 1
@@ -505,7 +525,7 @@ def one_pass():
         if stop is not None or not due(item):
             continue
 
-        if bar.standing(item["entry"]):
+        if standing(item["entry"]):
             item["misses"] = 0
             continue
 
@@ -577,7 +597,7 @@ for cycle in range(MAX_CYCLES):
         stop = "every buff was refused for good"
         break
 
-    if not KEEP_UP and settled(table, bar.standing):
+    if not KEEP_UP and settled(table, standing):
         stop = "everything that could go up is up"
         break
 

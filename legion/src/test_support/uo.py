@@ -56,6 +56,8 @@ class FakePlayer(object):
         self.Y = fields.get("y", 1000)
         self.Z = fields.get("z", 0)
         self.IsDead = fields.get("is_dead", False)
+        self.IsCasting = fields.get("is_casting", False)
+        self.TithingPoints = fields.get("tithing_points", 100)
         # 100/100 and 50/50 rather than 0: a 0 here is the stat-refresh fault, not a healthy player
         self.Hits = fields.get("hits", 100)
         self.HitsMax = fields.get("hits_max", 100)
@@ -89,6 +91,17 @@ class FakeAPI(object):
 
         self.has_target = False
         self.pathfinding = False
+        self.requested_target = 0
+
+        self.buffs = []
+        self.layers = {}
+        self.cast = []
+        self.used_skills = []
+        self.used = []
+        self.targeted = []
+        self.pre_targeted = []
+        self.cancelled_pre_targets = 0
+        self.moved = []
 
     def SysMsg(self, text, hue=None):
         self.messages.append(text)
@@ -150,6 +163,46 @@ class FakeAPI(object):
     def CancelPathfinding(self):
         self.cancelled_pathfinding += 1
         self.pathfinding = False
+
+    def ActiveBuffs(self):
+        return list(self.buffs)
+
+    def FindLayer(self, layer, serial=None):
+        return self.layers.get(layer)
+
+    def CastSpell(self, spell):
+        self.cast.append(spell)
+
+    def UseSkill(self, name):
+        self.used_skills.append(name)
+
+    def UseObject(self, serial):
+        self.used.append(serial)
+
+    def Target(self, *args):
+        self.targeted.append(args)
+        self.has_target = False
+
+    def TargetSelf(self):
+        self.targeted.append(("self",))
+        self.has_target = False
+
+    def PreTarget(self, serial, kind=None):
+        self.pre_targeted.append((serial, kind))
+
+    def CancelPreTarget(self):
+        self.cancelled_pre_targets += 1
+
+    def RequestTarget(self, timeout=None):
+        return self.requested_target
+
+    def WaitForTarget(self, kind="any", timeout=None):
+        return self.has_target
+
+    def MoveItem(self, serial, container, amount=-1):
+        self.moved.append((serial, container, amount))
+
+        return True
 
     def hear(self, *lines):
         self.journal.extend(lines)

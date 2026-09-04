@@ -3,8 +3,8 @@ import API
 from uo.journal import read_outcome
 
 
-def cast_once(entry, bar, buckets, timeout, wait_slice):
-    up_before = bar.standing(entry)
+def cast_once(entry, standing, buckets, timeout, wait_slice):
+    up_before = standing(entry)
 
     # Re-issuing a buff that is already standing is the one thing this script exists not to do
     if up_before:
@@ -27,7 +27,7 @@ def cast_once(entry, bar, buckets, timeout, wait_slice):
 
     # The proofs that do not go through the journal. A transition, not a state: one already standing
     # proves nothing, which is why up_before was read first.
-    if bar.standing(entry):
+    if standing(entry):
         return "cast"
 
     if API.Player.Mana < mana_before:
