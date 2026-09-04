@@ -24,8 +24,11 @@ class PackReadsTest(unittest.TestCase):
 
 
 class AmountAndHueTest(unittest.TestCase):
-    def test_a_missing_amount_counts_as_none(self):
+    def test_an_empty_stack_counts_as_none(self):
         self.assertEqual(amount_of(item(amount=0)), 0)
+
+    def test_a_stack_the_client_has_not_reported_counts_as_one(self):
+        self.assertEqual(amount_of(item(amount=None)), 1)
 
     def test_reads_the_stack_size(self):
         self.assertEqual(amount_of(item(amount=42)), 42)

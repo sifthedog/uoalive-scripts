@@ -1,0 +1,283 @@
+import API
+
+from mining.config import (LOG_EVERY, MAX_CYCLES, MAX_NO_CURSOR, MAX_NO_TOOL, MAX_THROTTLED,
+                           MAX_UNKNOWN, MAX_VEIN_WALKS, MAX_PATH_PROBES, MINE_RANGE, MINE_Z_RANGE,
+                           NOT_ORE_GRAPHICS, NOTHING_NEARBY_HINT, ORE_SETTLE_POLL,
+                           ORE_SETTLE_TIMEOUT, ORE_STATIC_NAME, ORE_TILE_GRAPHICS,
+                           OUTCOME_TEXT, PATHFIND_TIMEOUT, PICK_BEETLE, RESPAWN_DELAY, SCAN_RADIUS,
+                           STEP_DELAY, SURVEY_ARTS, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX,
+                           UNREACHABLE_DELAY, IDLE_LOG_EVERY, IDLE_POLL)
+from mining.dig import Digger
+from mining.relieve import Relief
+from mining.roam import Roam
+from mining.run import (DIG_CONFIG, beetle, combiner, get_off_the_mount, heartbeat, log, ore,
+                        pickaxe, say_where_we_stand, saves, smelter, stall,
+                        stop_reason, threat)
+from mining.vein import Veins
+from uo.loop import backoff_for
+from uo.tiles import TileMemory
+from uo.terrain import Terrain
+from uo.weight import too_heavy
+
+memory = TileMemory(RESPAWN_DELAY, UNREACHABLE_DELAY, "vein", log)
+veins = Veins(Terrain(), memory, {
+    "tile_graphics": ORE_TILE_GRAPHICS,
+    "not_ore_graphics": NOT_ORE_GRAPHICS,
+    "static_names": ORE_STATIC_NAME,
+    "z_range": MINE_Z_RANGE,
+    "range": MINE_RANGE,
+    "scan_radius": SCAN_RADIUS,
+    "probes": MAX_PATH_PROBES,
+    "respawn_delay": RESPAWN_DELAY,
+}, log)
+roam = Roam(veins, memory, saves, threat, {
+    "range": MINE_RANGE,
+    "scan_radius": SCAN_RADIUS,
+    "z_range": MINE_Z_RANGE,
+    "survey_arts": SURVEY_ARTS,
+    "max_walks": MAX_VEIN_WALKS,
+    "pathfind_timeout": PATHFIND_TIMEOUT,
+    "idle_poll": IDLE_POLL,
+    "idle_log_every": IDLE_LOG_EVERY,
+}, log, heartbeat, stop_reason)
+digger = Digger(ore, OUTCOME_TEXT, DIG_CONFIG, log, True)
+relief = Relief(ore, combiner, smelter, saves, beetle.walk_to, "", log)
+
+say_where_we_stand()
+
+# Before the cursor, so the beetle you click is one standing next to you rather than the one you are
+# sitting on
+afoot = get_off_the_mount()
+
+if PICK_BEETLE:
+    beetle.pick()
+
+# A pack that arrives full has no room for the first swing's ore. Smelting only once off the mount:
+# a smelt aimed at the beetle you ride is silent, and three silent passes write the hue off.
+combiner.group()
+
+if afoot and too_heavy():
+    relief.smelt()
+
+stop = None
+tally = 0
+unknown = 0
+throttled = 0
+no_cursor = 0
+no_tool = 0
+idled = 0
+reported = 0
+barren = 0
+cycle = 0
+
+
+def end_cycle(phase):
+    global stop
+
+    stall.end_cycle(phase, cycle, tally)
+
+    if stop is None:
+        stop = stall.reason()
+
+
+try:
+    while stop is None and cycle - idled < MAX_CYCLES:
+        cycle += 1
+
+        stop = stop_reason()
+
+        if stop is not None:
+            break
+
+        # Everything below reads a frozen shard as its own failure: a step that does not move is a
+        # wall, a smelt that converts nothing is ore that cannot be worked
+        if saves.is_saving():
+            saves.wait_out()
+            unknown = 0
+            throttled = 0
+            stall.progressed()
+            end_cycle("saving")
+            continue
+
+        threat.look()
+
+        # Asked every cycle, so a remount costs a single cycle instead of the rest of the run
+        if not get_off_the_mount():
+            stop = "could not get off the mount"
+            break
+
+        if not pickaxe.equip():
+            no_tool += 1
+
+            if no_tool >= MAX_NO_TOOL:
+                stop = "no pickaxe"
+                break
+
+            log("no pickaxe (%d/%d), looking again" % (no_tool, MAX_NO_TOOL))
+            end_cycle("no tool")
+            API.Pause(backoff_for(no_tool, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX))
+            continue
+
+        no_tool = 0
+
+        relieved = relief.smelt_for_room()
+
+        if relieved is not None:
+            if isinstance(relieved, dict):
+                stop = relieved["stop"]
+                break
+
+            end_cycle(relieved)
+            API.Pause(STEP_DELAY)
+            continue
+
+        found = roam.approach()
+
+        if found[0] == "stop":
+            stop = found[1]
+            break
+
+        # No pause: a resource coming back has already waited out its own clock, and a wait is the
+        # script working rather than stalling
+        if found[0] == "waited":
+            idled += 1
+            stall.progressed()
+            continue
+
+        if found[0] == "walked":
+            end_cycle("walking")
+            continue
+
+        vein = found[1]
+
+        ore_before = ore.total()
+        outcome = digger.dig_once(pickaxe.serial())
+
+        if outcome == "dug":
+            tally += 1
+            unknown = 0
+            throttled = 0
+            barren = 0
+            stall.progressed()
+
+            # Ore arrives as a new pile after the sentence that announced it, so grouping every
+            # swing keeps the pack at one pile per metal and the item cap out of reach
+            ore.wait_for_ore(ore_before, ORE_SETTLE_TIMEOUT, ORE_SETTLE_POLL)
+            combiner.group()
+
+        elif outcome == "wornOut":
+            log("pickaxe worn out, swapping")
+            unknown = 0
+
+        elif outcome == "saving":
+            saves.wait_out()
+            unknown = 0
+            throttled = 0
+            stall.progressed()
+
+        elif outcome == "throttled":
+            throttled += 1
+
+            # A refusal is a read outcome, so it clears the unreadable count: left standing, a shard
+            # alternating refusals with silence ends the run on MAX_UNKNOWN
+            unknown = 0
+            log("shard says wait (%d/%d), backing off" % (throttled, MAX_THROTTLED))
+            API.Pause(backoff_for(throttled, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX))
+
+            if throttled >= MAX_THROTTLED:
+                stop = "the shard kept refusing the swing"
+
+        elif outcome == "noCursor":
+            no_cursor += 1
+            log("no target cursor (%d/%d), backing off" % (no_cursor, MAX_NO_CURSOR))
+            API.Pause(backoff_for(no_cursor, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX))
+
+            if no_cursor >= MAX_NO_CURSOR:
+                stop = "the shard never opened a target cursor"
+
+        # Worked out, not dead: mark_depleted times it out and the scan picks it up again
+        elif outcome == "empty":
+            unknown = 0
+            memory.mark_depleted(vein)
+            relief.group_and_smelt()
+
+        # The shard answering about where you stand rather than about a tile
+        elif outcome == "nothingNearby":
+            unknown = 0
+            veins.mark_area_depleted(MINE_RANGE)
+            barren += 1
+
+            # Said once, at the point it stops looking like bad luck
+            if barren == NOTHING_NEARBY_HINT:
+                log(
+                    "%d spots in a row had nothing to harvest - ORE_TILE_GRAPHICS is probably "
+                    "matching ground that carries no ore" % NOTHING_NEARBY_HINT
+                )
+                veins.survey(MINE_RANGE, SURVEY_ARTS)
+
+            relief.group_and_smelt()
+
+        # A wrong band in ORE_TILE_GRAPHICS is a whole stretch of mountain, so ban the art rather
+        # than walking to its copies one at a time
+        elif outcome == "notOre":
+            unknown = 0
+            memory.ban_art(vein)
+            memory.mark_unusable(vein, "cannot be mined")
+
+        elif outcome == "tooFar":
+            unknown = 0
+            memory.mark_unusable(vein, "is out of reach at %d tiles" % vein["distance"])
+
+        elif outcome == "notSeen":
+            unknown = 0
+            memory.mark_unusable(vein, "is not in line of sight")
+
+        # The ore this swing produced was destroyed rather than dropped, so a full pack is answered
+        # by consolidating: forty piles of one become one pile of forty
+        elif outcome == "packFull":
+            unknown = 0
+            log("pack is full, consolidating before the next swing")
+            combiner.group()
+
+        else:
+            unknown += 1
+            log("unreadable outcome (%d/%d), check OUTCOME_TEXT" % (unknown, MAX_UNKNOWN))
+
+        # Done here rather than inside each branch the way unknown is: every branch but one clears
+        # it, and one added later would have to remember to
+        if outcome != "noCursor":
+            no_cursor = 0
+
+        if unknown >= MAX_UNKNOWN:
+            stop = "%d unreadable outcomes in a row" % MAX_UNKNOWN
+            break
+
+        if tally >= reported + LOG_EVERY:
+            reported = tally
+            log(
+                "%d swings, %d ore, %d/%d"
+                % (tally, ore.total(), API.Player.Weight, API.Player.WeightMax)
+            )
+
+        end_cycle(outcome if outcome is not None else "unknown")
+        API.Pause(STEP_DELAY)
+except Exception as error:
+    # Nothing else catches: a throw out of a client call used to end the run with no line at all
+    if stop is None:
+        stop = "threw - %s" % error
+
+if API.Pathfinding():
+    API.CancelPathfinding()
+
+reason = stop or "hit the %d working cycle backstop" % MAX_CYCLES
+
+# Smelted only if the run is ending over the limit: what is in the pack is a few swings' worth
+combiner.group()
+
+if too_heavy():
+    relief.smelt()
+
+# Swings rather than an ore delta: smelted ore has left the pack, so the pack cannot total the run
+log("%d swings, %d ore still in the pack" % (tally, ore.total()))
+log("stopping - %s" % reason)
+API.Stop()

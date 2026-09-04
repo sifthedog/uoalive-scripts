@@ -42,6 +42,7 @@ class FakeMobile(object):
         self.Notoriety = fields.get("notoriety", 1)
         self.Backpack = fields.get("backpack", None)
         self.IsDestroyed = fields.get("is_destroyed", False)
+        self.IsHuman = fields.get("is_human", False)
         self.Hits = fields.get("hits", 100)
         self.HitsMax = fields.get("hits_max", 100)
         self.X = fields.get("x", 0)
@@ -62,6 +63,7 @@ class FakePlayer(object):
         self.Z = fields.get("z", 0)
         self.IsDead = fields.get("is_dead", False)
         self.IsCasting = fields.get("is_casting", False)
+        self.IsMounted = fields.get("is_mounted", False)
         self.TithingPoints = fields.get("tithing_points", 100)
         # 100/100 and 50/50 rather than 0: a 0 here is the stat-refresh fault, not a healthy player
         self.Hits = fields.get("hits", 100)
@@ -116,6 +118,13 @@ class FakeAPI(object):
         self.closed_gumps = 0
         self.pathfound = []
         self.reachable = False
+        self.land = {}
+        self.statics = {}
+        self.paths = {}
+        self.props = {}
+        self.equipped = []
+        self.dismounts = 0
+        self.said_aloud = []
 
     def SysMsg(self, text, hue=None):
         self.messages.append(text)
@@ -218,7 +227,28 @@ class FakeAPI(object):
 
         return True
 
-    def GetAllMobiles(self, graphic=None, distance=None):
+    def GetTile(self, x, y):
+        return self.land.get((x, y))
+
+    def GetStaticsAt(self, x, y):
+        return list(self.statics.get((x, y), []))
+
+    def GetPath(self, x, y, z, within=0):
+        return self.paths.get((x, y))
+
+    def ItemNameAndProps(self, serial, force=False, timeout=None):
+        return self.props.get(serial, "")
+
+    def EquipItem(self, serial):
+        self.equipped.append(serial)
+
+    def Dismount(self):
+        self.dismounts += 1
+
+    def Msg(self, text):
+        self.said_aloud.append(text)
+
+    def GetAllMobiles(self, graphic=None, distance=None, notoriety=None):
         return [m for m in self.mobiles.values()
                 if (graphic is None or m.Graphic == graphic)
                 and (distance is None or m.Distance <= distance)]
@@ -298,3 +328,20 @@ def mobile(**fields):
 
 def skill(value=0.0, cap=100.0):
     return FakeSkill(value, cap)
+
+
+def tile(x, y, z=0, graphic=0, is_land=True, name=""):
+    return {"x": x, "y": y, "z": z, "graphic": graphic, "is_land": is_land, "name": name}
+
+
+class FakeStatic(object):
+    def __init__(self, z=0, graphic=0, name=""):
+        self.Z = z
+        self.Graphic = graphic
+        self.Name = name
+
+
+class FakeLand(object):
+    def __init__(self, z=0, graphic=0):
+        self.Z = z
+        self.Graphic = graphic

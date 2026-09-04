@@ -14,8 +14,12 @@ def pack_top_level():
     return items if items else []
 
 
+# None is an unreported stack, not an empty one: counted as 0 it would hide the ore a swing just
+# delivered, which is the proof that the swing landed
 def amount_of(item):
-    return getattr(item, "Amount", 0) or 0
+    amount = getattr(item, "Amount", None)
+
+    return amount if amount is not None else 1
 
 
 def hue_of(item):
