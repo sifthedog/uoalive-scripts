@@ -14,6 +14,7 @@ DIST = os.path.join(ROOT, "dist")
 
 ENTRIES = [
     {"in": "src/armslore/index.py", "out": "arms-lore"},
+    {"in": "src/buffs/index.py", "out": "buffs"},
 ]
 
 # Legion strips these from the script it loads and injects API as a builtin, so the artifact
@@ -287,7 +288,9 @@ def collect(entry_path):
 
         stack.pop()
         seen.add(path)
-        names = bound_names(tree)
+        # What a module re-exports counts as provided: the bundle is flat, so a config that pulls a
+        # shared constant through still answers for it
+        names = bound_names(tree) | set(name for _dep, imported, _line in deps for name in imported)
         provided[path] = names
         ordered.append((path, chunks_of(path, source, tree, set(start for start, _end in spans))))
 
