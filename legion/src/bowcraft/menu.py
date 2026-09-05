@@ -25,15 +25,13 @@ class CraftMenu(object):
     def button_id(self, kind, index):
         return 1 + kind + index * self._config["stride"]
 
-    # False is the client saying the gump was gone before the button was pressed, which is a
-    # different fact from the page not coming back and is worth not waiting out the timeout for
+    # False is the client saying the gump was gone before the press: not worth waiting out
     def press(self, button, gump, timeout):
         if not API.ReplyGump(button, gump):
             return 0
 
         found = await_any(timeout, self._config["gump_poll"])
 
-        # Only ever the craft menu presses buttons here, so whatever answered is the next page
         if found:
             self._id = found
 
@@ -46,7 +44,7 @@ class CraftMenu(object):
         if any_in(API.GetGumpContents(ident) or "", self._config["title_fragments"]):
             return True
 
-        # The client's own search gets a turn: it reads controls GetGumpContents may not put in text
+        # GumpContains reads controls GetGumpContents may not put in text
         for phrase in self._config["title_text"]:
             if API.GumpContains(phrase, ident):
                 return True
@@ -61,7 +59,6 @@ class CraftMenu(object):
     def open(self):
         found = API.HasGump()
 
-        # The one already being driven, or one that names itself
         if found and (found == self._id or self.is_craft_gump(found)):
             self._id = found
 
@@ -72,8 +69,7 @@ class CraftMenu(object):
         if serial is None:
             return None
 
-        # Any other server gump has to go first: the wait below is for a gump to be *there*, and a
-        # vendor's or a status gump standing open answers it before the tools have opened anything
+        # The wait below is for any gump, so a vendor's or status gump standing open would answer it
         if found:
             self._log("closing the gump that is in the way %s" % hex_of(found))
             API.CloseGump(found)
@@ -86,8 +82,7 @@ class CraftMenu(object):
         if not found:
             return None
 
-        # Whatever the tools opened is the menu. The title is not a gate - it is a cliloc the client
-        # resolves, and refusing a gump over it is what made a working craft menu read as no menu.
+        # The title is a cliloc the client resolves; gating on it made a working menu read as none
         if not self._said_gump_text and not self.is_craft_gump(found):
             self._said_gump_text = True
             lines = self.lines(found)
@@ -98,8 +93,7 @@ class CraftMenu(object):
 
         return found
 
-    # The stock gump emits the group rows before the item rows, so everything past the last group
-    # name is this page's SELECTIONS. A shard that emits them the other way round leaves this empty.
+    # The stock gump emits the group rows before the item rows
     def item_rows(self, gump):
         lines = self.lines(gump)
         start = None
@@ -111,8 +105,7 @@ class CraftMenu(object):
 
         return [] if start is None else lines[start:]
 
-    # A whole row, never a substring: "crossbow" is inside "crossbow bolt", so a substring match
-    # finds the wanted item in the Ammunition category and never reaches Weapons at all
+    # Whole row, never a substring: "crossbow" is inside "crossbow bolt", in another category
     def page_has(self, product, gump):
         rows = self.item_rows(gump)
 
@@ -135,8 +128,7 @@ class CraftMenu(object):
 
         return len(rejected)
 
-    # Pressing a category only redraws the SELECTIONS panel, so walking them costs nothing - which
-    # is why the category is found this way and the row below is not
+    # Pressing a category only redraws the SELECTIONS panel, so walking them costs no wood
     def find_category(self, product, gump):
         known = self._category_buttons.get(product)
 
@@ -153,8 +145,7 @@ class CraftMenu(object):
 
             opened = self.press(button, gump, self._config["gump_timeout"])
 
-            # A category that answered nothing says nothing about the category, so the caller
-            # retries rather than ending the run over it
+            # A press that answered nothing is not a verdict on the category
             if not opened:
                 return (0, 0)
 
@@ -173,8 +164,7 @@ class CraftMenu(object):
 
         return (gump, None)
 
-    # The text is read first and only falls back to walking the rows, because unlike a category a
-    # wrong row here crafts the wrong item and spends the wood for it
+    # The text first: unlike a category, a wrong row crafts the wrong item and spends the wood
     def candidate_buttons(self, product, gump):
         rows = self.item_rows(gump)
         order = []

@@ -1,10 +1,7 @@
 import API
 
 from bowcraft.wood import total_of
-from uo.entity import player
 from uo.pack import amount_of
-from uo.vitals import weight_reading
-from uo.weight import over_buffer
 
 
 class Restock(object):
@@ -13,32 +10,8 @@ class Restock(object):
         self._sources = sources
         self._config = config
         self._log = log
-        self._each = config["wood_weight"]
 
-    def _carried(self):
-        me = player()
-
-        return None if me is None else me.Weight
-
-    # None when the client has not said, which reads as no limit - the same call over_buffer makes
-    def _room_for_wood(self):
-        me = player()
-
-        if me is None or me.WeightMax <= 0:
-            return None
-
-        return int((me.WeightMax - self._config["buffer"] - me.Weight) / max(self._each, 0.1))
-
-    def _learn_weight(self, each):
-        # Sanity: a move the client mis-timed can read as any weight at all
-        if each < 0.1 or each > 50 or abs(each - self._each) < 0.05:
-            return
-
-        self._each = each
-        self._log("one wood weighs %.1f here, pulling to fit" % each)
-
-    # Wood of another type is weight and nothing else, and the container it came out of is open and
-    # in reach at exactly this moment - which is the only moment putting it back costs nothing
+    # Wrong wood goes back while its container is open and in reach, the one moment it costs nothing
     def _put_back(self, container):
         before = total_of(self._wood.pack_other())
 
@@ -56,21 +29,16 @@ class Restock(object):
 
         return moved
 
-    # Moves are asynchronous, so the pack is re-counted between them rather than MoveItem's return
-    # value being trusted. A move that gains nothing enough times running is a container that is done.
+    # Moves are asynchronous: the pack is re-counted after each rather than MoveItem's return read
     def run(self):
-        # The pack is read before anything is fetched: what is already here, bags included, counts
-        moved = self._wood.lift_from_bags()
+        lifted = self._wood.lift_from_bags()
 
+        # After the lift: in_pack reads bags too, and counting the lift twice left it short
         wanted = self._config["batch"] - self._wood.in_pack()
-
-        if wanted <= 0:
-            return moved
-
-        buffer = self._config["buffer"]
+        moved = 0
 
         for entry in self._sources.picked():
-            if moved >= wanted or over_buffer(buffer):
+            if moved >= wanted:
                 break
 
             if not self._sources.reach(entry):
@@ -88,27 +56,16 @@ class Restock(object):
 
             stalled = 0
 
-            while (moved < wanted and stalled < self._config["max_empty_moves"]
-                   and not over_buffer(buffer)):
+            while moved < wanted and stalled < self._config["max_empty_moves"]:
                 piles = self._sources.container_wood(container)
 
                 if len(piles) == 0:
                     break
 
-                room = self._room_for_wood()
-                take = min(wanted - moved, amount_of(piles[0]))
-
-                if room is not None:
-                    take = min(take, room)
-
-                # Not a stall: there is wood there and no room for it, which the caller reports
-                if take <= 0:
-                    break
-
                 before = self._wood.in_pack()
-                heavy = self._carried()
 
-                API.MoveItem(piles[0].Serial, API.Backpack, take)
+                API.MoveItem(piles[0].Serial, API.Backpack,
+                             min(wanted - moved, amount_of(piles[0])))
                 API.Pause(self._config["move_delay"])
 
                 gained = self._wood.in_pack() - before
@@ -119,16 +76,8 @@ class Restock(object):
                     stalled = 0
                     moved += gained
 
-                    now = self._carried()
-
-                    if heavy is not None and now is not None and now > heavy:
-                        self._learn_weight((now - heavy) / float(gained))
-
         if moved > 0:
             self._log("pulled %d wood, %s in the pack, %d left in what you picked"
                       % (moved, self._wood.pack_report(), self._sources.stock_left()))
 
-        if over_buffer(buffer) and moved < wanted:
-            self._log("stopped short of the batch at %s" % weight_reading())
-
-        return moved
+        return lifted + moved

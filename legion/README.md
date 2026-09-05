@@ -12,8 +12,9 @@ different client with a different language and a different API, so no code is sh
 | `mine-here.py` | Stands still and works the spot you are on until it runs dry, then smelts and stops |
 | `lumberjack.py` | Chops the nearest tree, turns the logs into boards, and loads the boards onto your pack animals |
 | `arms-lore.py` | Target a weapon, then read it every half second until Arms Lore caps |
-| `bowcraft.py` | Trains Bowcraft from 40 to cap: makes whatever the band still gains on, restocks wood from the containers and pack animals you pick, and sells to the nearest bowyer |
+| `bowcraft.py` | Trains Bowcraft from 30 to cap: makes whatever the band still gains on, restocks wood from the containers and pack animals you pick, and sells to the nearest bowyer |
 | `magery.py` | Trains Magery on the four spells that gain without a victim, meditating when the pool runs dry |
+| `mysticism.py` | Trains Mysticism on the five spells that gain without a victim, meditating when the pool runs dry |
 
 ## How to run it
 
@@ -24,7 +25,7 @@ different client with a different language and a different API, so no code is sh
    `mining.py` and `mine-here.py` want your fire beetle; `lumberjack.py` wants your pack animals,
    one after another; `arms-lore.py` wants the weapon to read; `bowcraft.py` wants every container
    or pack animal holding logs or boards, and none at all if you are carrying the wood already.
-   `magery.py` and `buffs.py` raise none. ESC declines, and each script says what it does instead.
+   `magery.py`, `mysticism.py` and `buffs.py` raise none. ESC declines, and each script says what it does instead.
 
 ## How it is built
 
@@ -36,7 +37,11 @@ imports into one file in `legion/dist/`. `dist/` is committed, because that is w
 src/uo/            the shared library, one concept per file
 src/<script>/      index.py, config.py, and that script's own decisions
 src/test_support/  the fake client the suite runs against
+src/skilldb/       host CPython, not a script - see The attempt log
 ```
+
+`python3 legion/skilldb.py convert <logs>` turns what the scripts record into two CSV tables. It is
+the only thing here that is not pasted into the game.
 
 `python3 legion/run-tests.py` runs the suite. It needs neither the game nor a shard: `test_support/uo.py`
 is a fake `API`, installed both ways the real one is reachable — as a builtin, and as `import API`.
@@ -69,6 +74,7 @@ proves nothing about this, so `build.py` walks the AST of every source and refus
 
 ```
 buffbar     the buff bar, re-read every time because ApiBuff never refreshes
+cast        a spell, and the two silent proofs a shard that says nothing still leaves
 clock       the one time.time(), so tests have one thing to fake
 convert     resource -> product, judged by the pack diff, with a per-hue write-off
 entity      hex, the guarded player read, Chebyshev, find-a-mobile
@@ -79,18 +85,23 @@ heartbeat   'still here', on the clock rather than per cycle
 journal     the phrase table, the reverse lookup off it, and the tail of what was said
 log         the script's own prefix
 loop        the throttle backoff and the stall watchdog
+mana        the pool, watched in slices so the guards get a look in
+meditate    filling the pool, and retiring the skill when the shard refuses it
 menu        a context menu entry, matched by its text
 mount       getting off the mount, proved by the flag
 notoriety   the values the threat scans are handed
 pace        the shard's skill timer, learned from its refusals rather than configured
 pack        counting and diffing what the backpack holds
 phrases     the shard's own wordings, as far as they do not depend on the script
+record      one line per attempt, buffered a cycle so the gain it earned is in it
 retry       act, poll for the proof
 roam        walking to the next spot, and waiting where there is nothing but a clock
 save        sitting out a world save
 scan        the crow-flight sort, the route probe, and the shortest way in
 skill       every read of GetSkill, and what a client that has not answered means
+stages      the band table: which row trains now, and what one of its cycles costs
 survey      the dead-end report: what the run actually saw
+target      answering a self cursor the pre-target did not take
 terrain     the land and statics cache, one pair of calls per coordinate for the run
 threat      noticing trouble and calling the guards, without ending the run over it
 tiles       what is worked out, unreachable, or not the resource at all
@@ -103,6 +114,85 @@ weight      the one place WeightMax is read
 
 `probe-target.py` sits outside all of this: it is the throwaway diagnostic that answered how this
 shard takes a self-target, and its own header says to delete it once the answer is known.
+
+## The attempt log
+
+Five scripts append one line per attempt to `DATA_PATH`, and `skilldb.py` turns those lines into two
+tables. Every counter these scripts keep is otherwise an int in memory, reported through `SysMsg` and
+gone when the run ends; this is the same information written down.
+
+`open()` is a builtin, so this needs no import and `HOISTED` is untouched — which is the only reason
+`src/uo/record.py` formats its JSON by hand rather than calling `json.dumps`. The standard library
+*is* on `sys.path` at runtime, but a file of numbers and two short strings is not worth relaxing the
+bundler's one rule for.
+
+**A bare filename lands in TazUO's working directory** — not beside the script, and not in this repo.
+Set an absolute path if you want it somewhere you will find it. `DATA_PATH = ""` turns a script's
+recording off entirely. The file is opened, appended to and closed per row, so a client killed
+mid-run loses at most the one row still in the air, and a run that cannot write says so once and
+carries on training.
+
+### What counts as an attempt
+
+Only what the shard clearly called a success or a failure. A throttle, a dry mana pool, a world save
+and an outcome no `OUTCOME_TEXT` matched all write nothing. A guessed row would be worse than a
+missing one: the missing row shows up in the run's own closing tally, and the wrong one never does.
+
+| Script | success | failure | Left out |
+| --- | --- | --- | --- |
+| `magery.py` | `cast`, and `disabled` where `DISABLED_IS_PROGRESS` | `fizzled` | the mana wait, the buff already standing, everything unread |
+| `mysticism.py` | the same | `fizzled` | the same, plus the health floor |
+| `tame.py` | `tamed` | `failed` | `pending` — the shard took the attempt and never said how it went |
+| `arms-lore.py` | `read` | `missed` | a use that raised no cursor, and any wording the table has not got |
+| `bowcraft.py` | `made` | `failed` | `noMaterial`, `wrongRow`, a worn tool, the sell trips |
+
+### Why a row waits a cycle
+
+`skill_to` is not read straight after the outcome. The client applies a gain some time after the
+shard grants it, so a value read at the outcome is usually still the old one. The row is buffered and
+written at the **next** skill read instead, one pace delay later.
+
+That is what makes carrying both values worth the trouble. A scroll of alacrity moves the skill 0.2
+to 0.5 in one go, and a row that recorded only the band it started in could not tell that apart from
+several ordinary gains. Recording every attempt rather than only the ones that gained is the same
+argument: a progression that stopped because the wood ran out is still fully described.
+
+### The row
+
+```json
+{"v":1,"id":"0x40012345/1757030000123/17","t":1757030042.500,"char":"Kaldor",
+ "serial":"0x40012345","skill":"Magery","from":74.6,"to":74.7,
+ "outcome":"cast","ok":true,
+ "consumed":[{"name":"oak boards","graphic":"0x1bd7","hue":2010,"qty":6}]}
+```
+
+`id` is `serial/run-start-in-milliseconds/sequence`, so it is stable across re-conversions and two
+runs cannot mint the same one. `to` is `null` where the client was not answering when the row
+settled. `consumed` is left off entirely unless something was measured — see `bowcraft.py` below,
+which is the only script that measures it.
+
+### Turning it into a table
+
+```
+python3 legion/skilldb.py convert ~/TazUO/LegionScripts/skill-attempts.jsonl --out legion/data
+```
+
+Every file named is merged into one pair of tables, so a log copied off each character joins the
+rest. Rows are recognised by their `id`, so converting the same log twice changes nothing, and a
+half-written line is reported with its file and line number and skipped rather than being fatal.
+
+`attempts.csv` is `id, ts, at_utc, character, serial, skill, skill_from, skill_to, gain, outcome,
+success`. `consumed.csv` is `id, name, graphic, hue, quantity` — one row per material, joined back by
+`id`, because a craft can spend several things at once and a column pair per material would cap how
+many at whatever seemed enough on the day. `gain` is `skill_to - skill_from`, rounded to a tenth
+because `74.7 - 74.6` is `0.09999999999999432` in binary floating point. The 0.1-band question that
+started all this — how many attempts did 40.0 to 40.1 cost — is a `GROUP BY skill_from` over that
+table rather than a shape the file was forced into.
+
+`src/skilldb/` is the one folder under `src/` that is **not** a Legion script: it is host CPython,
+run by `skilldb.py`, and it is not in `build.py`'s `ENTRIES`, so nothing holds it to what IronPython
+3.4 can parse. It lives there so `run-tests.py`'s discovery finds `convert_test.py` for free.
+
 
 ## tame.py
 
@@ -259,6 +349,7 @@ where the ClassicUO port took milliseconds.
 | `RELEASE_TIMEOUT` / `_POLL` | `3.0` / `0.25` | How long `IsRenamable` has to go back to false |
 | `RENAME_TIMEOUT` / `_POLL` | `3.0` / `0.25` | How long the new name has to arrive |
 | `OUTCOME_TEXT` | — | The shard's wordings. All guesses but two; see below |
+| `DATA_PATH` | `skill-attempts.jsonl` | Where each attempt is appended, one JSON object per line. `""` records nothing |
 
 ### When it goes wrong
 
@@ -992,8 +1083,8 @@ or you stop the script. It does not walk, and the weapon can sit in your pack.
 ### Before you run it
 
 - The weapon has to stay where the client can resolve it — dropped or handed away ends the run.
-- Nothing reads the journal. A use the shard refuses raises no cursor, so the pass times out after
-  `TARGET_TIMEOUT` and the next one asks again.
+- A use the shard refuses raises no cursor, so the pass times out after `TARGET_TIMEOUT` and the
+  next one asks again. Nothing is recorded for it.
 
 ### What to set
 
@@ -1001,7 +1092,24 @@ or you stop the script. It does not walk, and the weapon can sit in your pack.
 | --- | --- | --- |
 | `DELAY` | `0.5` | Seconds between uses. Below the shard's skill timer this just spends passes on refusals |
 | `TARGET_TIMEOUT` | `1.0` | How long a use is given to put a cursor up |
+| `READ_TIMEOUT` | `1.5` | How long a reading is given to say what it found |
+| `READ_POLL` | `0.1` | How often the journal is asked during that wait |
 | `PICK_TIMEOUT` | `30.0` | How long the opening cursor waits for you |
+| `DATA_PATH` | `skill-attempts.jsonl` | Where each reading is appended. `""` records nothing |
+
+### Known unverified
+
+- **Every phrase in `OUTCOME_TEXT` is a guess.** Nothing in this repo has watched Arms Lore on this
+  shard. The refusals are a reconstruction of the stock RunUO wording, and `read` is a list of stems
+  — `damage`, `durability`, `quality` — rather than any one sentence, because a shard reports what
+  it found in wording no two agree on. The journal is cleared before every use, so a stem only ever
+  sees this reading's own text, which is the same bargain `evalint` makes on the ClassicUO side.
+- What this costs when it is wrong is visible rather than silent: an unmatched outcome is counted,
+  reported at the end as `N outcome(s) went unread`, and **not** recorded. Watch one run, read what
+  the shard actually says, and correct the table.
+- **A wrong table also slows the run down.** A reading whose wording no bucket matches waits out the
+  whole of `READ_TIMEOUT` before the pass gives up, so a run that reports every outcome as unread is
+  also crawling. That is the symptom to look for; the fix is the wording, not a shorter timeout.
 
 ## magery.py
 
@@ -1069,12 +1177,12 @@ time without being told it. A band that is mostly them wants its `cast_delay` ra
 
 ### The self cursor
 
-**`API.PreTarget(API.Player.Serial, "beneficial")` before the cast is what answers it**, which is the
-order the client's own `CastSpell` example uses. **The type has to be the one the shard raises.**
-These cursors report as `beneficial`, and a pre-target set to `"neutral"` — which is the stub's
-default, and what `tame.py` passes — does not fire at all: the cursor is left standing and the cast
-is spent for nothing. The pre-target is cancelled after every cast, or one the cast never used stays
-armed for whatever the next one raises.
+**A pre-target queued before the cast is what answers it**, which is the order the client's own
+`CastSpell` example uses. **The type has to be the one the shard raises**, so it comes off the row's
+`target_kind` and defaults to `beneficial`, which is what every band here wants. A pre-target set to
+`"neutral"` — the stub's default, and what `tame.py` passes — does not fire at all: the cursor is
+left standing and the cast is spent for nothing. The pre-target is cancelled after every cast, or
+one the cast never used stays armed for whatever the next one raises.
 
 The post-cast answer is kept as a fallback for a shard where the pre-target does not land. It is
 tried from inside the outcome poll — so it costs nothing on a cast the pre-target already took — and
@@ -1161,6 +1269,7 @@ The config block is the top of `magery.py`. **Every timing is in seconds.**
 | `MAX_THROTTLED` | `20` | Refusals in a row before the run stops |
 | `MAX_CYCLES` | `5000` | The backstop |
 | `OUTCOME_TEXT` / `MEDITATE_OUTCOME_TEXT` | guesses | What the shard says. Correct these first when anything goes wrong |
+| `DATA_PATH` | `skill-attempts.jsonl` | Where each cast is appended, one JSON object per line. `""` records nothing |
 
 There is **no stall watchdog** and **no health floor**. The first because this run's cycles are mostly
 mana coming back on purpose; the second because nothing in this table hurts the caster, so the only
@@ -1243,9 +1352,152 @@ what the next row is for, and it means the bound between them wants moving down.
 - **The `cast_timeout` figures above the 3rd circle.** Only the 3rd was measured (1.8s); the other
   three are scaled from it, and a band that reads unreadable throughout wants its own raised.
 
+## mysticism.py
+
+Trains **Mysticism** by casting whichever of five spells still gains at the level the skill has
+reached, meditating when the pool runs dry, and stopping when the last band is done. It raises no
+cursor of its own — start it and leave it. Per cycle:
+
+1. **Check the stop conditions** — dead, and a health floor the two area bands make worth having.
+2. **Read the skill**, and pick the band the value falls in.
+3. **Meditate if the pool is short of the row's `mana`**, filling it right up.
+4. **Cast the row's spell**, answering its own cursor, and read whether it landed.
+5. **Pace**, and go round again, until 120.0 is passed.
+
+It is the same loop as `magery.py` on the same shared modules — `uo/cast.py`,
+`uo/target.py`, `uo/mana.py`, `uo/meditate.py`, `uo/stages.py` — so *How a cast is read*, *The self
+cursor* and *The mana wait* over there describe this one too. Only the table, the cursor kinds and
+the health floor are its own.
+
+| Band | Spell | Mana | Cursor | What it is |
+| --- | --- | --- | --- | --- |
+| ≤ 40.0 | Nether Bolt | 4 | none answered | The cheapest thing in the book |
+| 40.0 – 63.0 | Stone Form | 11 | at self, beneficial | A **toggle**. Every other cast takes it back off |
+| 63.0 – 80.0 | Cleansing Winds | 20 | at self, beneficial | A heal and cure, centred on the target |
+| 80.0 – 95.0 | Hail Storm | 40 | at self, **harmful** | An **area attack**, centred on you |
+| 95.0 – 120.0 | Nether Cyclone | 50 | at self, **harmful** | An **area drain**, centred on you |
+
+The four bands from 40.0 up are the training table as the guides give it. Nether Bolt below them is
+this script's own addition, so a character who has not bought the skill yet still has something to
+cast — but a trainer sells the first thirty points faster than this loop grinds them, and the
+start-up line says so.
+
+**Nether Bolt answers no cursor.** The mana goes and the skill is rolled as the incantation ends, so
+the cursor it raises is simply left for the next cycle's guarded cancel to take down. That is the
+same shape the last two bands fall back to if a harmful self-target turns out not to be allowed here
+— see *Known unverified*.
+
+| Outcome | What happens |
+| --- | --- |
+| `cast` | Tallied, and the fault counters cleared |
+| `fizzled` | Counted, not tallied. Ordinary, and commoner the further a band is above the skill |
+| `alreadyCasting` | Waits `CASTING_WAIT`, flat. **Never** counted towards a stop |
+| `alreadyUp` | Waits `BUFF_WAIT`. Only reached with `SKIP_WHEN_BUFFED` on, or a refusal in words |
+| `disabled` | Tallied — this is Stone Form toggling off, and the shard charged for that cast |
+| `formLocked` | **Stops.** Every band above Stone Form is unreachable while the form is up, and nothing here drops it |
+| `noMana` | Says the row's `mana` is understated, then gathers mana |
+| `noReagents` | **Stops.** Nothing waited for refills a pouch |
+| `unskilled` | **Stops** — the table is aimed at a skill this character cannot use |
+| `saving` | Sits the world save out and resets the counters |
+| `throttled` | Backs off, growing, `MAX_THROTTLED` in a row ends the run |
+| anything else | Unreadable — said once per stretch and carried on with. It ends nothing on its own |
+
+`MAX_STALE` cycles with no cast **and** no movement in the skill is the only ending left for a run
+that is getting nowhere, and it cannot fire while the skill is still moving. A dry mana stretch is
+charged what it cost in cycles rather than one.
+
+### Stone Form is a toggle
+
+`SKIP_WHEN_BUFFED` is off, so the row casts every cycle: on, off, on. Each of those is a cast the
+shard charged mana for and rolled the skill on, which is why `DISABLED_IS_PROGRESS` is on and the
+`disabled` bucket is tallied rather than warned about. The buff transition only proves the casts that
+turn it **on** — the ones that turn it off are proved by the mana instead, which is the ordinary
+silent proof and needs no wording.
+
+### The health floor
+
+The last two bands are harmful spells centred on the caster, and **nothing in this script heals**.
+`HURT_FLOOR` stops the run at half health rather than watching it die. On a shard that excludes the
+caster from their own area spell — which is the assumption the table is built on — it never fires,
+and what trips it is something that wandered up.
+
+### Before you run it
+
+- **Stand somewhere empty, and never in town.** The top two bands are area attacks for forty skill
+  points. In town that is the guards, and near anything blue it is a criminal flag. The script does
+  not move, fight or heal.
+- **Carry a Mysticism spellbook**, and the reagents for it — the standard eight plus Dragon's Blood,
+  Fertile Dirt, Daemon Bone and Bone — or wear a 100% Lower Reagent Cost suit. Running out ends the
+  run by name.
+- **Empty your hands.** Meditation is refused while anything is held, and this run will not put it
+  away for you.
+- **Focus or Imbuing sets the damage, not the gain.** Neither is needed for this to train.
+- **Below about 30.0, buy the skill from an NPC trainer first.**
+- It aims at **120.0**, which needs the power scrolls. The start-up line says so if the shard caps
+  you lower.
+
+### What to set
+
+The config block is the top of `mysticism.py`. **Every timing is in seconds.** Everything below
+`STAGES` is `magery.py`'s *What to set* block with the same defaults and the same meanings; only
+these are this script's own.
+
+| Setting | Default | What it is for |
+| --- | --- | --- |
+| `STAGES` | five rows | One row per band: cast `spell` until the skill reaches `up_to`, at `mana` a cast |
+| `STAGES[].up_to` | — | The skill value the row trains to, exclusive. A float — `63.0`, not the web client's tenths |
+| `STAGES[].target` | `self` on four | Answers the row's own cursor. Nether Bolt does not |
+| `STAGES[].target_kind` | `harmful` on two | The cursor type the shard raises. Defaults to `beneficial`; the area rows say otherwise |
+| `STAGES[].buff` | Stone Form only | A `BuffIconType` member name, matched against `str(buff.Type)`. The other four train on the mana proof |
+| `STAGES[].cast_timeout` | 3.0 – 5.0 | **The one worth tuning.** Below the spell's real cast time every success reads as unreadable |
+| `STAGES[].cast_delay` | 0.3 – 0.6 | The whole of the pause between two casts |
+| `FIRST_BAND` | `40.0` | Where the guides' table starts. Under it the start-up line points at the trainer |
+| `HURT_FLOOR` | `0.5` | The fraction of max hits the run stops below. Magery has none; the area bands here earn it |
+| `DATA_PATH` | `skill-attempts.jsonl` | Where each attempt is appended, one JSON object per line. `""` records nothing |
+
+### When it goes wrong
+
+**`a form is blocking ...`** — this shard will not let Stone Form and the rest of the book coexist,
+so the bands above 63.0 cannot be reached with the form up. Drop it and start again. If it turns out
+this shard never does that, the `formLocked` wordings are the guess to delete.
+
+**`the cursor would not take a self target`** on the Hail Storm or Nether Cyclone band — the harmful
+self-target is the guess. Delete `"target"` and `"target_kind"` from those two rows; they then behave
+like Nether Bolt, where the mana proves the cast and the next cycle cancels the standing cursor.
+
+**`outcome unreadable - carrying on`** — usually the row's `cast_timeout`, not the wordings. See `magery.py`'s
+*When it goes wrong*, which had exactly this on its first live run.
+
+**`buff bar:` prints an id this table does not use** — copy the `Type` you see into Stone Form's
+`buff`. Until then the `title` fallback and the mana proof carry that row.
+
+**`hurt (N/M)`** — something is hitting you, or this shard does include the caster in their own area
+spell. If it is the latter, the top two bands want a different plan.
+
+**`refused for mana at N`** — the row's `mana` is lower than the shard actually charges. Raise it.
+
+### Known unverified
+
+- **`"StoneForm"` as the `BuffIconType` name.** Read from the enum, not off a live run. The first
+  `mystic: buff bar: ...` line is what confirms it; the `title` fallback and the mana proof cover it
+  either way.
+- **A harmful self-target.** The guides all say to target yourself with Hail Storm and Nether
+  Cyclone, but whether the shard raises that cursor as `harmful` and then accepts the caster as its
+  own target is not something this was measured against. `legion/probe-target.py` is the diagnostic
+  if it needs settling.
+- **Whether the caster takes their own area damage.** The table assumes not. `HURT_FLOOR` is what
+  catches it if the assumption is wrong.
+- **Every phrase in `OUTCOME_TEXT`**, including the `formLocked` bucket, which no live run has
+  produced. RunUO-family guesses; a miss shows up as an unread outcome rather than a wrong turn.
+- **The band bounds and the mana figures.** The bounds are the guides' table as given; the mana is
+  the standard Mysticism cost ladder. A band that stops gaining before its `up_to` wants the bound
+  moved down, and `refused for mana at N` is what a wrong cost looks like.
+- **The `cast_timeout` figures.** Scaled from the 1.8s a 3rd-circle Magery cast was measured at on
+  this shard, not measured for these spells.
+
 ## bowcraft.py
 
-Trains **Bowcraft/Fletching** from 40 to its cap by making whatever the current band still gains on.
+Trains **Bowcraft/Fletching** from 30 to its cap by making whatever the current band still gains on.
 It pulls wood 300 at a time out of what you point at — **logs and boards both**, counted as one
 pool, because the menu crafts from either and the lumberjack run brings boards home — and unloads to
 the nearest bowyer every `SELL_AT` items so the pack never becomes the reason it stops. It is the
@@ -1261,7 +1513,7 @@ The band table, from the shard's own gain rates:
 
 | Bowcraft | Makes |
 | --- | --- |
-| 40 – 60 | `LOW_BAND_ITEM` — a bow by default, fukiya darts the other way |
+| 30 – 60 | `LOW_BAND_ITEM` — a bow by default, fukiya darts the other way |
 | 60 – 70 | crossbow |
 | 70 – 80 | composite bow |
 | 80 – 90 | heavy crossbow |
@@ -1274,15 +1526,14 @@ client's tenths and would be wrong by 10x if they were copied over.
 Each cycle:
 
 1. **Read the skill.** A band it does not cover ends the run; a band change re-selects the row.
-2. **Sell** if the pack holds `SELL_AT` products, is within `WEIGHT_BUFFER` of the ceiling, or is at
-   `PACK_LIMIT` items. It stays where the sale left it rather than walking back. A trip that buys
-   nothing does not own the cycle — the crafting below still gets its turn.
+2. **Sell** once the pack holds `SELL_AT` products, and for no other reason. It stays where the sale
+   left it rather than walking back. A trip that buys nothing does not own the cycle — the crafting
+   below still gets its turn.
 3. **Restock** if the pack is under `RESTOCK_AT` wood, walking to a container that is out of reach. A
    pack too short to restock but long enough to make something crafts instead of waiting. **The pack
    is read first**: wood sitting in a bag inside it is brought up before anything is fetched, since
-   it costs no weight and the craft may not reach into a bag. What is then pulled is the smaller of
-   `BATCH_SIZE` and what the weight has room for — a full batch in one move is what put a run at
-   400/386. The weight of one wood is learned from the first move that shifts any.
+   the craft may not reach into a bag. The pack is then filled to `BATCH_SIZE`. Weight is never a
+   reason to stop short, sell, or end the run.
 4. **Open the craft menu** by using the fletcher's tools, if one is not already up.
 5. **Press the row**, or `MAKE LAST` once the row is known.
 6. **Read the outcome** out of the journal, the gump's `NOTICES` panel **and the pack**, all three on
@@ -1321,25 +1572,18 @@ see both halves: `4 boards (300 oak set aside) in the pack`.
 
 To work oak instead, set `WOOD_TYPE = "oak"` **and** set the menu's material to oak by hand.
 
-### Weight is not an ending
+### A vendor that will not buy
 
-**Being overweight never stops the run.** There is nothing it could do about it that it is not doing
-already: the restock stops pulling at `WEIGHT_BUFFER`, the sell trip is already being tried, and
-every craft turns 7–10 wood into one lighter item — so carrying on *is* the way the weight comes off.
-It says `overweight at 460/400 - carrying on, crafting is what takes it off` once when it starts and
-once more when it clears.
-
-The same goes for a vendor that will not buy: `MAX_SELL_MISSES` trips in a row that bought nothing
-pause the trips for `SELL_RETRY_AFTER` cycles rather than ending the run, so it does not walk to the
-vendor and back on every pass while the crafting waits.
+`MAX_SELL_MISSES` trips in a row that bought nothing pause the trips for `SELL_RETRY_AFTER` cycles
+rather than ending the run, so it does not walk to the vendor and back on every pass while the
+crafting waits.
 
 ### Finding the row
 
 The gump numbers its buttons `1 + type + index * 20`: categories are type 0 (**1** Materials, **21**
 Ammunition, **41** Weapons), the arrow on a `SELECTIONS` row is type 1 (2, 22, 42, 62, …), and
-`MAKE LAST` is **47**. Those numbers are read off this shard's own menu, not derived — an earlier
-guess at the stock 7-step numbering put `MAKE LAST` on 21, which is the Ammunition category, so
-every craft after the first pressed a category and nothing was ever made.
+`MAKE LAST` is **47**. Those numbers are read off this shard's own menu; the stock 7-step numbering
+puts `MAKE LAST` on the Ammunition category.
 
 **`RECIPES` names the buttons for the rows this menu is known to carry**, so the common products cost
 no searching at all. It is a shortcut, not a source of truth: what proves a craft is still the pack,
@@ -1359,17 +1603,17 @@ itself is written off and another one is tried.
 Both matches are whole-row, never substrings: `crossbow` is inside `crossbow bolt`, and a substring
 match finds the crossbow in **Ammunition** and never reaches **Weapons** at all.
 
-Once a row has made the right item, every craft after it is `MAKE LAST`. Only a band change, a worn
-out tool, or a craft that produced the wrong graphic sends it back through the categories.
+Once a row has made the right item, every craft after it is `MAKE LAST`. A band change, a worn out
+tool, or a row that produced the wrong graphic sends it back through the categories. A `MAKE LAST`
+that produced the wrong graphic only presses the proven row again: the shard forgot, the row did not
+move.
 
 ### Waiting for the menu
 
 `API.HasGump()` answers the gump's **`ServerSerial`** — its *type* id, which every page of one craft
 menu shares — and `API.ReplyGump()` **disposes** the gump it answers before the shard sends the next
 page. So the wait after a button is *"is the menu back"*, never *"is the id different"*: the id is
-the same for the main page, every category page and the page that comes back after a craft. Waiting
-for it to change is what this script used to do, and it could never come true — every press timed out
-and reported `no craft menu` for a menu that was reopening correctly every time.
+the same for the main page, every category page and the page that comes back after a craft.
 
 That also means a stray server gump has to be closed before the tools are used, since "a gump is
 there" would otherwise be answered by the wrong one.
@@ -1377,10 +1621,9 @@ there" would otherwise be answered by the wrong one.
 ### Recognising the menu
 
 **Whatever the tools open is the menu.** The title is a cliloc the client resolves, and
-`GetGumpContents` on some builds answers nothing for it — the run used to refuse such a gump and
-report *no craft menu* for a menu that was standing open in front of you. Now the title is only used
-to *recognise* a gump that is already up; a gump the tools opened is used either way, and one that
-does not name itself is reported once with its first line so you can see what it was.
+`GetGumpContents` on some builds answers nothing for it, so the title only *recognises* a gump that is
+already up. A gump the tools opened is used either way, and one that does not name itself is reported
+once with its first line.
 
 ### Outcomes
 
@@ -1397,6 +1640,22 @@ does not name itself is reported once with its first line so you can see what it
 | `noGump` | The tools opened no craft menu. Retried the same way, and said with its own wording so the two are never one message |
 | `throttled` | *You must wait* — backs off further each time, capped at `THROTTLE_BACKOFF_MAX` |
 | `saving` | A world save, sat out rather than read as a failure |
+
+### What a craft spent
+
+`made` and `failed` are the two outcomes that reach `DATA_PATH`, and they are the only ones here
+that carry `consumed` rows. What went is **measured**, by counting the pack either side of the craft
+— never read off `RECIPES`, which is what the *menu* is told a recipe costs rather than what this
+shard charged.
+
+Only whitelisted stacks are counted: everything `WOOD_KINDS` knows, including the arts `WoodBook`
+learns by name as the run goes, plus `MATERIAL_GRAPHICS`. Anything else that shrank mid-craft — a
+potion drunk — is not a material. Only the *lost* side of the diff is taken: the product lands in the
+same pack, and a product is not a cost. A failed craft is read once the pack has moved and then held
+still for a poll, or after `REFUND_SETTLE`, because the shard's refund lands after its failure line.
+
+A craft that spent nothing writes an attempt row and no consumed rows, which is the truthful answer
+rather than a missing one. The pack is only counted at all when `DATA_PATH` is set.
 
 ### Before you run it
 
@@ -1419,7 +1678,7 @@ that ends early leaves you standing short and nothing else would notice. Then it
 menu's **Sell** entry, matched by its text so no index is guessed, falling back to saying
 `vendor sell` for a menu with no such entry. Either way it waits for the pack to drop; it does not
 drive the sell gump itself, so **the auto-sell agent still has to be configured** for the bowyer.
-- **`SELL_AT` counts amounts, not stacks.** Fukiya darts stack ten to a craft, so 30 is three crafts
+- **`SELL_AT` counts amounts, not stacks.** Fukiya darts stack ten to a craft, so 20 is two crafts
   — raise it if you run the darts band.
 
 ### What to set
@@ -1427,7 +1686,7 @@ drive the sell gump itself, so **the auto-sell agent still has to be configured*
 | Setting | Default | What it is for |
 | --- | --- | --- |
 | `SKILL_NAMES` | `Bowcraft`, … | Tried in order; the first the client answers to is the one used |
-| `MIN_SKILL` | `40.0` | Below this the run refuses to start |
+| `MIN_SKILL` | `30.0` | Below this the run refuses to start |
 | `LOW_BAND_ITEM` / `HIGH_BAND_ITEM` | `bow` / `repeating crossbow` | The two bands that offer a choice |
 | `BANDS` | see above | Ceiling and product, first row the value is under wins |
 | `PRODUCTS` | table | Row name as the gump spells it, and the graphics it arrives as |
@@ -1438,9 +1697,10 @@ drive the sell gump itself, so **the auto-sell agent still has to be configured*
 | `WOOD_TYPE` | `regular` | The wood the menu is set to. The only wood that is pulled or counted |
 | `WOOD_TYPES` / `WOOD_HUES` | oak, ash, … / `0`, `1191`, `2010` | How a wood is named and hued. Incomplete — the log names what is missing |
 | `RETURN_WRONG_WOOD` | `True` | Puts wood of another type back where it came from rather than carrying it |
-| `BATCH_SIZE` / `RESTOCK_AT` | `300` / `25` | The most a restock pulls, and what triggers one. What is actually pulled is capped by the weight |
-| `WOOD_WEIGHT` | `1.0` | A starting guess at what one wood weighs. Learned from the first move that shifts any |
-| `SELL_AT` | `30` | Products in the pack before a sell trip |
+| `MATERIAL_GRAPHICS` | feathers, shafts | What a craft can spend that is not wood, for the consumed rows. A graphic that is not in here is simply not measured |
+| `DATA_PATH` | `skill-attempts.jsonl` | Where each craft is appended, with what it spent. `""` records nothing |
+| `BATCH_SIZE` / `RESTOCK_AT` | `300` / `25` | What a restock fills the pack to, and what triggers one |
+| `SELL_AT` | `20` | Products in the pack before a sell trip. The only thing that triggers one |
 | `BOWYER_TITLES` / `SELL_PHRASE` | `bowyer`, … / `vendor sell` | Matched against the name **and** the tooltip, and what is said to it |
 | `VENDOR_SERIAL` | `None` | Set it to a vendor's serial to skip the search |
 | `VENDOR_SCAN_RADIUS` / `VENDOR_RANGE` | `18` / `1` | How far it looks for a bowyer, and how close it stands — adjacent |
@@ -1454,7 +1714,6 @@ drive the sell gump itself, so **the auto-sell agent still has to be configured*
 | `MAX_CATEGORIES` / `MAX_ITEM_ROWS` | `6` / `12` | How far the walk goes for anything not in `RECIPES` |
 | `MAX_ITEM_PROBES` | `8` | Crafts spent finding the row before the category is written off |
 | `CRAFT_TIMEOUT` / `CRAFT_SETTLE` | `10.0` / `1.5` | How long the shard has to answer, and the pack to show it |
-| `WEIGHT_BUFFER` / `PACK_LIMIT` | `40` / `120` | What triggers a sell trip before the shard starts refusing |
 | `MAX_SELL_MISSES` / `SELL_RETRY_AFTER` | `3` / `25` | Trips that bought nothing before the run stops trying, and the cycles it waits before asking again. Neither ends the run |
 | `MIN_CRAFT_WOOD` | `10` | The largest recipe in `BANDS`. Under this there is nothing to make, which is the only thing that makes a short pack worth a cycle of its own |
 | `MAX_NO_MATERIAL` | `3` | Refusals for material in a row, with wood still in the pack, before the run ends |
@@ -1498,12 +1757,11 @@ selling from too far away, which is what silently sold nothing before.
 
 **`the vendor bought nothing - is the auto-sell agent on?`** — the run said `vendor sell` and the
 pack did not move. Not an ending: `MAX_SELL_MISSES` of them in a row pause the trips for
-`SELL_RETRY_AFTER` cycles and the run keeps crafting, which is the only thing that takes weight off a
-pack nothing will buy from.
+`SELL_RETRY_AFTER` cycles and the run keeps crafting.
 
 **`out of wood`** — what you picked is empty and the pack is under `MIN_CRAFT_WOOD`. It counts what is in them at startup, so the opening
-line tells you how long that will last. Weight and a container it cannot reach also pull nothing,
-and neither ends the run here: those show up as `restocking` cycles and the stall watch ends them.
+line tells you how long that will last. A container it cannot reach also pulls nothing, and that
+does not end the run here: it shows up as `restocking` cycles and the stall watch ends them.
 
 ### Notes on the API
 

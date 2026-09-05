@@ -49,3 +49,7 @@ def diff_counts(before, after):
             lost[key] = -change
 
     return gained, lost
+
+
+def count_of(graphics):
+    return sum(amount_of(item) for item in pack_contents() if item.Graphic in graphics)

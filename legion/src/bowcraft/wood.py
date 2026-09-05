@@ -6,7 +6,7 @@ from uo.text import word_in
 
 
 class WoodBook(object):
-    """What in the pack is wood, which wood it is, and how much of it the menu will actually spend."""
+    """What in the pack is wood, which wood it is, and how much of it the menu will spend."""
 
     def __init__(self, config, log):
         self._kinds = config["kinds"]
@@ -16,8 +16,15 @@ class WoodBook(object):
         self._move_delay = config["move_delay"]
         self._log = log
 
-    # Graphic first across every kind, name second: names are empty until the client has tooltip
-    # data, and an art learned by name joins its kind's set, so it costs one name read and no more.
+    # For a snapshot key, which has no item left to read a name off
+    def is_wood_graphic(self, graphic):
+        for _kind, graphics, _words in self._kinds:
+            if graphic in graphics:
+                return True
+
+        return False
+
+    # Names are empty until the tooltip arrives, so the graphic is tried first across every kind
     def kind_of(self, item):
         if item is None:
             return None
@@ -39,8 +46,7 @@ class WoodBook(object):
     def is_wood(self, item):
         return self.kind_of(item) is not None
 
-    # The name first, because that is where the shard writes it. A name that has not arrived leaves
-    # the hue: plain is regular, coloured is a wood this table has no word for, neither is guessed.
+    # The name is where the shard writes it; a hue in neither table is not guessed at
     def type_of(self, item):
         for wood in self._types:
             if word_in(item.Name, [wood]):
@@ -54,8 +60,7 @@ class WoodBook(object):
     def wrong(self, item):
         return self.is_wood(item) and self.type_of(item) != self._wanted
 
-    # Only what the menu will spend. Wood of another type is not stock, however much of it there is
-    # - counting it is what let a run sit on 300 oak boards reporting a full pack and crafting none.
+    # Only what the menu will spend: counting oak let a run sit on a full pack and craft none
     def counts(self, items):
         counts = {}
 
@@ -68,7 +73,7 @@ class WoodBook(object):
 
         return counts
 
-    # The rest of the wood, by the name the shard gives it, so a pack that reads as empty says why
+    # The rest, by type, so a pack that reads as empty says why
     def other_counts(self, items):
         counts = {}
 
@@ -87,7 +92,7 @@ class WoodBook(object):
 
         return ", ".join(parts)
 
-    # In kind order, so two runs of the same pack read the same
+    # In kind order, so it reads the same each time
     def report(self, counts):
         parts = []
 
@@ -106,15 +111,13 @@ class WoodBook(object):
     def in_pack(self):
         return total_of(self.pack_wood())
 
-    # What the pack holds, in one phrase: what the menu will spend, and what it will not
     def pack_report(self):
         text = self.report(self.pack_wood())
         other = self.other_report(self.pack_other())
 
         return text if not other else "%s (%s set aside)" % (text, other)
 
-    # Hue is what tells one wood from another - oak, ash, yew and heartwood are all 'boards' by name
-    # and graphic, and the menu spends only the one it is set to
+    # By hue: oak, ash and yew are all 'boards' by graphic. Missing WOOD_HUES rows come from here.
     def hue_report(self):
         counts = {}
 
@@ -135,7 +138,7 @@ class WoodBook(object):
     def wrong_piles(self):
         return [item for item in pack_contents() if self.wrong(item)]
 
-    # Wood in a bag inside the pack is wood the craft may not reach, and it is nearer than a source
+    # The craft may not reach into a bag inside the pack
     def _nested(self):
         top = set(item.Serial for item in pack_top_level())
         piles = [item for item in pack_contents()
@@ -144,7 +147,6 @@ class WoodBook(object):
 
         return piles
 
-    # Moves inside the pack cost no weight, so this is free and always worth doing first
     def lift_from_bags(self):
         moved = 0
 

@@ -5,8 +5,7 @@ import time
 
 
 # src/bowcraft/bands.py
-# GetSkill answers None for a name it does not know, and a name the client does not carry throws
-# rather than answering None on some builds
+# A name the client does not carry throws on some builds rather than answering None
 def find_skill_name(names):
     for name in names:
         try:
@@ -18,7 +17,7 @@ def find_skill_name(names):
     return None
 
 
-# The first row whose ceiling the value is under wins, so the ceilings are exclusive
+# Ceilings are exclusive
 def band_for(bands, value):
     if value is None:
         return None
@@ -64,23 +63,23 @@ STALL_STOP = 300
 
 STEP_DELAY = 0.3
 
-# The item cap is per container
-PACK_LIMIT = 120
-
 
 # src/bowcraft/config.py
-# GetSkill answers None for a name it does not know, so the shard's wording is found rather than
-# asserted - the gump calls it "Bowcraft/Fletching" and the skill list may not
+# One JSON object per attempt, for legion/skilldb.py. "" turns recording off. A bare name lands in
+# TazUO's working directory, not beside the script.
+DATA_PATH = "skill-attempts.jsonl"
+
+# GetSkill answers None for a name it does not know: the gump says "Bowcraft/Fletching", the skill
+# list may not
 SKILL_NAMES = ["Bowcraft", "Bowcraft/Fletching", "Fletching"]
 
 MIN_SKILL = 30.0
 
-# The two bands that offer a choice. Flip these to "fukiya darts" and "yumi" without touching BANDS.
+# The two bands that offer a choice: "fukiya darts" and "yumi" are the other way
 LOW_BAND_ITEM = "bow"
 HIGH_BAND_ITEM = "repeating crossbow"
 
-# The first row whose ceiling the value is under wins, so the ceilings are exclusive. Value is a
-# float percentage here - the src/training tables are in the client's tenths and would be 10x out.
+# Ceilings are exclusive, in the client's float percentage - the src/training tables are in tenths
 BANDS = [
     (60.0, LOW_BAND_ITEM),
     (70.0, "crossbow"),
@@ -89,12 +88,10 @@ BANDS = [
     (None, HIGH_BAND_ITEM),
 ]
 
-# The CATEGORIES rows, lowercased. Only used to find where the group block ends and the item rows
-# begin in the gump text.
+# The CATEGORIES rows, lowercased: where the group block ends and the item rows begin
 CATEGORY_NAMES = ["materials", "ammunition", "weapons"]
 
-# Name as the SELECTIONS row spells it, and the graphics it arrives in the pack as. The graphics are
-# what proves a craft landed on the right row, and what the sell counter counts.
+# Name as the SELECTIONS row spells it, and the graphics it lands in the pack as
 PRODUCTS = {
     "bow": set([0x13B2]),
     "crossbow": set([0x0F50]),
@@ -105,26 +102,20 @@ PRODUCTS = {
     "fukiya darts": set([0x2806]),
 }
 
-PRODUCT_GRAPHICS = set()
-
-for _product in PRODUCTS:
-    PRODUCT_GRAPHICS.update(PRODUCTS[_product])
+PRODUCT_GRAPHICS = set().union(*PRODUCTS.values())
 
 TOOL_GRAPHICS = set([0x1022])
 TOOL_NAME_WORDS = ["fletcher", "fletchers"]
 
-# A stack's graphic changes with its size, so match a set rather than one graphic. Hue is
-# deliberately not part of the match: a shard with special woods hues them, and those craft too.
+# Hue is deliberately not matched: a shard with special woods hues them, and those craft too
 LOG_GRAPHICS = set([0x1BDD, 0x1BE0, 0x1BDE, 0x1BDF])
 LOG_NAME_WORDS = ["log", "logs"]
 
-# Boards are wood as far as this run is concerned: the menu takes them, and the lumberjack run
-# brings boards home rather than logs because they weigh less for the same craft.
+# Boards are wood too: the menu takes them, and the lumberjack run brings boards home
 BOARD_GRAPHICS = set([0x1BD7, 0x1BD9, 0x1BDA, 0x1BDB])
 BOARD_NAME_WORDS = ["board", "boards"]
 
-# Counted as one pool, reported apart. A shard that turns out to craft from only one of the two says
-# which kind is sitting in the pack being refused, rather than stalling on a full pack.
+# Counted as one pool, reported apart
 WOOD_KINDS = [
     ("logs", LOG_GRAPHICS, LOG_NAME_WORDS),
     ("boards", BOARD_GRAPHICS, BOARD_NAME_WORDS),
@@ -132,20 +123,22 @@ WOOD_KINDS = [
 
 REGULAR_WOOD = "regular"
 
-# The named woods, read straight off the tooltip: '74 Oak Boards' is oak, and '1580 Boards' with no
-# word in front of it is regular. Each is its own resource to the craft menu, which spends the one it
-# is set to and refuses every other - a pack full of oak is a pack full of nothing, as far as a menu
-# set to regular is concerned.
+# What a craft can spend besides wood, for the consumed rows in DATA_PATH. A stack not in here is
+# not measured, so a wrong graphic under-reports rather than inventing a material.
+MATERIAL_GRAPHICS = set([
+    0x1BD1,  # feathers
+    0x1BD4,  # shafts
+])
+
+# Read off the tooltip: '74 Oak Boards' is oak, '1580 Boards' is regular. Each is its own resource
+# to the craft menu, which spends only the one it is set to.
 WOOD_TYPES = ["oak", "ash", "yew", "heartwood", "bloodwood", "frostwood"]
 
-# What the menu is set to, and so what a restock pulls and what counts as stock. Set it to one of
-# WOOD_TYPES to work that wood instead, and set the menu to match by hand.
+# What the menu is set to: what a restock pulls and what counts as stock. Set the menu to match.
 WOOD_TYPE = REGULAR_WOOD
 
-# Hue to wood, for the stack whose tooltip has not arrived - the name is the first thing read, and
-# this is what answers when there is no name yet. Incomplete on purpose: these were read off this
-# shard, and the log's 'the pack holds ... hue 0x...' line is where the missing ones come from. A
-# colour that is in neither table is not treated as regular, whatever else it might be.
+# For the stack whose tooltip has not arrived. Incomplete on purpose: a colour in neither table is
+# reported as unknown in the 'the pack holds ...' line, never treated as regular.
 WOOD_HUES = {
     0: REGULAR_WOOD,
     1191: "ash",
@@ -155,44 +148,33 @@ WOOD_HUES = {
 # Wood of the wrong type is weight and nothing else. Off leaves it in the pack.
 RETURN_WRONG_WOOD = True
 
-# Above the largest recipe, so a craft never refuses for wood the run thinks it still has. What is
-# actually pulled is the smaller of this and what the weight has room for.
+# Every restock fills the pack to this
 BATCH_SIZE = 300
 RESTOCK_AT = 25
 
-# What one wood weighs, and only a starting guess: it is learned from the first move that shifts any,
-# because a board and a log do not weigh the same and a shard can change either. Pulling a batch
-# without it is what put a run at 400/386 in one move.
-WOOD_WEIGHT = 1.0
-
-# Counted as amounts, so fukiya darts - which stack ten to a craft - reach this in three crafts.
-# Raise it if you run the darts band.
+# Counted as amounts: fukiya darts stack ten to a craft, so raise it for that band
 SELL_AT = 20
 
-# Matched against the name *and* the tooltip: a shopkeeper is named "Alger" and titled "the bowyer",
-# and only the tooltip carries the title. Matching the name alone found no vendor to sell to.
+# Matched against the name *and* the tooltip: "Alger" is "the bowyer" only in the tooltip
 BOWYER_TITLES = ["bowyer", "fletcher", "archer", "bowyers", "fletchers"]
-# Tried before the phrase, and matched against the menu's own text so no entry index is guessed. The
-# menu wants you next to the vendor, which is where the run should be standing anyway.
+
+# The context entry first, matched by its text; the phrase for a menu with no such entry
 SELL_ENTRY = "sell"
 SELL_PHRASE = "vendor sell"
 
 VENDOR_SCAN_RADIUS = 18
 
-# Adjacent. Two tiles away is heard on some shards and not on others, and the context menu is
-# refused outright - a sell trip that stopped short is a sell trip that did nothing.
+# Adjacent: two tiles away is heard on some shards and not others, and the context menu is refused
 VENDOR_RANGE = 1
 
-# Walks at the vendor before giving up on reaching it. More than one because a pathfind that ends
-# early, a doorway and a vendor that stepped aside all look the same from here.
+# A pathfind that ends early, a doorway and a vendor that stepped aside all look the same from here
 VENDOR_STEPS = 3
 
 CONTEXT_TIMEOUT = 3.0
 
-# Set this to a vendor's serial to skip the search entirely
+# Set to a vendor's serial to skip the search
 VENDOR_SERIAL = None
 
-# How long the tooltips have to arrive once they have been asked for
 OPL_WAIT = 1.0
 
 # A backstop only - the selection ends when you press ESC
@@ -202,27 +184,22 @@ CONTAINER_RANGE = 2
 
 CRAFT_TITLE = "BOWCRAFT AND FLETCHING"
 
-# Any one of them, matched case-insensitively, and only ever to *recognise* a gump - never to refuse
-# one. The header is a cliloc the client resolves, and a build whose GetGumpContents answers nothing
-# for it made every craft read as 'no craft menu'.
+# Only ever to *recognise* a gump, never to refuse one: the header is a cliloc, and a build whose
+# GetGumpContents answers nothing for it made every craft read as 'no craft menu'
 CRAFT_TITLE_TEXT = [CRAFT_TITLE, "BOWCRAFT", "FLETCHING"]
 CRAFT_TITLE_FRAGMENTS = [phrase.lower() for phrase in CRAFT_TITLE_TEXT]
 
 # Its own button rather than a group, so it does not count toward the category index
 LAST_TEN_LABEL = "LAST TEN"
 
-# This gump numbers its buttons 1 + type + index * 20: categories are type 0 (1, 21, 41), the arrow
-# on a SELECTIONS row is type 1 (2, 22, 42, ...), and the fixed buttons sit where this shard puts
-# them. Read off a working script for this shard. The stock 7-step numbering this file used to
-# assume put MAKE LAST on 21, which is the Ammunition category - so every craft pressed a category.
+# Buttons are 1 + type + index * 20, read off this shard's menu: categories 1, 21, 41 and the row
+# arrows 2, 22, 42, ... The stock 7-step numbering puts MAKE LAST on the Ammunition category.
 BUTTON_STRIDE = 20
 CATEGORY_BUTTON_TYPE = 0
 ITEM_BUTTON_TYPE = 1
 MAKE_LAST_BUTTON = 47
 
-# (category button, row button) for the rows this menu is known to carry, so the common products
-# cost no probing at all. A product that is not here, or a row this table gets wrong, is found by
-# walking the categories exactly as before - the pack is what settles it either way.
+# (category button, row button). A shortcut, not the truth: a row this gets wrong is walked for
 RECIPES = {
     "bow": (41, 2),
     "crossbow": (41, 22),
@@ -240,25 +217,28 @@ RECIPES = {
 MAX_CATEGORIES = 6
 MAX_ITEM_ROWS = 12
 
-# Crafts spent finding the right SELECTIONS row when the gump text does not name it. Each miss costs
-# one item's worth of wood, which is why the text is read first.
+# Each miss costs one item's worth of wood, which is why the gump text is read first
 MAX_ITEM_PROBES = 8
 
-# Every timing here is in seconds - API.Pause takes seconds where the ClassicUO port took ms
+# Seconds throughout - API.Pause takes seconds
 PICK_TIMEOUT = 60.0
 
-# Whole seconds: the API takes an int here where API.Pause takes a float
+# Whole seconds: the API takes an int here
 PATHFIND_TIMEOUT = 10
 
 GUMP_TIMEOUT = 5.0
 GUMP_POLL = 0.15
 
-# A craft plays its animation before the shard answers, so this has to outlast the animation
+# Has to outlast the craft animation, which plays before the shard answers
 CRAFT_TIMEOUT = 10.0
 CRAFT_POLL = 0.2
 
 # How long the pack has to show the new item once the shard has answered
 CRAFT_SETTLE = 1.5
+
+# A failed craft's refund arrives after the journal line; the consumed row waits this long for it
+REFUND_SETTLE = 1.5
+REFUND_POLL = 0.25
 
 OPEN_DELAY = 0.6
 MOVE_DELAY = 0.7
@@ -269,42 +249,29 @@ SELL_POLL = 0.5
 SKILL_TIMEOUT = 5.0
 SKILL_POLL = 0.25
 
-
 MAX_CYCLES = 20000
 MAX_UNKNOWN = 5
 MAX_THROTTLED = 20
 MAX_NO_TOOL = 10
 MAX_EMPTY_MOVES = 3
 
-# Sell trips in a row that bought nothing before the run stops trying for a while. It never ends the
-# run: crafting is what takes weight off a pack nothing will buy from.
+# Sell trips in a row that bought nothing before the trips pause. Never ends the run.
 MAX_SELL_MISSES = 3
 SELL_RETRY_AFTER = 25
 
-# The largest recipe in BANDS. Under this there is nothing the run can make, which is the only thing
-# that makes a short pack worth another restock cycle rather than a craft.
+# The largest recipe in BANDS: under this there is nothing the run can make
 MIN_CRAFT_WOOD = 10
 
-# Refusals for material while the pack still holds wood a restock cannot add to. One is the shard
-# and the run disagreeing about a stack; this many in a row is the wrong kind of wood.
+# Refusals for material while the pack holds wood a restock cannot add to: the wrong kind of wood
 MAX_NO_MATERIAL = 3
 
-# What an unreadable outcome reports before it goes quiet again, and how much of it. Without this
-# the one wording that would fix OUTCOME_TEXT is the one thing nothing ever prints.
+# What an unreadable outcome reports before it goes quiet, and how much of it
 MAX_UNREADABLE_REPORTS = 2
 UNREADABLE_TEXT_LIMIT = 160
 JOURNAL_TAIL_SECONDS = 20.0
 JOURNAL_TAIL_LINES = 4
 
-# The shard's own pacing, counted rather than narrated: a line per throttle would outnumber the
-# progress lines, and a wait nobody can see is what makes a working run look hung.
-SAY_THROTTLE_ONCE = True
-
-# Buffer, so the sell trip lands before the shard starts refusing to move the next batch of wood
-WEIGHT_BUFFER = 40
-
-# Ordered, not a dict: the buckets are polled in order and the first holding a match wins. 'failed'
-# is declared before 'made' because "You failed to create the item" contains "create the item".
+# Ordered: 'failed' before 'made' because "You failed to create the item" contains "create the item"
 OUTCOME_TEXT = [
     (
         "failed",
@@ -323,8 +290,7 @@ OUTCOME_TEXT = [
             "You have worked the wood",
         ],
     ),
-    # The gump says this in its NOTICES panel and the journal may never carry it, which is why the
-    # outcome is read from both
+    # Said in the gump's NOTICES panel, which the journal may never carry
     (
         "noMaterial",
         [
@@ -412,6 +378,35 @@ def hue_of(item):
     return getattr(item, "Hue", 0) or 0
 
 
+def counts_by_graphic(items):
+    counts = {}
+
+    for item in items:
+        key = (item.Graphic, hue_of(item))
+        counts[key] = counts.get(key, 0) + amount_of(item)
+
+    return counts
+
+
+def diff_counts(before, after):
+    gained = {}
+    lost = {}
+
+    for key in set(list(before.keys()) + list(after.keys())):
+        change = after.get(key, 0) - before.get(key, 0)
+
+        if change > 0:
+            gained[key] = change
+        elif change < 0:
+            lost[key] = -change
+
+    return gained, lost
+
+
+def count_of(graphics):
+    return sum(amount_of(item) for item in pack_contents() if item.Graphic in graphics)
+
+
 # src/uo/retry.py
 def settled(timeout, poll, landed):
     waited = 0.0
@@ -481,9 +476,6 @@ class Crafter(object):
     def forget_last(self):
         self._make_last = False
 
-    def counts_of(self, graphics):
-        return sum(amount_of(item) for item in pack_contents() if item.Graphic in graphics)
-
     def _notice_bucket(self, gump):
         if not gump:
             return None
@@ -495,10 +487,8 @@ class Crafter(object):
 
         return None
 
-    # Three things every pass, and the pack is one of them. The journal is not read first because
-    # the shard writes its refusals into the NOTICES panel; the pack is not read *last* because a
-    # success whose wording this table has not got is still a success - and waiting out the timeout
-    # for a line that was never coming is a silent ten-second stall on a craft that worked.
+    # Pack first: a success this table has no wording for would otherwise wait out the timeout.
+    # The gump's NOTICES panel is read too because the shard writes refusals there, not the journal.
     def _read_outcome(self, opened, landed):
         waited = 0.0
 
@@ -520,9 +510,8 @@ class Crafter(object):
             API.Pause(self._config["craft_poll"])
             waited += self._config["craft_poll"]
 
-    # The shard's own words for an outcome this script cannot act on - the gump's panel and the
-    # journal it cleared before the press, so what comes back belongs to this craft and nothing
-    # older. A refusal nobody can read is the one thing that cannot be fixed from the log.
+    # The shard's own words for an outcome the script cannot act on, since a refusal nobody can read
+    # cannot be fixed from the log
     def _report_outcome(self, why, gump):
         if self._said_unreadable >= self._config["max_reports"]:
             return
@@ -546,109 +535,65 @@ class Crafter(object):
 
         self._item_probes[product] = self._item_probes.get(product, 0) + 1
 
-    # MAKE LAST is the only path that skips the category: an item button indexes whichever
-    # SELECTIONS page is showing, so a remembered one crafts whatever sits on that row of the wrong
-    # page
-    def craft_once(self, product):
-        # Asked apart from the gump, so an empty pack and a menu that will not open are not one
-        # message
-        if self._tools.serial() is None:
-            return "noTool"
-
-        gump = self._menu.open()
-
-        if gump is None:
-            return "noGump"
-
-        button = self._item_buttons.get(product)
+    # The button to press, or an outcome when there is none. MAKE LAST is the only path that skips
+    # the category: an item button indexes whichever SELECTIONS page is showing.
+    def _choose_button(self, product, gump):
         known = None if product in self._walked else self._config["recipes"].get(product)
 
-        if self._make_last and button is not None:
-            button = self._config["make_last_button"]
-        elif known is not None:
-            # Remembered too, so a walk that starts later - after a worn tool, say - starts in the
-            # right category rather than from the first one
+        if self._make_last:
+            return self._config["make_last_button"], None
+
+        if known is not None:
+            # Remembered too, so a later walk starts in the right category
             self._menu.remember_category(product, known[0])
 
-            gump = self._menu.press(known[0], gump, self._config["gump_timeout"])
+            if not self._menu.press(known[0], gump, self._config["gump_timeout"]):
+                return None, "noGump"
 
-            if not gump:
-                return "noGump"
+            return known[1], None
 
-            button = known[1]
-        else:
-            gump, category = self._menu.find_category(product, gump)
+        gump, category = self._menu.find_category(product, gump)
 
-            if category is None:
-                return "noRow"
+        if category is None:
+            return None, "noRow"
 
-            if not gump:
-                return "noGump"
+        if not gump:
+            return None, "noGump"
 
-            if button is None:
-                order = self._menu.candidate_buttons(product, gump)
-                probe = self._item_probes.get(product, 0)
+        button = self._item_buttons.get(product)
 
-                if probe >= min(self._config["max_probes"], len(order)):
-                    rejected = self._menu.reject_category(product, category)
-                    self._menu.forget_category(product)
+        if button is not None:
+            return button, None
 
-                    if rejected >= self._config["max_categories"]:
-                        return "noRow"
+        order = self._menu.candidate_buttons(product, gump)
+        probe = self._item_probes.get(product, 0)
 
-                    self._item_probes[product] = 0
-                    self._log("no row on button %d's page made a '%s', trying another category"
-                              % (category, product))
+        if probe < min(self._config["max_probes"], len(order)):
+            return order[probe], None
 
-                    return "wrongRow"
+        rejected = self._menu.reject_category(product, category)
+        self._menu.forget_category(product)
 
-                button = order[probe]
+        if rejected >= self._config["max_categories"]:
+            return None, "noRow"
 
-        graphics = self._config["products"][product]
-        before = self.counts_of(graphics)
+        self._item_probes[product] = 0
+        self._log("no row on button %d's page made a '%s', trying another category"
+                  % (category, product))
 
-        def made_one():
-            return self.counts_of(graphics) > before
+        return None, "wrongRow"
 
-        API.ClearJournal()
+    # Something was made and none of it was the product, so a row was wrong - unless the press was
+    # MAKE LAST, which the shard forgets on its own and which says nothing about the proven row
+    def _wrong_product(self, product, button):
+        if button == self._config["make_last_button"]:
+            self._make_last = False
+            self._log("MAKE LAST did not make a '%s', pressing the row itself next time" % product)
 
-        opened = self._menu.press(button, gump, self._config["craft_timeout"])
-        outcome = self._read_outcome(opened, made_one)
+            return "wrongRow"
 
-        # The one proof no wording can argue with, and it is checked before the wordings are
-        # trusted: a shard that says nothing on a success still puts the bow in the pack
-        if outcome == "made" or outcome is None:
-            if made_one() or settled(self._config["craft_settle"], self._config["craft_poll"],
-                                     made_one):
-                if self._item_buttons.get(product) is None:
-                    self._item_buttons[product] = button
-                    self._log("'%s' is the row on button %d" % (product, button))
-
-                self._make_last = True
-                self._said_unreadable = 0
-
-                return "made"
-
-        if outcome != "made":
-            # Nothing was made and nothing was said. MAKE LAST is the first thing to doubt - the
-            # shard forgets what was last made for reasons this script cannot see - so the next
-            # craft goes back through the category and the row, which is the path that proved itself.
-            if outcome == "noMaterial":
-                self._report_outcome("refused for materials", opened)
-
-            if outcome is None:
-                self._report_outcome("nothing readable came back", opened)
-
-                if button == self._config["make_last_button"]:
-                    self._make_last = False
-                    self._log("MAKE LAST made nothing, pressing the row itself next time")
-
-            return outcome
-
-        # It said it made something and none of it was the wanted product, so the row was wrong
         self._log("button %d did not make a '%s', trying the next row" % (button, product))
 
-        # A row the recipe table named is a row this shard has moved, so the walk takes it over
         if product in self._config["recipes"] and product not in self._walked:
             self._walked.add(product)
             self._log("the button table is out of date for '%s', walking the categories for it "
@@ -657,6 +602,58 @@ class Crafter(object):
         self._forget_row(product)
 
         return "wrongRow"
+
+    def craft_once(self, product):
+        # Asked apart from the gump, so an empty pack and a menu that will not open read differently
+        if self._tools.serial() is None:
+            return "noTool"
+
+        gump = self._menu.open()
+
+        if gump is None:
+            return "noGump"
+
+        button, outcome = self._choose_button(product, gump)
+
+        if button is None:
+            return outcome
+
+        graphics = self._config["products"][product]
+        before = count_of(graphics)
+
+        def made_one():
+            return count_of(graphics) > before
+
+        API.ClearJournal()
+
+        opened = self._menu.press(button, gump, self._config["craft_timeout"])
+        outcome = self._read_outcome(opened, made_one)
+
+        # The pack is the proof no wording can argue with: a shard that says nothing still delivers
+        if outcome in ("made", None) and (made_one() or settled(
+                self._config["craft_settle"], self._config["craft_poll"], made_one)):
+            if self._item_buttons.get(product) is None:
+                self._item_buttons[product] = button
+                self._log("'%s' is the row on button %d" % (product, button))
+
+            self._make_last = True
+            self._said_unreadable = 0
+
+            return "made"
+
+        if outcome == "made":
+            return self._wrong_product(product, button)
+
+        if outcome == "noMaterial":
+            self._report_outcome("refused for materials", opened)
+        elif outcome is None:
+            self._report_outcome("nothing readable came back", opened)
+
+            if button == self._config["make_last_button"]:
+                self._make_last = False
+                self._log("MAKE LAST made nothing, pressing the row itself next time")
+
+        return outcome
 
 
 # src/uo/entity.py
@@ -682,6 +679,75 @@ def chebyshev(x, y, unknown):
         return unknown
 
     return max(abs(me.X - x), abs(me.Y - y))
+
+
+# src/bowcraft/materials.py
+class Materials(object):
+    """What a craft spent, measured either side of it. Whitelisted: a potion drunk is not a cost."""
+
+    def __init__(self, wood, extra_graphics):
+        self._wood = wood
+        self._extra = extra_graphics
+        # Learned while the stack is there: the one that paid for a craft is often gone by the diff
+        self._names = {}
+
+    def _counted(self, item):
+        return self._wood.is_wood(item) or item.Graphic in self._extra
+
+    def _name_of(self, item):
+        kind = self._wood.kind_of(item)
+
+        if kind is not None:
+            wood = self._wood.type_of(item)
+
+            return kind if wood is None else "%s %s" % (wood, kind)
+
+        return (getattr(item, "Name", "") or "").strip() or hex_of(item.Graphic)
+
+    def snapshot(self):
+        wanted = [item for item in pack_contents() if self._counted(item)]
+
+        for item in wanted:
+            key = (item.Graphic, hue_of(item))
+
+            if key not in self._names:
+                self._names[key] = self._name_of(item)
+
+        return counts_by_graphic(wanted)
+
+    # The failure line lands before the deduction and refund, so a pack that has not moved yet is
+    # not settled: only one that moved and then held still for a poll is
+    def settled_snapshot(self, timeout, poll):
+        last = self.snapshot()
+        waited = 0.0
+        moved = False
+
+        while waited < timeout:
+            API.Pause(poll)
+            waited += poll
+            now = self.snapshot()
+
+            if now != last:
+                moved = True
+                last = now
+            elif moved:
+                return now
+
+        return last
+
+    def wood_total(self, counts):
+        return sum(counts[key] for key in counts if self._wood.is_wood_graphic(key[0]))
+
+    # The lost side only: the product lands in the same pack and is not a cost
+    def spent(self, before, after):
+        _gained, lost = diff_counts(before, after)
+        rows = []
+
+        for key in sorted(lost):
+            graphic, hue = key
+            rows.append((self._names.get(key) or hex_of(graphic), graphic, hue, lost[key]))
+
+        return rows
 
 
 # src/uo/gump.py
@@ -724,15 +790,13 @@ class CraftMenu(object):
     def button_id(self, kind, index):
         return 1 + kind + index * self._config["stride"]
 
-    # False is the client saying the gump was gone before the button was pressed, which is a
-    # different fact from the page not coming back and is worth not waiting out the timeout for
+    # False is the client saying the gump was gone before the press: not worth waiting out
     def press(self, button, gump, timeout):
         if not API.ReplyGump(button, gump):
             return 0
 
         found = await_any(timeout, self._config["gump_poll"])
 
-        # Only ever the craft menu presses buttons here, so whatever answered is the next page
         if found:
             self._id = found
 
@@ -745,7 +809,7 @@ class CraftMenu(object):
         if any_in(API.GetGumpContents(ident) or "", self._config["title_fragments"]):
             return True
 
-        # The client's own search gets a turn: it reads controls GetGumpContents may not put in text
+        # GumpContains reads controls GetGumpContents may not put in text
         for phrase in self._config["title_text"]:
             if API.GumpContains(phrase, ident):
                 return True
@@ -760,7 +824,6 @@ class CraftMenu(object):
     def open(self):
         found = API.HasGump()
 
-        # The one already being driven, or one that names itself
         if found and (found == self._id or self.is_craft_gump(found)):
             self._id = found
 
@@ -771,8 +834,7 @@ class CraftMenu(object):
         if serial is None:
             return None
 
-        # Any other server gump has to go first: the wait below is for a gump to be *there*, and a
-        # vendor's or a status gump standing open answers it before the tools have opened anything
+        # The wait below is for any gump, so a vendor's or status gump standing open would answer it
         if found:
             self._log("closing the gump that is in the way %s" % hex_of(found))
             API.CloseGump(found)
@@ -785,8 +847,7 @@ class CraftMenu(object):
         if not found:
             return None
 
-        # Whatever the tools opened is the menu. The title is not a gate - it is a cliloc the client
-        # resolves, and refusing a gump over it is what made a working craft menu read as no menu.
+        # The title is a cliloc the client resolves; gating on it made a working menu read as none
         if not self._said_gump_text and not self.is_craft_gump(found):
             self._said_gump_text = True
             lines = self.lines(found)
@@ -797,8 +858,7 @@ class CraftMenu(object):
 
         return found
 
-    # The stock gump emits the group rows before the item rows, so everything past the last group
-    # name is this page's SELECTIONS. A shard that emits them the other way round leaves this empty.
+    # The stock gump emits the group rows before the item rows
     def item_rows(self, gump):
         lines = self.lines(gump)
         start = None
@@ -810,8 +870,7 @@ class CraftMenu(object):
 
         return [] if start is None else lines[start:]
 
-    # A whole row, never a substring: "crossbow" is inside "crossbow bolt", so a substring match
-    # finds the wanted item in the Ammunition category and never reaches Weapons at all
+    # Whole row, never a substring: "crossbow" is inside "crossbow bolt", in another category
     def page_has(self, product, gump):
         rows = self.item_rows(gump)
 
@@ -834,8 +893,7 @@ class CraftMenu(object):
 
         return len(rejected)
 
-    # Pressing a category only redraws the SELECTIONS panel, so walking them costs nothing - which
-    # is why the category is found this way and the row below is not
+    # Pressing a category only redraws the SELECTIONS panel, so walking them costs no wood
     def find_category(self, product, gump):
         known = self._category_buttons.get(product)
 
@@ -852,8 +910,7 @@ class CraftMenu(object):
 
             opened = self.press(button, gump, self._config["gump_timeout"])
 
-            # A category that answered nothing says nothing about the category, so the caller
-            # retries rather than ending the run over it
+            # A press that answered nothing is not a verdict on the category
             if not opened:
                 return (0, 0)
 
@@ -872,8 +929,7 @@ class CraftMenu(object):
 
         return (gump, None)
 
-    # The text is read first and only falls back to walking the rows, because unlike a category a
-    # wrong row here crafts the wrong item and spends the wood for it
+    # The text first: unlike a category, a wrong row crafts the wrong item and spends the wood
     def candidate_buttons(self, product, gump):
         rows = self.item_rows(gump)
         order = []
@@ -899,7 +955,7 @@ class CraftMenu(object):
 
 # src/bowcraft/wood.py
 class WoodBook(object):
-    """What in the pack is wood, which wood it is, and how much of it the menu will actually spend."""
+    """What in the pack is wood, which wood it is, and how much of it the menu will spend."""
 
     def __init__(self, config, log):
         self._kinds = config["kinds"]
@@ -909,8 +965,15 @@ class WoodBook(object):
         self._move_delay = config["move_delay"]
         self._log = log
 
-    # Graphic first across every kind, name second: names are empty until the client has tooltip
-    # data, and an art learned by name joins its kind's set, so it costs one name read and no more.
+    # For a snapshot key, which has no item left to read a name off
+    def is_wood_graphic(self, graphic):
+        for _kind, graphics, _words in self._kinds:
+            if graphic in graphics:
+                return True
+
+        return False
+
+    # Names are empty until the tooltip arrives, so the graphic is tried first across every kind
     def kind_of(self, item):
         if item is None:
             return None
@@ -932,8 +995,7 @@ class WoodBook(object):
     def is_wood(self, item):
         return self.kind_of(item) is not None
 
-    # The name first, because that is where the shard writes it. A name that has not arrived leaves
-    # the hue: plain is regular, coloured is a wood this table has no word for, neither is guessed.
+    # The name is where the shard writes it; a hue in neither table is not guessed at
     def type_of(self, item):
         for wood in self._types:
             if word_in(item.Name, [wood]):
@@ -947,8 +1009,7 @@ class WoodBook(object):
     def wrong(self, item):
         return self.is_wood(item) and self.type_of(item) != self._wanted
 
-    # Only what the menu will spend. Wood of another type is not stock, however much of it there is
-    # - counting it is what let a run sit on 300 oak boards reporting a full pack and crafting none.
+    # Only what the menu will spend: counting oak let a run sit on a full pack and craft none
     def counts(self, items):
         counts = {}
 
@@ -961,7 +1022,7 @@ class WoodBook(object):
 
         return counts
 
-    # The rest of the wood, by the name the shard gives it, so a pack that reads as empty says why
+    # The rest, by type, so a pack that reads as empty says why
     def other_counts(self, items):
         counts = {}
 
@@ -980,7 +1041,7 @@ class WoodBook(object):
 
         return ", ".join(parts)
 
-    # In kind order, so two runs of the same pack read the same
+    # In kind order, so it reads the same each time
     def report(self, counts):
         parts = []
 
@@ -999,15 +1060,13 @@ class WoodBook(object):
     def in_pack(self):
         return total_of(self.pack_wood())
 
-    # What the pack holds, in one phrase: what the menu will spend, and what it will not
     def pack_report(self):
         text = self.report(self.pack_wood())
         other = self.other_report(self.pack_other())
 
         return text if not other else "%s (%s set aside)" % (text, other)
 
-    # Hue is what tells one wood from another - oak, ash, yew and heartwood are all 'boards' by name
-    # and graphic, and the menu spends only the one it is set to
+    # By hue: oak, ash and yew are all 'boards' by graphic. Missing WOOD_HUES rows come from here.
     def hue_report(self):
         counts = {}
 
@@ -1028,7 +1087,7 @@ class WoodBook(object):
     def wrong_piles(self):
         return [item for item in pack_contents() if self.wrong(item)]
 
-    # Wood in a bag inside the pack is wood the craft may not reach, and it is nearer than a source
+    # The craft may not reach into a bag inside the pack
     def _nested(self):
         top = set(item.Serial for item in pack_top_level())
         piles = [item for item in pack_contents()
@@ -1037,7 +1096,6 @@ class WoodBook(object):
 
         return piles
 
-    # Moves inside the pack cost no weight, so this is free and always worth doing first
     def lift_from_bags(self):
         moved = 0
 
@@ -1062,37 +1120,6 @@ def total_of(counts):
     return sum(counts[kind] for kind in counts)
 
 
-# src/uo/vitals.py
-def weight_reading():
-    me = player()
-
-    return "?/?" if me is None else "%d/%d" % (me.Weight, me.WeightMax)
-
-
-def where():
-    me = player()
-
-    return "somewhere" if me is None else "at %d,%d" % (me.X, me.Y)
-
-
-def position_and_weight():
-    return "%s, %s" % (where(), weight_reading())
-
-
-# src/uo/weight.py
-# Unknown is not overweight, the same call WeightMax == 0 gets: WeightMax reads 0 before the client
-# has been told, against which every weight is overweight - a live mining run ended at 436/453 on it
-def over_buffer(buffer):
-    me = player()
-
-    if me is None:
-        return False
-
-    ceiling = me.WeightMax
-
-    return ceiling > 0 and me.Weight > ceiling - buffer
-
-
 # src/bowcraft/restock.py
 class Restock(object):
     def __init__(self, wood, sources, config, log):
@@ -1100,32 +1127,8 @@ class Restock(object):
         self._sources = sources
         self._config = config
         self._log = log
-        self._each = config["wood_weight"]
 
-    def _carried(self):
-        me = player()
-
-        return None if me is None else me.Weight
-
-    # None when the client has not said, which reads as no limit - the same call over_buffer makes
-    def _room_for_wood(self):
-        me = player()
-
-        if me is None or me.WeightMax <= 0:
-            return None
-
-        return int((me.WeightMax - self._config["buffer"] - me.Weight) / max(self._each, 0.1))
-
-    def _learn_weight(self, each):
-        # Sanity: a move the client mis-timed can read as any weight at all
-        if each < 0.1 or each > 50 or abs(each - self._each) < 0.05:
-            return
-
-        self._each = each
-        self._log("one wood weighs %.1f here, pulling to fit" % each)
-
-    # Wood of another type is weight and nothing else, and the container it came out of is open and
-    # in reach at exactly this moment - which is the only moment putting it back costs nothing
+    # Wrong wood goes back while its container is open and in reach, the one moment it costs nothing
     def _put_back(self, container):
         before = total_of(self._wood.pack_other())
 
@@ -1143,21 +1146,16 @@ class Restock(object):
 
         return moved
 
-    # Moves are asynchronous, so the pack is re-counted between them rather than MoveItem's return
-    # value being trusted. A move that gains nothing enough times running is a container that is done.
+    # Moves are asynchronous: the pack is re-counted after each rather than MoveItem's return read
     def run(self):
-        # The pack is read before anything is fetched: what is already here, bags included, counts
-        moved = self._wood.lift_from_bags()
+        lifted = self._wood.lift_from_bags()
 
+        # After the lift: in_pack reads bags too, and counting the lift twice left it short
         wanted = self._config["batch"] - self._wood.in_pack()
-
-        if wanted <= 0:
-            return moved
-
-        buffer = self._config["buffer"]
+        moved = 0
 
         for entry in self._sources.picked():
-            if moved >= wanted or over_buffer(buffer):
+            if moved >= wanted:
                 break
 
             if not self._sources.reach(entry):
@@ -1175,27 +1173,16 @@ class Restock(object):
 
             stalled = 0
 
-            while (moved < wanted and stalled < self._config["max_empty_moves"]
-                   and not over_buffer(buffer)):
+            while moved < wanted and stalled < self._config["max_empty_moves"]:
                 piles = self._sources.container_wood(container)
 
                 if len(piles) == 0:
                     break
 
-                room = self._room_for_wood()
-                take = min(wanted - moved, amount_of(piles[0]))
-
-                if room is not None:
-                    take = min(take, room)
-
-                # Not a stall: there is wood there and no room for it, which the caller reports
-                if take <= 0:
-                    break
-
                 before = self._wood.in_pack()
-                heavy = self._carried()
 
-                API.MoveItem(piles[0].Serial, API.Backpack, take)
+                API.MoveItem(piles[0].Serial, API.Backpack,
+                             min(wanted - moved, amount_of(piles[0])))
                 API.Pause(self._config["move_delay"])
 
                 gained = self._wood.in_pack() - before
@@ -1206,19 +1193,11 @@ class Restock(object):
                     stalled = 0
                     moved += gained
 
-                    now = self._carried()
-
-                    if heavy is not None and now is not None and now > heavy:
-                        self._learn_weight((now - heavy) / float(gained))
-
         if moved > 0:
             self._log("pulled %d wood, %s in the pack, %d left in what you picked"
                       % (moved, self._wood.pack_report(), self._sources.stock_left()))
 
-        if over_buffer(buffer) and moved < wanted:
-            self._log("stopped short of the batch at %s" % weight_reading())
-
-        return moved
+        return lifted + moved
 
 
 # src/bowcraft/sources.py
@@ -1237,9 +1216,7 @@ class Sources(object):
     def name_of(self, entry):
         return entry["name"] or hex_of(entry["serial"])
 
-    # The animal holds nothing itself - what is read and drawn from is the backpack it wears. Never
-    # UseObject the animal to open that: on a rideable body a double-click mounts you, and nothing
-    # in this script dismounts.
+    # Never UseObject the animal itself: on a rideable body that mounts you
     def _animal_pack(self, serial):
         animal = API.FindMobile(serial)
 
@@ -1254,7 +1231,6 @@ class Sources(object):
         if pack is None:
             return None
 
-        # A build that answers with the serial itself rather than the item is fine too
         return getattr(pack, "Serial", pack)
 
     def container_of(self, entry):
@@ -1277,8 +1253,7 @@ class Sources(object):
 
         return {"kind": "mobile", "serial": serial, "name": animal.Name or "?", "spot": None}
 
-    # ItemsInContainer reads nothing out of a container the client has never seen inside, so a
-    # source is opened before it is counted or drawn from
+    # ItemsInContainer reads nothing out of a container the client has never seen inside
     def open(self, entry):
         container = self.container_of(entry)
 
@@ -1302,11 +1277,10 @@ class Sources(object):
 
             serial = API.RequestTarget(self._config["pick_timeout"])
 
-            # Falsy is ESC or a cursor that timed out, and either one ends the selection
+            # ESC or a timed-out cursor, either ends the selection
             if not serial:
                 break
 
-            # Your own pack is where the wood is being counted from in the first place
             if serial == API.Backpack or (mine is not None and serial == mine):
                 self._log("your own pack is always counted, no need to pick it")
                 continue
@@ -1316,12 +1290,11 @@ class Sources(object):
 
             entry = self._entry_for(serial)
 
-            # Not an ending: a misclick on the ground should cost the click and nothing more
             if entry is None:
                 self._log("%s is neither a container nor a creature" % hex_of(serial))
                 continue
 
-            # Opened here, and the spot recorded now, because this is the one moment it is in reach
+            # Opened now, while it is in reach
             if self.open(entry) is None:
                 self._log("'%s' has no backpack to draw from" % self.name_of(entry))
                 continue
@@ -1340,8 +1313,7 @@ class Sources(object):
 
         return self._picked
 
-    # Only the type the menu is set to: pulling a pile of oak into a pack a regular menu will not
-    # spend it from is the whole of what went wrong before
+    # Only the type the menu is set to
     def container_wood(self, serial):
         items = API.ItemsInContainer(serial, True)
         piles = [item for item in (items or []) if self._wood.usable(item)]
@@ -1354,7 +1326,7 @@ class Sources(object):
 
         return [] if container is None else self.container_wood(container)
 
-    # Every wood in there, wrong type included, for the lines that report what a source is holding
+    # Wrong type included, for the report lines
     def all_wood(self, entry):
         container = self.container_of(entry)
         items = API.ItemsInContainer(container, True) if container else None
@@ -1376,7 +1348,7 @@ class Sources(object):
 
         return "%d in the %d you picked" % (self.stock_left(), len(self._picked))
 
-    # Re-resolved rather than the picked entry trusted: a pathfind that ends early leaves you short
+    # Re-resolved after the walk: a pathfind that ends early leaves you short
     def reach(self, entry):
         within = self._config["container_range"]
 
@@ -1398,7 +1370,7 @@ class Sources(object):
 
         spot = entry["spot"]
 
-        # A container picked inside the pack has no world position worth walking to
+        # A container inside the pack has no world position
         if spot is None or (spot[0] == 0 and spot[1] == 0):
             return True
 
@@ -1484,7 +1456,7 @@ class Vendor(object):
         found = []
 
         for mobile in API.GetAllMobiles(None, self._config["scan_radius"]) or []:
-            # Your own pets are the bulk of what stands around a crafter, and only yours rename
+            # Only your own pets rename, and they are most of what stands around a crafter
             if mobile.IsDead or mobile.Serial == mine or mobile.IsRenamable:
                 continue
 
@@ -1492,9 +1464,7 @@ class Vendor(object):
 
         return found
 
-    # Name first because it costs nothing, tooltips second because they cost a round trip each: a
-    # shopkeeper is "Alger" by name and "the bowyer" only in the tooltip, which is why the name pass
-    # alone kept answering that there was no bowyer in sight.
+    # Tooltips cost a round trip each, and "Alger" is "the bowyer" only in the tooltip
     def _find(self):
         if self._config["serial"]:
             return API.FindMobile(self._config["serial"])
@@ -1517,8 +1487,7 @@ class Vendor(object):
 
         return None
 
-    # Re-resolved every pass rather than the found mobile trusted: a pathfind that ends early leaves
-    # you short, and the only way to know is to ask where the vendor is now.
+    # Re-resolved every pass: a pathfind that ends early leaves you short
     def _walk_to(self, serial):
         within = self._config["range"]
 
@@ -1539,8 +1508,7 @@ class Vendor(object):
 
         return here if here is not None and here.Distance <= within else None
 
-    # The context menu first: it is the vendor's own 'Sell', matched by its text, and it does not
-    # depend on the shard hearing a phrase. The phrase is still there for a menu with no such entry.
+    # The vendor's own Sell entry first; the phrase for a menu without one
     def _ask_to_sell(self, serial):
         asked = context_menu(serial, [self._config["sell_entry"]],
                              self._config["context_timeout"])
@@ -1586,7 +1554,7 @@ class Vendor(object):
         sold = settled(self._config["sell_timeout"], self._config["sell_poll"],
                        lambda: self._products_in_pack() < before)
 
-        # Never the bare form: it closes the last gump, which is as likely to be the craft menu
+        # Never the bare CloseGump: it closes the last gump, as likely the craft menu
         found = API.HasGump()
 
         if found and found != self._menu.current_id() and not self._menu.is_craft_gump(found):
@@ -1717,6 +1685,160 @@ class StallWatch(object):
         return self._reason
 
 
+# src/uo/record.py
+# Written by hand rather than with json.dumps: the bundler admits API and time and nothing else, and
+# a row of numbers and two short strings is not worth relaxing that rule for.
+def quoted(text):
+    out = ['"']
+
+    for character in text:
+        code = ord(character)
+
+        if character == '"' or character == "\\":
+            out.append("\\" + character)
+        elif character == "\n":
+            out.append("\\n")
+        elif character == "\r":
+            out.append("\\r")
+        elif character == "\t":
+            out.append("\\t")
+        # Non-ASCII escaped rather than written through: a character name carrying an accent is
+        # ordinary here, and what encoding the runtime picked for the file is not knowable from in
+        # here
+        elif code < 0x20 or code > 0x7E:
+            out.append("\\u%04x" % code)
+        else:
+            out.append(character)
+
+    out.append('"')
+
+    return "".join(out)
+
+
+def skill_json(value):
+    return "null" if value is None else "%.1f" % value
+
+
+def append_line(path, line):
+    handle = open(path, "a")
+
+    try:
+        handle.write(line + "\n")
+    finally:
+        handle.close()
+
+
+class AttemptLog(object):
+    """One JSON object per attempt, appended as it happens.
+
+    A row is buffered when the attempt resolves and written on the *next* skill read, because the
+    client applies a gain some time after the outcome and a value read straight away is usually
+    still the old one. The cost of that is one row in the air at any moment, which a killed script
+    loses; the alternative is a file that under-reports every gain it exists to measure.
+    """
+
+    def __init__(self, path, character, serial, skill, log, append=None):
+        self._path = path or ""
+        self._character = character or ""
+        self._serial = serial
+        self._skill = skill
+        self._log = log
+        self._append = append if append is not None else append_line
+        self._off = not self._path
+        # Milliseconds, not seconds: two runs started inside the same second would mint the
+        # same ids, and the converter reads a repeated id as the same row arriving twice
+        self._run = int(now() * 1000)
+        self._seq = 0
+        self._pending = None
+        self._said = False
+
+    # Asked before an attempt so a caller can skip the work of measuring what it spent
+    def recording(self):
+        return not self._off
+
+    # consumed is a list of (name, graphic, hue, quantity) - measured, so an attempt that spent
+    # nothing passes nothing rather than a guess at what the recipe charges
+    def record(self, skill_from, outcome, success, consumed=None, stock=None):
+        if self._off or skill_from is None:
+            return
+
+        # A caller that records twice without settling in between would otherwise drop the first
+        # row. This later read is exactly what the missed settle would have passed.
+        self.settle(skill_from)
+
+        self._seq += 1
+        self._pending = {
+            "id": "%s/%d/%d" % (hex_of(self._serial), self._run, self._seq),
+            "at": now(),
+            "from": skill_from,
+            "outcome": outcome,
+            "ok": success,
+            "consumed": list(consumed) if consumed else [],
+            # (before, after) totals of the material the attempt is costed in, written raw so the
+            # subtraction in 'consumed' can be checked without trusting it
+            "stock": tuple(stock) if stock else None,
+        }
+
+    def settle(self, skill_to):
+        pending = self._pending
+        self._pending = None
+
+        if pending is None or self._off:
+            return
+
+        self._write(pending, skill_to)
+
+    def _line(self, row, skill_to):
+        fields = [
+            '"v":1',
+            '"id":%s' % quoted(row["id"]),
+            '"t":%.3f' % row["at"],
+            '"char":%s' % quoted(self._character),
+            '"serial":%s' % quoted(hex_of(self._serial)),
+            '"skill":%s' % quoted(self._skill),
+            '"from":%s' % skill_json(row["from"]),
+            '"to":%s' % skill_json(skill_to),
+            '"outcome":%s' % quoted(row["outcome"]),
+            '"ok":%s' % ("true" if row["ok"] else "false"),
+        ]
+
+        if row.get("stock"):
+            fields.append('"stock_from":%d,"stock_to":%d' % (row["stock"][0], row["stock"][1]))
+
+        if row["consumed"]:
+            fields.append('"consumed":[%s]' % ",".join(
+                '{"name":%s,"graphic":%s,"hue":%d,"qty":%d}'
+                % (quoted(name), quoted(hex_of(graphic)), hue, quantity)
+                for name, graphic, hue, quantity in row["consumed"]
+            ))
+
+        return "{%s}" % ",".join(fields)
+
+    # A run that cannot write its log is still a run: the recorder retires itself and says so once,
+    # rather than ending the training over a file
+    def _write(self, row, skill_to):
+        try:
+            self._append(self._path, self._line(row, skill_to))
+        except Exception as error:
+            self._off = True
+
+            if not self._said:
+                self._said = True
+                self._log("cannot write %s (%s) - not recording this run" % (self._path, error))
+
+
+# The character is read once, here, rather than on every row: it cannot change under a running
+# script, and a client between world states answers None for the player without that meaning the
+# run should stop recording.
+def attempt_log(path, skill, log):
+    me = player()
+
+    if me is None and path:
+        log("the client is not reporting the character - rows will not name it")
+
+    return AttemptLog(path, getattr(me, "Name", ""), getattr(me, "Serial", 0), skill, log)
+
+
 # src/uo/save.py
 class SaveWatch(object):
     def __init__(self, saving_text, done_text, wait, poll, log, heartbeat, stop_reason):
@@ -1808,6 +1930,23 @@ class SkillReader(object):
             waited += poll
 
 
+# src/uo/vitals.py
+def weight_reading():
+    me = player()
+
+    return "?/?" if me is None else "%d/%d" % (me.Weight, me.WeightMax)
+
+
+def where():
+    me = player()
+
+    return "somewhere" if me is None else "at %d,%d" % (me.X, me.Y)
+
+
+def position_and_weight():
+    return "%s, %s" % (where(), weight_reading())
+
+
 # src/bowcraft/index.py
 log = make_log("bowcraft")
 heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "made", position_and_weight)
@@ -1829,6 +1968,10 @@ def stop_reason():
     return first_reason([stopped(STOPPED), dead(), skill_capped(skill_name)])
 
 
+def products_in_pack():
+    return count_of(PRODUCT_GRAPHICS)
+
+
 saves = SaveWatch(SAVING_TEXT, SAVE_DONE_TEXT, SAVE_WAIT, SAVE_POLL, log, heartbeat, stop_reason)
 
 tools = Tools(TOOL_GRAPHICS, TOOL_NAME_WORDS, log)
@@ -1848,10 +1991,8 @@ sources = Sources(wood, {
 }, log)
 restock = Restock(wood, sources, {
     "batch": BATCH_SIZE,
-    "buffer": WEIGHT_BUFFER,
     "move_delay": MOVE_DELAY,
     "max_empty_moves": MAX_EMPTY_MOVES,
-    "wood_weight": WOOD_WEIGHT,
     "return_wrong_wood": RETURN_WRONG_WOOD,
 }, log)
 menu = CraftMenu(tools, {
@@ -1884,13 +2025,6 @@ crafter = Crafter(tools, menu, wood, OUTCOME_TEXT, {
     "tail_lines": JOURNAL_TAIL_LINES,
     "wood_type": WOOD_TYPE,
 }, log)
-
-
-def products_in_pack():
-    return sum(amount_of(item) for item in pack_contents()
-               if item.Graphic in PRODUCT_GRAPHICS)
-
-
 vendor = Vendor(wood, menu, {
     "serial": VENDOR_SERIAL,
     "titles": BOWYER_TITLES,
@@ -1924,8 +2058,7 @@ if tools.serial() is None:
 
 sources.pick()
 
-# Nothing picked is only an ending when the pack is empty too: a run that starts on the wood it is
-# already carrying is a run that needed no cursor at all
+# A run that starts on the wood it is already carrying needed no cursor at all
 if len(sources.picked()) == 0 and wood.in_pack() == 0:
     log("nothing picked and no wood in the pack")
     API.Stop()
@@ -1936,6 +2069,9 @@ log("%s at %.1f, %s in the pack, %s" % (skill_name, start, wood.pack_report(),
 if wood.in_pack() < RESTOCK_AT:
     restock.run()
 
+recorder = attempt_log(DATA_PATH, skill_name, log)
+materials = Materials(wood, MATERIAL_GRAPHICS)
+
 stop = None
 tally = 0
 fails = 0
@@ -1945,7 +2081,6 @@ no_tool = 0
 no_material = 0
 throttle_tally = 0
 said_throttle = False
-said_overweight = False
 sell_misses = 0
 sell_paused_until = 0
 reported = 0
@@ -1963,18 +2098,14 @@ def end_cycle(phase):
         stop = stall.reason()
 
 
-# Weight stops nothing here. It is reported when it starts and when it clears, and that is all: the
-# run has no way to put the pack down that is not selling it, and it is already trying to sell.
-def warn_overweight():
-    global said_overweight
+# Measured either side of the craft rather than read off the recipe: a failure refunds part of it
+def record_craft(outcome, skill_from, before):
+    if not recorder.recording():
+        return
 
-    if over_buffer(0):
-        if not said_overweight:
-            said_overweight = True
-            log("overweight at %s - carrying on, crafting is what takes it off" % weight_reading())
-    elif said_overweight:
-        said_overweight = False
-        log("no longer overweight, at %s" % weight_reading())
+    after = materials.settled_snapshot(REFUND_SETTLE, REFUND_POLL)
+    recorder.record(skill_from, outcome, outcome == "made", materials.spent(before, after),
+                    (materials.wood_total(before), materials.wood_total(after)))
 
 
 try:
@@ -1986,8 +2117,7 @@ try:
         if stop is not None:
             break
 
-        # Everything below reads a frozen shard as its own failure: a craft that answers nothing is
-        # an unreadable outcome, a move that gains nothing is an empty container
+        # A frozen shard reads as every failure below, so it is waited out before any of them
         if saves.is_saving():
             saves.wait_out()
             unknown = 0
@@ -1997,6 +2127,9 @@ try:
             continue
 
         value = skill.read()
+
+        # The client applies a gain some time after the outcome, so the row waits a cycle for it
+        recorder.settle(value)
 
         if value is not None and value != last_skill:
             last_skill = value
@@ -2013,17 +2146,7 @@ try:
             product = wanted
             crafter.forget_last()
 
-        # Weight is never an ending. Said once a stretch, because a run that cannot sell can still
-        # craft, and every craft turns wood the pack is carrying into one lighter item.
-        warn_overweight()
-
-        wants_sale = (
-            products_in_pack() >= SELL_AT
-            or over_buffer(WEIGHT_BUFFER)
-            or len(pack_top_level()) >= PACK_LIMIT
-        )
-
-        if wants_sale and cycle >= sell_paused_until:
+        if products_in_pack() >= SELL_AT and cycle >= sell_paused_until:
             if vendor.sell_trip():
                 sell_misses = 0
 
@@ -2032,8 +2155,7 @@ try:
 
             sell_misses += 1
 
-            # The trip is worth retrying, but not every cycle for ever: without this it walks to the
-            # vendor and back on each pass and the crafting never gets a turn
+            # Retried, but not every cycle: otherwise the crafting never gets a turn
             if sell_misses >= MAX_SELL_MISSES:
                 sell_misses = 0
                 sell_paused_until = cycle + SELL_RETRY_AFTER
@@ -2041,8 +2163,7 @@ try:
                     % (MAX_SELL_MISSES, SELL_RETRY_AFTER))
 
         if wood.in_pack() < RESTOCK_AT:
-            # Weight and an unreachable container also pull nothing, and neither is an empty
-            # container - the stall watch is what ends those
+            # An unreachable container also pulls nothing, which the stall watch ends
             pulled = restock.run()
 
             if pulled == 0 and sources.stock_left() == 0 and wood.in_pack() < MIN_CRAFT_WOOD:
@@ -2050,29 +2171,30 @@ try:
                         % (WOOD_TYPE, wood.pack_report()))
                 break
 
-            # Only a pack with nothing makeable in it is worth spending the cycle on: a short pack
-            # that can still make something crafts, which is also what takes weight off
+            # A short pack that can still make something crafts
             if wood.in_pack() < MIN_CRAFT_WOOD:
                 end_cycle("restocking")
                 continue
 
+        spent_before = materials.snapshot() if recorder.recording() else {}
         outcome = crafter.craft_once(product)
 
-        if outcome == "made":
-            tally += 1
-            unknown = 0
+        if outcome != "throttled":
             throttled = 0
-            no_material = 0
-            stall.progressed()
-        elif outcome == "failed":
-            # Still a gain and still spends the wood, so it counts as the loop getting somewhere
-            fails += 1
+
+        if outcome is not None:
             unknown = 0
-            throttled = 0
+
+        if outcome in ("made", "failed"):
+            if outcome == "made":
+                tally += 1
+            else:
+                fails += 1
+
+            record_craft(outcome, value, spent_before)
             no_material = 0
             stall.progressed()
         elif outcome == "noMaterial":
-            unknown = 0
             pulled = restock.run()
 
             if pulled > 0:
@@ -2082,8 +2204,7 @@ try:
                 stop = "the shard says there is not enough wood and there is none left to pull"
                 break
             else:
-                # Wood in the pack that a restock cannot add to, refused all the same: what a shard
-                # that crafts from only one of logs and boards looks like from in here
+                # Wood in the pack, refused, nothing to add to it: the wrong kind of wood
                 no_material += 1
 
                 if no_material >= MAX_NO_MATERIAL:
@@ -2091,12 +2212,10 @@ try:
                             "above; if it wants another wood, set WOOD_TYPE and the menu to match"
                             % (wood.pack_report(), no_material))
                     break
-        elif outcome == "wrongRow":
-            unknown = 0
+        elif outcome in ("wrongRow", "saving"):
             stall.progressed()
         elif outcome == "toolWorn":
             crafter.forget_last()
-            unknown = 0
             stall.progressed()
             log("the tools wore out, looking for another pair")
         elif outcome == "skillTooLow":
@@ -2105,7 +2224,7 @@ try:
         elif outcome == "noRow":
             stop = "could not find the SELECTIONS row for '%s'" % product
             break
-        elif outcome == "noTool" or outcome == "noGump":
+        elif outcome in ("noTool", "noGump"):
             no_tool += 1
 
             if no_tool >= MAX_NO_TOOL:
@@ -2127,21 +2246,18 @@ try:
 
             waiting = backoff_for(throttled, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX)
 
-            # Said once, then only tallied: the pause itself is the shard's, and it is normal
-            if SAY_THROTTLE_ONCE and not said_throttle:
+            # Said once, then only tallied: the pause is the shard's, and it is normal
+            if not said_throttle:
                 said_throttle = True
                 log("the shard is pacing the crafts - waiting %.1fs, and counting these from here on"
                     % waiting)
 
             API.Pause(waiting)
-        elif outcome == "saving":
-            unknown = 0
-            stall.progressed()
         else:
             unknown += 1
             log("unreadable outcome (%d/%d), check OUTCOME_TEXT" % (unknown, MAX_UNKNOWN))
 
-        if outcome != "noTool" and outcome != "noGump":
+        if outcome not in ("noTool", "noGump"):
             no_tool = 0
 
         if unknown >= MAX_UNKNOWN:
@@ -2168,6 +2284,7 @@ if API.Pathfinding():
 
 reason = stop or "hit the %d cycle backstop" % MAX_CYCLES
 ended = skill.read()
+recorder.settle(ended)
 
 log(
     "%d made, %d failed, %d throttled, %s %.1f -> %s"

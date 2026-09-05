@@ -30,7 +30,7 @@ class Vendor(object):
         found = []
 
         for mobile in API.GetAllMobiles(None, self._config["scan_radius"]) or []:
-            # Your own pets are the bulk of what stands around a crafter, and only yours rename
+            # Only your own pets rename, and they are most of what stands around a crafter
             if mobile.IsDead or mobile.Serial == mine or mobile.IsRenamable:
                 continue
 
@@ -38,9 +38,7 @@ class Vendor(object):
 
         return found
 
-    # Name first because it costs nothing, tooltips second because they cost a round trip each: a
-    # shopkeeper is "Alger" by name and "the bowyer" only in the tooltip, which is why the name pass
-    # alone kept answering that there was no bowyer in sight.
+    # Tooltips cost a round trip each, and "Alger" is "the bowyer" only in the tooltip
     def _find(self):
         if self._config["serial"]:
             return API.FindMobile(self._config["serial"])
@@ -63,8 +61,7 @@ class Vendor(object):
 
         return None
 
-    # Re-resolved every pass rather than the found mobile trusted: a pathfind that ends early leaves
-    # you short, and the only way to know is to ask where the vendor is now.
+    # Re-resolved every pass: a pathfind that ends early leaves you short
     def _walk_to(self, serial):
         within = self._config["range"]
 
@@ -85,8 +82,7 @@ class Vendor(object):
 
         return here if here is not None and here.Distance <= within else None
 
-    # The context menu first: it is the vendor's own 'Sell', matched by its text, and it does not
-    # depend on the shard hearing a phrase. The phrase is still there for a menu with no such entry.
+    # The vendor's own Sell entry first; the phrase for a menu without one
     def _ask_to_sell(self, serial):
         asked = context_menu(serial, [self._config["sell_entry"]],
                              self._config["context_timeout"])
@@ -132,7 +128,7 @@ class Vendor(object):
         sold = settled(self._config["sell_timeout"], self._config["sell_poll"],
                        lambda: self._products_in_pack() < before)
 
-        # Never the bare form: it closes the last gump, which is as likely to be the craft menu
+        # Never the bare CloseGump: it closes the last gump, as likely the craft menu
         found = API.HasGump()
 
         if found and found != self._menu.current_id() and not self._menu.is_craft_gump(found):

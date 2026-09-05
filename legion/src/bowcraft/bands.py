@@ -1,8 +1,7 @@
 import API
 
 
-# GetSkill answers None for a name it does not know, and a name the client does not carry throws
-# rather than answering None on some builds
+# A name the client does not carry throws on some builds rather than answering None
 def find_skill_name(names):
     for name in names:
         try:
@@ -14,7 +13,7 @@ def find_skill_name(names):
     return None
 
 
-# The first row whose ceiling the value is under wins, so the ceilings are exclusive
+# Ceilings are exclusive
 def band_for(bands, value):
     if value is None:
         return None
