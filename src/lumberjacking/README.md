@@ -25,7 +25,10 @@ the first falls back to `PACK_ANIMAL_SERIALS`, and then to the body search. Then
 2. **Equip an axe.** Axes are two-handed and hatchets one-handed, so it reads
    `equippedItems.twoHanded ?? equippedItems.oneHanded`.
 3. **Haul, if the weight is over `HAUL_BUFFER`.** Boards are made first — only boards ever go on an
-   animal — then every pack animal in range is walked to and filled, nearest first. Logs that would
+   animal — then every pack animal in range that still has room is walked to and filled, nearest
+   first. Each one is loaded to `BOARDS_PER_ANIMAL`, its own pack counted first and every hue counted
+   together, splitting the last stack to land on the number. One that reaches it, or that refuses a
+   load before it, is left out of the rest of the run rather than walked to again. Logs that would
    not convert stay in the pack and are tried again on the next haul.
 4. **Scan for a tree** within `SCAN_RADIUS`, shortest walk first, skipping tiles the run has parked
    and trees there is no route to. If that box is dry, sweep again out to `ROAM_RADIUS`.
@@ -145,6 +148,7 @@ lumberjacking its own, delete it from the re-export list and declare it below.
 | `MAX_PICKS` | 8. A backstop on the cursor only — the selection ends when you press ESC |
 | `OPL_TIMEOUT` | 2s. How long to wait for the tooltip that names a pick |
 | `UNLOAD_RANGE` | 2. How close you have to be to move items onto the animal |
+| `BOARDS_PER_ANIMAL` | 1600. What one animal is loaded to, every hue counted together — its weight allowance in boards. `0` loads it until it refuses instead |
 | `CONVERT_ATTEMPTS` | 3. Silent failures in a row before giving up on a hue. A save, a throttle and a cursor that never opened are all excluded, so reaching this means the wood really did not work — raising it is rarely the fix |
 | `MAX_CONVERT_PASSES`, `CONVERT_DELAY`, `CONVERT_TIMEOUT`, `CONVERT_POLL`, `MOVE_DELAY` | Conversion and move pacing |
 
@@ -219,7 +223,19 @@ followed. It now cancels only when there is a cursor to cancel, the same fix
 **`no pack animal found, carrying on until overweight`.** Latched off after one failed search, so a
 missing animal costs one search rather than one per cycle — click the animals at startup, check
 `PACK_ANIMAL_GRAPHICS`, or pin `PACK_ANIMAL_SERIALS`. An animal that is merely full does not latch
-it: it is walked to again next cycle.
+it — only a missing one does.
+
+**`'<name>' took N, loaded to its 1600`.** It reached `BOARDS_PER_ANIMAL` and sits out the rest of the
+run. `'<name>' already holds N, its 1600` is the same animal on a later run, before a board is moved.
+
+**`'<name>' took N of M, leaving it out of the rest of the run`.** It refused *below* the cap, and the
+walk and one move per stack are not worth paying again to find that out — so it sits out the rest of
+the run. Either the boards weigh more than 1600 of them fit, or the animal was already carrying
+something else. What brings it back is restarting the script, which is what you do after emptying it
+anyway.
+
+**`all N pack animal(s) are full, nothing left to load`.** Said once. The run goes on converting and
+chopping, so it ends on the overweight stop or on the stall watch counting `hauling` cycles.
 
 **`N logs would not convert, keeping them in the pack`.** The wood is never hauled as logs, so the
 weight stays and the run ends on the stall watch if it never converts. Check the journal is not
@@ -284,8 +300,15 @@ confirmed comes from mining runs that exercise the same shared code.
   why `retry` takes a `force`.
 - Pack animals are found by body graphic, keeping the ones whose `isRenamable` is true — only your
   own pets can be renamed. Their packs come from `client.findItemOnLayer(serial, Layers.Backpack)`.
+- **The animal's own pack is counted before it is loaded**, so the cap survives a restart — the count
+  is the animal, not anything the script remembers. Contents stay undefined until a container is
+  opened, so the pack is opened when the layer read comes back silent; a pack that still will not
+  answer is loaded until it refuses rather than read as empty, which would fill a loaded animal again.
 - **All of them get loaded, not just the nearest.** One that stops accepting is full rather than
-  broken, so what is left goes to the next.
+  broken, so what is left goes to the next — and the full one is remembered and skipped from then on.
+  The mark is a module-scope set in [`haul.ts`](haul.ts) rather than anything in
+  [`memory.ts`](memory.ts): what empties a pack horse is a trip to the bank, and that ends the run,
+  so a restart is exactly when the mark should go.
 - **Do not double-click the animal to find its pack if you can avoid it.** A giant beetle is
   rideable, so the double-click mounts you. [`haul.ts`](haul.ts) only falls back to it when the
   backpack layer comes back empty.
@@ -313,3 +336,7 @@ confirmed comes from mining runs that exercise the same shared code.
 - The pack animal bodies in `PACK_ANIMAL_GRAPHICS`, and whether `Layers.Backpack` resolves for
   someone else's mobile at all. `PACK_ANIMAL_SERIALS` pins an exact list if the guesses are wrong.
 - Whether boards actually weigh less than logs here. If they do not, converting frees nothing.
+- `BOARDS_PER_ANIMAL`. 1600 is the stock pack-animal weight allowance read as one stone a board.
+- **`moveItem`'s `amount` argument**, which nothing else here has ever passed. If it moves the whole
+  stack the animal overshoots 1600; if it moves nothing the animal reads as refused. Both show in the
+  log, and the fallback is to stop at the last stack that fits whole.

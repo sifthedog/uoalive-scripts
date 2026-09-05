@@ -245,9 +245,11 @@
   var HOSTILE_NOTORIETY = 16 | 8 | 2 | 4;
   var CALL_ON_SIGHT_NOTORIETY = 8 | 2 | 4;
 
+  // src/lib/arts.ts
+  var CORPSE_GRAPHIC = 8198;
+
   // src/carving/config.ts
   var MAX_CYCLES = 1e5;
-  var CORPSE_GRAPHIC = 8198;
   var KNIFE_NAME = "knife";
   var SPARE_BAG_SERIAL = void 0;
   var KNIFE_GRAPHICS = /* @__PURE__ */ new Set([
@@ -577,14 +579,20 @@
   var { beat, resetBeat } = heartbeat;
 
   // src/lib/retry.ts
+  var settled = (options) => {
+    for (let waited = 0; waited < options.timeoutMs; waited += options.pollMs) {
+      sleep(options.pollMs);
+      if (options.landed()) {
+        return true;
+      }
+    }
+    return false;
+  };
   var untilLanded = (options) => {
     for (let attempt = 1; attempt <= options.attempts; attempt++) {
       options.act();
-      for (let waited = 0; waited < options.timeoutMs; waited += options.pollMs) {
-        sleep(options.pollMs);
-        if (options.landed()) {
-          return true;
-        }
+      if (settled(options)) {
+        return true;
       }
       log(`${options.label}: attempt ${attempt} did not land, reissuing`);
     }

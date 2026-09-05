@@ -25,10 +25,31 @@ one, and what to set. Start there.
 | `dist/lockpick-training.js` | Target a locked container, pick it until the lockpicks run out or Lockpicking is capped | [src/lockpicking](src/lockpicking/README.md) |
 | `dist/hiding.js` | Stand still, hide, and spam Stealth until one fails - then hide again | [src/hiding](src/hiding/README.md) |
 | `dist/animal-lore.js` | Target a creature, read it over and over until Animal Lore caps | [src/animallore](src/animallore/README.md) |
+| `dist/eval-int.js` | Evaluate your own character over and over until Evaluating Intelligence caps | [src/evalint](src/evalint/README.md) |
+| `dist/tame.js` | Target an animal and tame it until it accepts you, then target the next one | [src/taming](src/taming/README.md) |
 | `dist/transfer.js` | Target a container to empty and one to fill, move everything across | [src/transfer](src/transfer/README.md) |
 | `dist/stow.js` | Target items and a container, then move every one of them out of your pack as it turns up | [src/stow](src/stow/README.md) |
-| `dist/arrows.js` | Moves every arrow and crossbow bolt within reach off the floor and into your pack | [src/arrows](src/arrows/README.md) |
+| `dist/sweep.js` | Moves every arrow, bolt and gold pile within reach off the floor and into your pack | [src/sweep](src/sweep/README.md) |
 | `dist/carve.js` | Uses a butcher knife on every corpse within reach and takes the feathers | [src/carving](src/carving/README.md) |
+| `dist/open-corpse.js` | Finds the corpse named for you among the ones on the floor and opens it | [src/corpse](src/corpse/README.md) |
+
+### For TazUO
+
+[`legion/`](legion/README.md) holds Python scripts for [TazUO](https://tazuo.org)'s Legion Scripting
+engine — a different client with a different API, so no code is shared with `src/`. It has a build
+step of its own: sources in `legion/src/`, bundled by `legion/build.py` into `legion/dist/`.
+
+| Script | What it does | README |
+| --- | --- | --- |
+| `legion/dist/tame.py` | The taming run above, ported to TazUO: pathfinding, `API.Rename` and context menus by text in place of the workarounds the web client needs | [legion](legion/README.md) |
+| `legion/dist/buffs.py` | The buff keeper above, ported to TazUO: buffs told apart by the client's `BuffIconType` rather than a localized title, and a tithing gate the web client's run does not have | [legion](legion/README.md) |
+| `legion/dist/mining.py` | The mining run above, ported to TazUO: `API.Pathfind` in place of the walkability grid, `API.Dismount` in place of double-clicking yourself, and tooltips that arrive as flat text | [legion](legion/README.md) |
+| `legion/dist/mine-here.py` | The stand-still half of it, which contains no pathfinding call at all | [legion](legion/README.md) |
+| `legion/dist/lumberjack.py` | The lumberjack run above, ported to TazUO: `API.Pathfind` in place of the walkability grid, the client's own `ApiStatic.IsTree` in place of a tiledata name match, and no `BOUNDS` box - it roams | [legion](legion/README.md) |
+| `legion/dist/arms-lore.py` | Target a weapon and use Arms Lore on it every half second until the skill caps — no web client twin | [legion](legion/README.md) |
+| `legion/dist/magery.py` | The magery run above, ported to TazUO: paced by the client's own `IsCasting` rather than by converging on the shard's refusals, buffs told apart by `BuffIconType`, and no undressing for the trance | [legion](legion/README.md) |
+| `legion/dist/mysticism.py` | Train Mysticism from nothing to cap on the five spells that gain without a victim: Nether Bolt, then Stone Form, Cleansing Winds, Hail Storm and Nether Cyclone, each cast at yourself — no web client twin | [legion](legion/README.md) |
+| `legion/dist/bowcraft.py` | Train Bowcraft from 40 to cap through the craft gump: the band picks the item, logs come 300 at a time out of containers you point at, and the bowyer takes the output — no web client twin | [legion](legion/README.md) |
 
 ## Why a build step
 
@@ -55,11 +76,12 @@ identifier*.
 ```
 src/lib/           everything more than one script does (see below)
 src/animallore/    read one creature over and over to train Animal Lore
-src/arrows/        sweep spent arrows and bolts off the ground into the pack
 src/boxes/         empty the crafted wooden boxes, keys on the floor (+ a key dump)
 src/buffs/         keep the Chivalry self-buffs standing, recasting each as it lapses
 src/carving/       carve every corpse in reach with a butcher knife, take the feathers
 src/chivalry/      train Chivalry through its five bands, on the same loop as src/training/
+src/corpse/        find the corpse that is yours among the ones on the floor, and open it
+src/evalint/       evaluate your own character over and over to train Evaluating Intelligence
 src/hiding/        train Hiding and Stealth standing still, hiding and stealthing in turn
 src/lumberjacking/ chop the nearest tree, make boards, load the pack animals
 src/lockpicking/   pick at a locked box until Lockpicking catches up with it
@@ -68,11 +90,14 @@ src/mining/        mine the nearest vein, smelt the ore on a fire beetle (+ a st
 src/necromancy/    train Necromancy through its five bands, on the same loop as src/training/
 src/selling/       sell-to-vendor: target items until ESC, sell every stack of them
 src/stow/          watch the pack and stow the items you picked into the container you picked
+src/sweep/         sweep spent ammunition and gold off the ground into the pack
+src/taming/        tame one targeted animal, retrying every failure, then ask for the next
 src/training/      train a skill by casting the ability that still gains at the level it is at
 src/transfer/      move everything out of one container and into another
 types/             the client's TypeScript definitions (see below)
 scripts/           type retrieval and patching
 dist/              build output - this is what you paste
+legion/            Python for TazUO's Legion Scripting engine - its own src/, dist/ and tests
 ```
 
 Tunables live in each folder's `config.ts` — item names, delays, how much to keep back. Some are
@@ -100,6 +125,7 @@ heartbeat   'still here', on the clock rather than per cycle
 loop        the idle wait, the stall watchdog, the throttle backoff
 meditate    getting the mana back, with or without hands to clear first
 outcomes    a journal phrase table and the reverse lookup off it
+pace        the shard's skill timer, learned from its refusals rather than configured
 pack        counting and diffing what the backpack holds
 pick        the target cursor as a prompt: one click, or click-until-ESC
 retry       issue, poll for the proof, reissue

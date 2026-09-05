@@ -1,10 +1,18 @@
-import { collectIn, packContents, type ItemPredicate } from '../lib/containers.js';
+import {
+  collectIn,
+  contentsOf,
+  openContainers,
+  packContents,
+  type ItemPredicate,
+} from '../lib/containers.js';
 import { approach, distanceTo, hex, isMobile, nameOf } from '../lib/entity.js';
+import { totalMatching } from '../lib/pack.js';
 import { pickMany } from '../lib/pick.js';
 import { overweight } from '../lib/weight.js';
 import { isBoard } from './boards.js';
 import { isLog } from './chop.js';
 import {
+  BOARDS_PER_ANIMAL,
   HAUL_BUFFER,
   MAX_PICKS,
   MAX_STEPS,
@@ -19,6 +27,13 @@ import { isSaving } from './save.js';
 import { stepToward } from './walk.js';
 
 let reported = false;
+
+// Animals that have had their turn and refused it. Module state rather than ./memory.js: what empties
+// a pack horse is a trip to the bank, and that ends the run.
+const filled = new Set<number>();
+
+// So 'they are all full' is said once rather than once a cycle for the rest of the run
+let saidAllFull = false;
 
 // A list chosen rather than guessed - from config or from the cursor - is the law, so an animal out
 // of sight for a moment is not a reason to go loading a stranger's mule.
@@ -131,33 +146,67 @@ const walkToAnimal = (serial: number): boolean =>
     isSaving,
   }) !== undefined;
 
+// undefined rather than 0 for a pack that will not answer: read as empty, an animal already carrying
+// its load would be filled all over again. Contents stay undefined until a container is opened.
+const heldIn = (pack: Item, matches: ItemPredicate): number | undefined => {
+  if (BOARDS_PER_ANIMAL <= 0) {
+    return undefined;
+  }
+
+  if (contentsOf(pack) === undefined) {
+    openContainers(pack.serial);
+  }
+
+  const contents = contentsOf(pack);
+
+  return contents === undefined ? undefined : totalMatching(matches, contents);
+};
+
 // Moves are asynchronous, so rescan between passes rather than trusting moveItem's return value.
-// A pass that shifts nothing means this animal is full, which the caller reports.
-const moveAll = (packSerial: number, matches: ItemPredicate): void => {
-  let previousStacks = Infinity;
+// Progress is counted in boards, not stacks: a split stack leaves the stack count where it was.
+// Answers the room left over, so the caller can tell an animal that filled up from one that refused.
+const moveUpTo = (packSerial: number, matches: ItemPredicate, room: number): number => {
+  let left = room;
+  let previousCarried = Infinity;
 
-  while (true) {
-    const stacks = collectIn(packContents(), matches);
+  while (left > 0) {
+    const carried = totalMatching(matches);
 
-    if (stacks.length === 0 || stacks.length >= previousStacks) {
-      return;
+    if (carried === 0 || carried >= previousCarried) {
+      break;
     }
-    previousStacks = stacks.length;
+    previousCarried = carried;
 
-    for (const stack of stacks) {
-      player.moveItem(stack.serial, packSerial);
+    for (const stack of collectIn(packContents(), matches)) {
+      if (left <= 0) {
+        break;
+      }
+      const amount = stack.amount ?? 1;
+
+      if (amount <= left) {
+        player.moveItem(stack.serial, packSerial);
+        left -= amount;
+      } else {
+        // x, y and z are skipped to reach moveItem's amount, which nothing else here has ever passed
+        player.moveItem(stack.serial, packSerial, undefined, undefined, undefined, left);
+        left = 0;
+      }
+
       sleep(MOVE_DELAY);
     }
   }
+
+  return left;
 };
 
-// Works down the animals until the pack is clear or every one of them has had a turn. An animal
-// that stops accepting is full rather than broken, so what is left over goes to the next one.
+// Works down the animals until the pack is clear or every one of them has had a turn. An animal that
+// stops accepting is full rather than broken, so what is left over goes to the next one and the full
+// one is remembered rather than walked to again.
 const unloadTo = (animals: Mobile[], matches: ItemPredicate): boolean => {
   let moved = false;
 
   for (const animal of animals) {
-    const before = collectIn(packContents(), matches).length;
+    const before = totalMatching(matches);
     if (before === 0) {
       break;
     }
@@ -172,23 +221,49 @@ const unloadTo = (animals: Mobile[], matches: ItemPredicate): boolean => {
       continue;
     }
 
-    moveAll(pack.serial, matches);
+    const held = heldIn(pack, matches);
+    const room = held === undefined ? Infinity : BOARDS_PER_ANIMAL - held;
 
-    const after = collectIn(packContents(), matches).length;
+    if (room <= 0) {
+      filled.add(animal.serial);
+      log(`haul: '${nameOf(animal)}' already holds ${held}, its ${BOARDS_PER_ANIMAL}`);
+      continue;
+    }
+
+    const spare = moveUpTo(pack.serial, matches, room);
+
+    const after = totalMatching(matches);
     if (after < before) {
       moved = true;
     }
 
+    if (spare <= 0) {
+      filled.add(animal.serial);
+      log(`haul: '${nameOf(animal)}' took ${before - after}, loaded to its ${BOARDS_PER_ANIMAL}`);
+      continue;
+    }
+
     if (after > 0) {
-      log(`haul: '${nameOf(animal)}' took ${before - after} of ${before} stacks, trying the next`);
+      // A save refuses every move at once, so a pass that shifted nothing is not this animal's
+      // verdict - written off here it would sit out the rest of the run over a five second pause
+      const full = !isSaving();
+
+      if (full) {
+        filled.add(animal.serial);
+      }
+
+      log(
+        `haul: '${nameOf(animal)}' took ${before - after} of ${before}, ` +
+          (full ? 'leaving it out of the rest of the run' : 'trying the next'),
+      );
     }
   }
 
   return moved;
 };
 
-// Answers whether an animal was found, not whether anything moved: one that is merely full is worth
-// walking to again next cycle, and only a missing animal is worth giving up the search for.
+// Answers whether an animal was found, not whether anything moved: only a missing animal is worth
+// giving up the search for, and one that is merely full has already been dropped from the list.
 export const unload = (): boolean => {
   const animals = findPackAnimals();
 
@@ -198,7 +273,18 @@ export const unload = (): boolean => {
     return false;
   }
 
-  unloadTo(animals, isBoard);
+  // Filtered here rather than inside the loop, so the run says once that there is nothing left to
+  // load rather than walking the whole herd to find out again
+  const spare = animals.filter((animal) => !filled.has(animal.serial));
+
+  if (spare.length === 0) {
+    if (!saidAllFull) {
+      saidAllFull = true;
+      log(`haul: all ${animals.length} pack animal(s) are full, nothing left to load`);
+    }
+  } else {
+    unloadTo(spare, isBoard);
+  }
 
   // A log that leaves as a log never comes back as a board, so what would not convert waits for the
   // next haul to try it again. Asked once every animal has had its turn at the boards.

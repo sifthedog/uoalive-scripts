@@ -59,7 +59,7 @@ Everything lives in [`config.ts`](config.ts).
 
 | Setting | Default | What it is for |
 | --- | --- | --- |
-| `CORPSE_GRAPHIC` | `0x2006` | Every corpse in the game is this art; what died is in the hue |
+| `CORPSE_GRAPHIC` | `0x2006` | Every corpse in the game is this art; what died is in the hue. Shared, in [`lib/arts.ts`](../lib/arts.ts) — [`src/corpse`](../corpse/README.md) reads the same one |
 | `KNIFE_GRAPHICS` | butcher knife, cleaver, dagger, skinning knife | Seeds — the real art is learned off the first one found |
 | `KNIFE_NAME` | `knife` | The name fallback, for a shard whose art is not in the list |
 | `SPARE_BAG_SERIAL` | `undefined` | Pin the bag the knives are in instead of discovering it |
@@ -103,7 +103,7 @@ Written against UOAlive.
 
 - **`client.findAllItemsOfType(0x2006, undefined, 'world')` is the whole of the corpse scan.** There
   is no unfiltered item enumeration in this API — every item search is keyed on a graphic.
-- **No container filter, unlike [`arrows`](../arrows/floor.ts).** A corpse is never inside anything,
+- **No container filter, unlike [`sweep`](../sweep/floor.ts).** A corpse is never inside anything,
   so the parent serial decides nothing here.
 - **A corpse's `contents` is `undefined` until it has been opened**, which is why a corpse is only
   ever opened after it has been carved: asking costs a cycle whatever the answer.

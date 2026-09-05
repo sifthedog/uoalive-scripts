@@ -133,6 +133,9 @@ export const OPL_TIMEOUT = 2000;
 
 export const UNLOAD_RANGE = 2;
 
+// Boards an animal is loaded to, every hue counted together. 0 loads until it refuses instead.
+export const BOARDS_PER_ANIMAL = 1600;
+
 // Deliberately larger than the guards' WEIGHT_BUFFER, so hauling always gets its turn before the
 // overweight stop fires.
 export const HAUL_BUFFER = 120;

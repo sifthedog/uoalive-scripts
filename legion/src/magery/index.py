@@ -1,28 +1,29 @@
 import API
 
-from magery.cast import Caster
 from magery.config import (BUFF_WAIT, CAST_DELAY, CAST_TIMEOUT, CAST_WAIT_SLICE, CASTING_WAIT,
-                           DISABLED_IS_PROGRESS, HEARTBEAT_EVERY, LOG_EVERY, MANA_LOG_EVERY,
-                           MANA_POLL, MAX_BLIND_READS, MAX_CYCLES, MAX_STALE, MAX_THROTTLED,
-                           MEDITATE, MEDITATE_ATTEMPTS, MEDITATE_OUTCOME_TEXT,
+                           DATA_PATH, DISABLED_IS_PROGRESS, HEARTBEAT_EVERY, LOG_EVERY,
+                           MANA_LOG_EVERY, MANA_POLL, MAX_BLIND_READS, MAX_CYCLES, MAX_STALE,
+                           MAX_THROTTLED, MEDITATE, MEDITATE_ATTEMPTS, MEDITATE_OUTCOME_TEXT,
                            MEDITATE_START_TIMEOUT, MEDITATE_TIMEOUT, MEDITATE_TO_FULL, MEDITATION,
                            MEDITATION_BUFF, OUTCOME_TEXT, PROOF_GRACE, REGEN_TIMEOUT,
                            SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT, SAVING_TEXT, SELF_ANSWERS,
                            SELF_TARGET_POLL, SELF_TARGET_TIMEOUT, SKILL, SKILL_POLL, SKILL_TIMEOUT,
                            SKIP_WHEN_BUFFED, STAGES, STEP_DELAY, STOPPED, THROTTLE_BACKOFF,
                            THROTTLE_BACKOFF_MAX)
-from magery.mana import ManaWatch
-from magery.meditate import Meditation
-from magery.stages import cycle_cost, describe_plan, goal_of, make_plan, stage_now
-from magery.target import SelfTarget
 from uo.buffbar import BuffBar
+from uo.cast import Caster
 from uo.gear import in_hand
 from uo.guards import dead, first_reason, stopped
 from uo.heartbeat import Heartbeat
 from uo.log import make_log
 from uo.loop import backoff_for
+from uo.mana import ManaWatch
+from uo.meditate import Meditation
+from uo.record import attempt_log
 from uo.save import SaveWatch
 from uo.skill import SkillReader
+from uo.stages import cycle_cost, describe_plan, goal_of, make_plan, stage_now
+from uo.target import SelfTarget
 from uo.vitals import position_and_mana
 
 log = make_log("mage")
@@ -101,6 +102,7 @@ if start is None:
     stop = "the client is not reporting the skill"
 
 last_value = start
+recorder = attempt_log(DATA_PATH, skill.name(), log)
 
 if stop is None:
     log("%s at %.1f/%.1f - %s" % (skill.name(), start, goal, describe_plan(plan)))
@@ -146,6 +148,10 @@ try:
             continue
 
         blind = 0
+
+        # The gain an attempt earned lands here rather than at the attempt: the client applies
+        # it some time after the outcome, so the row waits a cycle for a value worth writing
+        recorder.settle(value)
 
         # The proof that cannot be argued with: every other signal is circumstantial. Either
         # direction counts - a skill falling because another is gaining is still the shard saying it
@@ -194,12 +200,14 @@ try:
 
         if outcome == "cast":
             casts += 1
+            recorder.record(value, outcome, True)
             since_progress = 0
             unread_said = False
 
         # Counted rather than tallied - the shard charged nothing for it - but the roll happened
         elif outcome == "fizzled":
             fizzled += 1
+            recorder.record(value, outcome, False)
             since_progress = 0
             unread_said = False
 
@@ -220,6 +228,7 @@ try:
 
             if DISABLED_IS_PROGRESS:
                 casts += 1
+                recorder.record(value, outcome, True)
             else:
                 log("the shard toggled %s off - check its buff in STAGES" % stage["spell"])
 
@@ -290,6 +299,7 @@ if API.HasTarget():
     API.CancelTarget()
 
 ended = skill.read()
+recorder.settle(ended)
 
 # A delta rather than a figure: a trainer that cast four hundred times and moved nothing has failed
 log(

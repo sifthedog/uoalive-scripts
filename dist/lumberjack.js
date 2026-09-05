@@ -499,14 +499,20 @@
   };
 
   // src/lib/retry.ts
+  var settled = (options) => {
+    for (let waited = 0; waited < options.timeoutMs; waited += options.pollMs) {
+      sleep(options.pollMs);
+      if (options.landed()) {
+        return true;
+      }
+    }
+    return false;
+  };
   var untilLanded = (options) => {
     for (let attempt = 1; attempt <= options.attempts; attempt++) {
       options.act();
-      for (let waited = 0; waited < options.timeoutMs; waited += options.pollMs) {
-        sleep(options.pollMs);
-        if (options.landed()) {
-          return true;
-        }
+      if (settled(options)) {
+        return true;
       }
       log(`${options.label}: attempt ${attempt} did not land, reissuing`);
     }
@@ -677,6 +683,7 @@
   var MAX_PICKS = 8;
   var OPL_TIMEOUT = 2e3;
   var UNLOAD_RANGE = 2;
+  var BOARDS_PER_ANIMAL = 1600;
   var HAUL_BUFFER = 120;
   var CONVERT_DELAY = 700;
   var MOVE_DELAY = 700;
@@ -1475,6 +1482,8 @@
 
   // src/lumberjacking/haul.ts
   var reported = false;
+  var filled = /* @__PURE__ */ new Set();
+  var saidAllFull = false;
   var pinnedSerials = [...PACK_ANIMAL_SERIALS];
   var pickPackAnimals = () => {
     const resolved = /* @__PURE__ */ new Map();
@@ -1545,24 +1554,46 @@
     step: stepToward,
     isSaving
   }) !== void 0;
-  var moveAll = (packSerial, matches2) => {
-    let previousStacks = Infinity;
-    while (true) {
-      const stacks = collectIn(packContents(), matches2);
-      if (stacks.length === 0 || stacks.length >= previousStacks) {
-        return;
+  var heldIn = (pack, matches2) => {
+    if (BOARDS_PER_ANIMAL <= 0) {
+      return void 0;
+    }
+    if (contentsOf(pack) === void 0) {
+      openContainers(pack.serial);
+    }
+    const contents = contentsOf(pack);
+    return contents === void 0 ? void 0 : totalMatching(matches2, contents);
+  };
+  var moveUpTo = (packSerial, matches2, room) => {
+    let left = room;
+    let previousCarried = Infinity;
+    while (left > 0) {
+      const carried = totalMatching(matches2);
+      if (carried === 0 || carried >= previousCarried) {
+        break;
       }
-      previousStacks = stacks.length;
-      for (const stack of stacks) {
-        player.moveItem(stack.serial, packSerial);
+      previousCarried = carried;
+      for (const stack of collectIn(packContents(), matches2)) {
+        if (left <= 0) {
+          break;
+        }
+        const amount = stack.amount ?? 1;
+        if (amount <= left) {
+          player.moveItem(stack.serial, packSerial);
+          left -= amount;
+        } else {
+          player.moveItem(stack.serial, packSerial, void 0, void 0, void 0, left);
+          left = 0;
+        }
         sleep(MOVE_DELAY);
       }
     }
+    return left;
   };
   var unloadTo = (animals, matches2) => {
     let moved = false;
     for (const animal of animals) {
-      const before = collectIn(packContents(), matches2).length;
+      const before = totalMatching(matches2);
       if (before === 0) {
         break;
       }
@@ -1574,13 +1605,31 @@
         log(`haul: '${nameOf(animal)}' has no reachable backpack`);
         continue;
       }
-      moveAll(pack.serial, matches2);
-      const after = collectIn(packContents(), matches2).length;
+      const held = heldIn(pack, matches2);
+      const room = held === void 0 ? Infinity : BOARDS_PER_ANIMAL - held;
+      if (room <= 0) {
+        filled.add(animal.serial);
+        log(`haul: '${nameOf(animal)}' already holds ${held}, its ${BOARDS_PER_ANIMAL}`);
+        continue;
+      }
+      const spare = moveUpTo(pack.serial, matches2, room);
+      const after = totalMatching(matches2);
       if (after < before) {
         moved = true;
       }
+      if (spare <= 0) {
+        filled.add(animal.serial);
+        log(`haul: '${nameOf(animal)}' took ${before - after}, loaded to its ${BOARDS_PER_ANIMAL}`);
+        continue;
+      }
       if (after > 0) {
-        log(`haul: '${nameOf(animal)}' took ${before - after} of ${before} stacks, trying the next`);
+        const full = !isSaving();
+        if (full) {
+          filled.add(animal.serial);
+        }
+        log(
+          `haul: '${nameOf(animal)}' took ${before - after} of ${before}, ` + (full ? "leaving it out of the rest of the run" : "trying the next")
+        );
       }
     }
     return moved;
@@ -1591,7 +1640,15 @@
       log("haul: no pack animal nearby");
       return false;
     }
-    unloadTo(animals, isBoard);
+    const spare = animals.filter((animal) => !filled.has(animal.serial));
+    if (spare.length === 0) {
+      if (!saidAllFull) {
+        saidAllFull = true;
+        log(`haul: all ${animals.length} pack animal(s) are full, nothing left to load`);
+      }
+    } else {
+      unloadTo(spare, isBoard);
+    }
     const logs = overweight(HAUL_BUFFER) ? collectIn(packContents(), isLog) : [];
     if (logs.length > 0) {
       const total = logs.reduce((sum, item) => sum + (item.amount ?? 1), 0);

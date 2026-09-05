@@ -4,150 +4,6 @@ import API
 import time
 
 
-# src/uo/journal.py
-def said(texts):
-    for text in texts:
-        if API.InJournal(text, False):
-            return True
-
-    return False
-
-
-def matched_bucket(buckets):
-    for name, phrases in buckets:
-        # clearMatches, or a line already read answers the next wait as well
-        if API.InJournalAny(phrases, True):
-            return name
-
-    return None
-
-
-def read_outcome(buckets, budget, poll, between=None):
-    waited = 0.0
-
-    while True:
-        hit = matched_bucket(buckets)
-
-        if hit is not None:
-            return hit
-
-        if waited >= budget:
-            return None
-
-        # Between the slices rather than around the wait: a mobile walks while its attempt resolves
-        if between is not None:
-            between()
-
-        API.Pause(poll)
-        waited += poll
-
-
-# src/magery/cast.py
-class Caster(object):
-    def __init__(self, buckets, standing, self_target, skip_when_buffed, fallback_timeout,
-                 fallback_delay, wait_slice, proof_grace, log):
-        self._buckets = buckets
-        self._standing = standing
-        self._self_target = self_target
-        self._skip_when_buffed = skip_when_buffed
-        self._fallback_timeout = fallback_timeout
-        self._fallback_delay = fallback_delay
-        self._wait_slice = wait_slice
-        self._proof_grace = proof_grace
-        self._log = log
-
-    # The wording wins over the two silent proofs, so it is read first on every slice: a fizzle that
-    # somehow spent mana still reads as a fizzle. Giving up early once IsCasting has gone up and come
-    # back down saves the rest of the budget; a shard that publishes no flag spends all of it.
-    def _read_outcome(self, stage, up_before, mana_before):
-        budget = stage.get("cast_timeout", self._fallback_timeout)
-        wants_self = stage.get("target") == "self"
-        waited = 0.0
-        started = False
-        ended = None
-        answered = False
-
-        while True:
-            hit = matched_bucket(self._buckets)
-
-            if hit is not None:
-                return hit
-
-            # Answered here rather than in a blocking wait before the poll: the pre-target usually
-            # takes the cursor before the script sees one at all, and that wait was spent on every
-            # cast
-            if wants_self and not answered and API.HasTarget():
-                answered = self._self_target.answer()
-
-            # A transition, not a state: a buff already standing proves nothing, which is why
-            # up_before is read before the cast
-            if not up_before and self._standing(stage):
-                return "cast"
-
-            if API.Player.Mana < mana_before:
-                return "cast"
-
-            if API.Player.IsCasting:
-                started = True
-
-            elif started:
-                if ended is None:
-                    ended = waited
-
-                # Not while a self row still has a cursor to answer: the shard raises it as the
-                # incantation ends, so leaving on the flag falling walks out just before it appears
-                elif waited - ended >= self._proof_grace and (answered or not wants_self):
-                    return None
-
-            if waited >= budget:
-                return None
-
-            API.Pause(self._wait_slice)
-            waited += self._wait_slice
-
-    def cast_once(self, stage):
-        up_before = self._standing(stage)
-
-        if self._skip_when_buffed and up_before:
-            return "alreadyUp"
-
-        mana_before = API.Player.Mana
-
-        # Cancelled only when there is one to cancel: an unconditional cancel just before an action
-        # left the next cursor unusable in the run this was copied from
-        if API.HasTarget():
-            API.CancelTarget()
-
-        API.ClearJournal()
-
-        wants_self = stage.get("target") == "self"
-
-        # Queued before the cast, the order the client's own CastSpell example uses. The type has to
-        # be the one the shard raises: these cursors report as beneficial, and a pre-target set to
-        # neutral does not fire at all - it leaves the cursor standing and the cast unspent.
-        if wants_self:
-            try:
-                API.PreTarget(API.Player.Serial, "beneficial")
-            except Exception as error:
-                self._log("PreTarget threw - %s" % error)
-
-        API.CastSpell(stage["spell"])
-
-        outcome = self._read_outcome(stage, up_before, mana_before)
-
-        # Or a queued target the cast never used is still armed for whatever the next one raises
-        if wants_self:
-            API.CancelPreTarget()
-
-        return outcome
-
-    # The row's floor and nothing else. Waiting out IsRecovering as well made a Bless cycle several
-    # seconds of standing still, and it buys nothing the shard does not already say: a cast issued
-    # too early is refused in words, and that refusal costs one flat CASTING_WAIT.
-    def pace(self, stage):
-        API.Pause(stage.get("cast_delay", self._fallback_delay))
-
-
 # src/uo/phrases.py
 """The shard's own wordings, as far as they are the same whatever the script is doing."""
 
@@ -187,6 +43,11 @@ STEP_DELAY = 0.3
 
 
 # src/magery/config.py
+# Every success and failure is appended here, one JSON object per line, for legion/skilldb.py to
+# turn into a table later. "" turns recording off. A bare name lands in TazUO's working directory
+# rather than beside the script - set an absolute path to put it somewhere you will find it.
+DATA_PATH = "skill-attempts.jsonl"
+
 # up_to is the skill value the row trains to, exclusive, so the bands butt together. These are the
 # spells the guides name as gaining without a victim: a punchbag has to be found, kept alive and in
 # range. `buff` is a BuffIconType member name matched against str(buff.Type); `title` is the
@@ -356,7 +217,283 @@ MEDITATE_OUTCOME_TEXT = [
 ]
 
 
-# src/magery/mana.py
+# src/uo/buffbar.py
+class BuffBar(object):
+    """ApiBuff never refreshes after it is handed over, so the bar is re-read every time it matters."""
+
+    def __init__(self, log):
+        self._log = log
+        self._dumped = False
+
+    def active(self):
+        buffs = API.ActiveBuffs()
+
+        if not buffs:
+            return []
+
+        if not self._dumped:
+            self._dumped = True
+            self._log("buff bar: " + ", ".join("%s/%s" % (b.Type, b.Title or "") for b in buffs))
+
+        return buffs
+
+    # title is the localized fallback for a shard whose BuffIconType member name does not match
+    def standing(self, kind, title=None):
+        if not kind:
+            return False
+
+        for buff in self.active():
+            if str(buff.Type) == kind:
+                return True
+
+            if title and title.lower() in (buff.Title or "").lower():
+                return True
+
+        return False
+
+
+# src/uo/journal.py
+def said(texts):
+    for text in texts:
+        if API.InJournal(text, False):
+            return True
+
+    return False
+
+
+def matched_bucket(buckets):
+    for name, phrases in buckets:
+        # clearMatches, or a line already read answers the next wait as well
+        if API.InJournalAny(phrases, True):
+            return name
+
+    return None
+
+
+def read_outcome(buckets, budget, poll, between=None):
+    waited = 0.0
+
+    while True:
+        hit = matched_bucket(buckets)
+
+        if hit is not None:
+            return hit
+
+        if waited >= budget:
+            return None
+
+        # Between the slices rather than around the wait: a mobile walks while its attempt resolves
+        if between is not None:
+            between()
+
+        API.Pause(poll)
+        waited += poll
+
+
+# src/uo/cast.py
+class Caster(object):
+    def __init__(self, buckets, standing, self_target, skip_when_buffed, fallback_timeout,
+                 fallback_delay, wait_slice, proof_grace, log):
+        self._buckets = buckets
+        self._standing = standing
+        self._self_target = self_target
+        self._skip_when_buffed = skip_when_buffed
+        self._fallback_timeout = fallback_timeout
+        self._fallback_delay = fallback_delay
+        self._wait_slice = wait_slice
+        self._proof_grace = proof_grace
+        self._log = log
+
+    # The wording wins over the two silent proofs, so it is read first on every slice: a fizzle that
+    # somehow spent mana still reads as a fizzle. Giving up early once IsCasting has gone up and come
+    # back down saves the rest of the budget; a shard that publishes no flag spends all of it.
+    def _read_outcome(self, stage, up_before, mana_before):
+        budget = stage.get("cast_timeout", self._fallback_timeout)
+        wants_self = stage.get("target") == "self"
+        waited = 0.0
+        started = False
+        ended = None
+        answered = False
+
+        while True:
+            hit = matched_bucket(self._buckets)
+
+            if hit is not None:
+                return hit
+
+            # Answered here rather than in a blocking wait before the poll: the pre-target usually
+            # takes the cursor before the script sees one at all, and that wait was spent on every
+            # cast
+            if wants_self and not answered and API.HasTarget():
+                answered = self._self_target.answer()
+
+            # A transition, not a state: a buff already standing proves nothing, which is why
+            # up_before is read before the cast
+            if not up_before and self._standing(stage):
+                return "cast"
+
+            if API.Player.Mana < mana_before:
+                return "cast"
+
+            if API.Player.IsCasting:
+                started = True
+
+            elif started:
+                if ended is None:
+                    ended = waited
+
+                # Not while a self row still has a cursor to answer: the shard raises it as the
+                # incantation ends, so leaving on the flag falling walks out just before it appears
+                elif waited - ended >= self._proof_grace and (answered or not wants_self):
+                    return None
+
+            if waited >= budget:
+                return None
+
+            API.Pause(self._wait_slice)
+            waited += self._wait_slice
+
+    def cast_once(self, stage):
+        up_before = self._standing(stage)
+
+        if self._skip_when_buffed and up_before:
+            return "alreadyUp"
+
+        mana_before = API.Player.Mana
+
+        # Cancelled only when there is one to cancel: an unconditional cancel just before an action
+        # left the next cursor unusable in the run this was copied from
+        if API.HasTarget():
+            API.CancelTarget()
+
+        API.ClearJournal()
+
+        wants_self = stage.get("target") == "self"
+
+        # Queued before the cast, the order the client's own CastSpell example uses. The type has to
+        # be the one the shard raises - a pre-target set to the wrong one does not fire at all, and
+        # leaves the cursor standing with the cast unspent - so an area spell names its own.
+        if wants_self:
+            try:
+                API.PreTarget(API.Player.Serial, stage.get("target_kind", "beneficial"))
+            except Exception as error:
+                self._log("PreTarget threw - %s" % error)
+
+        API.CastSpell(stage["spell"])
+
+        outcome = self._read_outcome(stage, up_before, mana_before)
+
+        # Or a queued target the cast never used is still armed for whatever the next one raises
+        if wants_self:
+            API.CancelPreTarget()
+
+        return outcome
+
+    # The row's floor and nothing else. Waiting out IsRecovering as well made a Bless cycle several
+    # seconds of standing still, and it buys nothing the shard does not already say: a cast issued
+    # too early is refused in words, and that refusal costs one flat CASTING_WAIT.
+    def pace(self, stage):
+        API.Pause(stage.get("cast_delay", self._fallback_delay))
+
+
+# src/uo/gear.py
+# Either hand: a katana is one-handed and a no-dachi two-handed, and meditation is refused while
+# anything at all is held
+def in_hand():
+    return API.FindLayer("onehanded") or API.FindLayer("twohanded")
+
+
+# src/uo/entity.py
+# API.Player is None whenever the client is between world states - a recall, a server line change,
+# the moment around a death - and reading through it threw a live restock away
+def player():
+    try:
+        return API.Player
+    except Exception:
+        return None
+
+
+def hex_of(value):
+    return "0x%x" % (value & 0xFFFFFFFF)
+
+
+# src/uo/guards.py
+def first_reason(clauses):
+    for clause in clauses:
+        reason = clause()
+
+        if reason is not None:
+            return reason
+
+    return None
+
+
+def stopped(text):
+    def clause():
+        return text if API.StopRequested else None
+
+    return clause
+
+
+def dead():
+    def clause():
+        me = player()
+
+        return "you are dead" if me is not None and me.IsDead else None
+
+    return clause
+
+
+# src/uo/clock.py
+def now():
+    return time.time()
+
+
+# src/uo/heartbeat.py
+class Heartbeat(object):
+    """Proof of life: a loop standing still in silence looks exactly like a hung one."""
+
+    def __init__(self, every, log, noun, vitals):
+        self._every = every
+        self._log = log
+        self._noun = noun
+        self._vitals = vitals
+        self._last = None
+
+    # The clock, not the cycle counter: a cycle can be 300ms or 8s depending on which waits it hit
+    def beat(self, phase, cycle, tally):
+        moment = now()
+
+        # The first call sets the clock rather than logging: the run has just said what it is doing
+        if self._last is None:
+            self._last = moment
+            return
+
+        if moment - self._last < self._every:
+            return
+
+        self._last = moment
+        self._log("still here - %s, cycle %d, %s, %d %s"
+                  % (phase, cycle, self._vitals(), tally, self._noun))
+
+    def reset(self):
+        self._last = now()
+
+
+# src/uo/log.py
+def make_log(prefix):
+    def log(message):
+        API.SysMsg(prefix + ": " + message)
+
+    return log
+
+
+# src/uo/loop.py
+def backoff_for(count, step, cap):
+    return min(step * count, cap)
+
+
+# src/uo/mana.py
 class ManaWatch(object):
     def __init__(self, to_full, poll, log_every, log, stop_reason, meditating):
         self._to_full = to_full
@@ -424,7 +561,7 @@ def settled(timeout, poll, landed):
     return False
 
 
-# src/magery/meditate.py
+# src/uo/meditate.py
 class Meditation(object):
     def __init__(self, skill, buckets, mana, meditating, log, saves, attempts, timeout,
                  start_timeout, wait_slice, regen_timeout):
@@ -504,199 +641,158 @@ class Meditation(object):
         return self._mana.watch(need, self._regen_timeout)
 
 
-# src/magery/stages.py
-def make_plan(stages):
-    return sorted(stages, key=lambda stage: stage["up_to"])
+# src/uo/record.py
+# Written by hand rather than with json.dumps: the bundler admits API and time and nothing else, and
+# a row of numbers and two short strings is not worth relaxing that rule for.
+def quoted(text):
+    out = ['"']
+
+    for character in text:
+        code = ord(character)
+
+        if character == '"' or character == "\\":
+            out.append("\\" + character)
+        elif character == "\n":
+            out.append("\\n")
+        elif character == "\r":
+            out.append("\\r")
+        elif character == "\t":
+            out.append("\\t")
+        # Non-ASCII escaped rather than written through: a character name carrying an accent is
+        # ordinary here, and what encoding the runtime picked for the file is not knowable from in
+        # here
+        elif code < 0x20 or code > 0x7E:
+            out.append("\\u%04x" % code)
+        else:
+            out.append(character)
+
+    out.append('"')
+
+    return "".join(out)
 
 
-def goal_of(plan):
-    return max([stage["up_to"] for stage in plan]) if plan else 0.0
+def skill_json(value):
+    return "null" if value is None else "%.1f" % value
 
 
-# The same table that picks the spell answers whether there is one left, so the two cannot disagree
-def stage_now(plan, value):
-    for stage in plan:
-        if value < stage["up_to"]:
-            return stage
+def append_line(path, line):
+    handle = open(path, "a")
 
-    return None
-
-
-def describe_plan(plan):
-    return ", ".join("%s to %.1f" % (stage["spell"], stage["up_to"]) for stage in plan)
-
-
-# What one casting cycle of a row costs in wall clock, and the denominator a dry mana stretch is
-# priced against
-def cycle_cost(stage, fallback_timeout, fallback_delay):
-    return max(0.1, stage.get("cast_timeout", fallback_timeout)
-               + stage.get("cast_delay", fallback_delay))
-
-
-# src/magery/target.py
-class SelfTarget(object):
-    """The fallback for a cursor the pre-target did not take."""
-
-    def __init__(self, answers, timeout, poll, log):
-        self._answers = answers
-        self._timeout = timeout
-        self._poll = poll
-        self._log = log
-        self._learned = None
-
-    # Target(player) is the one that worked on the probe run and is first for that reason; each is
-    # guarded on its own, because Target is an overloaded C# method and the wrong shape throws
-    def answer(self):
-        for how in [self._learned] if self._learned else self._answers:
-            try:
-                if how == "Target(player)":
-                    API.Target(API.Player)
-                elif how == "TargetSelf":
-                    API.TargetSelf()
-                else:
-                    API.Target(API.Player.Serial)
-            except Exception as error:
-                self._log("%s threw - %s" % (how, error))
-                continue
-
-            if settled(self._timeout, self._poll, lambda: not API.HasTarget()):
-                if self._learned is None:
-                    self._learned = how
-                    self._log("the cursor answers to %s" % how)
-
-                return True
-
-        self._log("the cursor would not take a self target")
-
-        return False
-
-
-# src/uo/buffbar.py
-class BuffBar(object):
-    """ApiBuff never refreshes after it is handed over, so the bar is re-read every time it matters."""
-
-    def __init__(self, log):
-        self._log = log
-        self._dumped = False
-
-    def active(self):
-        buffs = API.ActiveBuffs()
-
-        if not buffs:
-            return []
-
-        if not self._dumped:
-            self._dumped = True
-            self._log("buff bar: " + ", ".join("%s/%s" % (b.Type, b.Title or "") for b in buffs))
-
-        return buffs
-
-    # title is the localized fallback for a shard whose BuffIconType member name does not match
-    def standing(self, kind, title=None):
-        if not kind:
-            return False
-
-        for buff in self.active():
-            if str(buff.Type) == kind:
-                return True
-
-            if title and title.lower() in (buff.Title or "").lower():
-                return True
-
-        return False
-
-
-# src/uo/gear.py
-# Either hand: a katana is one-handed and a no-dachi two-handed, and meditation is refused while
-# anything at all is held
-def in_hand():
-    return API.FindLayer("onehanded") or API.FindLayer("twohanded")
-
-
-# src/uo/entity.py
-# API.Player is None whenever the client is between world states - a recall, a server line change,
-# the moment around a death - and reading through it threw a live restock away
-def player():
     try:
-        return API.Player
-    except Exception:
-        return None
+        handle.write(line + "\n")
+    finally:
+        handle.close()
 
 
-# src/uo/guards.py
-def first_reason(clauses):
-    for clause in clauses:
-        reason = clause()
+class AttemptLog(object):
+    """One JSON object per attempt, appended as it happens.
 
-        if reason is not None:
-            return reason
+    A row is buffered when the attempt resolves and written on the *next* skill read, because the
+    client applies a gain some time after the outcome and a value read straight away is usually
+    still the old one. The cost of that is one row in the air at any moment, which a killed script
+    loses; the alternative is a file that under-reports every gain it exists to measure.
+    """
 
-    return None
-
-
-def stopped(text):
-    def clause():
-        return text if API.StopRequested else None
-
-    return clause
-
-
-def dead():
-    def clause():
-        me = player()
-
-        return "you are dead" if me is not None and me.IsDead else None
-
-    return clause
-
-
-# src/uo/clock.py
-def now():
-    return time.time()
-
-
-# src/uo/heartbeat.py
-class Heartbeat(object):
-    """Proof of life: a loop standing still in silence looks exactly like a hung one."""
-
-    def __init__(self, every, log, noun, vitals):
-        self._every = every
+    def __init__(self, path, character, serial, skill, log, append=None):
+        self._path = path or ""
+        self._character = character or ""
+        self._serial = serial
+        self._skill = skill
         self._log = log
-        self._noun = noun
-        self._vitals = vitals
-        self._last = None
+        self._append = append if append is not None else append_line
+        self._off = not self._path
+        # Milliseconds, not seconds: two runs started inside the same second would mint the
+        # same ids, and the converter reads a repeated id as the same row arriving twice
+        self._run = int(now() * 1000)
+        self._seq = 0
+        self._pending = None
+        self._said = False
 
-    # The clock, not the cycle counter: a cycle can be 300ms or 8s depending on which waits it hit
-    def beat(self, phase, cycle, tally):
-        moment = now()
+    # Asked before an attempt so a caller can skip the work of measuring what it spent
+    def recording(self):
+        return not self._off
 
-        # The first call sets the clock rather than logging: the run has just said what it is doing
-        if self._last is None:
-            self._last = moment
+    # consumed is a list of (name, graphic, hue, quantity) - measured, so an attempt that spent
+    # nothing passes nothing rather than a guess at what the recipe charges
+    def record(self, skill_from, outcome, success, consumed=None, stock=None):
+        if self._off or skill_from is None:
             return
 
-        if moment - self._last < self._every:
+        # A caller that records twice without settling in between would otherwise drop the first
+        # row. This later read is exactly what the missed settle would have passed.
+        self.settle(skill_from)
+
+        self._seq += 1
+        self._pending = {
+            "id": "%s/%d/%d" % (hex_of(self._serial), self._run, self._seq),
+            "at": now(),
+            "from": skill_from,
+            "outcome": outcome,
+            "ok": success,
+            "consumed": list(consumed) if consumed else [],
+            # (before, after) totals of the material the attempt is costed in, written raw so the
+            # subtraction in 'consumed' can be checked without trusting it
+            "stock": tuple(stock) if stock else None,
+        }
+
+    def settle(self, skill_to):
+        pending = self._pending
+        self._pending = None
+
+        if pending is None or self._off:
             return
 
-        self._last = moment
-        self._log("still here - %s, cycle %d, %s, %d %s"
-                  % (phase, cycle, self._vitals(), tally, self._noun))
+        self._write(pending, skill_to)
 
-    def reset(self):
-        self._last = now()
+    def _line(self, row, skill_to):
+        fields = [
+            '"v":1',
+            '"id":%s' % quoted(row["id"]),
+            '"t":%.3f' % row["at"],
+            '"char":%s' % quoted(self._character),
+            '"serial":%s' % quoted(hex_of(self._serial)),
+            '"skill":%s' % quoted(self._skill),
+            '"from":%s' % skill_json(row["from"]),
+            '"to":%s' % skill_json(skill_to),
+            '"outcome":%s' % quoted(row["outcome"]),
+            '"ok":%s' % ("true" if row["ok"] else "false"),
+        ]
+
+        if row.get("stock"):
+            fields.append('"stock_from":%d,"stock_to":%d' % (row["stock"][0], row["stock"][1]))
+
+        if row["consumed"]:
+            fields.append('"consumed":[%s]' % ",".join(
+                '{"name":%s,"graphic":%s,"hue":%d,"qty":%d}'
+                % (quoted(name), quoted(hex_of(graphic)), hue, quantity)
+                for name, graphic, hue, quantity in row["consumed"]
+            ))
+
+        return "{%s}" % ",".join(fields)
+
+    # A run that cannot write its log is still a run: the recorder retires itself and says so once,
+    # rather than ending the training over a file
+    def _write(self, row, skill_to):
+        try:
+            self._append(self._path, self._line(row, skill_to))
+        except Exception as error:
+            self._off = True
+
+            if not self._said:
+                self._said = True
+                self._log("cannot write %s (%s) - not recording this run" % (self._path, error))
 
 
-# src/uo/log.py
-def make_log(prefix):
-    def log(message):
-        API.SysMsg(prefix + ": " + message)
+# The character is read once, here, rather than on every row: it cannot change under a running
+# script, and a client between world states answers None for the player without that meaning the
+# run should stop recording.
+def attempt_log(path, skill, log):
+    me = player()
 
-    return log
+    if me is None and path:
+        log("the client is not reporting the character - rows will not name it")
 
-
-# src/uo/loop.py
-def backoff_for(count, step, cap):
-    return min(step * count, cap)
+    return AttemptLog(path, getattr(me, "Name", ""), getattr(me, "Serial", 0), skill, log)
 
 
 # src/uo/save.py
@@ -784,6 +880,73 @@ class SkillReader(object):
 
             API.Pause(poll)
             waited += poll
+
+
+# src/uo/stages.py
+def make_plan(stages):
+    return sorted(stages, key=lambda stage: stage["up_to"])
+
+
+def goal_of(plan):
+    return max([stage["up_to"] for stage in plan]) if plan else 0.0
+
+
+# The same table that picks the spell answers whether there is one left, so the two cannot disagree
+def stage_now(plan, value):
+    for stage in plan:
+        if value < stage["up_to"]:
+            return stage
+
+    return None
+
+
+def describe_plan(plan):
+    return ", ".join("%s to %.1f" % (stage["spell"], stage["up_to"]) for stage in plan)
+
+
+# What one casting cycle of a row costs in wall clock, and the denominator a dry mana stretch is
+# priced against
+def cycle_cost(stage, fallback_timeout, fallback_delay):
+    return max(0.1, stage.get("cast_timeout", fallback_timeout)
+               + stage.get("cast_delay", fallback_delay))
+
+
+# src/uo/target.py
+class SelfTarget(object):
+    """The fallback for a cursor the pre-target did not take."""
+
+    def __init__(self, answers, timeout, poll, log):
+        self._answers = answers
+        self._timeout = timeout
+        self._poll = poll
+        self._log = log
+        self._learned = None
+
+    # Target(player) is the one that worked on the probe run and is first for that reason; each is
+    # guarded on its own, because Target is an overloaded C# method and the wrong shape throws
+    def answer(self):
+        for how in [self._learned] if self._learned else self._answers:
+            try:
+                if how == "Target(player)":
+                    API.Target(API.Player)
+                elif how == "TargetSelf":
+                    API.TargetSelf()
+                else:
+                    API.Target(API.Player.Serial)
+            except Exception as error:
+                self._log("%s threw - %s" % (how, error))
+                continue
+
+            if settled(self._timeout, self._poll, lambda: not API.HasTarget()):
+                if self._learned is None:
+                    self._learned = how
+                    self._log("the cursor answers to %s" % how)
+
+                return True
+
+        self._log("the cursor would not take a self target")
+
+        return False
 
 
 # src/uo/vitals.py
@@ -880,6 +1043,7 @@ if start is None:
     stop = "the client is not reporting the skill"
 
 last_value = start
+recorder = attempt_log(DATA_PATH, skill.name(), log)
 
 if stop is None:
     log("%s at %.1f/%.1f - %s" % (skill.name(), start, goal, describe_plan(plan)))
@@ -925,6 +1089,10 @@ try:
             continue
 
         blind = 0
+
+        # The gain an attempt earned lands here rather than at the attempt: the client applies
+        # it some time after the outcome, so the row waits a cycle for a value worth writing
+        recorder.settle(value)
 
         # The proof that cannot be argued with: every other signal is circumstantial. Either
         # direction counts - a skill falling because another is gaining is still the shard saying it
@@ -973,12 +1141,14 @@ try:
 
         if outcome == "cast":
             casts += 1
+            recorder.record(value, outcome, True)
             since_progress = 0
             unread_said = False
 
         # Counted rather than tallied - the shard charged nothing for it - but the roll happened
         elif outcome == "fizzled":
             fizzled += 1
+            recorder.record(value, outcome, False)
             since_progress = 0
             unread_said = False
 
@@ -999,6 +1169,7 @@ try:
 
             if DISABLED_IS_PROGRESS:
                 casts += 1
+                recorder.record(value, outcome, True)
             else:
                 log("the shard toggled %s off - check its buff in STAGES" % stage["spell"])
 
@@ -1069,6 +1240,7 @@ if API.HasTarget():
     API.CancelTarget()
 
 ended = skill.read()
+recorder.settle(ended)
 
 # A delta rather than a figure: a trainer that cast four hundred times and moved nothing has failed
 log(

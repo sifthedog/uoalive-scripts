@@ -1,0 +1,227 @@
+import unittest
+
+import uo.record
+from test_support.uo import FakePlayer, install
+from uo.record import AttemptLog, attempt_log, quoted, skill_json
+
+
+class Sink(object):
+    """Stands in for the file, so the suite never touches the disk."""
+
+    def __init__(self, throws=False):
+        self.lines = []
+        self.throws = throws
+
+    def append(self, path, line):
+        if self.throws:
+            raise IOError("read-only")
+
+        self.lines.append((path, line))
+
+
+class QuotedTest(unittest.TestCase):
+    def test_wraps_plain_text_in_quotes(self):
+        self.assertEqual(quoted("Magery"), '"Magery"')
+
+    def test_escapes_a_quote_and_a_backslash(self):
+        self.assertEqual(quoted('a"b\\c'), '"a\\"b\\\\c"')
+
+    def test_escapes_the_line_breaks_a_row_cannot_carry(self):
+        self.assertEqual(quoted("a\nb\tc"), '"a\\nb\\tc"')
+
+    def test_escapes_an_accent_rather_than_writing_it_through(self):
+        self.assertEqual(quoted("João"), '"Jo\\u00e3o"')
+
+
+class SkillJsonTest(unittest.TestCase):
+    def test_writes_one_decimal(self):
+        self.assertEqual(skill_json(74.65), "74.7")
+
+    def test_an_unread_skill_is_null_rather_than_zero(self):
+        self.assertEqual(skill_json(None), "null")
+
+
+class RecordingTest(unittest.TestCase):
+    def setUp(self):
+        self.clock = [1000.0]
+        self.saved = uo.record.now
+        uo.record.now = lambda: self.clock[0]
+        self.sink = Sink()
+        self.said = []
+
+    def tearDown(self):
+        uo.record.now = self.saved
+
+    def make(self, path="attempts.jsonl"):
+        return AttemptLog(path, "Kaldor", 0x40012345, "Magery", self.said.append,
+                          append=self.sink.append)
+
+    def test_a_recorded_attempt_is_not_written_until_it_settles(self):
+        log = self.make()
+        log.record(74.6, "cast", True)
+
+        self.assertEqual(self.sink.lines, [])
+
+        log.settle(74.7)
+
+        self.assertEqual(len(self.sink.lines), 1)
+
+    def test_the_row_carries_both_skill_values_and_the_character(self):
+        log = self.make()
+        log.record(74.6, "cast", True)
+        log.settle(74.7)
+
+        path, line = self.sink.lines[0]
+
+        self.assertEqual(path, "attempts.jsonl")
+        self.assertIn('"char":"Kaldor"', line)
+        self.assertIn('"serial":"0x40012345"', line)
+        self.assertIn('"skill":"Magery"', line)
+        self.assertIn('"from":74.6', line)
+        self.assertIn('"to":74.7', line)
+        self.assertIn('"outcome":"cast"', line)
+        self.assertIn('"ok":true', line)
+
+    def test_a_failure_is_recorded_as_one(self):
+        log = self.make()
+        log.record(74.6, "fizzled", False)
+        log.settle(74.6)
+
+        self.assertIn('"ok":false', self.sink.lines[0][1])
+
+    def test_ids_run_in_sequence_within_a_run(self):
+        log = self.make()
+        log.record(74.6, "cast", True)
+        log.settle(74.6)
+        log.record(74.6, "cast", True)
+        log.settle(74.7)
+
+        self.assertIn('"id":"0x40012345/1000000/1"', self.sink.lines[0][1])
+        self.assertIn('"id":"0x40012345/1000000/2"', self.sink.lines[1][1])
+
+    # Two runs inside the same second would otherwise mint the same ids, and the converter reads a
+    # repeated id as the same row arriving twice
+    def test_two_runs_started_a_millisecond_apart_do_not_share_ids(self):
+        first = self.make()
+        self.clock[0] += 0.001
+        second = self.make()
+
+        first.record(74.6, "cast", True)
+        first.settle(74.6)
+        second.record(74.6, "cast", True)
+        second.settle(74.6)
+
+        self.assertNotEqual(self.sink.lines[0][1], self.sink.lines[1][1])
+
+    def test_settling_with_nothing_recorded_writes_nothing(self):
+        log = self.make()
+        log.settle(74.7)
+
+        self.assertEqual(self.sink.lines, [])
+
+    def test_recording_twice_settles_the_first_against_the_later_read(self):
+        log = self.make()
+        log.record(74.6, "cast", True)
+        log.record(74.7, "cast", True)
+
+        self.assertEqual(len(self.sink.lines), 1)
+        self.assertIn('"to":74.7', self.sink.lines[0][1])
+
+    def test_a_blind_read_settles_the_row_as_unknown_rather_than_dropping_it(self):
+        log = self.make()
+        log.record(74.6, "cast", True)
+        log.settle(None)
+
+        self.assertIn('"to":null', self.sink.lines[0][1])
+
+    def test_an_attempt_with_no_skill_reading_is_not_recorded(self):
+        log = self.make()
+        log.record(None, "cast", True)
+        log.settle(74.7)
+
+        self.assertEqual(self.sink.lines, [])
+
+    def test_an_empty_path_records_nothing(self):
+        log = self.make("")
+        log.record(74.6, "cast", True)
+        log.settle(74.7)
+
+        self.assertEqual(self.sink.lines, [])
+
+
+class ConsumedTest(unittest.TestCase):
+    def setUp(self):
+        self.sink = Sink()
+
+    def make(self):
+        return AttemptLog("attempts.jsonl", "Kaldor", 0x1, "Bowcraft", lambda text: None,
+                          append=self.sink.append)
+
+    def test_an_attempt_that_spent_nothing_carries_no_consumed_field(self):
+        log = self.make()
+        log.record(74.6, "made", True)
+        log.settle(74.7)
+
+        self.assertNotIn("consumed", self.sink.lines[0][1])
+
+    def test_every_material_lands_in_the_row(self):
+        log = self.make()
+        log.record(74.6, "made", True, [("board", 0x1BD7, 0, 1), ("feather", 0x1BD1, 0, 4)])
+        log.settle(74.7)
+
+        self.assertIn(
+            '"consumed":[{"name":"board","graphic":"0x1bd7","hue":0,"qty":1},'
+            '{"name":"feather","graphic":"0x1bd1","hue":0,"qty":4}]',
+            self.sink.lines[0][1])
+
+
+class WriteFailureTest(unittest.TestCase):
+    def setUp(self):
+        self.said = []
+        self.sink = Sink(throws=True)
+        self.log = AttemptLog("attempts.jsonl", "Kaldor", 0x1, "Magery", self.said.append,
+                              append=self.sink.append)
+
+    def test_a_failed_write_says_so_and_does_not_throw(self):
+        self.log.record(74.6, "cast", True)
+        self.log.settle(74.7)
+
+        self.assertEqual(len(self.said), 1)
+        self.assertIn("not recording", self.said[0])
+
+    def test_it_says_so_once_and_stops_trying(self):
+        for _ in range(3):
+            self.log.record(74.6, "cast", True)
+            self.log.settle(74.7)
+
+        self.assertEqual(len(self.said), 1)
+
+
+class AttemptLogFactoryTest(unittest.TestCase):
+    def setUp(self):
+        self.api = install()
+        self.said = []
+
+    def test_it_names_the_character_the_client_reports(self):
+        self.api.Player = FakePlayer(name="Kaldor", serial=0x40012345)
+        sink = Sink()
+        log = attempt_log("attempts.jsonl", "Magery", self.said.append)
+        log._append = sink.append
+        log.record(74.6, "cast", True)
+        log.settle(74.7)
+
+        self.assertIn('"char":"Kaldor"', sink.lines[0][1])
+        self.assertIn('"serial":"0x40012345"', sink.lines[0][1])
+
+    def test_a_client_between_world_states_says_so_and_still_records(self):
+        self.api.Player = None
+        log = attempt_log("attempts.jsonl", "Magery", self.said.append)
+
+        self.assertEqual(len(self.said), 1)
+        self.assertIn("not reporting the character", self.said[0])
+
+    def test_it_stays_quiet_when_recording_is_off(self):
+        self.api.Player = None
+        attempt_log("", "Magery", self.said.append)
+
+        self.assertEqual(self.said, [])

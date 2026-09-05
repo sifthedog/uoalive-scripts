@@ -1,7 +1,7 @@
 import API
 
 from taming.attempt import Tamer
-from taming.config import (AFTER_TAME, ANGRY_DELAY, CHASE_TIMEOUT, CONTEXT_TIMEOUT,
+from taming.config import (AFTER_TAME, ANGRY_DELAY, CHASE_TIMEOUT, CONTEXT_TIMEOUT, DATA_PATH,
                            HEARTBEAT_EVERY, HUNT_RADIUS, KILL_CURSOR_TIMEOUT, KILL_MENU_TEXT,
                            KILL_PICK_POLL, KILL_PICK_TIMEOUT, LOG_EVERY, MAX_ANGRY, MAX_AWAY,
                            MAX_CONTESTED, MAX_CYCLES, MAX_PENDING, MAX_THROTTLED, MENU_RETRY_DELAY,
@@ -23,6 +23,7 @@ from uo.heartbeat import Heartbeat
 from uo.log import make_log
 from uo.loop import StallWatch, backoff_for
 from uo.pace import Pace
+from uo.record import attempt_log
 from uo.retry import settled
 from uo.save import SaveWatch
 from uo.skill import SkillReader, reading
@@ -68,6 +69,8 @@ KILL_CONFIG = {
 start = skill.wait(SKILL_TIMEOUT, SKILL_POLL)
 
 log("%s at %s" % (SKILL_NAME, reading(start)))
+
+recorder = attempt_log(DATA_PATH, skill.name(), log)
 
 tamed = 0
 attempts = 0
@@ -219,6 +222,10 @@ while stop is None:
 
         value = skill.read()
 
+        # The gain an attempt earned lands here rather than at the attempt: the client applies
+        # it some time after the outcome, so the row waits a cycle for a value worth writing
+        recorder.settle(value)
+
         # The one signal no wording can argue with: if the number moved, the taming is working,
         # whatever the journal looked like from in here
         if value is not None and value != last_value:
@@ -249,6 +256,7 @@ while stop is None:
         if outcome == "tamed":
             attempts += 1
             tamed += 1
+            recorder.record(value, outcome, True)
             stall.progressed()
             accepted = True
             done = "'%s' accepted you as master" % name
@@ -257,6 +265,7 @@ while stop is None:
         elif outcome == "failed":
             attempts += 1
             failures += 1
+            recorder.record(value, outcome, False)
             unread_said = False
             pace.landed()
             stall.progressed()
@@ -351,9 +360,12 @@ while stop is None:
 
 reason = stop or "the session ended"
 
+ended = skill.read()
+recorder.settle(ended)
+
 log(
     "%d tamed over %d attempts, %d failed, %s %s -> %s"
-    % (tamed, attempts, failures, SKILL_NAME, reading(start), reading(skill.read()))
+    % (tamed, attempts, failures, SKILL_NAME, reading(start), reading(ended))
 )
 
 # Said only when there were any, and said last so it reads as the footnote it is

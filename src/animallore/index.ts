@@ -1,6 +1,7 @@
 import { die } from '../lib/die.js';
 import { hex, isMobile } from '../lib/entity.js';
 import { backoffFor, createStallWatch } from '../lib/loop.js';
+import { createPace } from '../lib/pace.js';
 import { pickOne } from '../lib/pick.js';
 import { createSkillReader, tenths } from '../lib/skill.js';
 import {
@@ -26,7 +27,6 @@ import { closeStrayGump } from './gump.js';
 import { stopReason } from './guards.js';
 import { beat, heartbeat } from './heartbeat.js';
 import { loreOnce, STOP_REASON } from './lore.js';
-import { createPace } from './pace.js';
 import { isSaving, waitOutSave } from './save.js';
 
 const picked =

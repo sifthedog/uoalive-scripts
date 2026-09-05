@@ -605,14 +605,20 @@
   var describeItem = (item) => item ? `${hex(item.graphic)} '${item.name ?? ""}'` : "empty";
 
   // src/lib/retry.ts
+  var settled = (options) => {
+    for (let waited = 0; waited < options.timeoutMs; waited += options.pollMs) {
+      sleep(options.pollMs);
+      if (options.landed()) {
+        return true;
+      }
+    }
+    return false;
+  };
   var untilLanded = (options) => {
     for (let attempt = 1; attempt <= options.attempts; attempt++) {
       options.act();
-      for (let waited = 0; waited < options.timeoutMs; waited += options.pollMs) {
-        sleep(options.pollMs);
-        if (options.landed()) {
-          return true;
-        }
+      if (settled(options)) {
+        return true;
       }
       log(`${options.label}: attempt ${attempt} did not land, reissuing`);
     }

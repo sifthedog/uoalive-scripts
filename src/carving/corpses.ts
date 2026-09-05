@@ -2,7 +2,7 @@ import { distanceTo, hex } from '../lib/entity.js';
 import { CORPSE_GRAPHIC } from './config.js';
 import { memory, now } from './memory.js';
 
-// No container filter, unlike the arrows sweep: a corpse is never inside anything. graphic reads 0
+// No container filter, unlike the floor sweep: a corpse is never inside anything. graphic reads 0
 // for an entity the client is no longer tracking.
 export const onGround = (): Item[] =>
   client.findAllItemsOfType(CORPSE_GRAPHIC, undefined, 'world').filter((item) => item.graphic !== 0);

@@ -2,6 +2,11 @@ from uo.phrases import SAVE_DONE_TEXT, SAVING_TEXT, STOPPED, THROTTLED_TEXT, UNS
 from uo.timings import HEARTBEAT_EVERY, LOG_EVERY, SAVE_POLL, SAVE_WAIT, STALL_STOP, STALL_WARN
 from uo.timings import THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX
 
+# Every success and failure is appended here, one JSON object per line, for legion/skilldb.py to
+# turn into a table later. "" turns recording off. A bare name lands in TazUO's working directory
+# rather than beside the script - set an absolute path to put it somewhere you will find it.
+DATA_PATH = "skill-attempts.jsonl"
+
 PET_NAME = "sifinha"
 
 # What becomes of the animal once it is yours: 'kill' keeps it and puts it to work, 'release' hands

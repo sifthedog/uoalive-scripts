@@ -21,15 +21,14 @@ export {
   THROTTLE_BACKOFF_MAX,
 } from '../lib/timings.js';
 
+export { CORPSE_GRAPHIC } from '../lib/arts.js';
+
 import { SAVING_TEXT, THROTTLED_TEXT } from '../lib/timings.js';
 
 export { SAVING_TEXT };
 
 // Bounds carves and loots, not the idle polls between them, so a quiet field costs nothing
 export const MAX_CYCLES = 100_000;
-
-// Every corpse in the game is this art; what died is carried in the hue and the name.
-export const CORPSE_GRAPHIC = 0x2006;
 
 export const KNIFE_NAME = 'knife';
 

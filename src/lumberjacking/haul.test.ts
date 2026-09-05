@@ -223,11 +223,56 @@ describe('pickPackAnimals', () => {
 });
 
 describe('unload', () => {
-  const oneAnimalNearby = () => {
+  const oneAnimalNearby = (extra: Partial<Mobile> = {}) => {
     world.client.findAllMobilesOfType.mockImplementation((graphic: number) =>
-      graphic === BEETLE ? [beetle(1)] : [],
+      graphic === BEETLE ? [beetle(1, extra)] : [],
     );
-    world.client.findObject.mockImplementation((serial: number) => beetle(serial));
+    world.client.findObject.mockImplementation((serial: number) => beetle(serial, extra));
+  };
+
+  // A full animal from here is one whose pack takes the moves and lets nothing leave the backpack -
+  // moveItem answers nothing at all, the way installGlobals leaves it
+  const packRefusesEverything = (contents: Item[]) => {
+    Object.defineProperty(world.player, 'backpack', {
+      configurable: true,
+      get: () => ({ serial: 0x40000000, contents }),
+    });
+
+    world.client.findItemOnLayer.mockImplementation((_serial: number, layer: number) =>
+      layer === Layers.Backpack ? item({ serial: ANIMAL_PACK, graphic: 0x0e76 }) : undefined,
+    );
+  };
+
+  // Two animals, the first of which only ever accepts stack 5. Hands back the backpack it reads, so
+  // a test can load it and then load it again for a second haul.
+  const oneFullOneSpare = (): Item[] => {
+    const full = beetle(1, { x: 100 });
+    const spare = beetle(2, { x: 101 });
+
+    world.client.findAllMobilesOfType.mockImplementation((graphic: number) =>
+      graphic === BEETLE ? [full, spare] : [],
+    );
+    world.client.findObject.mockImplementation((serial: number) =>
+      serial === 1 ? full : serial === 2 ? spare : undefined,
+    );
+
+    const remaining: Item[] = [];
+
+    Object.defineProperty(world.player, 'backpack', {
+      configurable: true,
+      get: () => ({ serial: 0x40000000, contents: remaining }),
+    });
+    world.client.findItemOnLayer.mockImplementation((serial: number) =>
+      item({ serial: serial === 1 ? ANIMAL_PACK : ANIMAL_PACK + 1, graphic: 0x0e76 }),
+    );
+    world.player.moveItem.mockImplementation((serial: number, into: number) => {
+      if (into === ANIMAL_PACK && serial !== 5) return;
+
+      const at = remaining.findIndex((i) => i.serial === serial);
+      if (at >= 0) remaining.splice(at, 1);
+    });
+
+    return remaining;
   };
 
   const overweight = () => {
@@ -317,7 +362,7 @@ describe('unload', () => {
     unload();
 
     expect(world.client.findItemOnLayer).toHaveBeenCalledWith(1, Layers.Backpack);
-    expect(world.player.use).not.toHaveBeenCalled();
+    expect(world.player.use).not.toHaveBeenCalledWith(1);
   });
 
   it('falls back to a double-click only when the layer comes back empty', async () => {
@@ -334,37 +379,253 @@ describe('unload', () => {
 
   // An animal that stops accepting is full rather than broken, so what is left goes to the next
   it('carries the leftovers on to the next animal when one fills up', async () => {
-    const full = beetle(1, { x: 100 });
-    const spare = beetle(2, { x: 101 });
-    world.client.findAllMobilesOfType.mockImplementation((graphic: number) =>
-      graphic === BEETLE ? [full, spare] : [],
-    );
-    world.client.findObject.mockImplementation((serial: number) =>
-      serial === 1 ? full : serial === 2 ? spare : undefined,
-    );
-
-    const remaining = [
+    const remaining = oneFullOneSpare();
+    remaining.push(
       item({ serial: 5, graphic: BOARD, amount: 20 }),
       item({ serial: 6, graphic: BOARD, amount: 20 }),
-    ];
-    Object.defineProperty(world.player, 'backpack', {
-      configurable: true,
-      get: () => ({ serial: 0x40000000, contents: remaining }),
-    });
-    world.client.findItemOnLayer.mockImplementation((serial: number) =>
-      item({ serial: serial === 1 ? ANIMAL_PACK : ANIMAL_PACK + 1, graphic: 0x0e76 }),
     );
-    // The first animal takes one stack and then refuses the rest
-    world.player.moveItem.mockImplementation((serial: number, into: number) => {
-      if (into === ANIMAL_PACK && serial !== 5) return;
-      const at = remaining.findIndex((i) => i.serial === serial);
-      if (at >= 0) remaining.splice(at, 1);
-    });
 
     const { unload } = await loadHaul();
 
     expect(unload()).toBe(true);
     expect(world.player.moveItem).toHaveBeenCalledWith(6, ANIMAL_PACK + 1);
-    expect(said('trying the next')).toBe(true);
+    expect(said('leaving it out of the rest of the run')).toBe(true);
+  });
+
+  describe('an animal that has already refused a load', () => {
+    // The point of the whole thing: the walk and one move per stack, paid again every haul, to prove
+    // what the last haul had already found out
+    it('is not walked to again', async () => {
+      oneAnimalNearby();
+      packRefusesEverything([item({ serial: 5, graphic: BOARD, amount: 20 })]);
+      const { unload } = await loadHaul();
+
+      unload();
+      world.player.moveItem.mockClear();
+      unload();
+
+      expect(world.player.moveItem).not.toHaveBeenCalled();
+    });
+
+    it('is named when it is written off', async () => {
+      oneAnimalNearby({ name: 'Bessie' });
+      packRefusesEverything([item({ serial: 5, graphic: BOARD, amount: 20 })]);
+      const { unload } = await loadHaul();
+
+      unload();
+
+      expect(said("'Bessie' took 0 of 20, leaving it out of the rest of the run")).toBe(true);
+    });
+
+    // Only the full one: the animal that took the leftovers has room and is the one to fill next
+    it('does not take the rest of the herd with it', async () => {
+      const remaining = oneFullOneSpare();
+      remaining.push(
+        item({ serial: 5, graphic: BOARD, amount: 20 }),
+        item({ serial: 6, graphic: BOARD, amount: 20 }),
+      );
+
+      const { unload } = await loadHaul();
+
+      unload();
+      world.player.moveItem.mockClear();
+      remaining.push(item({ serial: 7, graphic: BOARD, amount: 20 }));
+      unload();
+
+      expect(world.player.moveItem).toHaveBeenCalledWith(7, ANIMAL_PACK + 1);
+      expect(world.player.moveItem).not.toHaveBeenCalledWith(7, ANIMAL_PACK);
+    });
+
+    // A save refuses every move at once, so an animal would be written off for the rest of the run
+    // over a five second pause
+    it('is not written off over a world save', async () => {
+      oneAnimalNearby();
+      packRefusesEverything([item({ serial: 5, graphic: BOARD, amount: 20 })]);
+      world.journal.containsText.mockReturnValue(true);
+      const { unload } = await loadHaul();
+
+      unload();
+      world.player.moveItem.mockClear();
+      unload();
+
+      expect(world.player.moveItem).toHaveBeenCalledWith(5, ANIMAL_PACK);
+      expect(said('trying the next')).toBe(true);
+    });
+
+    // The animal is still there, so the run goes on converting and chopping until the overweight
+    // stop or the stall watch ends it - it just stops walking the herd to find out
+    it('leaves the run hauling once every one of them is full', async () => {
+      oneAnimalNearby();
+      packRefusesEverything([item({ serial: 5, graphic: BOARD, amount: 20 })]);
+      const { unload } = await loadHaul();
+
+      unload();
+
+      expect(unload()).toBe(true);
+      expect(said('all 1 pack animal(s) are full')).toBe(true);
+    });
+
+    it('says they are all full once rather than once a haul', async () => {
+      oneAnimalNearby();
+      packRefusesEverything([item({ serial: 5, graphic: BOARD, amount: 20 })]);
+      const { unload } = await loadHaul();
+
+      unload();
+      unload();
+      unload();
+
+      expect(world.log.mock.calls.filter(([line]) => String(line).includes('are full'))).toHaveLength(
+        1,
+      );
+    });
+  });
+
+  describe('the boards an animal is loaded to', () => {
+    // The animal's own pack, read for the cap. Moves land in it, splitting the stack when moveItem
+    // is passed an amount, so a second pass sees what the first one left behind.
+    const animalHolding = (held: Item[], carried: Item[]) => {
+      const inside = [...held];
+      const remaining = [...carried];
+
+      Object.defineProperty(world.player, 'backpack', {
+        configurable: true,
+        get: () => ({ serial: 0x40000000, contents: remaining }),
+      });
+
+      world.client.findItemOnLayer.mockImplementation((_serial: number, layer: number) =>
+        layer === Layers.Backpack
+          ? item({ serial: ANIMAL_PACK, graphic: 0x0e76, contents: inside })
+          : undefined,
+      );
+
+      world.player.moveItem.mockImplementation(
+        (serial: number, _into: number, _x?: number, _y?: number, _z?: number, amount?: number) => {
+          const at = remaining.findIndex((i) => i.serial === serial);
+          if (at < 0) return;
+
+          const stack = remaining[at];
+          const whole = stack.amount ?? 1;
+          const moved = Math.min(amount ?? whole, whole);
+
+          if (moved >= whole) remaining.splice(at, 1);
+          else stack.amount = whole - moved;
+
+          inside.push(item({ serial: 0x900 + inside.length, graphic: stack.graphic, amount: moved }));
+        },
+      );
+
+      return { inside, remaining };
+    };
+
+    it('walks past an animal that is already at its cap', async () => {
+      oneAnimalNearby({ name: 'Bessie' });
+      animalHolding(
+        [item({ serial: 9, graphic: BOARD, amount: 1600 })],
+        [item({ serial: 5, graphic: BOARD, amount: 20 })],
+      );
+      const { unload } = await loadHaul();
+
+      unload();
+
+      expect(world.player.moveItem).not.toHaveBeenCalled();
+      expect(said("'Bessie' already holds 1600, its 1600")).toBe(true);
+    });
+
+    // The requirement: hue1 + hue2 + ... = 1600, so coloured wood counts towards the same cap
+    it('counts every hue towards the one cap', async () => {
+      oneAnimalNearby();
+      animalHolding(
+        [
+          item({ serial: 9, graphic: BOARD, amount: 800, hue: 0 }),
+          item({ serial: 10, graphic: BOARD, amount: 800, hue: 0x4a8 }),
+        ],
+        [item({ serial: 5, graphic: BOARD, amount: 20 })],
+      );
+      const { unload } = await loadHaul();
+
+      unload();
+
+      expect(world.player.moveItem).not.toHaveBeenCalled();
+    });
+
+    it('splits the stack that would take it past the cap', async () => {
+      oneAnimalNearby();
+      const { remaining } = animalHolding(
+        [item({ serial: 9, graphic: BOARD, amount: 1500 })],
+        [item({ serial: 5, graphic: BOARD, amount: 300 })],
+      );
+      const { unload } = await loadHaul();
+
+      unload();
+
+      expect(world.player.moveItem).toHaveBeenCalledWith(
+        5,
+        ANIMAL_PACK,
+        undefined,
+        undefined,
+        undefined,
+        100,
+      );
+      expect(remaining.map((i) => i.amount)).toEqual([200]);
+    });
+
+    it('leaves an animal it filled out of the rest of the run', async () => {
+      oneAnimalNearby({ name: 'Bessie' });
+      animalHolding(
+        [item({ serial: 9, graphic: BOARD, amount: 1500 })],
+        [item({ serial: 5, graphic: BOARD, amount: 300 })],
+      );
+      const { unload } = await loadHaul();
+
+      unload();
+      world.player.moveItem.mockClear();
+      unload();
+
+      expect(said("'Bessie' took 100, loaded to its 1600")).toBe(true);
+      expect(world.player.moveItem).not.toHaveBeenCalled();
+    });
+
+    it('moves whole stacks without an amount while there is room for them', async () => {
+      oneAnimalNearby();
+      animalHolding(
+        [],
+        [
+          item({ serial: 5, graphic: BOARD, amount: 100 }),
+          item({ serial: 6, graphic: BOARD, amount: 100 }),
+        ],
+      );
+      const { unload } = await loadHaul();
+
+      unload();
+
+      expect(world.player.moveItem).toHaveBeenCalledWith(5, ANIMAL_PACK);
+      expect(world.player.moveItem).toHaveBeenCalledWith(6, ANIMAL_PACK);
+      expect(said('loaded to its')).toBe(false);
+    });
+
+    // An unopened pack answers undefined, and read as 0 an animal already carrying its load would
+    // be filled all over again
+    it('loads until it refuses when the pack will not say what is in it', async () => {
+      oneAnimalNearby();
+      packAcceptsEverything([item({ serial: 5, graphic: BOARD, amount: 2000 })]);
+      const { unload } = await loadHaul();
+
+      unload();
+
+      expect(world.player.moveItem).toHaveBeenCalledWith(5, ANIMAL_PACK);
+    });
+
+    it('loads until it refuses when the cap is off', async () => {
+      oneAnimalNearby();
+      animalHolding(
+        [item({ serial: 9, graphic: BOARD, amount: 1600 })],
+        [item({ serial: 5, graphic: BOARD, amount: 20 })],
+      );
+      const { unload } = await loadHaul({ BOARDS_PER_ANIMAL: 0 });
+
+      unload();
+
+      expect(world.player.moveItem).toHaveBeenCalledWith(5, ANIMAL_PACK);
+    });
   });
 });

@@ -17,5 +17,8 @@ Thumbs.db
 *.log
 npm-debug.log*
 
+# Python bytecode from a local py_compile of legion/
+__pycache__/
+
 # dist/ is intentionally committed: the built files in it are the paste-ready
 # scripts for the ClassicUO client, so they need to be readable from the repo.

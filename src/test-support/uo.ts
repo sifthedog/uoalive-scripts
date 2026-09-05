@@ -171,6 +171,8 @@ const enumOf = (members: Record<string, number>): Record<string, number | string
 
 // Real values, copied from types/classicuo.d.ts, and only the members the scripts name
 export const Skills = enumOf({
+  AnimalLore: 2,
+  AnimalTaming: 35,
   Hiding: 21,
   Lockpicking: 24,
   Magery: 25,
@@ -252,6 +254,8 @@ export interface FakePlayer {
   maxHits: number;
   mana: number;
   maxMana: number;
+  followers: number;
+  maxFollowers: number;
   backpack?: { serial: number; contents?: Item[] };
   // The whole keyed set from types/classicuo.d.ts, not just the three the harvest scripts read: gear
   // strips fifteen layers, and a test that cannot dress a character in a tunic cannot pin it.
@@ -318,12 +322,41 @@ export interface FakeTarget {
 
   cancel: ReturnType<typeof vi.fn>;
   clearQueue: ReturnType<typeof vi.fn>;
+  entity: ReturnType<typeof vi.fn>;
   self: ReturnType<typeof vi.fn>;
   wait: ReturnType<typeof vi.fn>;
   terrain: ReturnType<typeof vi.fn>;
   waitTargetEntity: ReturnType<typeof vi.fn>;
   waitTargetSelf: ReturnType<typeof vi.fn>;
   query: ReturnType<typeof vi.fn>;
+}
+
+export interface FakeGump {
+  exists: ReturnType<typeof vi.fn>;
+  findOrWait: ReturnType<typeof vi.fn>;
+  waitForVendorGumpData: ReturnType<typeof vi.fn>;
+  lastSerial: number;
+  last: {
+    hasButton: ReturnType<typeof vi.fn>;
+    reply: ReturnType<typeof vi.fn>;
+    close: ReturnType<typeof vi.fn>;
+    exists: boolean;
+  } | null;
+}
+
+export interface FakePopupMenu {
+  request: ReturnType<typeof vi.fn>;
+  waitUntilOpen: ReturnType<typeof vi.fn>;
+  waitForContent: ReturnType<typeof vi.fn>;
+  reply: ReturnType<typeof vi.fn>;
+  close: ReturnType<typeof vi.fn>;
+  exists: boolean;
+}
+
+export interface FakePrompt {
+  waitUntilOpen: ReturnType<typeof vi.fn>;
+  reply: ReturnType<typeof vi.fn>;
+  exists: boolean;
 }
 
 export interface FakeJournal {
@@ -337,7 +370,9 @@ export interface FakeWorld {
   client: FakeClient;
   target: FakeTarget;
   journal: FakeJournal;
-  gump: Record<string, ReturnType<typeof vi.fn>>;
+  popupMenu: FakePopupMenu;
+  prompt: FakePrompt;
+  gump: FakeGump;
   log: ReturnType<typeof vi.fn>;
   sleep: ReturnType<typeof vi.fn>;
   exit: ReturnType<typeof vi.fn>;
@@ -348,6 +383,8 @@ export interface WorldOverrides {
   client?: Partial<FakeClient>;
   target?: Partial<FakeTarget>;
   journal?: Partial<FakeJournal>;
+  popupMenu?: Partial<FakePopupMenu>;
+  prompt?: Partial<FakePrompt>;
   backpack?: Item[];
 }
 
@@ -372,6 +409,10 @@ const defaults = (): FakeWorld => {
       maxHits: 100,
       mana: 50,
       maxMana: 50,
+
+      // Room to spare, which is this fixture's inert answer to 'can you take another pet'
+      followers: 0,
+      maxFollowers: 5,
 
       backpack: { serial: 0x40000000, contents: [] },
       equippedItems: {},
@@ -412,6 +453,7 @@ const defaults = (): FakeWorld => {
       open: false,
       cancel: vi.fn(),
       clearQueue: vi.fn(),
+      entity: vi.fn(),
       self: vi.fn(),
       wait: vi.fn(() => true),
       terrain: vi.fn(),
@@ -419,6 +461,19 @@ const defaults = (): FakeWorld => {
       waitTargetSelf: vi.fn(() => true),
       // Inert like the rest: a cursor nobody clicks answers with nothing
       query: vi.fn(() => undefined),
+    },
+    popupMenu: {
+      request: vi.fn(() => true),
+      waitUntilOpen: vi.fn(() => false),
+      waitForContent: vi.fn(() => null),
+      reply: vi.fn(),
+      close: vi.fn(),
+      exists: false,
+    },
+    prompt: {
+      waitUntilOpen: vi.fn(() => false),
+      reply: vi.fn(),
+      exists: false,
     },
     journal: {
       clear: vi.fn(),
@@ -429,6 +484,8 @@ const defaults = (): FakeWorld => {
       exists: vi.fn(() => false),
       findOrWait: vi.fn(() => undefined),
       waitForVendorGumpData: vi.fn(() => undefined),
+      lastSerial: 0,
+      last: null,
     },
     log: vi.fn(),
     // A no-op, so the poll loops in pickaxe.ts and boards.ts finish instantly instead of
@@ -462,6 +519,8 @@ export const installGlobals = (overrides: WorldOverrides = {}): FakeWorld => {
   Object.assign(world.client, overrides.client);
   Object.assign(world.target, overrides.target);
   Object.assign(world.journal, overrides.journal);
+  Object.assign(world.popupMenu, overrides.popupMenu);
+  Object.assign(world.prompt, overrides.prompt);
 
   if (overrides.backpack) {
     world.player.backpack = { serial: 0x40000000, contents: overrides.backpack };
@@ -473,6 +532,8 @@ export const installGlobals = (overrides: WorldOverrides = {}): FakeWorld => {
   scope.client = world.client;
   scope.target = world.target;
   scope.journal = world.journal;
+  scope.popupMenu = world.popupMenu;
+  scope.prompt = world.prompt;
   scope.Gump = world.gump;
   scope.Directions = Directions;
   scope.Layers = Layers;

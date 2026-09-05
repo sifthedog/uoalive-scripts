@@ -36,6 +36,28 @@
     };
   };
 
+  // src/lib/pace.ts
+  var createPace = (options) => {
+    let delay = options.floor;
+    let landed = 0;
+    return {
+      delay: () => delay,
+      refused: () => {
+        landed = 0;
+        delay = Math.min(delay + options.step, options.max);
+        return delay;
+      },
+      landed: () => {
+        if (++landed < options.easeAfter) {
+          return delay;
+        }
+        landed = 0;
+        delay = Math.max(options.floor, delay - options.step);
+        return delay;
+      }
+    };
+  };
+
   // src/lib/opl.ts
   var threw = false;
   var queryOPL = (serial, timeoutMs, prefix) => {
@@ -275,28 +297,6 @@
       return outcomeFor(said) ?? "unknown";
     }
     return opened ? "lored" : "unknown";
-  };
-
-  // src/animallore/pace.ts
-  var createPace = (options) => {
-    let delay = options.floor;
-    let landed = 0;
-    return {
-      delay: () => delay,
-      refused: () => {
-        landed = 0;
-        delay = Math.min(delay + options.step, options.max);
-        return delay;
-      },
-      landed: () => {
-        if (++landed < options.easeAfter) {
-          return delay;
-        }
-        landed = 0;
-        delay = Math.max(options.floor, delay - options.step);
-        return delay;
-      }
-    };
   };
 
   // src/lib/save.ts

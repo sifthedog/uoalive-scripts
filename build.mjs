@@ -2,12 +2,13 @@ import * as esbuild from 'esbuild';
 
 const ENTRIES = [
   { in: 'src/animallore/index.ts', out: 'animal-lore' },
-  { in: 'src/arrows/index.ts', out: 'arrows' },
   { in: 'src/boxes/index.ts', out: 'boxes' },
   { in: 'src/boxes/keys.ts', out: 'keys' },
   { in: 'src/buffs/index.ts', out: 'buffs' },
   { in: 'src/carving/index.ts', out: 'carve' },
   { in: 'src/chivalry/index.ts', out: 'chivalry' },
+  { in: 'src/corpse/index.ts', out: 'open-corpse' },
+  { in: 'src/evalint/index.ts', out: 'eval-int' },
   { in: 'src/hiding/index.ts', out: 'hiding' },
   { in: 'src/lockpicking/index.ts', out: 'lockpick-training' },
   { in: 'src/lumberjacking/index.ts', out: 'lumberjack' },
@@ -18,6 +19,8 @@ const ENTRIES = [
   { in: 'src/selling/index.ts', out: 'sell' },
   { in: 'src/selling/watch.ts', out: 'sell-watch' },
   { in: 'src/stow/index.ts', out: 'stow' },
+  { in: 'src/sweep/index.ts', out: 'sweep' },
+  { in: 'src/taming/index.ts', out: 'tame' },
   { in: 'src/training/index.ts', out: 'train' },
   { in: 'src/transfer/index.ts', out: 'transfer' },
 ];

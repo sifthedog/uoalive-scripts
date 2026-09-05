@@ -2,6 +2,11 @@ from uo.phrases import SAVE_DONE_TEXT, SAVING_TEXT, STOPPED, THROTTLED_TEXT, UNS
 from uo.timings import HEARTBEAT_EVERY, LOG_EVERY, SAVE_POLL, SAVE_WAIT, STEP_DELAY
 from uo.timings import THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX
 
+# Every success and failure is appended here, one JSON object per line, for legion/skilldb.py to
+# turn into a table later. "" turns recording off. A bare name lands in TazUO's working directory
+# rather than beside the script - set an absolute path to put it somewhere you will find it.
+DATA_PATH = "skill-attempts.jsonl"
+
 # up_to is the skill value the row trains to, exclusive, so the bands butt together. These are the
 # spells the guides name as gaining without a victim: a punchbag has to be found, kept alive and in
 # range. `buff` is a BuffIconType member name matched against str(buff.Type); `title` is the

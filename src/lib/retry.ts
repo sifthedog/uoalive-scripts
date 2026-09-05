@@ -1,3 +1,21 @@
+// The shard changes the world after the call has already returned, so the proof is polled for rather
+// than assumed.
+export const settled = (options: {
+  timeoutMs: number;
+  pollMs: number;
+  landed: () => boolean;
+}): boolean => {
+  for (let waited = 0; waited < options.timeoutMs; waited += options.pollMs) {
+    sleep(options.pollMs);
+
+    if (options.landed()) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
 // An equip, a dismount and anything else the shard does asynchronously: the call returns before the
 // world has changed. Poll for the proof, and reissue rather than give up on the first attempt - a
 // throttled action looks exactly like one that never arrived.
@@ -12,12 +30,8 @@ export const untilLanded = (options: {
   for (let attempt = 1; attempt <= options.attempts; attempt++) {
     options.act();
 
-    for (let waited = 0; waited < options.timeoutMs; waited += options.pollMs) {
-      sleep(options.pollMs);
-
-      if (options.landed()) {
-        return true;
-      }
+    if (settled(options)) {
+      return true;
     }
 
     log(`${options.label}: attempt ${attempt} did not land, reissuing`);
