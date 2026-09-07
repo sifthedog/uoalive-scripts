@@ -1,6 +1,6 @@
 import API
 
-from uo.journal import said
+from uo.journal import forget, said
 
 
 class SaveWatch(object):
@@ -23,7 +23,7 @@ class SaveWatch(object):
         # threw the completion away and then stood still for the whole of the wait
         ended = "the shard had already finished" if said(self._done_text) else None
 
-        API.ClearJournal()
+        forget(self._saving_text + self._done_text)
 
         waited = 0.0
 

@@ -55,6 +55,51 @@ class PickNearestTest(unittest.TestCase):
         best, _cooling, _walled = pick_nearest([far, near], self.memory, 24, 2)
 
         self.assertEqual((best["x"], best["y"]), (105, 100))
+        self.assertEqual(self.api.path_probes, [(101, 100), (105, 100)])
+
+    def test_stops_asking_once_no_later_candidate_can_beat_the_best(self):
+        self._walkable((101, 100, 1), (110, 100, 8))
+
+        best, _cooling, _walled = pick_nearest([tile(110, 100), tile(101, 100)],
+                                              self.memory, 24, 2)
+
+        self.assertEqual((best["x"], best["y"]), (101, 100))
+        self.assertEqual(self.api.path_probes, [(101, 100)])
+
+    def test_a_tile_in_reach_ends_the_probing_at_once(self):
+        self._walkable((110, 100, 8))
+
+        best, _cooling, _walled = pick_nearest([tile(110, 100), tile(101, 100)],
+                                              self.memory, 24, 2, True)
+
+        self.assertEqual((best["x"], best["y"]), (101, 100))
+        self.assertEqual(self.api.path_probes, [])
+
+    def test_two_tiles_the_same_way_off_cost_one_probe(self):
+        self._walkable((103, 100, 2), (100, 103, 2))
+
+        best, _cooling, _walled = pick_nearest([tile(103, 100), tile(100, 103)],
+                                              self.memory, 24, 2)
+
+        self.assertEqual((best["x"], best["y"]), (103, 100))
+        self.assertEqual(self.api.path_probes, [(103, 100)])
+
+    def test_counts_the_probes_it_paid_for(self):
+        stats = {}
+        self._walkable((105, 100, 3))
+
+        pick_nearest([tile(101, 100), tile(105, 100)], self.memory, 24, 2, False, stats)
+
+        self.assertEqual(stats["probes"], 2)
+
+    def test_parks_a_tile_with_no_route(self):
+        walled = tile(101, 100)
+        self._walkable((105, 100, 3))
+
+        pick_nearest([walled, tile(105, 100)], self.memory, 24, 2)
+
+        self.assertTrue(self.memory.is_blocked(walled))
+        self.assertEqual(self.memory.blocked_until(walled), 1300.0)
 
     def test_counts_the_ones_with_no_route(self):
         self._walkable((105, 100, 3))
@@ -94,4 +139,4 @@ class PickNearestTest(unittest.TestCase):
         candidates = [tile(100 + n, 100) for n in range(1, 10)]
         pick_nearest(candidates, self.memory, 3, 2)
 
-        self.assertEqual(len(self.api.paths), 0)
+        self.assertEqual(self.api.path_probes, [(101, 100), (102, 100), (103, 100)])

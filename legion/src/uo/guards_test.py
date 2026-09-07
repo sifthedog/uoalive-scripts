@@ -64,6 +64,18 @@ class ClauseTest(unittest.TestCase):
     def test_skill_capped_is_quiet_for_no_skill_name(self):
         self.assertIsNone(skill_capped(None)())
 
+    def test_skill_capped_reads_the_base_and_not_what_jewelry_adds(self):
+        self.api.skills["Magery"] = skill(105.0, 100.0)
+        self.api.skills["Magery"].Base = 99.0
+
+        self.assertIsNone(skill_capped("Magery")())
+
+    def test_skill_capped_reports_the_base(self):
+        self.api.skills["Magery"] = skill(115.0, 100.0)
+        self.api.skills["Magery"].Base = 100.0
+
+        self.assertEqual(skill_capped("Magery")(), "Magery is capped at 100.0")
+
     def test_hurt_ignores_a_hitsmax_of_zero(self):
         self.api.Player.Hits = 1
         self.api.Player.HitsMax = 0

@@ -1,16 +1,17 @@
 import API
 
-from mining.config import (LOG_EVERY, MAX_CYCLES, MAX_NO_CURSOR, MAX_NO_TOOL, MAX_THROTTLED,
-                           MAX_UNKNOWN, MAX_VEIN_WALKS, MAX_PATH_PROBES, MINE_RANGE, MINE_Z_RANGE,
-                           NOT_ORE_GRAPHICS, NOTHING_NEARBY_HINT, ORE_SETTLE_POLL,
-                           ORE_SETTLE_TIMEOUT, ORE_STATIC_NAME, ORE_TILE_GRAPHICS,
-                           OUTCOME_TEXT, PATHFIND_TIMEOUT, PICK_BEETLE, RESPAWN_DELAY, SCAN_RADIUS,
+from mining.config import (HARVEST_BANK, LOG_EVERY, MAX_CYCLES, MAX_NO_CURSOR, MAX_NO_TOOL,
+                           MAX_THROTTLED, MAX_UNKNOWN, MAX_VEIN_WALKS, MAX_PATH_PROBES, MINE_RANGE,
+                           MINE_Z_RANGE, NOT_ORE_GRAPHICS, NOTHING_NEARBY_HINT, ORE_SETTLE_POLL,
+                           ORE_SETTLE_TIMEOUT, ORE_STATIC_NAME, ORE_TILE_GRAPHICS, OUTCOME_TEXT,
+                           PATHFIND_TIMEOUT, PICK_BEETLE, RESPAWN_DELAY, SCAN_RADIUS, SLOW_CYCLE,
                            STEP_DELAY, SURVEY_ARTS, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX,
                            UNREACHABLE_DELAY, IDLE_LOG_EVERY, IDLE_POLL)
 from mining.dig import Digger
 from mining.relieve import Relief
 from mining.run import Run
 from mining.vein import Veins
+from uo.clock import now
 from uo.loop import backoff_for
 from uo.roam import Roam
 from uo.tiles import TileMemory
@@ -43,6 +44,7 @@ veins = Veins(Terrain(), memory, {
     "scan_radius": SCAN_RADIUS,
     "probes": MAX_PATH_PROBES,
     "respawn_delay": RESPAWN_DELAY,
+    "bank": HARVEST_BANK,
 }, log)
 roam = Roam(veins, memory, saves, threat, {
     "noun": "vein",
@@ -86,12 +88,34 @@ idled = 0
 reported = 0
 barren = 0
 cycle = 0
+cycle_started = now()
+spent = {}
+
+
+def describe_spent():
+    parts = []
+
+    if "walk" in spent:
+        scan = veins.stats
+        parts.append("scan %.1fs (%d reads, %d probes, %d walled), walk %.1fs"
+                     % (scan.get("seconds", 0.0), scan.get("reads", 0), scan.get("probes", 0),
+                        scan.get("walled", 0), spent["walk"]))
+
+    for name in ["smelt", "dig", "after"]:
+        if spent.get(name, 0.0) >= 0.1:
+            parts.append("%s %.1fs" % (name, spent[name]))
+
+    return ", ".join(parts) or "nothing timed"
 
 
 def end_cycle(phase):
     global stop
 
     stall.end_cycle(phase, cycle, tally)
+    total = now() - cycle_started
+
+    if total >= SLOW_CYCLE:
+        log("slow cycle, %.1fs - %s" % (total, describe_spent()))
 
     if stop is None:
         stop = stall.reason()
@@ -100,6 +124,8 @@ def end_cycle(phase):
 try:
     while stop is None and cycle - idled < MAX_CYCLES:
         cycle += 1
+        cycle_started = now()
+        spent.clear()
 
         stop = stop_reason()
 
@@ -137,7 +163,9 @@ try:
 
         no_tool = 0
 
+        started = now()
         relieved = relief.smelt_for_room()
+        spent["smelt"] = now() - started
 
         if relieved is not None:
             if isinstance(relieved, dict):
@@ -148,7 +176,9 @@ try:
             API.Pause(STEP_DELAY)
             continue
 
+        started = now()
         found = roam.approach()
+        spent["walk"] = now() - started - veins.stats.get("seconds", 0.0)
 
         if found[0] == "stop":
             stop = found[1]
@@ -168,7 +198,10 @@ try:
         vein = found[1]
 
         ore_before = ore.total()
+        started = now()
         outcome = digger.dig_once(pickaxe.serial())
+        spent["dig"] = now() - started
+        started = now()
 
         if outcome == "dug":
             tally += 1
@@ -269,6 +302,8 @@ try:
             stop = "%d unreadable outcomes in a row" % MAX_UNKNOWN
             break
 
+        spent["after"] = now() - started
+
         if tally >= reported + LOG_EVERY:
             reported = tally
             log(
@@ -279,6 +314,10 @@ try:
         end_cycle(outcome if outcome is not None else "unknown")
         API.Pause(STEP_DELAY)
 except Exception as error:
+    # The stop button lands here as well, and the client waits for it to unwind the thread
+    if API.StopRequested:
+        raise
+
     # Nothing else catches: a throw out of a client call used to end the run with no line at all
     if stop is None:
         stop = "threw - %s" % error

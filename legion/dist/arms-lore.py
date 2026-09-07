@@ -109,7 +109,7 @@ def matched_bucket(buckets):
 def read_outcome(buckets, budget, poll, between=None):
     waited = 0.0
 
-    while True:
+    while not API.StopRequested:
         hit = matched_bucket(buckets)
 
         if hit is not None:
@@ -333,7 +333,7 @@ class SkillReader(object):
     def wait(self, timeout, poll):
         waited = 0.0
 
-        while True:
+        while not API.StopRequested:
             value = self.read()
 
             if value is not None:

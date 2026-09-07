@@ -1,7 +1,7 @@
 import unittest
 
 from test_support.uo import install, skill
-from uo.skill import SkillReader, skill_value, wait_for_skill
+from uo.skill import SkillReader, find_skill_name, skill_value, wait_for_skill
 
 
 class SkillValueTest(unittest.TestCase):
@@ -89,3 +89,27 @@ class SkillReaderTest(unittest.TestCase):
         self.api.skills["Magery"] = skill(0.0)
 
         self.assertIsNone(SkillReader("Magery").read())
+
+
+class FindSkillNameTest(unittest.TestCase):
+    def setUp(self):
+        self.api = install()
+
+    def test_the_first_name_the_client_answers_to(self):
+        self.api.skills["Blacksmith"] = skill(70.0)
+
+        self.assertEqual(find_skill_name(["Blacksmithy", "Blacksmith"]), "Blacksmith")
+
+    def test_a_name_that_throws_is_skipped(self):
+        def get(name):
+            if name == "Blacksmithy":
+                raise ValueError(name)
+
+            return skill(70.0)
+
+        self.api.GetSkill = get
+
+        self.assertEqual(find_skill_name(["Blacksmithy", "Blacksmith"]), "Blacksmith")
+
+    def test_none_when_nothing_answers(self):
+        self.assertIsNone(find_skill_name(["Blacksmithy"]))

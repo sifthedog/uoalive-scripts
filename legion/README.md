@@ -15,6 +15,7 @@ different client with a different language and a different API, so no code is sh
 | `bowcraft.py` | Trains Bowcraft from 30 to cap: makes whatever the band still gains on, restocks wood from the containers and pack animals you pick, and sells to the nearest bowyer |
 | `magery.py` | Trains Magery on the four spells that gain without a victim, meditating when the pool runs dry |
 | `mysticism.py` | Trains Mysticism on the five spells that gain without a victim, meditating when the pool runs dry |
+| `bod.py` | Target a small Blacksmithing bulk order deed: crafts what it asks for from the ingots in your pack, puts each qualifying piece into the deed, and stops when it is full |
 
 ## How to run it
 
@@ -25,7 +26,8 @@ different client with a different language and a different API, so no code is sh
    `mining.py` and `mine-here.py` want your fire beetle; `lumberjack.py` wants your pack animals,
    one after another; `arms-lore.py` wants the weapon to read; `bowcraft.py` wants every container
    or pack animal holding logs or boards, and none at all if you are carrying the wood already.
-   `magery.py`, `mysticism.py` and `buffs.py` raise none. ESC declines, and each script says what it does instead.
+   `bod.py` wants the deed to fill. `magery.py`, `mysticism.py` and `buffs.py` raise none. ESC
+   declines, and each script says what it does instead.
 
 ## How it is built
 
@@ -49,6 +51,9 @@ It is deliberately inert, so a test that wants an outcome has to say so.
 
 - **Nothing in `src/uo/` imports a script folder's `config.py`.** The parameters come in through
   the call.
+- **The Script Manager's stop arrives as an exception** thrown out of the next `API.Pause`, and the
+  client gives the thread two seconds to unwind on it before declaring the script stuck. A catch-all
+  around a loop must re-raise when `API.StopRequested` is set.
 - **Nothing in `src/uo/` holds mutable module state.** State lives on an object, so the bundled
   artifact and the same module imported under test behave identically — `global` binds to the
   defining module, and a flat bundle would hide the difference.
@@ -73,10 +78,13 @@ proves nothing about this, so `build.py` walks the AST of every source and refus
 ## The shared library
 
 ```
+alert       a command run on the machine through .NET, so a warning does not depend on the game
 buffbar     the buff bar, re-read every time because ApiBuff never refreshes
 cast        a spell, and the two silent proofs a shard that says nothing still leaves
 clock       the one time.time(), so tests have one thing to fake
 convert     resource -> product, judged by the pack diff, with a per-hue write-off
+craftmenu   a craft gump: opening it, walking the categories, reading and pressing the rows
+crafttool   the tool a craft menu is opened with, found in the pack by art or by name
 entity      hex, the guarded player read, Chebyshev, find-a-mobile
 gear        what is in either hand
 guards      the stop conditions, composed per script
@@ -103,7 +111,7 @@ stages      the band table: which row trains now, and what one of its cycles cos
 survey      the dead-end report: what the run actually saw
 target      answering a self cursor the pre-target did not take
 terrain     the land and statics cache, one pair of calls per coordinate for the run
-threat      noticing trouble and calling the guards, without ending the run over it
+threat      noticing trouble and sounding the ambush alarm, without ending the run over it
 tiles       what is worked out, unreachable, or not the resource at all
 timings     the constants the scripts agreed on
 tool        find it, learn its graphic, equip it, notice it break
@@ -575,7 +583,7 @@ Per cycle:
 | --- | --- |
 | `dug` | Wait for the ore to land, then consolidate the pack to one pile per metal |
 | `empty` | Park that tile for `RESPAWN_DELAY`, **and smelt** — the spot has run dry |
-| `nothingNearby` | Park *everything* within `MINE_RANGE`, so the next scan looks further and the character walks off. **And smelt** |
+| `nothingNearby` | Park the `HARVEST_BANK` block you stand in and everything within `MINE_RANGE`, so the next scan looks further and the character walks off. **And smelt** |
 | `notOre` | Ban the whole graphic, not just the tile — a wrong band in `ORE_TILE_GRAPHICS` is a whole stretch of mountain |
 | `tooFar` | The shard disagreeing about the range. Set the tile aside rather than swinging again |
 | `notSeen` | Line of sight. Permanent — neither walking closer nor waiting fixes it |
@@ -639,8 +647,8 @@ beetle has to be standing next to you*, call the beetle over and run it again.
 ### What to set
 
 The config block is the top of each file. **Every timing is in seconds** — `API.Pause` takes seconds
-where the ClassicUO port took milliseconds — except `OPL_TIMEOUT` and `PATHFIND_TIMEOUT`, whose APIs
-take whole-second ints.
+where the ClassicUO port took milliseconds — except `PATHFIND_TIMEOUT`, whose API takes a
+whole-second int.
 
 #### Finding the ore — `mining.py` only
 
@@ -654,7 +662,8 @@ take whole-second ints.
 | `SCAN_RADIUS` / `SURVEY_ARTS` | `12` / `15` | How far the loop looks, and how many arts it lists on a dead end |
 | `PATHFIND_TIMEOUT` | `10` | How long one blocking `API.Pathfind` may take |
 | `MAX_VEIN_WALKS` | `4` | Cycles spent walking to one vein before it is written off |
-| `MAX_PATH_PROBES` | `24` | How many of the nearest matches a full sweep pays an `API.GetPath` for |
+| `MAX_PATH_PROBES` | `24` | At most how many of the nearest matches a full sweep pays an `API.GetPath` for. It stops early once no farther match can have a shorter route |
+| `HARVEST_BANK` | `8` | The block *no harvestable resources nearby* is about on RunUO-family shards, parked whole |
 | `RESPAWN_DELAY` / `UNREACHABLE_DELAY` | `1500.0` / `300.0` | How long a worked-out tile, and a tile with no route, are left alone |
 | `NOTHING_NEARBY_HINT` | `5` | Empty spots in a row before it says `ORE_TILE_GRAPHICS` is probably wrong |
 
@@ -687,16 +696,24 @@ take whole-second ints.
 | `ORE_SETTLE_TIMEOUT` / `_POLL` | `1.5` / `0.15` | How long to wait for a swing's ore, which arrives after the sentence announcing it |
 | `ORE_METALS` | RunUO's nine | Metal names. One this shard has that these do not joins the set off its first tooltip |
 | `METAL_LINE_EXTRA` / `NOT_METAL_WORDS` | `" '-"` / flags | Which tooltip line is the metal: letters and these only, and not one of the flags every item can carry |
-| `OPL_TIMEOUT` / `METAL_MISSES` / `METAL_ASKS` | `1` / `3` / `3` | How long to wait for a pile's tooltip, how many unanswered ones before the lookup stops costing that wait, and how many passes one pile gets |
+| `METAL_MISSES` / `METAL_ASKS` | `3` / `3` | How many tooltips carrying no metal line before the lookup stops asking, and how many passes one pile gets. A tooltip not there yet is requested and read next pass, never waited for |
 | `DIFFERENT_ORE_TEXT` | RunUO's wording | The shard refusing two piles as different metals. The backstop for a pile no tooltip named |
 | `INGOT_GRAPHICS` | four arts | A seed only — the real graphic is learned by diffing the pack across the first smelt |
 
 #### Trouble and stopping
 
-Same names and defaults as `tame.py` where they overlap. `WATCH_FOR_TROUBLE` is the whole guard-call
-feature; `HOSTILE_NOTORIETY` and `CALL_ON_SIGHT_NOTORIETY` are lists of `API.Notoriety` members
-rather than the web client's bitmasks. `PACK_LIMIT` is the item-cap guard and there is deliberately
-**no weight guard** — one would fire before the smelt could ever run.
+`WATCH_FOR_TROUBLE` is the whole feature: each cycle scans `THREAT_RANGE` for a hostile, watches
+your hits and the beetle's, and logs `trouble` / `clear`. Nothing calls the guards. `PACK_LIMIT` is
+the item-cap guard and there is deliberately **no weight guard** — one would fire before the smelt
+could ever run.
+
+| name | default | what it is |
+|---|---|---|
+| `AMBUSH_TEXT` | `["been ambushed"]` | Fragment of what your character says on an ambush. The journal line carries the name first |
+| `AMBUSH_WARNING` / `AMBUSH_HUE` | `"AMBUSHED!"` / `33` | Shown over your head once per ambush |
+| `AMBUSH_ALARM` | `afplay` on a system sound | A command run on this Mac, outside the game, so the client's sound setting does not matter. Any file `afplay` can play. Restarted when it ends while trouble lasts, never layered |
+| `AMBUSH_NOTICES` | one `osascript` notification | Commands run once per ambush. `["say", "ambushed"]` is a spoken one |
+| `AMBUSH_REPEATS` | `30` | Starts the alarm gets. It stops sooner once a hostile has come and gone |
 
 ### When it goes wrong
 
@@ -722,10 +739,10 @@ you can see *Where do you wish to dig?* on screen while the log says this, corre
 every hue written off. The run clears the write-offs, consolidates and smelts once more before
 giving up — once, not once per cycle.
 
-**`tooltips are not naming the metal here`.** No tooltip answered for three piles in a row, so the
+**`tooltips are not naming the metal here`.** Three piles in a row answered with a bare name, so the
 run falls back to telling the metals apart the slow way — attempt a pair, read the refusal. Ordinary
-on a shard with no OPL. If the metal *is* on screen and this still fires, the tooltip is arriving
-slower than `OPL_TIMEOUT`.
+on a shard with no OPL. If the metal *is* on screen and this still fires, `NOT_METAL_WORDS` is
+eating the line.
 
 **`the shard refused two piles both read as 'x'`.** The line being read as the metal is not the
 metal. Correct `METAL_LINE_EXTRA` or `NOT_METAL_WORDS` against what the tooltip actually shows.
@@ -737,16 +754,24 @@ metal. Correct `METAL_LINE_EXTRA` or `NOT_METAL_WORDS` against what the tooltip 
 ### Notes on the API
 
 - **`API.Pause` takes seconds.** Every constant ported from `src/mining/config.ts` was divided by
-  1000, except `OPL_TIMEOUT` and `PATHFIND_TIMEOUT`, whose APIs take whole-second ints already.
+  1000, except `PATHFIND_TIMEOUT`, whose API takes a whole-second int already.
 - **There is no blocking journal wait**, so `OUTCOME_TEXT` is a list of `(name, phrases)` tuples
   polled in **declaration order** rather than resolved by which phrase arrived first. That makes the
   order load-bearing in a way it was not in TypeScript, and it is why `saving` and `throttled` sit
   last: `THROTTLED_TEXT` ends in a bare `You must wait` that longer sentences contain.
+- **Nothing clears the whole journal.** `API.ClearJournal` takes a filter, and each action clears
+  only the lines it is about to wait on: a wholesale clear before every swing wiped the ambush
+  warning before the threat watch's once-a-cycle look at it.
 - **Which reads consume and which do not.** Only the outcome read passes `clearMatches=True`.
   Everything that merely observes — the save check, the throttle and unskilled checks inside the
   smelt, `DIFFERENT_ORE_TEXT` — reads without consuming, because each is read more than once.
   Consuming the ore refusal inside the merge poll would make the combine's own refusal branch
   unreachable and silently split a metal.
+- **Every call that reads game state is one client frame.** The client queues it for the game
+  thread and drains the queue once per `Update`, so a sweep's tile reads and route probes scale with
+  the FPS cap, and "reduce FPS when inactive" slows every wait several times over. Journal reads
+  stay on the script thread. A refused `API.GetPath` is a full A* to its node budget, which is why
+  the scan parks the tile for `UNREACHABLE_DELAY` rather than asking again next sweep.
 - **`API.Pathfind` and `API.GetPath` replace the web client's walkability grid.** `src/lib/grid.ts`
   (382 lines), `tiles.ts`, `flags.ts` and `walk.ts` have no counterpart here, and neither do the
   tile flags, the `MAX_CLIMB`/`PLAYER_HEIGHT`/`STEP_HEADROOM` approximation, or the route budget.
@@ -802,8 +827,10 @@ metal. Correct `METAL_LINE_EXTRA` or `NOT_METAL_WORDS` against what the tooltip 
   whether it has to be yours. `IsRenamable` is what tells your pet from a stranger's.
 - `DIFFERENT_ORE_TEXT`, the stock RunUO wording. A shard that words it differently reaches the
   grouping as silence, which splits the pair for the pass and says so.
-- **Everything the guard call rests on**, and `HOSTILE_NOTORIETY` — whether this shard's encounter
-  spawns come up gray or red. Also whether the `Notoriety` members are distinct at runtime.
+- **The ambush alarm** — whether the script engine lets `import clr` reach
+  `System.Diagnostics.Process`; a refusal is logged once as `could not run afplay`. Also whether
+  the encounter spawns come up gray or red so `trouble` keeps it sounding, and whether the
+  `Notoriety` members are distinct at runtime.
 
 ## lumberjack.py
 
@@ -1073,7 +1100,7 @@ against the shard before raising `CONVERT_ATTEMPTS`.
 - **`"twohanded"` and `"onehanded"` as the layers** an axe lands on here.
 - **What `API.GetStaticsInArea` costs at `ROAM_RADIUS`** — 49 tiles a side, walked attribute by
   attribute through interop, once per dry cycle.
-- Everything the guard call rests on, and `HOSTILE_NOTORIETY`, on the same footing as `mining.py`'s.
+- The ambush alarm, on the same footing as `mining.py`'s.
 
 ## arms-lore.py
 
@@ -1236,8 +1263,8 @@ pool passes a figure as often as it lands on it.
 - **Carry reagents**, or wear a 100% Lower Reagent Cost suit. Running out ends the run by name.
 - **Below about 30.0, buy the skill from an NPC trainer first.** The first row covers everything
   under 45.0, and at 25 it is mostly fizzles.
-- It aims at **120.0**, which needs the power scrolls. The start-up line says so if the shard caps
-  you lower.
+- It aims at **120.0**, which needs the power scrolls. The run stops at whatever the shard caps the
+  skill at, and the start-up line says so when that is lower.
 
 ### What to set
 
@@ -1312,7 +1339,7 @@ look like it was standing still.
 **Casts land but the skill does not move.** The circle has stopped gaining at this level; that is
 what the next row is for, and it means the bound between them wants moving down.
 
-**It stops at 100.0 saying the last stage is finished.** No power scroll. The start-up line warned.
+**`Magery is capped at 100.0`** — no power scroll. The start-up line warned.
 
 ### Notes on the API
 
@@ -1433,8 +1460,8 @@ and what trips it is something that wandered up.
   away for you.
 - **Focus or Imbuing sets the damage, not the gain.** Neither is needed for this to train.
 - **Below about 30.0, buy the skill from an NPC trainer first.**
-- It aims at **120.0**, which needs the power scrolls. The start-up line says so if the shard caps
-  you lower.
+- It aims at **120.0**, which needs the power scrolls. The run stops at whatever the shard caps the
+  skill at, and the start-up line says so when that is lower.
 
 ### What to set
 
@@ -1533,7 +1560,9 @@ Each cycle:
    pack too short to restock but long enough to make something crafts instead of waiting. **The pack
    is read first**: wood sitting in a bag inside it is brought up before anything is fetched, since
    the craft may not reach into a bag. The pack is then filled to `BATCH_SIZE`. Weight is never a
-   reason to stop short, sell, or end the run.
+   reason to stop short or end the run: when the shard refuses a move as too heavy and the pack
+   holds anything to sell, the run sells first and loads on the next cycle. With nothing to sell it
+   crafts down what it has.
 4. **Open the craft menu** by using the fletcher's tools, if one is not already up.
 5. **Press the row**, or `MAKE LAST` once the row is known.
 6. **Read the outcome** out of the journal, the gump's `NOTICES` panel **and the pack**, all three on
@@ -1661,6 +1690,8 @@ rather than a missing one. The pack is only counted at all when `DATA_PATH` is s
 
 - **Bowcraft has to be at `MIN_SKILL` or above.** Below it the run refuses to start rather than
   grinding a band the table does not cover.
+- **It stops at the shard's cap.** A character already there is refused before the cursor, and a
+  run that reaches it mid-way ends by name. The start-up line shows the cap it is training toward.
 - **Fletcher's tools in your pack**, and spares if you want the run to outlast one pair.
 - **What you pick has to be reachable.** A container is opened and its position recorded when you
   click it, and the run pathfinds back to that spot; a pack animal is pathfound to by serial, so it
@@ -1700,7 +1731,8 @@ drive the sell gump itself, so **the auto-sell agent still has to be configured*
 | `MATERIAL_GRAPHICS` | feathers, shafts | What a craft can spend that is not wood, for the consumed rows. A graphic that is not in here is simply not measured |
 | `DATA_PATH` | `skill-attempts.jsonl` | Where each craft is appended, with what it spent. `""` records nothing |
 | `BATCH_SIZE` / `RESTOCK_AT` | `300` / `25` | What a restock fills the pack to, and what triggers one |
-| `SELL_AT` | `20` | Products in the pack before a sell trip. The only thing that triggers one |
+| `SELL_AT` | `20` | Products in the pack before a sell trip |
+| `TOO_HEAVY_TEXT` | *That container cannot hold more weight* | The shard refusing a move for weight. A refusal with products in the pack is the other thing that triggers a sell trip |
 | `BOWYER_TITLES` / `SELL_PHRASE` | `bowyer`, … / `vendor sell` | Matched against the name **and** the tooltip, and what is said to it |
 | `VENDOR_SERIAL` | `None` | Set it to a vendor's serial to skip the search |
 | `VENDOR_SCAN_RADIUS` / `VENDOR_RANGE` | `18` / `1` | How far it looks for a bowyer, and how close it stands — adjacent |
@@ -1788,3 +1820,118 @@ does not end the run here: it shows up as `restocking` cycles and the stall watc
   container multi-pick.
 - **The product graphics.** They are the stock arts; a shard that reskins one makes every craft of it
   read as `wrongRow`.
+
+## bod.py
+
+Fills one **small** Blacksmithing bulk order deed. Target the deed; the run reads what it asks
+for off the tooltip, crafts it from the ingots in your pack, puts each piece the deed will take
+into it through the deed's own gump, and stops when the count reaches the total. Large deeds are
+refused at the cursor. Nothing is restocked and nothing is thrown away: what the deed will not
+take stays in the pack.
+
+The request is read from the deed's tooltip: `amount to make`, the `<item>: <done>` line, `All
+items must be exceptional`, and `All items must be made with <material> ingots`. A deed that
+names no material is an iron deed, and the menu is set to iron for it.
+
+Each cycle:
+
+1. **Check the stop conditions** — dead, or stopped from the Script Manager. Sit out a world save.
+2. **Done** when the count reaches the total.
+3. **Look for a piece the deed would take** in the top level of the pack. Each item's tooltip is
+   read once: the name has to be the deed's item (with the material folded in, `dull copper
+   platemail gorget`, or on a line of its own), `exceptional` has to be on it when the deed says
+   so. A piece the deed refused is never offered again.
+4. **Combine it** if there is one: open the deed, press the combine button, answer the cursor
+   with the piece. The piece leaving the pack is the proof; the shard's wording is read as well.
+5. **Otherwise craft one**: open the smith menu with the hammer or tongs in the pack, set the
+   material once, find the row by name, `MAKE LAST` once the row has proven itself. A new item in
+   the pack is the proof, and its tooltip says whether the row was right.
+
+| Outcome | What happens |
+| --- | --- |
+| `combined` | Counted. The deed is re-read for up to `REREAD_SETTLE` and the larger count wins |
+| `full` | The shard says the deed is complete. Ends the run |
+| `notRequested`, `notExceptional`, `wrongMaterial` | The piece is left in the pack and never offered again. `wrongMaterial` also re-selects the menu's material |
+| `notInPack` | Ends the run: the deed or the piece is not in your backpack |
+| `noCursor` | The combine button raised no cursor. `MAX_NO_CURSOR` of them end the run |
+| `made`, `failed` | A craft that landed, or one the shard called a failure. Both spend ingots |
+| `wrongRow` | The row made something else; the next candidate row is tried |
+| `noMaterial` | Ends the run naming the ingots in the pack and the pieces still owed |
+| `noAnvil`, `skillTooLow`, `noRow`, `noMaterialRow` | End the run with the reason |
+| `toolWorn`, `noTool`, `noGump`, `throttled`, `saving`, unreadable | As `bowcraft.py` |
+
+### Before you run it
+
+- **The deed in your backpack.** The shard refuses a combine from anywhere else.
+- **Stand next to an anvil and a forge.** The shard refuses every craft otherwise, and the run
+  stops on the first refusal.
+- **Ingots of the kind the deed names**, in your pack. The run crafts until the shard refuses for
+  materials, then stops: it never restocks, and it does not count the cost first.
+- **A smith's hammer or tongs** in your pack. Spares if you want the run to outlast one.
+- **Exceptional deeds produce leftovers.** Every non-exceptional piece stays in the pack; smelt
+  them yourself. Watch the weight on a plate deed.
+- **Large deeds are not handled.** The cursor refuses one and the run stops.
+
+### What to set
+
+| Setting | Default | What it is for |
+| --- | --- | --- |
+| `SKILL_NAMES` | `Blacksmithy`, `Blacksmith` | For the start-up line only |
+| `TOOL_GRAPHICS` / `TOOL_NAME_WORDS` | hammer, tongs, sledge / `tongs`, `smith` | What opens the menu. Whole words, so a war hammer is not a tool |
+| `INGOT_GRAPHICS` / `INGOT_HUES` | stock | For the `in the pack` line. A hue not in the table is reported as a hue |
+| `PLAIN_MATERIAL` | `iron` | What a deed with no material line wants |
+| `MATERIAL_ALIASES` | `shadow iron` → `shadow` | How the menu row and the item tooltip may shorten the deed's wording |
+| `DEED_TEXT` | stock | The tooltip lines, lower-cased fragments |
+| `CATEGORY_NAMES` | both spellings | Where the group rows end and the item rows begin |
+| `BUTTON_STRIDE`, `*_BUTTON_TYPE`, `MAKE_LAST_BUTTON` | 20, 0/1/5/6, 47 | The menu's numbering. The material page is `1 + 6`, its rows `1 + 5 + i * 20` |
+| `BOD_COMBINE_BUTTON` | `2` | The deed gump's *Combine this deed with the item requested* |
+| `MAX_ITEM_PROBES` | `4` | Crafts spent finding the row. Each miss costs one item's worth of ingots |
+| `OPL_TIMEOUT` / `OPL_ASKS` | `2` / `3` | How long a tooltip has to arrive, and how many times one item is asked |
+| `REREAD_SETTLE` | `3.0` | How long the deed's tooltip has to show a combine the pack already proved |
+| `MAX_NO_CURSOR` | `3` | Combine presses that raised no cursor before the run stops |
+| `OUTCOME_TEXT` / `COMBINE_TEXT` | stock ServUO | The shard's wordings for a craft and for a combine |
+
+### When it goes wrong
+
+**`is not a deed this run can fill: could not read it - the tooltip says '…'`** — the lines are
+not the stock ones. Read what it printed and correct `DEED_TEXT`. An empty tooltip means it had
+not arrived: run it again.
+
+**`no material row reads 'valorite' - rows seen: …`** — the material page names it differently,
+or the character lacks the skill for it and the shard left it off the page. Add the row's
+wording to `MATERIAL_ALIASES`.
+
+**`the deed's gump raised no cursor 3 times`** — button 2 is not the combine on this shard. Open
+the deed by hand and count the buttons; set `BOD_COMBINE_BUTTON`.
+
+**`the deed refused 0x… (notRequested)`** on a piece that plainly is the item — the deed wants
+another graphic of the same name (a female plate, a gargish piece). The row it found is the
+wrong one; the pieces stay in the pack and the run keeps crafting from the same row, so stop it
+and read the SELECTIONS rows.
+
+**`the deed's tooltip is behind the count`** — said once, and not an error. The pack proved the
+combine; the shard's tooltip had not caught up in `REREAD_SETTLE`.
+
+**`the new item's tooltip did not arrive - taking the craft as the product`** — the row could
+not be judged, so it is trusted. A wrong row shows up as `notRequested` at the combine instead.
+
+### Notes on the API
+
+- **`API.ItemNameAndProps` is the whole of the deed.** The BOD gump is only ever opened to press
+  combine; nothing is read off it.
+- **The material page is the craft menu's own gump**: `HasGump()` answers the same id for it, so
+  it is walked with `CraftMenu.press` and read with `CraftMenu.item_rows`, the same as a category.
+- **The deed gump is closed before the menu is opened, and the menu before the deed**, because
+  `HasGump()` answers one id and the wait after a `UseObject` is for any gump.
+
+### Known unverified
+
+- **The material page's wording and order.** Stock is `IRON`, `DULL COPPER`, `SHADOW IRON`, …
+  with the count beside each; a row is matched on its leading words, so the count does not matter.
+- **Button 7 for the material page and 6/26/46… for its rows**, derived from the stride the
+  bowcraft run measured and stock's type numbering, and **button 2 for the combine**.
+- **Whether the deed tooltip re-reads after a combine.** If not, every combine says `behind`
+  once and the run trusts the pack, which is the right answer anyway.
+- **Whether `RootContainer` reads** on this client. If it is `None` the check is skipped and the
+  shard's own refusal ends the run.
+- **The `exceptional` line and the folded material name**, stock ServUO wording.

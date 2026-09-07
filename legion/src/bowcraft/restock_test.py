@@ -69,7 +69,17 @@ class RunTest(unittest.TestCase):
             "move_delay": 0.0,
             "max_empty_moves": 3,
             "return_wrong_wood": False,
+            "heavy_text": ["That container cannot hold more weight"],
         }, lambda text: None)
+
+    def refuse_for_weight(self):
+        def move(serial, container, amount=-1):
+            self.api.moved.append((serial, container, amount))
+            self.api.journal.append("That container cannot hold more weight.")
+
+            return True
+
+        self.api.MoveItem = move
 
     def test_fills_the_pack_to_the_batch_after_a_lift(self):
         self.assertEqual(self.restock.run(), 300)
@@ -80,3 +90,23 @@ class RunTest(unittest.TestCase):
 
         self.assertEqual(self.restock.run(), 20)
         self.assertEqual(self.pile.Amount, 1000)
+
+    def test_a_move_refused_for_weight_ends_the_pull(self):
+        self.refuse_for_weight()
+
+        self.assertEqual(self.restock.run(), 20)
+        self.assertTrue(self.restock.refused_for_weight())
+        self.assertEqual(len(self.api.moved), 1)
+
+    def test_a_stall_the_shard_did_not_explain_is_not_weight(self):
+        self.api.MoveItem = lambda serial, container, amount=-1: True
+
+        self.assertEqual(self.restock.run(), 20)
+        self.assertFalse(self.restock.refused_for_weight())
+
+    def test_the_refusal_is_forgotten_by_the_next_run(self):
+        self.refuse_for_weight()
+        self.restock.run()
+        self.setUp()
+
+        self.assertFalse(self.restock.refused_for_weight())

@@ -67,7 +67,7 @@ STAGES = [
     # The only row that publishes a buff, and a toggle: every other cast takes it back off, which is
     # still a cast the shard charged for and rolled - see DISABLED_IS_PROGRESS.
     {
-        "up_to": 63.0,
+        "up_to": 62.0,
         "spell": "Stone Form",
         "buff": "StoneForm",
         "title": "Stone Form",
@@ -274,6 +274,13 @@ def said(texts):
     return False
 
 
+# Line by line rather than the whole journal: a wholesale clear before every swing wiped the ambush
+# warning before the threat watch got its once-a-cycle look at it
+def forget(phrases):
+    for text in phrases:
+        API.ClearJournal(text)
+
+
 def matched_bucket(buckets):
     for name, phrases in buckets:
         # clearMatches, or a line already read answers the next wait as well
@@ -286,7 +293,7 @@ def matched_bucket(buckets):
 def read_outcome(buckets, budget, poll, between=None):
     waited = 0.0
 
-    while True:
+    while not API.StopRequested:
         hit = matched_bucket(buckets)
 
         if hit is not None:
@@ -328,7 +335,7 @@ class Caster(object):
         ended = None
         answered = False
 
-        while True:
+        while not API.StopRequested:
             hit = matched_bucket(self._buckets)
 
             if hit is not None:
@@ -453,6 +460,25 @@ def dead():
         me = player()
 
         return "you are dead" if me is not None and me.IsDead else None
+
+    return clause
+
+
+# The base, not Value: jewelry lifts Value past the cap while the skill is still gaining
+def skill_capped(name):
+    def clause():
+        skill = API.GetSkill(name) if name is not None else None
+
+        if skill is None:
+            return None
+
+        base = getattr(skill, "Base", None)
+        value = base if base is not None else skill.Value
+
+        if value > 0 and value >= skill.Cap:
+            return "%s is capped at %.1f" % (name, value)
+
+        return None
 
     return clause
 
@@ -847,7 +873,7 @@ class SaveWatch(object):
         # threw the completion away and then stood still for the whole of the wait
         ended = "the shard had already finished" if said(self._done_text) else None
 
-        API.ClearJournal()
+        forget(self._saving_text + self._done_text)
 
         waited = 0.0
 
@@ -900,7 +926,7 @@ class SkillReader(object):
     def wait(self, timeout, poll):
         waited = 0.0
 
-        while True:
+        while not API.StopRequested:
             value = self.read()
 
             if value is not None:
@@ -1007,7 +1033,7 @@ heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "casts", position_and_mana)
 # The two area bands are cast on the caster, so a shard that does include them in their own damage
 # is caught here rather than by the corpse
 def stop_reason():
-    return first_reason([stopped(STOPPED), dead(), hurt(HURT_FLOOR)])
+    return first_reason([stopped(STOPPED), dead(), hurt(HURT_FLOOR), skill_capped(SKILL)])
 
 
 def standing(stage):
@@ -1095,8 +1121,8 @@ if stop is None:
     # itself would be lying about its plan
     if cap is not None and cap > 0 and goal > cap:
         log(
-            "the last stage aims at %.1f and the shard caps %s at %.1f - it will not finish "
-            "without a power scroll" % (goal, skill.name(), cap)
+            "the last stage aims at %.1f and the shard caps %s at %.1f - it will stop there"
+            % (goal, skill.name(), cap)
         )
 
     if stage_now(plan, start) is None:
@@ -1274,6 +1300,10 @@ try:
         heartbeat.beat(outcome or "unknown", cycle, casts)
         caster.pace(stage)
 except Exception as error:
+    # The stop button lands here as well, and the client waits for it to unwind the thread
+    if API.StopRequested:
+        raise
+
     # Nothing else catches: a throw out of a client call used to end the run with no line at all
     if stop is None:
         stop = "threw - %s" % error

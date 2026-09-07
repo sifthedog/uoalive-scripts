@@ -1,6 +1,6 @@
 import API
 
-from uo.journal import read_outcome, said
+from uo.journal import forget, forget_outcomes, read_outcome, said
 
 
 class Digger(object):
@@ -64,7 +64,8 @@ class Digger(object):
             API.CancelTarget()
 
         ore_before = self._ore.total()
-        API.ClearJournal()
+        forget(self._config["prompt_text"])
+        forget_outcomes(self._buckets)
 
         API.UseObject(serial)
 

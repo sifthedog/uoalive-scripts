@@ -90,7 +90,7 @@ BATCH_SIZE = 300
 RESTOCK_AT = 25
 
 # Counted as amounts: fukiya darts stack ten to a craft, so raise it for that band
-SELL_AT = 20
+SELL_AT = 10
 
 # Matched against the name *and* the tooltip: "Alger" is "the bowyer" only in the tooltip
 BOWYER_TITLES = ["bowyer", "fletcher", "archer", "bowyers", "fletchers"]
@@ -191,6 +191,9 @@ MAX_UNKNOWN = 5
 MAX_THROTTLED = 20
 MAX_NO_TOOL = 10
 MAX_EMPTY_MOVES = 3
+
+# The shard refusing a move for weight. With products in the pack the run sells before it loads.
+TOO_HEAVY_TEXT = ["That container cannot hold more weight"]
 
 # Sell trips in a row that bought nothing before the trips pause. Never ends the run.
 MAX_SELL_MISSES = 3

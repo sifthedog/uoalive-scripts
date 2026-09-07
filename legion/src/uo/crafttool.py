@@ -3,10 +3,11 @@ from uo.pack import pack_contents
 from uo.text import word_in
 
 
-class Tools(object):
-    """The fletcher's tools, which are used out of the pack rather than equipped."""
+class CraftTool(object):
+    """A crafting tool, used out of the pack rather than equipped."""
 
-    def __init__(self, graphics, name_words, log):
+    def __init__(self, noun, graphics, name_words, log):
+        self._noun = noun
         self._graphics = graphics
         self._name_words = name_words
         self._log = log
@@ -22,8 +23,8 @@ class Tools(object):
             return False
 
         self._graphics.add(item.Graphic)
-        self._log("%s '%s' is a fletcher's tool too, remembering the art"
-                  % (hex_of(item.Graphic), item.Name))
+        self._log("%s '%s' is a %s too, remembering the art"
+                  % (hex_of(item.Graphic), item.Name, self._noun))
 
         return True
 

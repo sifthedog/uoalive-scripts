@@ -2,21 +2,21 @@ import API
 
 from mining.beetle import Beetle
 from mining.combine import Combiner
-from mining.config import (ATTACK_TEXT, BEETLE_SCAN_RADIUS, COMBINE_DELAY, COMBINE_POLL,
+from mining.config import (AMBUSH_ALARM, AMBUSH_HUE, AMBUSH_NOTICES, AMBUSH_REPEATS,
+                           AMBUSH_TEXT, AMBUSH_WARNING, BEETLE_SCAN_RADIUS, COMBINE_DELAY, COMBINE_POLL,
                            COMBINE_TIMEOUT, DIFFERENT_ORE_TEXT, DIG_PROMPT_TEXT,
                            DIG_TARGET_POLL, DIG_TARGET_TIMEOUT, DIG_TIMEOUT, DISMOUNT_ATTEMPTS,
                            DISMOUNT_POLL, DISMOUNT_TIMEOUT, EQUIP_ATTEMPTS, EQUIP_POLL,
                            EQUIP_TIMEOUT, FIRE_BEETLE_GRAPHICS, FIRE_BEETLE_SERIAL,
-                           GUARD_CALL, GUARD_CALL_DELAY, GUARD_CALLS, GUARD_REPLY_WAIT,
-                           GUARD_ZONE_TEXT, HEARTBEAT_EVERY, INGOT_GRAPHICS,
+                           HEARTBEAT_EVERY, INGOT_GRAPHICS,
                            MAX_COMBINE_ATTEMPTS, MAX_SMELT_PASSES, METAL_ASKS, METAL_LINE_EXTRA,
-                           METAL_MISSES, MIN_SMELT_AMOUNT, NO_CURSOR_READ, NO_GUARDS_TEXT,
-                           NOT_METAL_WORDS, OPL_TIMEOUT, ORE_GRAPHICS, ORE_METALS, ORE_NAME_WORD,
+                           METAL_MISSES, MIN_SMELT_AMOUNT, NO_CURSOR_READ,
+                           NOT_METAL_WORDS, ORE_GRAPHICS, ORE_METALS, ORE_NAME_WORD,
                            OUTCOME_TEXT, PACK_LIMIT, PATHFIND_TIMEOUT, PICK_TIMEOUT, PICKAXE_NAMES,
                            PLAIN_METAL, SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT, SAVING_TEXT,
                            SMELT_ATTEMPTS, SMELT_DELAY, SMELT_POLL, SMELT_RANGE, SMELT_TIMEOUT,
                            SMELT_UNSKILLED_TEXT, SPARE_BAG_SERIAL, STALL_STOP, STALL_WARN, STOPPED,
-                           TARGET_TIMEOUT, THREAT_RANGE, THROTTLED_TEXT, UNGUARDED_TEXT,
+                           TARGET_TIMEOUT, THREAT_RANGE, THROTTLED_TEXT,
                            WATCH_FOR_TROUBLE)
 from mining.metal import MetalBook
 from mining.ore import OrePack
@@ -57,7 +57,6 @@ class Run(object):
             "not_metal_words": NOT_METAL_WORDS,
             "asks": METAL_ASKS,
             "misses": METAL_MISSES,
-            "opl_timeout": OPL_TIMEOUT,
         }, log)
         combiner = Combiner(ore, metals, {
             "attempts": MAX_COMBINE_ATTEMPTS,
@@ -86,14 +85,12 @@ class Run(object):
         threat = ThreatWatch({
             "watch": WATCH_FOR_TROUBLE,
             "range": THREAT_RANGE,
-            "call": GUARD_CALL,
-            "calls": GUARD_CALLS,
-            "call_delay": GUARD_CALL_DELAY,
-            "reply_wait": GUARD_REPLY_WAIT,
-            "no_guards_text": NO_GUARDS_TEXT,
-            "zone_text": GUARD_ZONE_TEXT,
-            "unguarded_text": UNGUARDED_TEXT,
-            "attack_text": ATTACK_TEXT,
+            "ambush_text": AMBUSH_TEXT,
+            "ambush_alarm": AMBUSH_ALARM,
+            "ambush_notices": AMBUSH_NOTICES,
+            "ambush_warning": AMBUSH_WARNING,
+            "ambush_hue": AMBUSH_HUE,
+            "ambush_repeats": AMBUSH_REPEATS,
         }, log, beetle.find, "beetle")
 
         DIG_CONFIG = {

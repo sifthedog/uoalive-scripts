@@ -1,7 +1,7 @@
 import API
 
 from uo.entity import hex_of
-from uo.journal import read_outcome, said
+from uo.journal import forget, forget_outcomes, read_outcome, said
 
 
 class Chopper(object):
@@ -67,7 +67,8 @@ class Chopper(object):
             API.CancelTarget()
 
         logs_before = self._wood.log_total()
-        API.ClearJournal()
+        forget(self._config["prompt_text"])
+        forget_outcomes(self._buckets)
 
         API.UseObject(serial)
 

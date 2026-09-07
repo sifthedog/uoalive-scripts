@@ -1,6 +1,5 @@
-from uo.notoriety import CALL_ON_SIGHT, HOSTILE
-from uo.phrases import (ATTACK_TEXT, GUARD_ZONE_TEXT, NO_GUARDS_TEXT, SAVE_DONE_TEXT, SAVING_TEXT,
-                        STOPPED, THROTTLED_TEXT, UNGUARDED_TEXT, UNSKILLED_TEXT)
+from uo.phrases import (AMBUSH_TEXT, SAVE_DONE_TEXT, SAVING_TEXT, STOPPED, THROTTLED_TEXT,
+                        UNSKILLED_TEXT)
 from uo.timings import (HEARTBEAT_EVERY, LOG_EVERY, PACK_LIMIT, SAVE_POLL, SAVE_WAIT, STALL_STOP,
                         STALL_WARN, STEP_DELAY, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX)
 
@@ -33,6 +32,10 @@ MINE_RANGE = 2
 MINE_Z_RANGE = 20
 
 SCAN_RADIUS = 12
+
+# 'No harvestable resources nearby' is about the 8x8 block the character stands in, on RunUO-family
+# shards, so that is what it parks
+HARVEST_BANK = 8
 SURVEY_ARTS = 15
 
 # How long one blocking pathfind may take, in place of the web client's per-tile step budget
@@ -72,13 +75,10 @@ ORE_NAME_WORD = "ore"
 
 INGOT_GRAPHICS = set([0x1BEF, 0x1BF0, 0x1BF1, 0x1BF2])
 
-COMBINE_DELAY = 0.7
+COMBINE_DELAY = 0.3
 COMBINE_TIMEOUT = 2.0
 COMBINE_POLL = 0.2
 MAX_COMBINE_ATTEMPTS = 12
-
-# ItemNameAndProps takes whole seconds
-OPL_TIMEOUT = 1
 
 ORE_METALS = set(
     [
@@ -165,6 +165,9 @@ TARGET_TIMEOUT = 2.0
 IDLE_POLL = 10.0
 IDLE_LOG_EVERY = 60.0
 
+# A cycle this long says where its time went, so a slow run can be read off the journal
+SLOW_CYCLE = 2.0
+
 MAX_CYCLES = 5000
 MAX_UNKNOWN = 5
 MAX_THROTTLED = 20
@@ -177,10 +180,16 @@ NOTHING_NEARBY_HINT = 5
 WATCH_FOR_TROUBLE = True
 
 THREAT_RANGE = 12
-GUARD_CALL = "guards"
-GUARD_CALLS = 3
-GUARD_CALL_DELAY = 10.0
-GUARD_REPLY_WAIT = 0.8
+AMBUSH_WARNING = "AMBUSHED!"
+AMBUSH_HUE = 33
+
+# Run on this Mac, outside the game, so the client's sound setting does not matter. An empty list
+# turns the one off. The alarm restarts while trouble lasts, up to AMBUSH_REPEATS starts
+AMBUSH_ALARM = ["afplay", "/System/Library/Sounds/Sosumi.aiff"]
+AMBUSH_NOTICES = [
+    ["osascript", "-e", 'display notification "You have been ambushed!" with title "Ultima Online"'],
+]
+AMBUSH_REPEATS = 30
 
 # The smelt refusal is mining's own; the rest are the shard's general wording
 SMELT_UNSKILLED_TEXT = ["You have no idea how to smelt this strange ore"] + UNSKILLED_TEXT

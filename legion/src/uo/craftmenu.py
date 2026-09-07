@@ -6,7 +6,7 @@ from uo.text import any_in
 
 
 class CraftMenu(object):
-    """The fletcher's craft gump: opening it, finding the category, and finding the row."""
+    """A craft gump: opening it, finding the category, and finding the row."""
 
     def __init__(self, tools, config, log):
         self._tools = tools
@@ -86,8 +86,9 @@ class CraftMenu(object):
         if not self._said_gump_text and not self.is_craft_gump(found):
             self._said_gump_text = True
             lines = self.lines(found)
-            self._log("the tools opened a gump that does not name %s - it starts '%s'"
-                      % (self._config["title"], lines[0] if lines else "(no text)"))
+            self._log("the %s opened a gump that does not name %s - it starts '%s'"
+                      % (self._config["tool_noun"], self._config["title"],
+                         lines[0] if lines else "(no text)"))
 
         self._id = found
 

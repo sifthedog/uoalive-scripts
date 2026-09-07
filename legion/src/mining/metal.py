@@ -13,7 +13,6 @@ class MetalBook(object):
         self._not_metal_words = config["not_metal_words"]
         self._asks = config["asks"]
         self._miss_limit = config["misses"]
-        self._opl_timeout = config["opl_timeout"]
         self._log = log
 
         self._known = {}
@@ -80,11 +79,18 @@ class MetalBook(object):
 
         self._asked[serial] = self._asked.get(serial, 0) + 1
 
-        props = API.ItemNameAndProps(serial, True, self._opl_timeout) or ""
+        # Never waited for: a wait is a second of nothing else, and the pile is still there next pass
+        props = API.ItemNameAndProps(serial, False) or ""
+
+        if not props:
+            self._missed_this_pass.add(serial)
+            API.RequestOPLData([serial])
+
+            return
+
         name = (item.Name or "").strip()
 
-        # A miss is an unanswered tooltip, which here is an empty string or one carrying only the
-        # name - the structured OPL this was ported from reported it as an empty property list
+        # A miss is a tooltip that arrived carrying only the name
         if not self._body(props, name):
             self._missed_this_pass.add(serial)
             self._misses += 1

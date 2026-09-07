@@ -13,6 +13,13 @@ def said(texts):
     return False
 
 
+# Line by line rather than the whole journal: a wholesale clear before every swing wiped the ambush
+# warning before the threat watch got its once-a-cycle look at it
+def forget(phrases):
+    for text in phrases:
+        API.ClearJournal(text)
+
+
 def matched_bucket(buckets):
     for name, phrases in buckets:
         # clearMatches, or a line already read answers the next wait as well
@@ -25,7 +32,7 @@ def matched_bucket(buckets):
 def read_outcome(buckets, budget, poll, between=None):
     waited = 0.0
 
-    while True:
+    while not API.StopRequested:
         hit = matched_bucket(buckets)
 
         if hit is not None:
@@ -372,7 +379,7 @@ class SaveWatch(object):
         # threw the completion away and then stood still for the whole of the wait
         ended = "the shard had already finished" if said(self._done_text) else None
 
-        API.ClearJournal()
+        forget(self._saving_text + self._done_text)
 
         waited = 0.0
 

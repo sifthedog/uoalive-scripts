@@ -1,6 +1,7 @@
 import API
 
 from uo.convert import Converter
+from uo.journal import forget
 from uo.entity import hex_of
 
 
@@ -88,7 +89,7 @@ class Smelter(object):
         if API.HasTarget():
             API.CancelTarget()
 
-        API.ClearJournal()
+        forget(self._config["throttled_text"] + self._config["unskilled_text"])
         API.UseObject(stack.Serial)
 
         if not API.WaitForTarget("any", self._config["target_timeout"]):

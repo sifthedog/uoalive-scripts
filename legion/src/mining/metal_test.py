@@ -12,7 +12,6 @@ def book(log, metals=None):
         "not_metal_words": set(["blessed", "weight", "ore"]),
         "asks": 3,
         "misses": 3,
-        "opl_timeout": 1,
     }, log)
 
 
@@ -46,10 +45,19 @@ class MetalBookTest(unittest.TestCase):
 
     def test_gives_up_on_tooltips_after_enough_misses(self):
         for serial in range(1, 4):
+            self._tooltip(serial, "ore")
             self.book.of(item(serial=serial, name="ore"))
 
         self.assertIn("tooltips are not naming the metal here, so a pair has to be refused "
                       "to be split", self.said)
+
+    def test_a_tooltip_not_here_yet_is_asked_for_rather_than_counted(self):
+        self.book.of(item(serial=1, name="ore"))
+        self.book.of(item(serial=2, name="ore"))
+        self.book.of(item(serial=3, name="ore"))
+
+        self.assertEqual(self.api.opl_requests, [[1], [2], [3]])
+        self.assertEqual(self.said, [])
 
     def test_a_pile_is_pending_only_once_a_tooltip_has_answered(self):
         self.assertFalse(self.book.pending(item(serial=1, name="ore")))

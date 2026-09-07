@@ -9,11 +9,3 @@ HOSTILE = [
     API.Notoriety.Enemy,
     API.Notoriety.Murderer,
 ]
-
-# Gray is out: the wildlife is gray, and a cat wandering past is not evidence of anything. A gray
-# still draws the call the moment it damages you or the pet.
-CALL_ON_SIGHT = [
-    API.Notoriety.Criminal,
-    API.Notoriety.Enemy,
-    API.Notoriety.Murderer,
-]

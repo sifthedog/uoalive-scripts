@@ -27,7 +27,7 @@ class Caster(object):
         ended = None
         answered = False
 
-        while True:
+        while not API.StopRequested:
             hit = matched_bucket(self._buckets)
 
             if hit is not None:

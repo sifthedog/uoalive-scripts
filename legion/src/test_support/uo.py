@@ -7,6 +7,7 @@ thing under test.
 
 import builtins
 import sys
+import types
 
 
 class FakeEntry(object):
@@ -59,6 +60,16 @@ class FakeMobile(object):
         return self.props
 
 
+class FakeNotoriety(object):
+    Innocent = 1
+    Ally = 2
+    Gray = 3
+    Criminal = 4
+    Enemy = 5
+    Murderer = 6
+    Invulnerable = 7
+
+
 class FakePlayer(object):
     def __init__(self, **fields):
         self.Serial = fields.get("serial", 0x00000001)
@@ -86,6 +97,7 @@ class FakeAPI(object):
         self.Player = FakePlayer()
         self.Backpack = 0x40000000
         self.StopRequested = False
+        self.Notoriety = FakeNotoriety
 
         self.messages = []
         self.journal = []
@@ -119,6 +131,8 @@ class FakeAPI(object):
         self.menus = []
         self.gump = 0
         self.gump_text = []
+        self.gump_contents = {}
+        self.opens = {}
         self.replies = []
         self.closed_gumps = 0
         self.pathfound = []
@@ -126,10 +140,17 @@ class FakeAPI(object):
         self.land = {}
         self.statics = {}
         self.paths = {}
+        self.path_probes = []
+        self.opl_requests = []
+        self.forgotten = []
         self.props = {}
         self.equipped = []
         self.dismounts = 0
         self.said_aloud = []
+        self.head_messages = []
+        self.launched = []
+        self.processes = []
+        self.launch_error = None
 
     def SysMsg(self, text, hue=None):
         self.messages.append(text)
@@ -141,9 +162,14 @@ class FakeAPI(object):
     def Stop(self):
         self.stopped = True
 
-    def ClearJournal(self):
+    def ClearJournal(self, matching=""):
         self.cleared += 1
-        self.journal = []
+
+        if matching:
+            self.forgotten.append(matching)
+            self.journal = [line for line in self.journal if matching not in line]
+        else:
+            self.journal = []
 
     def GetJournalEntries(self, seconds=None):
         return [FakeEntry(line) for line in self.journal]
@@ -207,6 +233,9 @@ class FakeAPI(object):
     def UseObject(self, serial):
         self.used.append(serial)
 
+        if serial in self.opens:
+            self.gump = self.opens[serial]
+
     def Target(self, *args):
         self.targeted.append(args)
         self.has_target = False
@@ -248,10 +277,15 @@ class FakeAPI(object):
         return found
 
     def GetPath(self, x, y, z, within=0):
+        self.path_probes.append((x, y))
+
         return self.paths.get((x, y))
 
     def ItemNameAndProps(self, serial, force=False, timeout=None):
         return self.props.get(serial, "")
+
+    def RequestOPLData(self, serials):
+        self.opl_requests.append(list(serials))
 
     def EquipItem(self, serial):
         self.equipped.append(serial)
@@ -261,6 +295,9 @@ class FakeAPI(object):
 
     def Msg(self, text):
         self.said_aloud.append(text)
+
+    def HeadMsg(self, text, serial, hue=None):
+        self.head_messages.append((text, serial, hue))
 
     def GetAllMobiles(self, graphic=None, distance=None, notoriety=None):
         return [m for m in self.mobiles.values()
@@ -283,8 +320,13 @@ class FakeAPI(object):
     def GumpContains(self, text, gump=None):
         return any(text.lower() in line.lower() for line in self.gump_text)
 
+    def GetGumpContents(self, gump=None):
+        return self.gump_contents.get(gump, "")
+
     def ReplyGump(self, button, gump=None):
         self.replies.append((button, gump))
+
+        return bool(self.gump)
 
     def CloseGump(self, gump=None):
         self.closed_gumps += 1
@@ -306,8 +348,63 @@ class FakeAPI(object):
         for held in items:
             self.items[held.Serial] = held
 
+    def take(self, *serials):
+        for container in self.containers:
+            self.containers[container] = [held for held in self.containers[container]
+                                          if held.Serial not in serials]
+
+        for serial in serials:
+            self.items.pop(serial, None)
+
 
 _current = [FakeAPI()]
+
+
+class FakeProcess(object):
+    def __init__(self, command):
+        self.command = command
+        self.HasExited = False
+        self.killed = False
+
+    def Kill(self):
+        self.killed = True
+        self.HasExited = True
+
+
+class _Arguments(list):
+    Add = list.append
+
+
+class FakeStartInfo(object):
+    def __init__(self):
+        self.FileName = ""
+        self.UseShellExecute = True
+        self.CreateNoWindow = False
+        self.ArgumentList = _Arguments()
+
+
+class FakeProcessClass(object):
+    @staticmethod
+    def Start(info):
+        if _current[0].launch_error is not None:
+            raise _current[0].launch_error
+
+        process = FakeProcess([info.FileName] + list(info.ArgumentList))
+        _current[0].launched.append(process.command)
+        _current[0].processes.append(process)
+
+        return process
+
+
+def _dotnet():
+    clr = types.ModuleType("clr")
+    clr.AddReference = lambda name: None
+    system = types.ModuleType("System")
+    system.Diagnostics = types.ModuleType("System.Diagnostics")
+    system.Diagnostics.Process = FakeProcessClass
+    system.Diagnostics.ProcessStartInfo = FakeStartInfo
+
+    return clr, system
 
 
 class _Proxy(object):
@@ -324,6 +421,10 @@ _proxy = _Proxy()
 
 builtins.API = _proxy
 sys.modules.setdefault("API", _proxy)
+
+_clr, _system = _dotnet()
+sys.modules.setdefault("clr", _clr)
+sys.modules.setdefault("System", _system)
 
 
 def install():

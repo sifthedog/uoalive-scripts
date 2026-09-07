@@ -1,9 +1,9 @@
 import API
 
-from uo.clock import now
+from uo.alert import Launcher
 from uo.entity import hex_of
-from uo.journal import read_outcome, said
-from uo.notoriety import CALL_ON_SIGHT, HOSTILE
+from uo.journal import matched_bucket
+from uo.notoriety import HOSTILE
 
 
 # 0 is what the client reports while it is refreshing stats, and for a mobile it has lost track of,
@@ -30,66 +30,17 @@ class ThreatWatch(object):
         self._log = log
         self._companion = companion
         self._friend_label = friend_label
+        self._alert = Launcher(log)
         self._last_hits = 0
         self._last_companion_hits = 0
-        self._last_call = 0.0
-        self._calls = 0
         self._in_episode = False
-        self._no_guards = False
-        self._said_protection = False
-        self._zone = None
+        self._trouble_seen = False
+        self._alarm_left = 0
 
-    def _read_zone(self):
-        if said(self._config["zone_text"]):
-            self._zone = "guarded"
-        elif said(self._config["unguarded_text"]):
-            self._zone = "unguarded"
-
-    # Nothing in the API answers this. A yellow human is a guard or a vendor, and either one means a
-    # town, which is the best the client can be asked.
-    def _protection(self):
-        if self._zone is not None:
-            return "the journal says %s" % self._zone
-
-        seen = API.GetAllMobiles(None, self._config["range"], [API.Notoriety.Invulnerable]) or []
-
-        for mobile in seen:
-            if mobile.IsHuman and not mobile.IsDead:
-                return "an invulnerable '%s' in sight, so probably a town" % (mobile.Name or "?")
-
-        return "nothing in sight to say either way"
-
-    def _call_guards(self):
-        limit = self._config["calls"]
-
-        if self._no_guards or (limit > 0 and self._calls >= limit):
-            return
-
-        at = now()
-
-        if self._calls > 0 and at - self._last_call < self._config["call_delay"]:
-            return
-
-        self._last_call = at
-        self._calls += 1
-
-        if not self._said_protection:
-            self._said_protection = True
-            self._log("guard protection - %s" % self._protection())
-
-        self._log("calling the guards (%d%s)" % (self._calls, "/%d" % limit if limit > 0 else ""))
-        API.Msg(self._config["call"])
-
-        refusals = self._config["no_guards_text"]
-
-        if not refusals:
-            return
-
-        wait = self._config["reply_wait"]
-
-        if read_outcome([("refused", refusals)], wait, wait) is not None:
-            self._no_guards = True
-            self._log("the shard says the guards cannot be called here - not calling again this run")
+    # Consuming: the roam idle loop never clears the journal, so said() would re-arm this every poll
+    def _ambushed(self):
+        text = self._config["ambush_text"]
+        return bool(text) and matched_bucket([("ambushed", text)]) is not None
 
     def _describe(self, hostile, friend):
         if hostile is not None:
@@ -115,8 +66,6 @@ class ThreatWatch(object):
         if not self._config["watch"]:
             return
 
-        self._read_zone()
-
         hits = API.Player.Hits
         hurt = dropped(self._last_hits, hits)
 
@@ -130,25 +79,34 @@ class ThreatWatch(object):
         if friend_hits > 0:
             self._last_companion_hits = friend_hits
 
-        attack_text = self._config["attack_text"]
-        attacked = said(attack_text) if attack_text else False
         hostile = hostiles_near(HOSTILE, self._config["range"])
+        trouble = hostile is not None or hurt or friend_hurt
 
-        if hostile is None and not hurt and not friend_hurt and not attacked:
-            if self._in_episode:
-                self._in_episode = False
-                self._calls = 0
-                self._log("clear")
-
-            return
-
-        if not self._in_episode:
+        if self._ambushed():
             self._in_episode = True
-            self._log("trouble - %s" % self._describe(hostile, friend))
+            self._trouble_seen = False
+            self._alarm_left = self._config["ambush_repeats"] if self._config["ambush_alarm"] else 0
+            self._log("ambushed - %s" % self._describe(hostile, friend))
+            API.HeadMsg(self._config["ambush_warning"], API.Player.Serial,
+                        self._config["ambush_hue"])
 
-        # Blood drawn is evidence whatever its notoriety; being in sight is only evidence for the
-        # notorieties CALL_ON_SIGHT names
-        on_sight = hostile is not None and hostile.Notoriety in CALL_ON_SIGHT
+            for command in self._config["ambush_notices"]:
+                self._alert.run(command)
 
-        if hurt or friend_hurt or attacked or on_sight:
-            self._call_guards()
+        if trouble:
+            if not self._in_episode:
+                self._in_episode = True
+                self._log("trouble - %s" % self._describe(hostile, friend))
+
+            self._trouble_seen = True
+        # An ambush announces monsters that take a cycle to appear, so the alarm outlives an empty
+        # scan until a fight has come and gone or the repeats run out
+        elif self._in_episode and (self._trouble_seen or self._alarm_left == 0):
+            self._in_episode = False
+            self._trouble_seen = False
+            self._alarm_left = 0
+            self._alert.stop()
+            self._log("clear")
+
+        if self._alarm_left > 0 and self._alert.play(self._config["ambush_alarm"]):
+            self._alarm_left -= 1

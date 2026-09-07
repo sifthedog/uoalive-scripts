@@ -40,7 +40,7 @@ class Crafter(object):
     def _read_outcome(self, opened, landed):
         waited = 0.0
 
-        while True:
+        while not API.StopRequested:
             if landed():
                 return "made"
 

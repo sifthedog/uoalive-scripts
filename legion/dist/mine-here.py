@@ -2,26 +2,8 @@
 
 import API
 import time
-
-
-# src/uo/notoriety.py
-"""Passed through to the scans, never compared or OR-ed: the API.py stub lists every value as 1."""
-
-# Innocent is out, or every blue NPC in the world is trouble
-HOSTILE = [
-    API.Notoriety.Gray,
-    API.Notoriety.Criminal,
-    API.Notoriety.Enemy,
-    API.Notoriety.Murderer,
-]
-
-# Gray is out: the wildlife is gray, and a cat wandering past is not evidence of anything. A gray
-# still draws the call the moment it damages you or the pet.
-CALL_ON_SIGHT = [
-    API.Notoriety.Criminal,
-    API.Notoriety.Enemy,
-    API.Notoriety.Murderer,
-]
+import clr
+import System
 
 
 # src/uo/phrases.py
@@ -46,22 +28,8 @@ UNSKILLED_TEXT = [
 
 STOPPED = "stopped from the script manager"
 
-NO_GUARDS_TEXT = [
-    "The guards can not be called here",
-    "The guards cannot be called here",
-    "Guards can not be called here",
-    "Guards cannot be called here",
-    "There are no guards here",
-    "guards cannot be summoned here",
-    "You are not in a guarded area",
-]
-
-GUARD_ZONE_TEXT = ["under the protection of the town guards", "now under guard"]
-UNGUARDED_TEXT = ["left the protection of the town guards", "no longer under guard"]
-
-# Empty on purpose: nothing in stock RunUO announces being attacked, and a wrong guess calls the
-# guards every cycle of a quiet run
-ATTACK_TEXT = []
+# A fragment: the journal line is your own character's "You have been ambushed!" with the name first
+AMBUSH_TEXT = ["been ambushed"]
 
 
 # src/uo/timings.py
@@ -125,13 +93,10 @@ ORE_NAME_WORD = "ore"
 
 INGOT_GRAPHICS = set([0x1BEF, 0x1BF0, 0x1BF1, 0x1BF2])
 
-COMBINE_DELAY = 0.7
+COMBINE_DELAY = 0.3
 COMBINE_TIMEOUT = 2.0
 COMBINE_POLL = 0.2
 MAX_COMBINE_ATTEMPTS = 12
-
-# ItemNameAndProps takes whole seconds
-OPL_TIMEOUT = 1
 
 ORE_METALS = set(
     [
@@ -224,10 +189,16 @@ MAX_NO_TOOL = 10
 WATCH_FOR_TROUBLE = True
 
 THREAT_RANGE = 12
-GUARD_CALL = "guards"
-GUARD_CALLS = 3
-GUARD_CALL_DELAY = 10.0
-GUARD_REPLY_WAIT = 0.8
+AMBUSH_WARNING = "AMBUSHED!"
+AMBUSH_HUE = 33
+
+# Run on this Mac, outside the game, so the client's sound setting does not matter. An empty list
+# turns the one off. The alarm restarts while trouble lasts, up to AMBUSH_REPEATS starts
+AMBUSH_ALARM = ["afplay", "/System/Library/Sounds/Sosumi.aiff"]
+AMBUSH_NOTICES = [
+    ["osascript", "-e", 'display notification "You have been ambushed!" with title "Ultima Online"'],
+]
+AMBUSH_REPEATS = 30
 
 # The smelt refusal is mining's own; the rest are the shard's general wording
 SMELT_UNSKILLED_TEXT = ["You have no idea how to smelt this strange ore"] + UNSKILLED_TEXT
@@ -272,6 +243,18 @@ def said(texts):
     return False
 
 
+# Line by line rather than the whole journal: a wholesale clear before every swing wiped the ambush
+# warning before the threat watch got its once-a-cycle look at it
+def forget(phrases):
+    for text in phrases:
+        API.ClearJournal(text)
+
+
+def forget_outcomes(buckets):
+    for _name, phrases in buckets:
+        forget(phrases)
+
+
 def matched_bucket(buckets):
     for name, phrases in buckets:
         # clearMatches, or a line already read answers the next wait as well
@@ -284,7 +267,7 @@ def matched_bucket(buckets):
 def read_outcome(buckets, budget, poll, between=None):
     waited = 0.0
 
-    while True:
+    while not API.StopRequested:
         hit = matched_bucket(buckets)
 
         if hit is not None:
@@ -363,7 +346,8 @@ class Digger(object):
             API.CancelTarget()
 
         ore_before = self._ore.total()
-        API.ClearJournal()
+        forget(self._config["prompt_text"])
+        forget_outcomes(self._buckets)
 
         API.UseObject(serial)
 
@@ -756,7 +740,7 @@ class Combiner(object):
     def _combine(self, primary, dup):
         before = amount_of(primary)
 
-        API.ClearJournal()
+        forget(self._config["different_text"] + self._config["throttled_text"])
 
         # No cancel before the use: a cursor cancelled shortly before an action has been measured
         # costing that action its own cursor
@@ -885,7 +869,6 @@ class MetalBook(object):
         self._not_metal_words = config["not_metal_words"]
         self._asks = config["asks"]
         self._miss_limit = config["misses"]
-        self._opl_timeout = config["opl_timeout"]
         self._log = log
 
         self._known = {}
@@ -952,11 +935,18 @@ class MetalBook(object):
 
         self._asked[serial] = self._asked.get(serial, 0) + 1
 
-        props = API.ItemNameAndProps(serial, True, self._opl_timeout) or ""
+        # Never waited for: a wait is a second of nothing else, and the pile is still there next pass
+        props = API.ItemNameAndProps(serial, False) or ""
+
+        if not props:
+            self._missed_this_pass.add(serial)
+            API.RequestOPLData([serial])
+
+            return
+
         name = (item.Name or "").strip()
 
-        # A miss is an unanswered tooltip, which here is an empty string or one carrying only the
-        # name - the structured OPL this was ported from reported it as an empty property list
+        # A miss is a tooltip that arrived carrying only the name
         if not self._body(props, name):
             self._missed_this_pass.add(serial)
             self._misses += 1
@@ -1057,7 +1047,7 @@ class OrePack(object):
     def wait_for_ore(self, before, timeout, poll):
         waited = 0.0
 
-        while True:
+        while not API.StopRequested:
             # Read before the first pause: the delivery has usually already happened by the time the
             # journal line announcing it is read
             if self.total() > before:
@@ -1326,7 +1316,7 @@ class Smelter(object):
         if API.HasTarget():
             API.CancelTarget()
 
-        API.ClearJournal()
+        forget(self._config["throttled_text"] + self._config["unskilled_text"])
         API.UseObject(stack.Serial)
 
         if not API.WaitForTarget("any", self._config["target_timeout"]):
@@ -1541,7 +1531,7 @@ class SaveWatch(object):
         # threw the completion away and then stood still for the whole of the wait
         ended = "the shard had already finished" if said(self._done_text) else None
 
-        API.ClearJournal()
+        forget(self._saving_text + self._done_text)
 
         waited = 0.0
 
@@ -1556,6 +1546,79 @@ class SaveWatch(object):
 
         self._log("%s, carrying on" % (ended or "nothing said in %ds" % int(self._wait)))
         self._heartbeat.reset()
+
+
+# src/uo/alert.py
+class Launcher(object):
+    def __init__(self, log):
+        self._log = log
+        self._playing = None
+        self._referenced = False
+        self._failed = set()
+
+    def _start(self, command):
+        if not self._referenced:
+            self._referenced = True
+            # Process is in its own assembly on .NET Core, and IronPython does not load it unasked
+            clr.AddReference("System.Diagnostics.Process")
+
+        info = System.Diagnostics.ProcessStartInfo()
+        info.FileName = command[0]
+        info.UseShellExecute = False
+        info.CreateNoWindow = True
+
+        for argument in command[1:]:
+            info.ArgumentList.Add(argument)
+
+        return System.Diagnostics.Process.Start(info)
+
+    def _try(self, command):
+        try:
+            return self._start(command)
+        except Exception as error:
+            if command[0] not in self._failed:
+                self._failed.add(command[0])
+                self._log("could not run %s - %s" % (command[0], error))
+
+            return None
+
+    def run(self, command):
+        if command:
+            self._try(command)
+
+    # One at a time, so a long file is not layered over itself every cycle. True means a start
+    # was attempted, which is what the caller counts
+    def play(self, command):
+        if not command:
+            return False
+
+        if self._playing is not None and not self._playing.HasExited:
+            return False
+
+        self._playing = self._try(command)
+
+        return True
+
+    def stop(self):
+        playing, self._playing = self._playing, None
+
+        if playing is not None and not playing.HasExited:
+            try:
+                playing.Kill()
+            except Exception:
+                pass
+
+
+# src/uo/notoriety.py
+"""Passed through to the scans, never compared or OR-ed: the API.py stub lists every value as 1."""
+
+# Innocent is out, or every blue NPC in the world is trouble
+HOSTILE = [
+    API.Notoriety.Gray,
+    API.Notoriety.Criminal,
+    API.Notoriety.Enemy,
+    API.Notoriety.Murderer,
+]
 
 
 # src/uo/threat.py
@@ -1583,66 +1646,17 @@ class ThreatWatch(object):
         self._log = log
         self._companion = companion
         self._friend_label = friend_label
+        self._alert = Launcher(log)
         self._last_hits = 0
         self._last_companion_hits = 0
-        self._last_call = 0.0
-        self._calls = 0
         self._in_episode = False
-        self._no_guards = False
-        self._said_protection = False
-        self._zone = None
+        self._trouble_seen = False
+        self._alarm_left = 0
 
-    def _read_zone(self):
-        if said(self._config["zone_text"]):
-            self._zone = "guarded"
-        elif said(self._config["unguarded_text"]):
-            self._zone = "unguarded"
-
-    # Nothing in the API answers this. A yellow human is a guard or a vendor, and either one means a
-    # town, which is the best the client can be asked.
-    def _protection(self):
-        if self._zone is not None:
-            return "the journal says %s" % self._zone
-
-        seen = API.GetAllMobiles(None, self._config["range"], [API.Notoriety.Invulnerable]) or []
-
-        for mobile in seen:
-            if mobile.IsHuman and not mobile.IsDead:
-                return "an invulnerable '%s' in sight, so probably a town" % (mobile.Name or "?")
-
-        return "nothing in sight to say either way"
-
-    def _call_guards(self):
-        limit = self._config["calls"]
-
-        if self._no_guards or (limit > 0 and self._calls >= limit):
-            return
-
-        at = now()
-
-        if self._calls > 0 and at - self._last_call < self._config["call_delay"]:
-            return
-
-        self._last_call = at
-        self._calls += 1
-
-        if not self._said_protection:
-            self._said_protection = True
-            self._log("guard protection - %s" % self._protection())
-
-        self._log("calling the guards (%d%s)" % (self._calls, "/%d" % limit if limit > 0 else ""))
-        API.Msg(self._config["call"])
-
-        refusals = self._config["no_guards_text"]
-
-        if not refusals:
-            return
-
-        wait = self._config["reply_wait"]
-
-        if read_outcome([("refused", refusals)], wait, wait) is not None:
-            self._no_guards = True
-            self._log("the shard says the guards cannot be called here - not calling again this run")
+    # Consuming: the roam idle loop never clears the journal, so said() would re-arm this every poll
+    def _ambushed(self):
+        text = self._config["ambush_text"]
+        return bool(text) and matched_bucket([("ambushed", text)]) is not None
 
     def _describe(self, hostile, friend):
         if hostile is not None:
@@ -1668,8 +1682,6 @@ class ThreatWatch(object):
         if not self._config["watch"]:
             return
 
-        self._read_zone()
-
         hits = API.Player.Hits
         hurt = dropped(self._last_hits, hits)
 
@@ -1683,28 +1695,37 @@ class ThreatWatch(object):
         if friend_hits > 0:
             self._last_companion_hits = friend_hits
 
-        attack_text = self._config["attack_text"]
-        attacked = said(attack_text) if attack_text else False
         hostile = hostiles_near(HOSTILE, self._config["range"])
+        trouble = hostile is not None or hurt or friend_hurt
 
-        if hostile is None and not hurt and not friend_hurt and not attacked:
-            if self._in_episode:
-                self._in_episode = False
-                self._calls = 0
-                self._log("clear")
-
-            return
-
-        if not self._in_episode:
+        if self._ambushed():
             self._in_episode = True
-            self._log("trouble - %s" % self._describe(hostile, friend))
+            self._trouble_seen = False
+            self._alarm_left = self._config["ambush_repeats"] if self._config["ambush_alarm"] else 0
+            self._log("ambushed - %s" % self._describe(hostile, friend))
+            API.HeadMsg(self._config["ambush_warning"], API.Player.Serial,
+                        self._config["ambush_hue"])
 
-        # Blood drawn is evidence whatever its notoriety; being in sight is only evidence for the
-        # notorieties CALL_ON_SIGHT names
-        on_sight = hostile is not None and hostile.Notoriety in CALL_ON_SIGHT
+            for command in self._config["ambush_notices"]:
+                self._alert.run(command)
 
-        if hurt or friend_hurt or attacked or on_sight:
-            self._call_guards()
+        if trouble:
+            if not self._in_episode:
+                self._in_episode = True
+                self._log("trouble - %s" % self._describe(hostile, friend))
+
+            self._trouble_seen = True
+        # An ambush announces monsters that take a cycle to appear, so the alarm outlives an empty
+        # scan until a fight has come and gone or the repeats run out
+        elif self._in_episode and (self._trouble_seen or self._alarm_left == 0):
+            self._in_episode = False
+            self._trouble_seen = False
+            self._alarm_left = 0
+            self._alert.stop()
+            self._log("clear")
+
+        if self._alarm_left > 0 and self._alert.play(self._config["ambush_alarm"]):
+            self._alarm_left -= 1
 
 
 # src/uo/tool.py
@@ -1872,7 +1893,6 @@ class Run(object):
             "not_metal_words": NOT_METAL_WORDS,
             "asks": METAL_ASKS,
             "misses": METAL_MISSES,
-            "opl_timeout": OPL_TIMEOUT,
         }, log)
         combiner = Combiner(ore, metals, {
             "attempts": MAX_COMBINE_ATTEMPTS,
@@ -1901,14 +1921,12 @@ class Run(object):
         threat = ThreatWatch({
             "watch": WATCH_FOR_TROUBLE,
             "range": THREAT_RANGE,
-            "call": GUARD_CALL,
-            "calls": GUARD_CALLS,
-            "call_delay": GUARD_CALL_DELAY,
-            "reply_wait": GUARD_REPLY_WAIT,
-            "no_guards_text": NO_GUARDS_TEXT,
-            "zone_text": GUARD_ZONE_TEXT,
-            "unguarded_text": UNGUARDED_TEXT,
-            "attack_text": ATTACK_TEXT,
+            "ambush_text": AMBUSH_TEXT,
+            "ambush_alarm": AMBUSH_ALARM,
+            "ambush_notices": AMBUSH_NOTICES,
+            "ambush_warning": AMBUSH_WARNING,
+            "ambush_hue": AMBUSH_HUE,
+            "ambush_repeats": AMBUSH_REPEATS,
         }, log, beetle.find, "beetle")
 
         DIG_CONFIG = {
@@ -2162,6 +2180,10 @@ try:
         end_cycle(outcome if outcome is not None else "unknown")
         API.Pause(STEP_DELAY)
 except Exception as error:
+    # The stop button lands here as well, and the client waits for it to unwind the thread
+    if API.StopRequested:
+        raise
+
     # Nothing else catches: a throw out of a client call used to end the run with no line at all
     if stop is None:
         stop = "threw - %s" % error

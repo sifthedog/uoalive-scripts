@@ -2,25 +2,26 @@ import API
 
 from lumberjacking.boards import Boards
 from lumberjacking.chop import Chopper
-from lumberjacking.config import (AIM_AT_SELF, ANIMAL_SCAN_RADIUS, ATTACK_TEXT, AXE_NAMES,
+from lumberjacking.config import (AIM_AT_SELF, AMBUSH_ALARM, AMBUSH_HUE, AMBUSH_NOTICES,
+                                  AMBUSH_REPEATS, AMBUSH_TEXT, AMBUSH_WARNING,
+                                  ANIMAL_SCAN_RADIUS, AXE_NAMES,
                                   BOARD_GRAPHICS, BOARD_NAME_WORDS, CHOP_PROMPT_TEXT, CHOP_RANGE,
                                   CHOP_TARGET_POLL, CHOP_TARGET_TIMEOUT, CHOP_TIMEOUT, CHOP_Z_RANGE,
                                   CONVERT_ATTEMPTS, CONVERT_DELAY, CONVERT_POLL, CONVERT_TIMEOUT,
                                   EMPTY_HINT, EQUIP_ATTEMPTS, EQUIP_POLL, EQUIP_TIMEOUT,
-                                  GUARD_CALL, GUARD_CALL_DELAY, GUARD_CALLS, GUARD_REPLY_WAIT,
-                                  GUARD_ZONE_TEXT, HAUL_BUFFER, HEARTBEAT_EVERY, IDLE_LOG_EVERY,
+                                  HAUL_BUFFER, HEARTBEAT_EVERY, IDLE_LOG_EVERY,
                                   IDLE_POLL, LOG_EVERY, LOG_GRAPHICS, LOG_NAME_WORDS,
                                   MAX_CONVERT_PASSES, MAX_CYCLES, MAX_EMPTY_HAULS, MAX_NO_CURSOR,
                                   MAX_NO_TOOL, MAX_PATH_PROBES, MAX_PICKS, MAX_THROTTLED,
                                   MAX_TREE_WALKS, MAX_UNKNOWN, MOVE_DELAY, NO_CURSOR_READ,
-                                  NO_GUARDS_TEXT, NOT_AXE_NAMES, NOT_TREE_GRAPHICS,
+                                  NOT_AXE_NAMES, NOT_TREE_GRAPHICS,
                                   OUTCOME_TEXT, PACK_ANIMAL_GRAPHICS, PACK_ANIMAL_SERIALS,
                                   PACK_LIMIT, PATHFIND_TIMEOUT, PICK_PACK_ANIMALS, PICK_TIMEOUT,
                                   REGROW_DELAY, ROAM_RADIUS, SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT,
                                   SAVING_TEXT, SCAN_RADIUS, SPARE_BAG_SERIAL, STALL_STOP,
                                   STALL_WARN, STEP_DELAY, STOPPED, SURVEY_ARTS, TARGET_TIMEOUT,
                                   THREAT_RANGE, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX,
-                                  THROTTLED_TEXT, TREE_GRAPHICS, TREE_NAME, UNGUARDED_TEXT,
+                                  THROTTLED_TEXT, TREE_GRAPHICS, TREE_NAME,
                                   UNLOAD_RANGE, UNREACHABLE_DELAY, UNSKILLED_TEXT,
                                   WATCH_FOR_TROUBLE, WEIGHT_BUFFER)
 from lumberjacking.haul import Haul
@@ -92,14 +93,12 @@ trees = Trees(memory, {
 threat = ThreatWatch({
     "watch": WATCH_FOR_TROUBLE,
     "range": THREAT_RANGE,
-    "call": GUARD_CALL,
-    "calls": GUARD_CALLS,
-    "call_delay": GUARD_CALL_DELAY,
-    "reply_wait": GUARD_REPLY_WAIT,
-    "no_guards_text": NO_GUARDS_TEXT,
-    "zone_text": GUARD_ZONE_TEXT,
-    "unguarded_text": UNGUARDED_TEXT,
-    "attack_text": ATTACK_TEXT,
+    "ambush_text": AMBUSH_TEXT,
+    "ambush_alarm": AMBUSH_ALARM,
+    "ambush_notices": AMBUSH_NOTICES,
+    "ambush_warning": AMBUSH_WARNING,
+    "ambush_hue": AMBUSH_HUE,
+    "ambush_repeats": AMBUSH_REPEATS,
 }, log, haul.companion, lambda friend: "'%s'" % (friend.Name or "?"))
 roam = Roam(trees, memory, saves, threat, {
     "noun": "tree",
@@ -340,6 +339,10 @@ try:
         end_cycle(outcome if outcome is not None else "unknown")
         API.Pause(STEP_DELAY)
 except Exception as error:
+    # The stop button lands here as well, and the client waits for it to unwind the thread
+    if API.StopRequested:
+        raise
+
     # Nothing else catches: a throw out of a client call used to end the run with no line at all
     if stop is None:
         stop = "threw - %s" % error

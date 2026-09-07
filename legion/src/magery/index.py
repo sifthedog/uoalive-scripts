@@ -13,7 +13,7 @@ from magery.config import (BUFF_WAIT, CAST_DELAY, CAST_TIMEOUT, CAST_WAIT_SLICE,
 from uo.buffbar import BuffBar
 from uo.cast import Caster
 from uo.gear import in_hand
-from uo.guards import dead, first_reason, stopped
+from uo.guards import dead, first_reason, skill_capped, stopped
 from uo.heartbeat import Heartbeat
 from uo.log import make_log
 from uo.loop import backoff_for
@@ -33,7 +33,7 @@ heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "casts", position_and_mana)
 
 
 def stop_reason():
-    return first_reason([stopped(STOPPED), dead()])
+    return first_reason([stopped(STOPPED), dead(), skill_capped(SKILL)])
 
 
 def standing(stage):
@@ -116,8 +116,8 @@ if stop is None:
     # itself would be lying about its plan
     if cap is not None and cap > 0 and goal > cap:
         log(
-            "the last stage aims at %.1f and the shard caps %s at %.1f - it will not finish "
-            "without a power scroll" % (goal, skill.name(), cap)
+            "the last stage aims at %.1f and the shard caps %s at %.1f - it will stop there"
+            % (goal, skill.name(), cap)
         )
 
     if stage_now(plan, start) is None:
@@ -291,6 +291,10 @@ try:
         heartbeat.beat(outcome or "unknown", cycle, casts)
         caster.pace(stage)
 except Exception as error:
+    # The stop button lands here as well, and the client waits for it to unwind the thread
+    if API.StopRequested:
+        raise
+
     # Nothing else catches: a throw out of a client call used to end the run with no line at all
     if stop is None:
         stop = "threw - %s" % error

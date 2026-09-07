@@ -1,6 +1,6 @@
 import unittest
 
-from bowcraft.menu import CraftMenu
+from uo.craftmenu import CraftMenu
 from test_support.uo import install
 
 CONFIG = {
@@ -12,6 +12,7 @@ CONFIG = {
     "title": "BOWCRAFT AND FLETCHING",
     "title_text": ["BOWCRAFT AND FLETCHING", "BOWCRAFT", "FLETCHING"],
     "title_fragments": ["bowcraft and fletching", "bowcraft", "fletching"],
+    "tool_noun": "tools",
     "gump_timeout": 5.0,
     "gump_poll": 0.15,
     "max_categories": 6,
@@ -19,7 +20,7 @@ CONFIG = {
 }
 
 
-class Tools(object):
+class FakeTool(object):
     def __init__(self, serial=7):
         self._serial = serial
 
@@ -30,7 +31,7 @@ class Tools(object):
 class ButtonIdTest(unittest.TestCase):
     def setUp(self):
         install()
-        self.menu = CraftMenu(Tools(), CONFIG, [].append)
+        self.menu = CraftMenu(FakeTool(), CONFIG, [].append)
 
     def test_categories_are_type_zero(self):
         self.assertEqual([self.menu.button_id(0, n) for n in range(3)], [1, 21, 41])
@@ -43,7 +44,7 @@ class ItemRowsTest(unittest.TestCase):
     def setUp(self):
         self.api = install()
         self.said = []
-        self.menu = CraftMenu(Tools(), CONFIG, self.said.append)
+        self.menu = CraftMenu(FakeTool(), CONFIG, self.said.append)
 
     def _gump(self, *lines):
         self.api.gump = 88
@@ -91,7 +92,7 @@ class ItemRowsTest(unittest.TestCase):
 class IsCraftGumpTest(unittest.TestCase):
     def setUp(self):
         self.api = install()
-        self.menu = CraftMenu(Tools(), CONFIG, [].append)
+        self.menu = CraftMenu(FakeTool(), CONFIG, [].append)
 
     def test_nothing_is_not_a_craft_gump(self):
         self.assertFalse(self.menu.is_craft_gump(0))
@@ -112,7 +113,7 @@ class FindCategoryTest(unittest.TestCase):
     def setUp(self):
         self.api = install()
         self.said = []
-        self.menu = CraftMenu(Tools(), CONFIG, self.said.append)
+        self.menu = CraftMenu(FakeTool(), CONFIG, self.said.append)
         self.pages = {}
         self.api.GetGumpContents = lambda ident: self.pages.get(ident, "")
 

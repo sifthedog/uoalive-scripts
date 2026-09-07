@@ -1,6 +1,5 @@
-from uo.notoriety import CALL_ON_SIGHT, HOSTILE
-from uo.phrases import (ATTACK_TEXT, GUARD_ZONE_TEXT, NO_GUARDS_TEXT, SAVE_DONE_TEXT, SAVING_TEXT,
-                        STOPPED, THROTTLED_TEXT, UNGUARDED_TEXT, UNSKILLED_TEXT)
+from uo.phrases import (AMBUSH_TEXT, SAVE_DONE_TEXT, SAVING_TEXT, STOPPED, THROTTLED_TEXT,
+                        UNSKILLED_TEXT)
 from uo.timings import (HEARTBEAT_EVERY, LOG_EVERY, PACK_LIMIT, SAVE_POLL, SAVE_WAIT, STALL_STOP,
                         STALL_WARN, STEP_DELAY, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX)
 
@@ -155,10 +154,16 @@ MAX_NO_TOOL = 10
 WATCH_FOR_TROUBLE = True
 
 THREAT_RANGE = 12
-GUARD_CALL = "guards"
-GUARD_CALLS = 3
-GUARD_CALL_DELAY = 10.0
-GUARD_REPLY_WAIT = 0.8
+AMBUSH_WARNING = "AMBUSHED!"
+AMBUSH_HUE = 33
+
+# Run on this Mac, outside the game, so the client's sound setting does not matter. An empty list
+# turns the one off. The alarm restarts while trouble lasts, up to AMBUSH_REPEATS starts
+AMBUSH_ALARM = ["afplay", "/System/Library/Sounds/Sosumi.aiff"]
+AMBUSH_NOTICES = [
+    ["osascript", "-e", 'display notification "You have been ambushed!" with title "Ultima Online"'],
+]
+AMBUSH_REPEATS = 30
 
 
 # Ordered, not a dict: InJournalAny answers yes/no, so the buckets are polled in order and the first

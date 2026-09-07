@@ -1,6 +1,6 @@
 import API
 
-from uo.journal import said
+from uo.journal import forget, said
 from uo.pack import amount_of, hue_of, pack_contents
 
 
@@ -96,7 +96,7 @@ class Combiner(object):
     def _combine(self, primary, dup):
         before = amount_of(primary)
 
-        API.ClearJournal()
+        forget(self._config["different_text"] + self._config["throttled_text"])
 
         # No cancel before the use: a cursor cancelled shortly before an action has been measured
         # costing that action its own cursor

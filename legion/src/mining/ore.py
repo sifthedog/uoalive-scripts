@@ -43,7 +43,7 @@ class OrePack(object):
     def wait_for_ore(self, before, timeout, poll):
         waited = 0.0
 
-        while True:
+        while not API.StopRequested:
             # Read before the first pause: the delivery has usually already happened by the time the
             # journal line announcing it is read
             if self.total() > before:

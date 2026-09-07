@@ -50,12 +50,19 @@ def overweight(buffer):
     return clause
 
 
+# The base, not Value: jewelry lifts Value past the cap while the skill is still gaining
 def skill_capped(name):
     def clause():
         skill = API.GetSkill(name) if name is not None else None
 
-        if skill is not None and skill.Value > 0 and skill.Value >= skill.Cap:
-            return "%s is capped at %.1f" % (name, skill.Value)
+        if skill is None:
+            return None
+
+        base = getattr(skill, "Base", None)
+        value = base if base is not None else skill.Value
+
+        if value > 0 and value >= skill.Cap:
+            return "%s is capped at %.1f" % (name, value)
 
         return None
 

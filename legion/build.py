@@ -22,11 +22,12 @@ ENTRIES = [
     {"in": "src/mining/here.py", "out": "mine-here"},
     {"in": "src/lumberjacking/index.py", "out": "lumberjack"},
     {"in": "src/bowcraft/index.py", "out": "bowcraft"},
+    {"in": "src/bod/index.py", "out": "bod"},
 ]
 
 # Legion strips these from the script it loads and injects API as a builtin, so the artifact
 # carries one of each and no module body does.
-HOISTED = ("API", "time")
+HOISTED = ("API", "time", "clr", "System")
 
 
 class BuildError(Exception):

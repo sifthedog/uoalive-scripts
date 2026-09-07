@@ -2,6 +2,7 @@ import API
 
 from uo.convert import Converter
 from uo.entity import hex_of
+from uo.journal import forget
 from uo.pack import hue_of
 
 
@@ -79,7 +80,7 @@ class Boards(object):
         if API.HasTarget():
             API.CancelTarget()
 
-        API.ClearJournal()
+        forget(self._config["throttled_text"] + self._config["unskilled_text"])
         API.UseObject(serial)
 
         if not API.WaitForTarget("any", self._config["target_timeout"]):

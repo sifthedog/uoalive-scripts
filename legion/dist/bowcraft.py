@@ -5,18 +5,6 @@ import time
 
 
 # src/bowcraft/bands.py
-# A name the client does not carry throws on some builds rather than answering None
-def find_skill_name(names):
-    for name in names:
-        try:
-            if API.GetSkill(name) is not None:
-                return name
-        except Exception:
-            continue
-
-    return None
-
-
 # Ceilings are exclusive
 def band_for(bands, value):
     if value is None:
@@ -153,7 +141,7 @@ BATCH_SIZE = 300
 RESTOCK_AT = 25
 
 # Counted as amounts: fukiya darts stack ten to a craft, so raise it for that band
-SELL_AT = 20
+SELL_AT = 10
 
 # Matched against the name *and* the tooltip: "Alger" is "the bowyer" only in the tooltip
 BOWYER_TITLES = ["bowyer", "fletcher", "archer", "bowyers", "fletchers"]
@@ -255,6 +243,9 @@ MAX_THROTTLED = 20
 MAX_NO_TOOL = 10
 MAX_EMPTY_MOVES = 3
 
+# The shard refusing a move for weight. With products in the pack the run sells before it loads.
+TOO_HEAVY_TEXT = ["That container cannot hold more weight"]
+
 # Sell trips in a row that bought nothing before the trips pause. Never ends the run.
 MAX_SELL_MISSES = 3
 SELL_RETRY_AFTER = 25
@@ -341,6 +332,13 @@ def journal_tail(seconds, limit):
             texts.append(text.strip())
 
     return texts[-limit:]
+
+
+# Line by line rather than the whole journal: a wholesale clear before every swing wiped the ambush
+# warning before the threat watch got its once-a-cycle look at it
+def forget(phrases):
+    for text in phrases:
+        API.ClearJournal(text)
 
 
 def matched_bucket(buckets):
@@ -492,7 +490,7 @@ class Crafter(object):
     def _read_outcome(self, opened, landed):
         waited = 0.0
 
-        while True:
+        while not API.StopRequested:
             if landed():
                 return "made"
 
@@ -750,209 +748,6 @@ class Materials(object):
         return rows
 
 
-# src/uo/gump.py
-# For a menu whose pages all share one type id: HasGump answers the gump's *type*, and ReplyGump
-# disposes the gump it answers before the shard sends the next page, so the wait is for the menu to
-# be back rather than for a different id
-def await_any(timeout, poll):
-    waited = 0.0
-
-    while waited < timeout:
-        found = API.HasGump()
-
-        if found:
-            return found
-
-        API.Pause(poll)
-        waited += poll
-
-    return 0
-
-
-# src/bowcraft/menu.py
-class CraftMenu(object):
-    """The fletcher's craft gump: opening it, finding the category, and finding the row."""
-
-    def __init__(self, tools, config, log):
-        self._tools = tools
-        self._config = config
-        self._log = log
-        self._id = 0
-        self._said_gump_text = False
-        self._said_no_category = False
-        self._said_no_row = set()
-        self._category_buttons = {}
-        self._category_rejects = {}
-
-    def current_id(self):
-        return self._id
-
-    def button_id(self, kind, index):
-        return 1 + kind + index * self._config["stride"]
-
-    # False is the client saying the gump was gone before the press: not worth waiting out
-    def press(self, button, gump, timeout):
-        if not API.ReplyGump(button, gump):
-            return 0
-
-        found = await_any(timeout, self._config["gump_poll"])
-
-        if found:
-            self._id = found
-
-        return found
-
-    def is_craft_gump(self, ident):
-        if not ident:
-            return False
-
-        if any_in(API.GetGumpContents(ident) or "", self._config["title_fragments"]):
-            return True
-
-        # GumpContains reads controls GetGumpContents may not put in text
-        for phrase in self._config["title_text"]:
-            if API.GumpContains(phrase, ident):
-                return True
-
-        return False
-
-    def lines(self, gump):
-        text = API.GetGumpContents(gump)
-
-        return [line.strip() for line in (text or "").split("\n") if line.strip()]
-
-    def open(self):
-        found = API.HasGump()
-
-        if found and (found == self._id or self.is_craft_gump(found)):
-            self._id = found
-
-            return found
-
-        serial = self._tools.serial()
-
-        if serial is None:
-            return None
-
-        # The wait below is for any gump, so a vendor's or status gump standing open would answer it
-        if found:
-            self._log("closing the gump that is in the way %s" % hex_of(found))
-            API.CloseGump(found)
-            API.Pause(self._config["gump_poll"])
-
-        API.UseObject(serial)
-
-        found = await_any(self._config["gump_timeout"], self._config["gump_poll"])
-
-        if not found:
-            return None
-
-        # The title is a cliloc the client resolves; gating on it made a working menu read as none
-        if not self._said_gump_text and not self.is_craft_gump(found):
-            self._said_gump_text = True
-            lines = self.lines(found)
-            self._log("the tools opened a gump that does not name %s - it starts '%s'"
-                      % (self._config["title"], lines[0] if lines else "(no text)"))
-
-        self._id = found
-
-        return found
-
-    # The stock gump emits the group rows before the item rows
-    def item_rows(self, gump):
-        lines = self.lines(gump)
-        start = None
-
-        for index in range(len(lines)):
-            if (lines[index].lower() in self._config["category_names"]
-                    or lines[index].upper() == self._config["last_ten_label"]):
-                start = index + 1
-
-        return [] if start is None else lines[start:]
-
-    # Whole row, never a substring: "crossbow" is inside "crossbow bolt", in another category
-    def page_has(self, product, gump):
-        rows = self.item_rows(gump)
-
-        for row in rows:
-            if row.lower() == product:
-                return True
-
-        return len(rows) == 0 and API.GumpContains(product, gump)
-
-    def remember_category(self, product, button):
-        self._category_buttons[product] = button
-
-    def forget_category(self, product):
-        if product in self._category_buttons:
-            del self._category_buttons[product]
-
-    def reject_category(self, product, button):
-        rejected = self._category_rejects.setdefault(product, set())
-        rejected.add(button)
-
-        return len(rejected)
-
-    # Pressing a category only redraws the SELECTIONS panel, so walking them costs no wood
-    def find_category(self, product, gump):
-        known = self._category_buttons.get(product)
-
-        if known is not None:
-            return (self.press(known, gump, self._config["gump_timeout"]), known)
-
-        rejected = self._category_rejects.get(product, set())
-
-        for index in range(self._config["max_categories"]):
-            button = self.button_id(self._config["category_type"], index)
-
-            if button in rejected:
-                continue
-
-            opened = self.press(button, gump, self._config["gump_timeout"])
-
-            # A press that answered nothing is not a verdict on the category
-            if not opened:
-                return (0, 0)
-
-            if self.page_has(product, opened):
-                self._category_buttons[product] = button
-                self._log("'%s' is in the category on button %d" % (product, button))
-
-                return (opened, button)
-
-            gump = opened
-
-        if not self._said_no_category:
-            self._said_no_category = True
-            self._log("no category lists '%s' - check the name against the SELECTIONS rows"
-                      % product)
-
-        return (gump, None)
-
-    # The text first: unlike a category, a wrong row crafts the wrong item and spends the wood
-    def candidate_buttons(self, product, gump):
-        rows = self.item_rows(gump)
-        order = []
-
-        for index in range(len(rows)):
-            if rows[index].lower() == product:
-                order.append(self.button_id(self._config["item_type"], index))
-
-        if len(order) == 0 and product not in self._said_no_row:
-            self._said_no_row.add(product)
-            self._log("the gump text does not name '%s' on a row of its own, walking the rows"
-                      % product)
-            self._log("rows seen: %s" % (", ".join(rows) if rows else "none"))
-
-        for index in range(self._config["max_item_rows"]):
-            button = self.button_id(self._config["item_type"], index)
-
-            if button not in order:
-                order.append(button)
-
-        return order
-
-
 # src/bowcraft/wood.py
 class WoodBook(object):
     """What in the pack is wood, which wood it is, and how much of it the menu will spend."""
@@ -1120,6 +915,23 @@ def total_of(counts):
     return sum(counts[kind] for kind in counts)
 
 
+# src/uo/vitals.py
+def weight_reading():
+    me = player()
+
+    return "?/?" if me is None else "%d/%d" % (me.Weight, me.WeightMax)
+
+
+def where():
+    me = player()
+
+    return "somewhere" if me is None else "at %d,%d" % (me.X, me.Y)
+
+
+def position_and_weight():
+    return "%s, %s" % (where(), weight_reading())
+
+
 # src/bowcraft/restock.py
 class Restock(object):
     def __init__(self, wood, sources, config, log):
@@ -1127,6 +939,10 @@ class Restock(object):
         self._sources = sources
         self._config = config
         self._log = log
+        self._heavy = False
+
+    def refused_for_weight(self):
+        return self._heavy
 
     # Wrong wood goes back while its container is open and in reach, the one moment it costs nothing
     def _put_back(self, container):
@@ -1148,6 +964,7 @@ class Restock(object):
 
     # Moves are asynchronous: the pack is re-counted after each rather than MoveItem's return read
     def run(self):
+        self._heavy = False
         lifted = self._wood.lift_from_bags()
 
         # After the lift: in_pack reads bags too, and counting the lift twice left it short
@@ -1155,7 +972,7 @@ class Restock(object):
         moved = 0
 
         for entry in self._sources.picked():
-            if moved >= wanted:
+            if moved >= wanted or self._heavy:
                 break
 
             if not self._sources.reach(entry):
@@ -1186,6 +1003,13 @@ class Restock(object):
                 API.Pause(self._config["move_delay"])
 
                 gained = self._wood.in_pack() - before
+
+                # Every container answers the same, so the first refusal ends the whole pull
+                if gained <= 0 and matched_bucket([("heavy", self._config["heavy_text"])]):
+                    self._heavy = True
+                    self._log("the shard will not load more wood - too heavy at %s"
+                              % weight_reading())
+                    break
 
                 if gained <= 0:
                     stalled += 1
@@ -1382,39 +1206,6 @@ class Sources(object):
         return chebyshev(spot[0], spot[1], within + 1) <= within
 
 
-# src/bowcraft/tools.py
-class Tools(object):
-    """The fletcher's tools, which are used out of the pack rather than equipped."""
-
-    def __init__(self, graphics, name_words, log):
-        self._graphics = graphics
-        self._name_words = name_words
-        self._log = log
-
-    def is_tool(self, item):
-        if item is None:
-            return False
-
-        if item.Graphic in self._graphics:
-            return True
-
-        if not word_in(item.Name, self._name_words):
-            return False
-
-        self._graphics.add(item.Graphic)
-        self._log("%s '%s' is a fletcher's tool too, remembering the art"
-                  % (hex_of(item.Graphic), item.Name))
-
-        return True
-
-    def serial(self):
-        for item in pack_contents():
-            if self.is_tool(item):
-                return item.Serial
-
-        return None
-
-
 # src/uo/menu.py
 # ContextMenu opens the menu itself, and cannot tell an entry that is missing from one that never
 # arrived - both come back False
@@ -1570,6 +1361,244 @@ class Vendor(object):
         return sold
 
 
+# src/uo/gump.py
+# For a menu whose pages all share one type id: HasGump answers the gump's *type*, and ReplyGump
+# disposes the gump it answers before the shard sends the next page, so the wait is for the menu to
+# be back rather than for a different id
+def await_any(timeout, poll):
+    waited = 0.0
+
+    while waited < timeout:
+        found = API.HasGump()
+
+        if found:
+            return found
+
+        API.Pause(poll)
+        waited += poll
+
+    return 0
+
+
+# src/uo/craftmenu.py
+class CraftMenu(object):
+    """A craft gump: opening it, finding the category, and finding the row."""
+
+    def __init__(self, tools, config, log):
+        self._tools = tools
+        self._config = config
+        self._log = log
+        self._id = 0
+        self._said_gump_text = False
+        self._said_no_category = False
+        self._said_no_row = set()
+        self._category_buttons = {}
+        self._category_rejects = {}
+
+    def current_id(self):
+        return self._id
+
+    def button_id(self, kind, index):
+        return 1 + kind + index * self._config["stride"]
+
+    # False is the client saying the gump was gone before the press: not worth waiting out
+    def press(self, button, gump, timeout):
+        if not API.ReplyGump(button, gump):
+            return 0
+
+        found = await_any(timeout, self._config["gump_poll"])
+
+        if found:
+            self._id = found
+
+        return found
+
+    def is_craft_gump(self, ident):
+        if not ident:
+            return False
+
+        if any_in(API.GetGumpContents(ident) or "", self._config["title_fragments"]):
+            return True
+
+        # GumpContains reads controls GetGumpContents may not put in text
+        for phrase in self._config["title_text"]:
+            if API.GumpContains(phrase, ident):
+                return True
+
+        return False
+
+    def lines(self, gump):
+        text = API.GetGumpContents(gump)
+
+        return [line.strip() for line in (text or "").split("\n") if line.strip()]
+
+    def open(self):
+        found = API.HasGump()
+
+        if found and (found == self._id or self.is_craft_gump(found)):
+            self._id = found
+
+            return found
+
+        serial = self._tools.serial()
+
+        if serial is None:
+            return None
+
+        # The wait below is for any gump, so a vendor's or status gump standing open would answer it
+        if found:
+            self._log("closing the gump that is in the way %s" % hex_of(found))
+            API.CloseGump(found)
+            API.Pause(self._config["gump_poll"])
+
+        API.UseObject(serial)
+
+        found = await_any(self._config["gump_timeout"], self._config["gump_poll"])
+
+        if not found:
+            return None
+
+        # The title is a cliloc the client resolves; gating on it made a working menu read as none
+        if not self._said_gump_text and not self.is_craft_gump(found):
+            self._said_gump_text = True
+            lines = self.lines(found)
+            self._log("the %s opened a gump that does not name %s - it starts '%s'"
+                      % (self._config["tool_noun"], self._config["title"],
+                         lines[0] if lines else "(no text)"))
+
+        self._id = found
+
+        return found
+
+    # The stock gump emits the group rows before the item rows
+    def item_rows(self, gump):
+        lines = self.lines(gump)
+        start = None
+
+        for index in range(len(lines)):
+            if (lines[index].lower() in self._config["category_names"]
+                    or lines[index].upper() == self._config["last_ten_label"]):
+                start = index + 1
+
+        return [] if start is None else lines[start:]
+
+    # Whole row, never a substring: "crossbow" is inside "crossbow bolt", in another category
+    def page_has(self, product, gump):
+        rows = self.item_rows(gump)
+
+        for row in rows:
+            if row.lower() == product:
+                return True
+
+        return len(rows) == 0 and API.GumpContains(product, gump)
+
+    def remember_category(self, product, button):
+        self._category_buttons[product] = button
+
+    def forget_category(self, product):
+        if product in self._category_buttons:
+            del self._category_buttons[product]
+
+    def reject_category(self, product, button):
+        rejected = self._category_rejects.setdefault(product, set())
+        rejected.add(button)
+
+        return len(rejected)
+
+    # Pressing a category only redraws the SELECTIONS panel, so walking them costs no wood
+    def find_category(self, product, gump):
+        known = self._category_buttons.get(product)
+
+        if known is not None:
+            return (self.press(known, gump, self._config["gump_timeout"]), known)
+
+        rejected = self._category_rejects.get(product, set())
+
+        for index in range(self._config["max_categories"]):
+            button = self.button_id(self._config["category_type"], index)
+
+            if button in rejected:
+                continue
+
+            opened = self.press(button, gump, self._config["gump_timeout"])
+
+            # A press that answered nothing is not a verdict on the category
+            if not opened:
+                return (0, 0)
+
+            if self.page_has(product, opened):
+                self._category_buttons[product] = button
+                self._log("'%s' is in the category on button %d" % (product, button))
+
+                return (opened, button)
+
+            gump = opened
+
+        if not self._said_no_category:
+            self._said_no_category = True
+            self._log("no category lists '%s' - check the name against the SELECTIONS rows"
+                      % product)
+
+        return (gump, None)
+
+    # The text first: unlike a category, a wrong row crafts the wrong item and spends the wood
+    def candidate_buttons(self, product, gump):
+        rows = self.item_rows(gump)
+        order = []
+
+        for index in range(len(rows)):
+            if rows[index].lower() == product:
+                order.append(self.button_id(self._config["item_type"], index))
+
+        if len(order) == 0 and product not in self._said_no_row:
+            self._said_no_row.add(product)
+            self._log("the gump text does not name '%s' on a row of its own, walking the rows"
+                      % product)
+            self._log("rows seen: %s" % (", ".join(rows) if rows else "none"))
+
+        for index in range(self._config["max_item_rows"]):
+            button = self.button_id(self._config["item_type"], index)
+
+            if button not in order:
+                order.append(button)
+
+        return order
+
+
+# src/uo/crafttool.py
+class CraftTool(object):
+    """A crafting tool, used out of the pack rather than equipped."""
+
+    def __init__(self, noun, graphics, name_words, log):
+        self._noun = noun
+        self._graphics = graphics
+        self._name_words = name_words
+        self._log = log
+
+    def is_tool(self, item):
+        if item is None:
+            return False
+
+        if item.Graphic in self._graphics:
+            return True
+
+        if not word_in(item.Name, self._name_words):
+            return False
+
+        self._graphics.add(item.Graphic)
+        self._log("%s '%s' is a %s too, remembering the art"
+                  % (hex_of(item.Graphic), item.Name, self._noun))
+
+        return True
+
+    def serial(self):
+        for item in pack_contents():
+            if self.is_tool(item):
+                return item.Serial
+
+        return None
+
+
 # src/uo/guards.py
 def first_reason(clauses):
     for clause in clauses:
@@ -1597,12 +1626,19 @@ def dead():
     return clause
 
 
+# The base, not Value: jewelry lifts Value past the cap while the skill is still gaining
 def skill_capped(name):
     def clause():
         skill = API.GetSkill(name) if name is not None else None
 
-        if skill is not None and skill.Value > 0 and skill.Value >= skill.Cap:
-            return "%s is capped at %.1f" % (name, skill.Value)
+        if skill is None:
+            return None
+
+        base = getattr(skill, "Base", None)
+        value = base if base is not None else skill.Value
+
+        if value > 0 and value >= skill.Cap:
+            return "%s is capped at %.1f" % (name, value)
 
         return None
 
@@ -1860,7 +1896,7 @@ class SaveWatch(object):
         # threw the completion away and then stood still for the whole of the wait
         ended = "the shard had already finished" if said(self._done_text) else None
 
-        API.ClearJournal()
+        forget(self._saving_text + self._done_text)
 
         waited = 0.0
 
@@ -1878,6 +1914,18 @@ class SaveWatch(object):
 
 
 # src/uo/skill.py
+# A name the client does not carry throws on some builds rather than answering None
+def find_skill_name(names):
+    for name in names:
+        try:
+            if API.GetSkill(name) is not None:
+                return name
+        except Exception:
+            continue
+
+    return None
+
+
 def reading(value):
     return "unknown" if value is None else "%.1f" % value
 
@@ -1917,7 +1965,7 @@ class SkillReader(object):
     def wait(self, timeout, poll):
         waited = 0.0
 
-        while True:
+        while not API.StopRequested:
             value = self.read()
 
             if value is not None:
@@ -1928,23 +1976,6 @@ class SkillReader(object):
 
             API.Pause(poll)
             waited += poll
-
-
-# src/uo/vitals.py
-def weight_reading():
-    me = player()
-
-    return "?/?" if me is None else "%d/%d" % (me.Weight, me.WeightMax)
-
-
-def where():
-    me = player()
-
-    return "somewhere" if me is None else "at %d,%d" % (me.X, me.Y)
-
-
-def position_and_weight():
-    return "%s, %s" % (where(), weight_reading())
 
 
 # src/bowcraft/index.py
@@ -1974,7 +2005,7 @@ def products_in_pack():
 
 saves = SaveWatch(SAVING_TEXT, SAVE_DONE_TEXT, SAVE_WAIT, SAVE_POLL, log, heartbeat, stop_reason)
 
-tools = Tools(TOOL_GRAPHICS, TOOL_NAME_WORDS, log)
+tools = CraftTool("fletcher's tool", TOOL_GRAPHICS, TOOL_NAME_WORDS, log)
 wood = WoodBook({
     "kinds": WOOD_KINDS,
     "types": WOOD_TYPES,
@@ -1994,6 +2025,7 @@ restock = Restock(wood, sources, {
     "move_delay": MOVE_DELAY,
     "max_empty_moves": MAX_EMPTY_MOVES,
     "return_wrong_wood": RETURN_WRONG_WOOD,
+    "heavy_text": TOO_HEAVY_TEXT,
 }, log)
 menu = CraftMenu(tools, {
     "stride": BUTTON_STRIDE,
@@ -2004,6 +2036,7 @@ menu = CraftMenu(tools, {
     "title": CRAFT_TITLE,
     "title_text": CRAFT_TITLE_TEXT,
     "title_fragments": CRAFT_TITLE_FRAGMENTS,
+    "tool_noun": "fletcher's tools",
     "gump_timeout": GUMP_TIMEOUT,
     "gump_poll": GUMP_POLL,
     "max_categories": MAX_CATEGORIES,
@@ -2044,12 +2077,18 @@ vendor = Vendor(wood, menu, {
 
 start = skill.wait(SKILL_TIMEOUT, SKILL_POLL)
 
+# Before the cursor: a capped character has nothing to pick containers for
+capped = skill_capped(skill_name)()
+
 if start is None:
     log("%s is not reading yet - start it again once the skill list has arrived" % skill_name)
     API.Stop()
 elif start < MIN_SKILL:
     log("%s is at %.1f and the table starts at %.1f - train it up by hand first"
         % (skill_name, start, MIN_SKILL))
+    API.Stop()
+elif capped is not None:
+    log(capped)
     API.Stop()
 
 if tools.serial() is None:
@@ -2063,8 +2102,11 @@ if len(sources.picked()) == 0 and wood.in_pack() == 0:
     log("nothing picked and no wood in the pack")
     API.Stop()
 
-log("%s at %.1f, %s in the pack, %s" % (skill_name, start, wood.pack_report(),
-                                        sources.stock_line()))
+cap = skill.cap()
+
+log("%s at %.1f%s, %s in the pack, %s"
+    % (skill_name, start, "/%.1f" % cap if cap is not None and cap > 0 else "",
+       wood.pack_report(), sources.stock_line()))
 
 if wood.in_pack() < RESTOCK_AT:
     restock.run()
@@ -2096,6 +2138,41 @@ def end_cycle(phase):
 
     if stop is None:
         stop = stall.reason()
+
+
+def sell_now():
+    global sell_misses, sell_paused_until
+
+    if vendor.sell_trip():
+        sell_misses = 0
+
+        return True
+
+    sell_misses += 1
+
+    # Retried, but not every cycle: otherwise the crafting never gets a turn
+    if sell_misses >= MAX_SELL_MISSES:
+        sell_misses = 0
+        sell_paused_until = cycle + SELL_RETRY_AFTER
+        log("%d sell trips bought nothing - crafting on, and asking again in %d cycles"
+            % (MAX_SELL_MISSES, SELL_RETRY_AFTER))
+
+    return False
+
+
+# A pack the shard will not load for weight is unloaded first, when there is anything in it to sell
+def sell_for_room():
+    if not restock.refused_for_weight() or cycle < sell_paused_until:
+        return False
+
+    held = products_in_pack()
+
+    if held == 0:
+        return False
+
+    log("selling %d before loading more wood" % held)
+
+    return sell_now()
 
 
 # Measured either side of the craft rather than read off the recipe: a failure refunds part of it
@@ -2146,25 +2223,17 @@ try:
             product = wanted
             crafter.forget_last()
 
-        if products_in_pack() >= SELL_AT and cycle >= sell_paused_until:
-            if vendor.sell_trip():
-                sell_misses = 0
-
-                end_cycle("selling")
-                continue
-
-            sell_misses += 1
-
-            # Retried, but not every cycle: otherwise the crafting never gets a turn
-            if sell_misses >= MAX_SELL_MISSES:
-                sell_misses = 0
-                sell_paused_until = cycle + SELL_RETRY_AFTER
-                log("%d sell trips bought nothing - crafting on, and asking again in %d cycles"
-                    % (MAX_SELL_MISSES, SELL_RETRY_AFTER))
+        if products_in_pack() >= SELL_AT and cycle >= sell_paused_until and sell_now():
+            end_cycle("selling")
+            continue
 
         if wood.in_pack() < RESTOCK_AT:
             # An unreachable container also pulls nothing, which the stall watch ends
             pulled = restock.run()
+
+            if sell_for_room():
+                end_cycle("selling")
+                continue
 
             if pulled == 0 and sources.stock_left() == 0 and wood.in_pack() < MIN_CRAFT_WOOD:
                 stop = ("out of %s wood - %s in the pack, none left in what you picked"
@@ -2196,6 +2265,10 @@ try:
             stall.progressed()
         elif outcome == "noMaterial":
             pulled = restock.run()
+
+            if sell_for_room():
+                end_cycle("selling")
+                continue
 
             if pulled > 0:
                 no_material = 0
@@ -2275,6 +2348,10 @@ try:
         end_cycle(outcome if outcome is not None else "unknown")
         API.Pause(STEP_DELAY)
 except Exception as error:
+    # The stop button lands here as well, and the client waits for it to unwind the thread
+    if API.StopRequested:
+        raise
+
     # Nothing else catches: a throw out of a client call used to end the run with no line at all
     if stop is None:
         stop = "threw - %s" % error

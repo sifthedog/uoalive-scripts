@@ -162,7 +162,7 @@ class Haul(object):
     def _move_all(self, pack_serial):
         previous = None
 
-        while True:
+        while not API.StopRequested:
             stacks = self._wood.board_piles()
 
             if len(stacks) == 0 or (previous is not None and len(stacks) >= previous):

@@ -1,7 +1,7 @@
 import unittest
 
 from test_support.uo import install
-from uo.journal import matched_bucket, read_outcome, said
+from uo.journal import forget, forget_outcomes, matched_bucket, read_outcome, said
 
 BUCKETS = [("empty", ["there is nothing here"]), ("saving", ["saving"])]
 
@@ -23,6 +23,25 @@ class SaidTest(unittest.TestCase):
         said(["saving"])
 
         self.assertTrue(said(["saving"]))
+
+
+class ForgetTest(unittest.TestCase):
+    def setUp(self):
+        self.api = install()
+
+    def test_drops_only_the_lines_it_is_told_to(self):
+        self.api.journal = ["Where do you wish to dig?", "You have been ambushed!", "You must wait"]
+
+        forget(["Where do you wish to dig", "You must wait"])
+
+        self.assertEqual(self.api.journal, ["You have been ambushed!"])
+
+    def test_drops_every_phrase_of_an_outcome_table(self):
+        self.api.journal = ["You dig some iron ore", "You have been ambushed!"]
+
+        forget_outcomes([("dug", ["You dig some", "You put"])])
+
+        self.assertEqual(self.api.journal, ["You have been ambushed!"])
 
 
 class MatchedBucketTest(unittest.TestCase):

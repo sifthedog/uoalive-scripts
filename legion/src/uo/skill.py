@@ -1,6 +1,18 @@
 import API
 
 
+# A name the client does not carry throws on some builds rather than answering None
+def find_skill_name(names):
+    for name in names:
+        try:
+            if API.GetSkill(name) is not None:
+                return name
+        except Exception:
+            continue
+
+    return None
+
+
 def reading(value):
     return "unknown" if value is None else "%.1f" % value
 
@@ -63,7 +75,7 @@ class SkillReader(object):
     def wait(self, timeout, poll):
         waited = 0.0
 
-        while True:
+        while not API.StopRequested:
             value = self.read()
 
             if value is not None:

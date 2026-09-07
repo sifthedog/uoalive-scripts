@@ -1,7 +1,9 @@
 import API
 
 from bowcraft.wood import total_of
+from uo.journal import matched_bucket
 from uo.pack import amount_of
+from uo.vitals import weight_reading
 
 
 class Restock(object):
@@ -10,6 +12,10 @@ class Restock(object):
         self._sources = sources
         self._config = config
         self._log = log
+        self._heavy = False
+
+    def refused_for_weight(self):
+        return self._heavy
 
     # Wrong wood goes back while its container is open and in reach, the one moment it costs nothing
     def _put_back(self, container):
@@ -31,6 +37,7 @@ class Restock(object):
 
     # Moves are asynchronous: the pack is re-counted after each rather than MoveItem's return read
     def run(self):
+        self._heavy = False
         lifted = self._wood.lift_from_bags()
 
         # After the lift: in_pack reads bags too, and counting the lift twice left it short
@@ -38,7 +45,7 @@ class Restock(object):
         moved = 0
 
         for entry in self._sources.picked():
-            if moved >= wanted:
+            if moved >= wanted or self._heavy:
                 break
 
             if not self._sources.reach(entry):
@@ -69,6 +76,13 @@ class Restock(object):
                 API.Pause(self._config["move_delay"])
 
                 gained = self._wood.in_pack() - before
+
+                # Every container answers the same, so the first refusal ends the whole pull
+                if gained <= 0 and matched_bucket([("heavy", self._config["heavy_text"])]):
+                    self._heavy = True
+                    self._log("the shard will not load more wood - too heavy at %s"
+                              % weight_reading())
+                    break
 
                 if gained <= 0:
                     stalled += 1

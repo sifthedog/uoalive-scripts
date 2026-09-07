@@ -26,7 +26,7 @@ STAGES = [
     # The only row that publishes a buff, and a toggle: every other cast takes it back off, which is
     # still a cast the shard charged for and rolled - see DISABLED_IS_PROGRESS.
     {
-        "up_to": 63.0,
+        "up_to": 62.0,
         "spell": "Stone Form",
         "buff": "StoneForm",
         "title": "Stone Form",
