@@ -21,6 +21,7 @@ ENTRIES = [
     {"in": "src/mining/index.py", "out": "mining"},
     {"in": "src/mining/here.py", "out": "mine-here"},
     {"in": "src/lumberjacking/index.py", "out": "lumberjack"},
+    {"in": "src/fishing/index.py", "out": "fishing"},
     {"in": "src/bowcraft/index.py", "out": "bowcraft"},
     {"in": "src/tinkering/index.py", "out": "tinkering"},
     {"in": "src/bod/index.py", "out": "bod"},
