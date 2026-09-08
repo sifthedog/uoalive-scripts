@@ -81,6 +81,7 @@ class FakeMenu(object):
         self.says = []
         self.category = 1
         self.rows = {"axe": 2}
+        self.missing = set()
 
     def open(self):
         return 88
@@ -92,6 +93,18 @@ class FakeMenu(object):
         self._api.hold(*held)
         self._items.names[serial] = None if name == "unknown" else name == "product"
 
+    def current_id(self):
+        return 88
+
+    def has_button(self, button, gump):
+        return button not in self.missing
+
+    def reply(self, button, gump):
+        return self._api.ReplyGump(button, gump)
+
+    def reply_page(self, button, page):
+        return self._api.ReplyGump(button, page)
+
     def press(self, button, gump, timeout):
         self.presses.append(button)
         self._api.hear(*self.says)
@@ -102,6 +115,9 @@ class FakeMenu(object):
             self._api.hear("You create the item")
 
         return 88
+
+    def press_page(self, button, gump, timeout):
+        return self.press(button, gump, timeout)
 
     def find_category(self, product, gump):
         return (88, self.category)

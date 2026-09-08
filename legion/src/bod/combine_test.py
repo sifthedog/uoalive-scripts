@@ -71,13 +71,21 @@ class DeedCombinerTest(unittest.TestCase):
 
         self.assertEqual(self.combiner.combine(BAG, [GORGET, SECOND]), ("combined", [GORGET]))
 
-    def test_a_gump_in_the_way_is_closed_first(self):
+    def test_a_gump_already_up_is_left_alone_and_not_pressed(self):
         self.api.gump = 88
         self.api.Target = lambda serial: self.api.take(GORGET)
 
         self.combiner.combine(BAG, [GORGET])
 
-        self.assertEqual(self.api.closed_gumps, 2)
+        self.assertEqual(self.api.replies, [(4, 99)])
+        self.assertEqual(self.api.closed_gumps, 1)
+
+    def test_a_deed_gump_without_the_combine_button_is_not_pressed(self):
+        self.api.gump_buttons[99] = set([0, 1])
+
+        self.assertEqual(self.combiner.combine(BAG, [GORGET]), ("noGump", []))
+        self.assertEqual(self.api.replies, [])
+        self.assertTrue(any("has no button 4" in line for line in self.said))
 
     def test_no_cursor(self):
         self.api.has_target = False

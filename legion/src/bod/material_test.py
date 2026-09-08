@@ -46,6 +46,7 @@ class MaterialPickerTest(unittest.TestCase):
         self.picker = MaterialPicker(self.menu, CONFIG, self.said.append)
         self.api.gump = 88
         self.api.gump_contents[88] = "\n".join(["Metal Armor", "Helmets"] + ROWS)
+        self.menu.open()
 
     def test_rows_are_matched_on_their_leading_words(self):
         self.assertEqual(self.picker.row_of("copper", ROWS), 3)

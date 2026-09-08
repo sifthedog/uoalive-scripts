@@ -42,9 +42,13 @@ class Menu(object):
         self._api = api
         self.presses = []
         self.makes = {}
+        self.missing = set()
 
     def open(self):
         return 88
+
+    def has_button(self, button, gump):
+        return button not in self.missing
 
     def press(self, button, gump, timeout):
         self.presses.append(button)
@@ -69,8 +73,9 @@ class MakeLastTest(unittest.TestCase):
     def setUp(self):
         self.api = install()
         self.menu = Menu(self.api)
+        self.said = []
         self.crafter = Crafter(Tools(), self.menu, Stock(), [("made", ["You create the item"])],
-                               CONFIG, lambda text: None)
+                               CONFIG, self.said.append)
 
     def test_a_proven_row_is_pressed_as_make_last_from_then_on(self):
         self.menu.makes = {2: BOW, MAKE_LAST: BOW}
@@ -88,3 +93,19 @@ class MakeLastTest(unittest.TestCase):
         self.assertEqual(self.menu.presses, [41, 2, MAKE_LAST, 41, 2])
         self.assertEqual(self.crafter._item_buttons, {"bow": 2})
         self.assertEqual(self.crafter._walked, set())
+
+    def test_the_row_is_pressed_when_the_menu_has_no_make_last(self):
+        self.menu.makes = {2: BOW}
+        self.menu.missing = set([MAKE_LAST])
+
+        self.assertEqual(self.crafter.craft_once("bow"), "made")
+        self.assertEqual(self.crafter.craft_once("bow"), "made")
+        self.assertEqual(self.menu.presses, [41, 2, 41, 2])
+        self.assertEqual(len([line for line in self.said if "no MAKE LAST" in line]), 1)
+
+    def test_a_recipe_button_the_menu_lacks_is_walked_for_and_never_pressed(self):
+        self.menu.missing = set([2])
+
+        self.assertEqual(self.crafter.craft_once("bow"), "wrongRow")
+        self.assertEqual(self.menu.presses, [41])
+        self.assertEqual(self.crafter._walked, set(["bow"]))

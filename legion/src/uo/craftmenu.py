@@ -1,7 +1,7 @@
 import API
 
 from uo.entity import hex_of
-from uo.gump import await_any
+from uo.gump import await_gump, await_recognised, button_ids, is_open, open_ids
 from uo.text import any_in
 
 
@@ -13,9 +13,13 @@ class CraftMenu(object):
         self._config = config
         self._log = log
         self._id = 0
+        self._page = 0
+        self._ignored = set()
         self._said_gump_text = False
         self._said_no_category = False
         self._said_no_row = set()
+        self._said_no_button = set()
+        self._said_not_menu = False
         self._category_buttons = {}
         self._category_rejects = {}
 
@@ -25,17 +29,61 @@ class CraftMenu(object):
     def button_id(self, kind, index):
         return 1 + kind + index * self._config["stride"]
 
-    # False is the client saying the gump was gone before the press: not worth waiting out
+    def has_button(self, button, gump):
+        known = button_ids(gump)
+
+        return known is None or button in known
+
+    # The shard drops the connection for a button the gump does not have, so nothing is sent blind
+    def _send(self, button, gump):
+        if not self.has_button(button, gump):
+            if button not in self._said_no_button:
+                self._said_no_button.add(button)
+                self._log("gump %s has no button %d - not pressing it" % (hex_of(gump), button))
+
+            return False
+
+        return bool(API.ReplyGump(button, gump))
+
+    def reply(self, button, gump):
+        if not gump or gump != self._id:
+            if not self._said_not_menu:
+                self._said_not_menu = True
+                self._log("not pressing button %d on %s - it is not the craft menu"
+                          % (button, hex_of(gump)))
+
+            return False
+
+        return self._send(button, gump)
+
     def press(self, button, gump, timeout):
-        if not API.ReplyGump(button, gump):
+        if not self.reply(button, gump):
             return 0
 
-        found = await_any(timeout, self._config["gump_poll"])
+        return await_gump(self._id, timeout)
 
-        if found:
-            self._id = found
+    # For a button that opens another gump: the one that was not up before answers, else the menu
+    def press_page(self, button, gump, timeout):
+        before = open_ids() + list(self._ignored)
+
+        if not self.reply(button, gump):
+            return 0
+
+        found, _recognised = await_recognised(lambda ident: False, before, timeout,
+                                              self._config["gump_poll"])
+
+        if not found:
+            found = await_gump(self._id, 0)
+
+        self._page = found
 
         return found
+
+    def reply_page(self, button, page):
+        if not page or page != self._page:
+            return False
+
+        return self._send(button, page)
 
     def is_craft_gump(self, ident):
         if not ident:
@@ -49,6 +97,12 @@ class CraftMenu(object):
             if API.GumpContains(phrase, ident):
                 return True
 
+        # The title is a cliloc that may not render; the group rows are read here regardless
+        for line in self.lines(ident):
+            if (line.lower() in self._config["category_names"]
+                    or line.upper() == self._config["last_ten_label"]):
+                return True
+
         return False
 
     def lines(self, gump):
@@ -56,34 +110,45 @@ class CraftMenu(object):
 
         return [line.strip() for line in (text or "").split("\n") if line.strip()]
 
+    def _ignore(self, ident):
+        if ident in self._ignored:
+            return
+
+        self._ignored.add(ident)
+        lines = self.lines(ident)
+        self._log("ignoring gump %s - it is not the craft menu, it starts '%s'"
+                  % (hex_of(ident), lines[0] if lines else "(no text)"))
+
     def open(self):
-        found = API.HasGump()
+        if self._id and is_open(self._id):
+            return self._id
 
-        if found and (found == self._id or self.is_craft_gump(found)):
-            self._id = found
+        before = open_ids()
 
-            return found
+        for ident in before:
+            if self.is_craft_gump(ident):
+                self._id = ident
+
+                return ident
+
+            self._ignore(ident)
 
         serial = self._tools.serial()
 
         if serial is None:
             return None
 
-        # The wait below is for any gump, so a vendor's or status gump standing open would answer it
-        if found:
-            self._log("closing the gump that is in the way %s" % hex_of(found))
-            API.CloseGump(found)
-            API.Pause(self._config["gump_poll"])
-
         API.UseObject(serial)
 
-        found = await_any(self._config["gump_timeout"], self._config["gump_poll"])
+        # A foreign gump the shard re-sends during the wait is not what the tools opened
+        found, recognised = await_recognised(self.is_craft_gump, before + list(self._ignored),
+                                             self._config["gump_timeout"],
+                                             self._config["gump_poll"])
 
         if not found:
             return None
 
-        # The title is a cliloc the client resolves; gating on it made a working menu read as none
-        if not self._said_gump_text and not self.is_craft_gump(found):
+        if not recognised and not self._said_gump_text:
             self._said_gump_text = True
             lines = self.lines(found)
             self._log("the %s opened a gump that does not name %s - it starts '%s'"
@@ -141,7 +206,7 @@ class CraftMenu(object):
         for index in range(self._config["max_categories"]):
             button = self.button_id(self._config["category_type"], index)
 
-            if button in rejected:
+            if button in rejected or not self.has_button(button, gump):
                 continue
 
             opened = self.press(button, gump, self._config["gump_timeout"])
@@ -196,4 +261,6 @@ class CraftMenu(object):
             if button not in order:
                 order.append(button)
 
-        return order
+        known = button_ids(gump)
+
+        return order if known is None else [button for button in order if button in known]

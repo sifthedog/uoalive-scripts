@@ -94,6 +94,21 @@ class FakePlayer(object):
         self.FollowersMax = fields.get("followers_max", 5)
 
 
+class FakeGui(object):
+    def __init__(self, serial):
+        self.ServerSerial = serial
+
+
+class FakeButton(object):
+    def __init__(self, button):
+        self.ButtonID = button
+
+
+class FakeGump(object):
+    def __init__(self, children):
+        self.Children = children
+
+
 class FakeAPI(object):
     def __init__(self):
         self.Player = FakePlayer()
@@ -132,6 +147,8 @@ class FakeAPI(object):
         self.menu_entries = set()
         self.menus = []
         self.gump = 0
+        self.open_gumps = set()
+        self.gump_buttons = {}
         self.gump_text = []
         self.gump_contents = {}
         self.opens = {}
@@ -318,6 +335,21 @@ class FakeAPI(object):
 
     def HasGump(self):
         return self.gump
+
+    def _open_gumps(self):
+        return set(self.open_gumps) | (set([self.gump]) if self.gump else set())
+
+    def WaitForGump(self, ID=None, delay=5):
+        return bool(ID) and ID in self._open_gumps()
+
+    def GetAllGumps(self):
+        return [FakeGui(serial) for serial in sorted(self._open_gumps())]
+
+    def GetGump(self, ID=None):
+        if ID not in self.gump_buttons:
+            return None
+
+        return FakeGump([FakeButton(button) for button in self.gump_buttons[ID]])
 
     def GumpContains(self, text, gump=None):
         return any(text.lower() in line.lower() for line in self.gump_text)

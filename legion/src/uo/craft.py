@@ -18,6 +18,7 @@ class Crafter(object):
         self._item_probes = {}
         self._make_last = False
         self._said_unreadable = 0
+        self._said_no_make_last = False
         # Products the recipe table got wrong on this shard, which the walk owns from then on
         self._walked = set()
 
@@ -89,14 +90,34 @@ class Crafter(object):
         known = None if product in self._walked else self._config["recipes"].get(product)
 
         if self._make_last:
-            return self._config["make_last_button"], None
+            if self._menu.has_button(self._config["make_last_button"], gump):
+                return self._config["make_last_button"], None
+
+            self._make_last = False
+
+            if not self._said_no_make_last:
+                self._said_no_make_last = True
+                self._log("the menu has no MAKE LAST on button %d, pressing the row itself"
+                          % self._config["make_last_button"])
 
         if known is not None:
             # Remembered too, so a later walk starts in the right category
             self._menu.remember_category(product, known[0])
 
-            if not self._menu.press(known[0], gump, self._config["gump_timeout"]):
+            if not self._menu.has_button(known[0], gump):
+                self._log("the menu has no category button %d for '%s'" % (known[0], product))
+
+                return None, self._walk_instead(product)
+
+            page = self._menu.press(known[0], gump, self._config["gump_timeout"])
+
+            if not page:
                 return None, "noGump"
+
+            if not self._menu.has_button(known[1], page):
+                self._log("the menu has no row button %d for '%s'" % (known[1], product))
+
+                return None, self._walk_instead(product)
 
             return known[1], None
 
@@ -131,6 +152,16 @@ class Crafter(object):
 
         return None, "wrongRow"
 
+    def _walk_instead(self, product):
+        if product in self._config["recipes"] and product not in self._walked:
+            self._walked.add(product)
+            self._log("the button table is out of date for '%s', walking the categories for it "
+                      "instead" % product)
+
+        self._forget_row(product)
+
+        return "wrongRow"
+
     # Something was made and none of it was the product, so a row was wrong - unless the press was
     # MAKE LAST, which the shard forgets on its own and which says nothing about the proven row
     def _wrong_product(self, product, button):
@@ -142,14 +173,7 @@ class Crafter(object):
 
         self._log("button %d did not make a '%s', trying the next row" % (button, product))
 
-        if product in self._config["recipes"] and product not in self._walked:
-            self._walked.add(product)
-            self._log("the button table is out of date for '%s', walking the categories for it "
-                      "instead" % product)
-
-        self._forget_row(product)
-
-        return "wrongRow"
+        return self._walk_instead(product)
 
     def craft_once(self, product):
         # Asked apart from the gump, so an empty pack and a menu that will not open read differently

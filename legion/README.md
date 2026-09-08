@@ -140,11 +140,16 @@ What the typings do not say, learned on UOAlive. Script-specific notes sit under
   `API.BuffExists(name)` substring-matches the localized title, so `str(buff.Type)` is matched
   instead. `ApiBuff.Timer` is a client-tick deadline with no exposed clock, so there is no
   time-remaining.
-- **`API.HasGump()` answers the gump's type id**, not a bool, and every page of one craft menu shares
-  it. A new gump is the id changing against a snapshot. `API.WaitForGump()` with no id resolves to
-  `LastGumpID`, so it returns instantly on a stale gump and never on a fresh one. `ReplyGump` and
-  `GumpContains` take the id second; `ReplyGump` disposes the gump before the next page arrives.
-  `CloseGump()` with no id closes the last gump, whichever that is.
+- **`API.HasGump()` answers the type id of the *last* gump the shard sent**, not a bool, and every
+  page of one craft menu shares it. Any gump the shard re-sends on its own (UOAlive has one whose
+  text is chat lines) takes that slot, so nothing waits on "any gump". `WaitForGump(id, secs)`,
+  `GumpContains(text, id)`, `GetGumpContents(id)`, `ReplyGump(button, id)` and `CloseGump(id)` address
+  a gump by id whichever was last; `GetAllGumps()` lists the open ones and `GetGump(id).Children`
+  carries each button's `ButtonID`. `ReplyGump` disposes the gump before the next page arrives.
+- **A reply naming a button the gump does not have disconnects you.** ServUO's
+  `DisplayGumpResponse` drops the socket for it ("Connection lost: Socket Error"); button 0 is
+  always taken. Every press goes through `CraftMenu.reply`, which sends only to the menu's own id
+  and only a button read off it, and a gump whose buttons cannot be read is pressed as before.
 - **`API.ContextMenu(serial, text, timeout)` returns the moment a menu without the entry arrives**,
   so an entry that is not there *yet* looks like one that never will be.
 - **`API.ItemsInContainer(container, True)` reads the pack recursively.** Item-cap guards and the
@@ -1127,12 +1132,14 @@ page lists the product, the row is read from `GetGumpContents` as the text past 
 name, and proved by the pack. A craft that added none of the product's graphics tries the next
 candidate, up to `MAX_ITEM_PROBES`, then the next category. Matches are whole-row: `crossbow` is
 inside `crossbow bolt`, and a substring match finds Ammunition first. Once a row has made the item,
-every craft after is `MAKE LAST`; a band change, a worn tool or a wrong graphic sends it back. A
-stray server gump is closed before the tools are used, since the gump wait is "is a menu up".
+every craft after is `MAKE LAST`, when the menu has that button; a band change, a worn tool or a
+wrong graphic sends it back. A `RECIPES` button the menu does not have is never sent: the product
+goes to the walk instead.
 
-**Recognising the menu.** Whatever the tools open is the menu. The title is a cliloc that
-`GetGumpContents` may answer nothing for, so `CRAFT_TITLE` only recognises a gump already up; one
-that does not name itself is reported once with its first line.
+**Recognising the menu.** A gump naming `CRAFT_TITLE`, or one whose rows include a `CATEGORY_NAMES`
+entry or `LAST TEN`, is the menu, wherever it sits among the open gumps. Any other gump is ignored
+and reported once with its first line, never closed. Failing both, whatever the tools newly opened
+is the menu, reported once: the title is a cliloc that `GetGumpContents` may answer nothing for.
 
 | Outcome | What it means |
 | --- | --- |
@@ -1217,6 +1224,9 @@ when `DATA_PATH` is set.
   is not what the row says, or the item is not in this shard's menu. Open it by hand.
 - **`the tools opened a gump that does not name BOWCRAFT AND FLETCHING`**: said once, and used
   anyway. `(no text)` is ordinary for a cliloc header.
+- **`ignoring gump 0x… - it is not the craft menu`**: a gump the shard keeps up beside the menu.
+  Harmless; the line says what it starts with. **`gump 0x… has no button 47`**: `MAKE_LAST_BUTTON`
+  or a `RECIPES` entry is wrong for this menu, and the row is walked for instead of pressed blind.
 - **`the button table is out of date for 'crossbow'`**: the `RECIPES` button made something else.
   The walk corrects it; fix the entry to save the crafts.
 - **`unreadable outcome (n/5), check OUTCOME_TEXT`**: a success needs no wording; a refusal does.
@@ -1482,8 +1492,8 @@ small; the small leaving the pack is the proof. The run stops when every entry r
   exception: they read `IRON (1587) DULL COPPER (111) …` after the `DO NOT COLOR` toggle and split
   on the counts.
 - The material page is the craft menu's own gump, same id, pressed like a category.
-- The deed gump is closed before the menu is opened, and the menu before the deed, because
-  `HasGump()` answers one id and the wait after `UseObject` is for any gump.
+- The deed gump is the one that says bulk order among the open gumps, or the one the deed newly
+  opened; it is closed after the combine. The menu is never closed for it.
 - `API.ItemsInContainer(API.Backpack, True)` reads into the bag once it has been opened, which is
   why it is opened at start and the pieces need no second cursor.
 

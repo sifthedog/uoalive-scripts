@@ -1,6 +1,6 @@
 import API
 
-from uo.gump import await_any, gump_says
+from uo.gump import await_recognised, button_ids, gump_says, open_ids
 from uo.journal import journal_tail, matched_bucket
 from uo.pack import pack_contents
 from uo.text import clipped
@@ -17,29 +17,32 @@ class DeedCombiner(object):
         self._log = log
         self._said_gump_text = False
         self._reported = 0
+        self._gump = 0
 
     def _lines(self, gump):
         text = API.GetGumpContents(gump)
 
         return [line.strip() for line in (text or "").split("\n") if line.strip()]
 
-    # Whatever is up - the craft menu, the last deed gump - would answer the wait below
-    def _open(self):
-        up = API.HasGump()
+    def _is_deed_gump(self, ident):
+        return gump_says(ident, self._config["gump_text"])
 
-        if up:
-            API.CloseGump(up)
-            API.Pause(self._config["gump_poll"])
+    def _open(self):
+        before = open_ids()
 
         API.UseObject(self._deed.serial)
 
-        found = await_any(self._config["gump_timeout"], self._config["gump_poll"])
+        found, recognised = await_recognised(self._is_deed_gump, before,
+                                             self._config["gump_timeout"],
+                                             self._config["gump_poll"])
 
-        if found and not self._said_gump_text and not gump_says(found, self._config["gump_text"]):
+        if found and not recognised and not self._said_gump_text:
             self._said_gump_text = True
             lines = self._lines(found)
             self._log("the deed opened a gump that does not say bulk order - it starts '%s'"
                       % (lines[0] if lines else "(no text)"))
+
+        self._gump = found
 
         return found
 
@@ -95,15 +98,21 @@ class DeedCombiner(object):
         if API.HasTarget():
             API.CancelTarget()
 
-        up = API.HasGump()
-
-        if up:
-            API.CloseGump(up)
+        if self._gump:
+            API.CloseGump(self._gump)
 
     def combine(self, container, offered):
         gump = self._open()
 
         if not gump:
+            return "noGump", []
+
+        # The shard drops the connection for a button the gump does not have
+        known = button_ids(gump)
+
+        if known is not None and self._config["combine_button"] not in known:
+            self._report("the deed gump has no button %d" % self._config["combine_button"], gump)
+
             return "noGump", []
 
         API.ClearJournal()

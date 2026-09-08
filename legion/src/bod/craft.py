@@ -83,9 +83,23 @@ class DeedCrafter(object):
 
         if known is not None:
             self._menu.remember_category(product, known[0])
+
+            if not self._menu.has_button(known[0], gump):
+                self._log("the menu has no category button %d for '%s'" % (known[0], product))
+
+                return None, "noRow"
+
             page = self._menu.press(known[0], gump, self._config["gump_timeout"])
 
-            return (known[1], None) if page else (None, "noGump")
+            if not page:
+                return None, "noGump"
+
+            if not self._menu.has_button(known[1], page):
+                self._log("the menu has no row button %d for '%s'" % (known[1], product))
+
+                return None, "noRow"
+
+            return known[1], None
 
         gump, category = self._menu.find_category(product, gump)
 
@@ -189,10 +203,7 @@ class DeedCrafter(object):
         return outcome
 
     def _cancel(self):
-        up = API.HasGump()
-
-        if up:
-            API.ReplyGump(self._config["cancel_button"], up)
+        self._menu.reply(self._config["cancel_button"], self._menu.current_id())
 
     # The auto craft says nothing when it ends: the pack and the journal are counted up to the
     # amount, and a stretch with no change is taken as the end. One failure line per poll is
@@ -218,7 +229,7 @@ class DeedCrafter(object):
                 hit = matched_bucket(self._buckets)
 
             if stopper is None:
-                notice = self._notice_bucket(API.HasGump())
+                notice = self._notice_bucket(self._menu.current_id())
 
                 if notice in STOPPERS:
                     stopper = notice
@@ -264,8 +275,8 @@ class DeedCrafter(object):
         if not gump or category is None:
             return "noGump", 0, 0
 
-        details = self._menu.press(self._item_buttons[product] + 1, gump,
-                                   self._config["gump_timeout"])
+        details = self._menu.press_page(self._item_buttons[product] + 1, gump,
+                                        self._config["gump_timeout"])
 
         if not details:
             return "noGump", 0, 0
@@ -273,7 +284,7 @@ class DeedCrafter(object):
         before = self._items.serials()
         API.ClearJournal()
 
-        if not API.ReplyGump(self._config["make_number_button"], details):
+        if not self._menu.reply_page(self._config["make_number_button"], details):
             return "noGump", 0, 0
 
         API.Pause(self._config["prompt_delay"])
@@ -282,9 +293,9 @@ class DeedCrafter(object):
         outcome, made, failed = self._watch_batch(amount, before)
 
         if outcome is None:
-            self._report_outcome("the batch of %d made nothing" % amount, API.HasGump())
+            self._report_outcome("the batch of %d made nothing" % amount, self._menu.current_id())
         elif outcome == "noMaterial":
-            self._report_outcome("refused for materials", API.HasGump())
+            self._report_outcome("refused for materials", self._menu.current_id())
 
         if made > 0 and not self._made_product(self._items.new_since(before)):
             self._log("the batch made %d that are not a '%s' - the row moved" % (made, product))
