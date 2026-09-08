@@ -58,7 +58,7 @@ class RecordingTest(unittest.TestCase):
 
     def test_a_recorded_attempt_is_not_written_until_it_settles(self):
         log = self.make()
-        log.record(74.6, "cast", True)
+        log.record(74.6, "cast", "Bless")
 
         self.assertEqual(self.sink.lines, [])
 
@@ -68,7 +68,7 @@ class RecordingTest(unittest.TestCase):
 
     def test_the_row_carries_both_skill_values_and_the_character(self):
         log = self.make()
-        log.record(74.6, "cast", True)
+        log.record(74.6, "cast", "Bless")
         log.settle(74.7)
 
         path, line = self.sink.lines[0]
@@ -77,23 +77,23 @@ class RecordingTest(unittest.TestCase):
         self.assertIn('"char":"Kaldor"', line)
         self.assertIn('"serial":"0x40012345"', line)
         self.assertIn('"skill":"Magery"', line)
+        self.assertIn('"used":"Bless"', line)
         self.assertIn('"from":74.6', line)
         self.assertIn('"to":74.7', line)
         self.assertIn('"outcome":"cast"', line)
-        self.assertIn('"ok":true', line)
 
-    def test_a_failure_is_recorded_as_one(self):
+    def test_what_was_used_is_escaped_like_any_other_text(self):
         log = self.make()
-        log.record(74.6, "fizzled", False)
-        log.settle(74.6)
+        log.record(74.6, "tamed", 'a "wild" João')
+        log.settle(74.7)
 
-        self.assertIn('"ok":false', self.sink.lines[0][1])
+        self.assertIn('"used":"a \\"wild\\" Jo\\u00e3o"', self.sink.lines[0][1])
 
     def test_ids_run_in_sequence_within_a_run(self):
         log = self.make()
-        log.record(74.6, "cast", True)
+        log.record(74.6, "cast", "Bless")
         log.settle(74.6)
-        log.record(74.6, "cast", True)
+        log.record(74.6, "cast", "Bless")
         log.settle(74.7)
 
         self.assertIn('"id":"0x40012345/1000000/1"', self.sink.lines[0][1])
@@ -106,9 +106,9 @@ class RecordingTest(unittest.TestCase):
         self.clock[0] += 0.001
         second = self.make()
 
-        first.record(74.6, "cast", True)
+        first.record(74.6, "cast", "Bless")
         first.settle(74.6)
-        second.record(74.6, "cast", True)
+        second.record(74.6, "cast", "Bless")
         second.settle(74.6)
 
         self.assertNotEqual(self.sink.lines[0][1], self.sink.lines[1][1])
@@ -121,29 +121,29 @@ class RecordingTest(unittest.TestCase):
 
     def test_recording_twice_settles_the_first_against_the_later_read(self):
         log = self.make()
-        log.record(74.6, "cast", True)
-        log.record(74.7, "cast", True)
+        log.record(74.6, "cast", "Bless")
+        log.record(74.7, "cast", "Bless")
 
         self.assertEqual(len(self.sink.lines), 1)
         self.assertIn('"to":74.7', self.sink.lines[0][1])
 
     def test_a_blind_read_settles_the_row_as_unknown_rather_than_dropping_it(self):
         log = self.make()
-        log.record(74.6, "cast", True)
+        log.record(74.6, "cast", "Bless")
         log.settle(None)
 
         self.assertIn('"to":null', self.sink.lines[0][1])
 
     def test_an_attempt_with_no_skill_reading_is_not_recorded(self):
         log = self.make()
-        log.record(None, "cast", True)
+        log.record(None, "cast", "Bless")
         log.settle(74.7)
 
         self.assertEqual(self.sink.lines, [])
 
     def test_an_empty_path_records_nothing(self):
         log = self.make("")
-        log.record(74.6, "cast", True)
+        log.record(74.6, "cast", "Bless")
         log.settle(74.7)
 
         self.assertEqual(self.sink.lines, [])
@@ -159,20 +159,44 @@ class ConsumedTest(unittest.TestCase):
 
     def test_an_attempt_that_spent_nothing_carries_no_consumed_field(self):
         log = self.make()
-        log.record(74.6, "made", True)
+        log.record(74.6, "made", "bow")
         log.settle(74.7)
 
         self.assertNotIn("consumed", self.sink.lines[0][1])
 
     def test_every_material_lands_in_the_row(self):
         log = self.make()
-        log.record(74.6, "made", True, [("board", 0x1BD7, 0, 1), ("feather", 0x1BD1, 0, 4)])
+        log.record(74.6, "made", "bow", [("board", 0x1BD7, 0, 1), ("feather", 0x1BD1, 0, 4)])
         log.settle(74.7)
 
         self.assertIn(
             '"consumed":[{"name":"board","graphic":"0x1bd7","hue":0,"qty":1},'
             '{"name":"feather","graphic":"0x1bd1","hue":0,"qty":4}]',
             self.sink.lines[0][1])
+
+
+class GainedTest(unittest.TestCase):
+    def setUp(self):
+        self.sink = Sink()
+
+    def make(self):
+        return AttemptLog("attempts.jsonl", "Kaldor", 0x1, "Fishing", lambda text: None,
+                          append=self.sink.append)
+
+    def test_an_attempt_that_brought_nothing_in_carries_no_gained_field(self):
+        log = self.make()
+        log.record(50.0, "failed", "fishing pole")
+        log.settle(50.1)
+
+        self.assertNotIn("gained", self.sink.lines[0][1])
+
+    def test_what_came_in_lands_in_the_row_with_its_name(self):
+        log = self.make()
+        log.record(50.0, "caught", "fishing pole", gained=[("a fish", 0x09CC, 0, 1)])
+        log.settle(50.1)
+
+        self.assertIn('"gained":[{"name":"a fish","graphic":"0x9cc","hue":0,"qty":1}]',
+                      self.sink.lines[0][1])
 
 
 class WriteFailureTest(unittest.TestCase):
@@ -183,7 +207,7 @@ class WriteFailureTest(unittest.TestCase):
                               append=self.sink.append)
 
     def test_a_failed_write_says_so_and_does_not_throw(self):
-        self.log.record(74.6, "cast", True)
+        self.log.record(74.6, "cast", "Bless")
         self.log.settle(74.7)
 
         self.assertEqual(len(self.said), 1)
@@ -191,7 +215,7 @@ class WriteFailureTest(unittest.TestCase):
 
     def test_it_says_so_once_and_stops_trying(self):
         for _ in range(3):
-            self.log.record(74.6, "cast", True)
+            self.log.record(74.6, "cast", "Bless")
             self.log.settle(74.7)
 
         self.assertEqual(len(self.said), 1)
@@ -207,7 +231,7 @@ class AttemptLogFactoryTest(unittest.TestCase):
         sink = Sink()
         log = attempt_log("attempts.jsonl", "Magery", self.said.append)
         log._append = sink.append
-        log.record(74.6, "cast", True)
+        log.record(74.6, "cast", "Bless")
         log.settle(74.7)
 
         self.assertIn('"char":"Kaldor"', sink.lines[0][1])

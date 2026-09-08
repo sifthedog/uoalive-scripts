@@ -10,6 +10,7 @@ repo targets the ClassicUO web client; nothing is shared between the two.
 | `mining.py` | Walks to the nearest vein, swings, consolidates the ore, and smelts it against a fire beetle |
 | `mine-here.py` | Stands still and works the spot you are on until it runs dry, then smelts and stops |
 | `lumberjack.py` | Chops the nearest tree, turns the logs into boards, and loads the boards onto your pack animals |
+| `fishing.py` | Gets off the mount, says `all guard`, casts the fishing pole once at the nearest water and records what came out. Run it again for the next cast |
 | `arms-lore.py` | Target a weapon, then read it every half second until Arms Lore caps |
 | `bowcraft.py` | Trains Bowcraft from 30 to cap: makes whatever the band still gains on, restocks wood from the containers and pack animals you pick, and sells to the nearest bowyer |
 | `tinkering.py` | Trains Tinkering from 20 to cap on the iron ingots you carry: makes whatever the band still gains on and sells it to the vendor that buys it |
@@ -24,8 +25,8 @@ repo targets the ClassicUO web client; nothing is shared between the two.
 3. Answer the cursor. `tame.py` wants an animal, and another after each tame; `mining.py` and
    `mine-here.py` want your fire beetle; `lumberjack.py` wants your pack animals, one after another;
    `arms-lore.py` wants the weapon; `bowcraft.py` wants every container or pack animal holding wood,
-   or none if you carry it; `bod.py` wants the deed. `magery.py`, `mysticism.py`, `buffs.py` and
-   `tinkering.py` raise none. ESC declines, and each script says what it does instead.
+   or none if you carry it; `bod.py` wants the deed. `magery.py`, `mysticism.py`, `buffs.py`,
+   `tinkering.py` and `fishing.py` raise none. ESC declines, and each script says what it does instead.
 
 ## How it is built
 
@@ -174,7 +175,7 @@ reports everything as unread is also crawling; fix the wording, not the timeout.
 
 ## The attempt log
 
-Six scripts append one JSON line per attempt to `DATA_PATH`; `skilldb.py` turns them into two CSV
+Seven scripts append one JSON line per attempt to `DATA_PATH`; `skilldb.py` turns them into two CSV
 tables. A bare filename lands in TazUO's working directory, so set an absolute path. `DATA_PATH = ""`
 records nothing. The file is opened and closed per row; a run that cannot write says so once and
 carries on.
@@ -190,6 +191,7 @@ unread outcomes write nothing; a missing row shows in the closing tally, a guess
 | `arms-lore.py` | `read` | `missed` | a use that raised no cursor, unread wordings |
 | `bowcraft.py` | `made` | `failed` | `noMaterial`, `wrongRow`, a worn tool, the sell trips |
 | `tinkering.py` | `made` | `failed` | the same |
+| `fishing.py` | `caught` | `failed` | no cursor, not biting, out of reach, throttles, unread wordings |
 
 The row is buffered and written at the **next** skill read: the client applies a gain some time after
 the shard grants it, so a value read at the outcome is usually still the old one. Carrying both
@@ -197,13 +199,16 @@ values is what lets a scroll of alacrity's 0.2 to 0.5 jump be told from several 
 
 ```json
 {"v":1,"id":"0x40012345/1757030000123/17","t":1757030042.500,"char":"Kaldor",
- "serial":"0x40012345","skill":"Magery","from":74.6,"to":74.7,
- "outcome":"cast","ok":true,
+ "serial":"0x40012345","skill":"Magery","used":"Bless","from":74.6,"to":74.7,
+ "outcome":"cast",
  "consumed":[{"name":"oak boards","graphic":"0x1bd7","hue":2010,"qty":6}]}
 ```
 
-`id` is `serial/run-start-ms/sequence`. `to` is `null` where the client was not answering. `consumed`
-appears only when something was measured, which the two crafting scripts do.
+`id` is `serial/run-start-ms/sequence`. `used` is what the attempt was made with: the spell, the
+item made, the creature, the weapon read. `to` is `null` where the client was not answering.
+`consumed` appears only when something was measured, which the two crafting scripts do. `gained`
+has the same shape and is what `fishing.py` writes: the catch as the pack received it, named off the
+journal line.
 
 ```
 python3 legion/skilldb.py convert ~/TazUO/LegionScripts/skill-attempts.jsonl --out legion/data
@@ -211,8 +216,8 @@ python3 legion/skilldb.py convert ~/TazUO/LegionScripts/skill-attempts.jsonl --o
 
 Every file named is merged; rows are recognised by `id`, so re-converting changes nothing, and a
 half-written line is reported and skipped. `attempts.csv` is `id, ts, at_utc, character, serial,
-skill, skill_from, skill_to, gain, outcome, success`; `consumed.csv` is `id, name, graphic, hue,
-quantity`, one row per material. `gain` is rounded to a tenth because `74.7 - 74.6` is not `0.1` in
+skill, used, skill_from, skill_to, gain, outcome`; `consumed.csv` is `id, name, graphic,
+hue, quantity`, one row per material. `gain` is rounded to a tenth because `74.7 - 74.6` is not `0.1` in
 binary. `src/skilldb/` is host CPython, not in `build.py`'s `ENTRIES`, and lives under `src/` only so
 `run-tests.py` finds `convert_test.py`.
 
@@ -753,6 +758,90 @@ Trouble and stopping carry the same names and defaults as `mining.py`.
 - Whether `API.RequestTarget` returning falsy is ESC rather than a timeout, which ends the multi-pick.
 - `"twohanded"` and `"onehanded"` as the axe layers.
 - What `API.GetStaticsInArea` costs at `ROAM_RADIUS`, 49 tiles a side through interop.
+
+## fishing.py
+
+One cast, then it stops: get off the mount, say `GUARD_PHRASE`, double-click the fishing pole,
+answer the cursor with the nearest water tile, read the shard's answer, append one row. Run it again
+for the next cast. There is no loop, no stall watch and no heartbeat.
+
+1. Wait for the skill to read, and stop if you are dead or Fishing is capped.
+2. Dismount, up to `DISMOUNT_ATTEMPTS` times.
+3. Say `GUARD_PHRASE`.
+4. Find the pole in either hand, then in the pack. Nothing is equipped.
+5. Read the land and statics within `FISH_RANGE` and take the water tile nearest by crow flight.
+6. Use the pole, wait for the cursor, answer it with `Target(x, y, z, graphic)`.
+7. Read the outcome. A catch is named off the text past the colon of `You pull out an item: …`.
+
+| Outcome | What it means |
+| --- | --- |
+| `caught` | `You pull out an item: …`. Recorded with what the pack gained |
+| `failed` | `You fish a while, but fail to catch anything`. Recorded |
+| `empty` | The fish are not biting here. Move along the shore |
+| `tooFar` | The shard wants you closer to the water |
+| `notWater` | The shard refused the tile. `WATER_LAND_GRAPHICS` or `WATER_STATIC_GRAPHICS` is wrong for this shard |
+| `mounted` | The shard still sees you mounted |
+| `noCursor` | The pole raised no cursor and the shard said nothing |
+| `throttled` / `saving` | Run it again in a moment |
+| `unknown` | Nothing matched. The journal's last lines are printed |
+
+Only `caught` and `failed` are recorded. The row is written after `GAIN_SETTLE`, or as soon as the
+skill value moves, because the client applies the gain after the outcome line. A `caught` row waits
+`CATCH_SETTLE` for the pack to show the fish first.
+
+### Before you run it
+
+- **A fishing pole in hand or in the pack.** A held one is preferred.
+- **Stand within `FISH_RANGE` tiles of water**, on foot or mounted; it dismounts you.
+- **`GUARD_PHRASE` is said every run.** Set it to `""` if the guards are already set or you have
+  none.
+- **`DATA_PATH` is relative to TazUO's working directory.** Set an absolute path.
+
+### What to set
+
+| Setting | Default | What it is for |
+| --- | --- | --- |
+| `GUARD_PHRASE` | `all guard` | Said before the cast. `""` says nothing |
+| `POLE_GRAPHICS` / `POLE_NAME_WORDS` | `0x0DBF` / `fishing`, `pole` | A pack art learned by name joins the set |
+| `HAND_LAYERS` | `twohanded`, `onehanded` | Where a held pole is looked for |
+| `WATER_LAND_GRAPHICS` / `WATER_STATIC_GRAPHICS` | stock RunUO bands | **The important one.** What counts as water. Statics are numbered apart from land |
+| `FISH_RANGE` | `4` | How far it looks for water. RunUO's fishing range |
+| `PROMPT_TEXT` | *Where do you want to fish* | The cursor prompt, a guess. `HasTarget` is what the wait leans on |
+| `CURSOR_TIMEOUT` / `NO_CURSOR_READ` | `2.0` / `1.0` | How long the pole has to raise a cursor, and how long a refusal is listened for when it does not |
+| `CAST_TIMEOUT` | `12.0` | How long the shard has to answer after the cast animation |
+| `CATCH_SETTLE` / `GAIN_SETTLE` | `1.5` / `2.0` | How long the pack has to show the fish, and the client the gain |
+| `DISMOUNT_ATTEMPTS` | `3` | Before *could not get off the mount* |
+| `DATA_PATH` | `skill-attempts.jsonl` | Where each cast is appended. `""` records nothing |
+
+### When it goes wrong
+
+- **`no water within 4 tiles`**: nothing in either table is in range. Stand nearer the water, or
+  the shard's water arts are not the stock ones: read them off a `mine-here.py` style survey, or
+  off `API.GetTile` and `API.GetStaticsAt` at a tile you can fish from by hand, and add them.
+- **`the shard says that tile is not water`**: the table matched an art the shard does not fish.
+  Same fix.
+- **`the pole raised no cursor`**: the pole was refused silently. Check it is a fishing pole and
+  not worn out.
+- **`unreadable outcome, check OUTCOME_TEXT`**: the last journal lines are printed under it; copy
+  the shard's wording into the matching bucket.
+- **`caught something the journal did not name`**: the catch line had no colon. The row is still
+  written, with an empty name.
+
+### Notes
+
+- The catch bucket is read off the journal tail rather than through `InJournalAny`, because that
+  clears the line and the name is on it.
+- A self-target is refused for fishing on this shard, which is why the tile is named.
+
+### Unverified
+
+- Every water band. They are RunUO's `Fishing.cs` tables with the static ids brought down by
+  `0x4000`.
+- Whether `Target(x, y, z, graphic)` on a *land* water tile is taken. The land art is passed as
+  read; if the shard wants the default, try `1337` in its place.
+- The cursor prompt and every wording in `OUTCOME_TEXT`.
+- That a pole in the pack is accepted without being equipped.
+- The catch line's shape on this shard. Anything past the first colon is the name.
 
 ## arms-lore.py
 

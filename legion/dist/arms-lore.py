@@ -210,9 +210,10 @@ class AttemptLog(object):
     def recording(self):
         return not self._off
 
-    # consumed is a list of (name, graphic, hue, quantity) - measured, so an attempt that spent
-    # nothing passes nothing rather than a guess at what the recipe charges
-    def record(self, skill_from, outcome, success, consumed=None, stock=None):
+    # used is what the attempt was made with: the spell, the product, the creature, the weapon.
+    # consumed and gained are lists of (name, graphic, hue, quantity) - measured, so an attempt that
+    # spent nothing passes nothing rather than a guess at what the recipe charges
+    def record(self, skill_from, outcome, used, consumed=None, gained=None):
         if self._off or skill_from is None:
             return
 
@@ -225,12 +226,10 @@ class AttemptLog(object):
             "id": "%s/%d/%d" % (hex_of(self._serial), self._run, self._seq),
             "at": now(),
             "from": skill_from,
+            "used": used,
             "outcome": outcome,
-            "ok": success,
             "consumed": list(consumed) if consumed else [],
-            # (before, after) totals of the material the attempt is costed in, written raw so the
-            # subtraction in 'consumed' can be checked without trusting it
-            "stock": tuple(stock) if stock else None,
+            "gained": list(gained) if gained else [],
         }
 
     def settle(self, skill_to):
@@ -250,21 +249,19 @@ class AttemptLog(object):
             '"char":%s' % quoted(self._character),
             '"serial":%s' % quoted(hex_of(self._serial)),
             '"skill":%s' % quoted(self._skill),
+            '"used":%s' % quoted(row["used"]),
             '"from":%s' % skill_json(row["from"]),
             '"to":%s' % skill_json(skill_to),
             '"outcome":%s' % quoted(row["outcome"]),
-            '"ok":%s' % ("true" if row["ok"] else "false"),
         ]
 
-        if row.get("stock"):
-            fields.append('"stock_from":%d,"stock_to":%d' % (row["stock"][0], row["stock"][1]))
-
-        if row["consumed"]:
-            fields.append('"consumed":[%s]' % ",".join(
-                '{"name":%s,"graphic":%s,"hue":%d,"qty":%d}'
-                % (quoted(name), quoted(hex_of(graphic)), hue, quantity)
-                for name, graphic, hue, quantity in row["consumed"]
-            ))
+        for key in ("consumed", "gained"):
+            if row[key]:
+                fields.append('"%s":[%s]' % (key, ",".join(
+                    '{"name":%s,"graphic":%s,"hue":%d,"qty":%d}'
+                    % (quoted(name), quoted(hex_of(graphic)), hue, quantity)
+                    for name, graphic, hue, quantity in row[key]
+                )))
 
         return "{%s}" % ",".join(fields)
 
@@ -408,13 +405,13 @@ while not API.StopRequested:
 
         if outcome == "read":
             reads += 1
-            recorder.record(value, outcome, True)
+            recorder.record(value, outcome, name)
 
         # The roll happened and the shard said it did not go: that is the half of the data a tally
         # of reads alone cannot show
         elif outcome == "missed":
             missed += 1
-            recorder.record(value, outcome, False)
+            recorder.record(value, outcome, name)
 
         # Everything else - a refusal, a save, a wording OUTCOME_TEXT has not got - is left out of
         # the record rather than guessed at, and reported at the end so a wrong table is obvious

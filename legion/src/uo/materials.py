@@ -57,9 +57,6 @@ class Materials(object):
 
         return last
 
-    def stock_total(self, counts):
-        return sum(counts[key] for key in counts if self._stock.is_stock_graphic(key[0]))
-
     # The lost side only: the product lands in the same pack and is not a cost
     def spent(self, before, after):
         _gained, lost = diff_counts(before, after)

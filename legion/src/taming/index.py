@@ -256,7 +256,7 @@ while stop is None:
         if outcome == "tamed":
             attempts += 1
             tamed += 1
-            recorder.record(value, outcome, True)
+            recorder.record(value, outcome, name)
             stall.progressed()
             accepted = True
             done = "'%s' accepted you as master" % name
@@ -265,7 +265,7 @@ while stop is None:
         elif outcome == "failed":
             attempts += 1
             failures += 1
-            recorder.record(value, outcome, False)
+            recorder.record(value, outcome, name)
             unread_said = False
             pace.landed()
             stall.progressed()

@@ -161,12 +161,6 @@ class SettledSnapshotTest(unittest.TestCase):
 
         self.assertEqual(self.materials.settled_snapshot(1.5, 0.25), {(BOARDS, 0): 93})
 
-    def test_stock_total_adds_up_only_the_wood(self):
-        self.api.hold(item(serial=1, graphic=BOARDS, amount=93, name="boards"),
-                      item(serial=2, graphic=FEATHER, amount=40, name="feathers"))
-
-        self.assertEqual(self.materials.stock_total(self.materials.snapshot()), 93)
-
     def test_gives_up_on_a_pack_that_will_not_settle(self):
         counts = [90, 89, 88, 87, 86, 85, 84, 83]
 

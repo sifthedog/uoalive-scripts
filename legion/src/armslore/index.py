@@ -69,13 +69,13 @@ while not API.StopRequested:
 
         if outcome == "read":
             reads += 1
-            recorder.record(value, outcome, True)
+            recorder.record(value, outcome, name)
 
         # The roll happened and the shard said it did not go: that is the half of the data a tally
         # of reads alone cannot show
         elif outcome == "missed":
             missed += 1
-            recorder.record(value, outcome, False)
+            recorder.record(value, outcome, name)
 
         # Everything else - a refusal, a save, a wording OUTCOME_TEXT has not got - is left out of
         # the record rather than guessed at, and reported at the end so a wrong table is obvious

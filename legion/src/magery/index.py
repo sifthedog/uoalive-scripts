@@ -200,14 +200,14 @@ try:
 
         if outcome == "cast":
             casts += 1
-            recorder.record(value, outcome, True)
+            recorder.record(value, outcome, stage["spell"])
             since_progress = 0
             unread_said = False
 
         # Counted rather than tallied - the shard charged nothing for it - but the roll happened
         elif outcome == "fizzled":
             fizzled += 1
-            recorder.record(value, outcome, False)
+            recorder.record(value, outcome, stage["spell"])
             since_progress = 0
             unread_said = False
 
@@ -228,7 +228,7 @@ try:
 
             if DISABLED_IS_PROGRESS:
                 casts += 1
-                recorder.record(value, outcome, True)
+                recorder.record(value, outcome, stage["spell"])
             else:
                 log("the shard toggled %s off - check its buff in STAGES" % stage["spell"])
 

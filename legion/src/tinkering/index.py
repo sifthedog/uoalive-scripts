@@ -227,8 +227,7 @@ def record_craft(outcome, skill_from, before):
         return
 
     after = materials.settled_snapshot(REFUND_SETTLE, REFUND_POLL)
-    recorder.record(skill_from, outcome, outcome == "made", materials.spent(before, after),
-                    (materials.stock_total(before), materials.stock_total(after)))
+    recorder.record(skill_from, outcome, product, materials.spent(before, after))
 
 
 try:

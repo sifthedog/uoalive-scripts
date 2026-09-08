@@ -9,12 +9,12 @@ import json
 
 VERSION = 1
 
-ATTEMPT_COLUMNS = ["id", "ts", "at_utc", "character", "serial", "skill", "skill_from", "skill_to",
-                   "gain", "outcome", "success"]
+ATTEMPT_COLUMNS = ["id", "ts", "at_utc", "character", "serial", "skill", "used", "skill_from",
+                   "skill_to", "gain", "outcome"]
 
 CONSUMED_COLUMNS = ["id", "name", "graphic", "hue", "quantity"]
 
-REQUIRED = ("id", "t", "skill", "from", "outcome", "ok")
+REQUIRED = ("id", "t", "skill", "from", "outcome")
 
 
 class Skipped(Exception):
@@ -118,11 +118,11 @@ def attempt_row(row):
         "character": row.get("char", ""),
         "serial": row.get("serial", ""),
         "skill": row["skill"],
+        "used": row.get("used", ""),
         "skill_from": number(row.get("from")),
         "skill_to": number(row.get("to")),
         "gain": number(gain_of(row)),
         "outcome": row["outcome"],
-        "success": "true" if row["ok"] else "false",
     }
 
 

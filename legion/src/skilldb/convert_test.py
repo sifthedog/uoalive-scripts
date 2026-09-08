@@ -5,12 +5,12 @@ from skilldb.convert import (Skipped, gain_of, merge, parse_line, read_lines, st
 
 def line(**fields):
     row = {"v": 1, "id": "0x1/1000/1", "t": 1757030042.5, "char": "Kaldor", "serial": "0x1",
-           "skill": "Magery", "from": 74.6, "to": 74.7, "outcome": "cast", "ok": True}
+           "skill": "Magery", "used": "Bless", "from": 74.6, "to": 74.7, "outcome": "cast"}
     row.update(fields)
 
     parts = []
 
-    for name in ("v", "id", "t", "char", "serial", "skill", "from", "to", "outcome", "ok"):
+    for name in ("v", "id", "t", "char", "serial", "skill", "used", "from", "to", "outcome"):
         value = row[name]
 
         if isinstance(value, str):
@@ -34,7 +34,6 @@ class ParseLineTest(unittest.TestCase):
 
         self.assertEqual(row["skill"], "Magery")
         self.assertEqual(row["from"], 74.6)
-        self.assertTrue(row["ok"])
 
     def test_a_half_written_line_is_skipped_rather_than_fatal(self):
         self.assertRaises(Skipped, parse_line, '{"v":1,"id":"0x1/1000/1","t":175')
@@ -116,16 +115,22 @@ class TablesTest(unittest.TestCase):
         self.assertEqual(len(attempts), 1)
         self.assertEqual(consumed, [])
         self.assertEqual(attempts[0]["character"], "Kaldor")
+        self.assertEqual(attempts[0]["used"], "Bless")
         self.assertEqual(attempts[0]["skill_from"], "74.6")
         self.assertEqual(attempts[0]["skill_to"], "74.7")
         self.assertEqual(attempts[0]["gain"], "0.1")
-        self.assertEqual(attempts[0]["success"], "true")
 
-    def test_a_failure_reads_as_one(self):
-        rows, _ = read_lines([line(ok=False, outcome="fizzled")], "a")
+    def test_a_row_written_before_used_existed_still_converts(self):
+        rows, problems = read_lines([line().replace('"used":"Bless",', '')], "a")
         attempts, _ = tables(rows)
 
-        self.assertEqual(attempts[0]["success"], "false")
+        self.assertEqual(problems, [])
+        self.assertEqual(attempts[0]["used"], "")
+
+    def test_a_failure_reads_as_one(self):
+        rows, _ = read_lines([line(outcome="fizzled")], "a")
+        attempts, _ = tables(rows)
+
         self.assertEqual(attempts[0]["outcome"], "fizzled")
 
     def test_an_unsettled_row_keeps_its_attempt_and_leaves_the_gain_empty(self):
