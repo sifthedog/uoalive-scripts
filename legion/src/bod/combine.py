@@ -1,13 +1,13 @@
 import API
 
-from uo.entity import hex_of
 from uo.gump import await_any, gump_says
 from uo.journal import journal_tail, matched_bucket
+from uo.pack import pack_contents
 from uo.text import clipped
 
 
 class DeedCombiner(object):
-    """One item into the deed, through the deed's own gump and the cursor it raises."""
+    """The deed's 'combine with contained items', aimed at the bag the pieces are in."""
 
     def __init__(self, deed, items, buckets, config, log):
         self._deed = deed
@@ -54,21 +54,38 @@ class DeedCombiner(object):
         self._log("%s - the gump says '%s'" % (why, text or "(nothing)"))
         self._log("the journal says '%s'" % (" | ".join(lines) or "(nothing)"))
 
-    # The item leaving the pack is the proof no wording can argue with
-    def _read_outcome(self, serial):
+    # Without a book the pack itself is read, which is what the large flow watches
+    def _serials(self):
+        if self._items is not None:
+            return self._items.serials()
+
+        return set(item.Serial for item in pack_contents())
+
+    def _gone(self, offered):
+        here = self._serials()
+
+        return [serial for serial in offered if serial not in here]
+
+    # The pieces leaving the bag are the proof; the wording is read only when none did, because a
+    # bag holding both kinds gets a refusal per piece alongside the successes
+    def _read_outcome(self, offered):
         waited = 0.0
 
         while not API.StopRequested:
+            gone = self._gone(offered)
+
+            if len(gone) > 0:
+                API.Pause(self._config["combine_poll"])
+
+                return "combined", self._gone(offered)
+
             hit = matched_bucket(self._buckets)
 
-            if hit is not None:
-                return hit
-
-            if serial not in self._items.serials():
-                return "combined"
+            if hit is not None and hit != "combined":
+                return hit, []
 
             if waited >= self._config["combine_timeout"]:
-                return None
+                return None, []
 
             API.Pause(self._config["combine_poll"])
             waited += self._config["combine_poll"]
@@ -83,30 +100,30 @@ class DeedCombiner(object):
         if up:
             API.CloseGump(up)
 
-    def combine(self, serial):
+    def combine(self, container, offered):
         gump = self._open()
 
         if not gump:
-            return "noGump"
+            return "noGump", []
 
         API.ClearJournal()
 
         if not API.ReplyGump(self._config["combine_button"], gump):
-            return "noGump"
+            return "noGump", []
 
         if not API.WaitForTarget("any", self._config["target_timeout"]):
             self._report("no cursor came up for the combine", gump)
             self._close()
 
-            return "noCursor"
+            return "noCursor", []
 
-        API.Target(serial)
+        API.Target(container)
 
-        outcome = self._read_outcome(serial)
+        outcome, taken = self._read_outcome(offered)
 
         if outcome is None:
-            self._report("nothing readable came back for %s" % hex_of(serial), gump)
+            self._report("nothing readable came back from the combine", gump)
 
         self._close()
 
-        return outcome
+        return outcome, taken

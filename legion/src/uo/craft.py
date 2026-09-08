@@ -7,10 +7,10 @@ from uo.text import clipped
 
 
 class Crafter(object):
-    def __init__(self, tools, menu, wood, buckets, config, log):
+    def __init__(self, tools, menu, stock, buckets, config, log):
         self._tools = tools
         self._menu = menu
-        self._wood = wood
+        self._stock = stock
         self._buckets = buckets
         self._config = config
         self._log = log
@@ -73,7 +73,7 @@ class Crafter(object):
         self._log("%s - the gump says '%s'" % (why, text or "(nothing)"))
         self._log("the journal says '%s'" % (" | ".join(lines) or "(nothing)"))
         self._log("the pack holds %s, and the menu is set to %s here"
-                  % (self._wood.hue_report(), self._config["wood_type"]))
+                  % (self._stock.hue_report(), self._config["material"]))
 
     def _forget_row(self, product):
         self._make_last = False

@@ -1796,6 +1796,7 @@ class Tool(object):
         self._log = log
         self._graphic = None
         self._reported_empty_pack = False
+        self._opened = set()
 
     # Refused only on positive evidence. A name reads empty until the client has tooltip data, and
     # a tool in hand is the documented precondition, so an unnamed one is taken at its word - but a
@@ -1845,21 +1846,58 @@ class Tool(object):
 
         return item.Serial if item is not None else None
 
-    def find(self):
+    def _search(self):
         for item in pack_contents():
             if self.is_tool(item):
-                self._reported_empty_pack = False
-                self.learn(item)
-
                 return item
 
         if self._spare_bag is not None:
             for item in API.ItemsInContainer(self._spare_bag, True) or []:
                 if self.is_tool(item):
-                    self._reported_empty_pack = False
-                    self.learn(item)
-
                     return item
+
+        return None
+
+    # A bag the client has not opened this session reads as empty, whatever is in it
+    def _open_bags(self):
+        bags = [item for item in pack_contents()
+                if getattr(item, "IsContainer", False) and not getattr(item, "Opened", False)]
+
+        if self._spare_bag is not None:
+            spare = API.FindItem(self._spare_bag)
+
+            if spare is not None and not getattr(spare, "Opened", False):
+                bags.append(spare)
+
+        bags = [bag for bag in bags if bag.Serial not in self._opened]
+
+        if not bags:
+            return False
+
+        # A cursor left up would take the double-click as its answer
+        if API.HasTarget():
+            API.CancelTarget()
+
+        self._log("opening %d bag(s) to look inside for a %s" % (len(bags), self._noun))
+
+        for bag in bags:
+            self._opened.add(bag.Serial)
+            API.UseObject(bag.Serial)
+
+        return True
+
+    def find(self):
+        found = self._search()
+
+        if found is None and self._open_bags():
+            settled(self._timeout, self._poll, lambda: self._search() is not None)
+            found = self._search()
+
+        if found is not None:
+            self._reported_empty_pack = False
+            self.learn(found)
+
+            return found
 
         if not self._reported_empty_pack:
             self._reported_empty_pack = True

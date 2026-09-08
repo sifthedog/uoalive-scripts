@@ -1,6 +1,6 @@
 import unittest
 
-from uo.stages import cycle_cost, describe_plan, goal_of, make_plan, stage_now
+from uo.stages import band_for, cycle_cost, describe_plan, goal_of, make_plan, stage_now
 
 STAGES = [
     {"up_to": 80.0, "spell": "Invisibility"},
@@ -40,6 +40,24 @@ class StageNowTest(unittest.TestCase):
 
     def test_is_none_once_the_last_band_is_finished(self):
         self.assertIsNone(stage_now(self.plan, 80.0))
+
+
+BANDS = [(60.0, "bow"), (70.0, "crossbow"), (None, "repeating crossbow")]
+
+
+class BandForTest(unittest.TestCase):
+    def test_the_ceiling_is_exclusive(self):
+        self.assertEqual(band_for(BANDS, 59.9), "bow")
+        self.assertEqual(band_for(BANDS, 60.0), "crossbow")
+
+    def test_a_none_ceiling_catches_everything_above(self):
+        self.assertEqual(band_for(BANDS, 119.9), "repeating crossbow")
+
+    def test_an_unread_skill_has_no_band(self):
+        self.assertIsNone(band_for(BANDS, None))
+
+    def test_past_the_last_finite_ceiling_is_uncovered(self):
+        self.assertIsNone(band_for([(60.0, "bow")], 60.0))
 
 
 class CycleCostTest(unittest.TestCase):

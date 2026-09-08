@@ -14,14 +14,13 @@ def tooltip_of(mobile):
 
 
 class Vendor(object):
-    def __init__(self, wood, menu, config, log, heartbeat, products_in_pack):
-        self._wood = wood
+    def __init__(self, menu, config, log, heartbeat, products_in_pack):
         self._menu = menu
         self._config = config
         self._log = log
         self._heartbeat = heartbeat
         self._products_in_pack = products_in_pack
-        self._said_no_vendor = False
+        self._said_no_vendor = None
         self._said_sell_how = False
 
     def _candidates(self):
@@ -39,14 +38,14 @@ class Vendor(object):
         return found
 
     # Tooltips cost a round trip each, and "Alger" is "the bowyer" only in the tooltip
-    def _find(self):
+    def _find(self, titles):
         if self._config["serial"]:
             return API.FindMobile(self._config["serial"])
 
         candidates = self._candidates()
 
         for mobile in candidates:
-            if any_in(mobile.Name, self._config["titles"]):
+            if any_in(mobile.Name, titles):
                 return mobile
 
         if len(candidates) == 0:
@@ -56,7 +55,7 @@ class Vendor(object):
         API.Pause(self._config["opl_wait"])
 
         for mobile in candidates:
-            if any_in(tooltip_of(mobile), self._config["titles"]):
+            if any_in(tooltip_of(mobile), titles):
                 return mobile
 
         return None
@@ -97,20 +96,21 @@ class Vendor(object):
 
         return asked
 
-    def sell_trip(self):
-        vendor = self._find()
+    # The band decides who buys, so the titles come with the trip rather than the config
+    def sell_trip(self, titles, noun):
+        vendor = self._find(titles)
 
         if vendor is None:
-            if not self._said_no_vendor:
-                self._said_no_vendor = True
+            if self._said_no_vendor != noun:
+                self._said_no_vendor = noun
                 names = [mobile.Name or "?" for mobile in self._candidates()]
-                self._log("no bowyer within %d - looked at %d: %s"
-                          % (self._config["scan_radius"], len(names),
+                self._log("no %s within %d - looked at %d: %s"
+                          % (noun, self._config["scan_radius"], len(names),
                              clipped(", ".join(names), self._config["text_limit"]) or "nobody"))
 
             return False
 
-        self._said_no_vendor = False
+        self._said_no_vendor = None
 
         name = vendor.Name or hex_of(vendor.Serial)
         here = self._walk_to(vendor.Serial)

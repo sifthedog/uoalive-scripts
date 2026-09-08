@@ -22,6 +22,8 @@ MENU = {
 
 CONFIG = {
     "aliases": {"shadow iron": ["shadow"]},
+    "order": ["iron", "dull copper", "shadow iron", "copper"],
+    "rows_after": "do not color",
     "button_type": 6,
     "row_type": 5,
     "max_rows": 12,
@@ -61,6 +63,39 @@ class MaterialPickerTest(unittest.TestCase):
         self.assertEqual([button for button, _gump in self.api.replies], [7, 66])
         self.assertFalse(self.picker.needs("copper"))
         self.assertTrue(self.picker.needs("iron"))
+
+    def test_the_one_line_page_is_split_on_the_counts(self):
+        text = ("<CENTER>BLACKSMITHING MENU</CENTER> EXIT CANCEL MAKE SMELT ITEM BRONZE (187) "
+                "RED SCALES (0) LAST TEN Metal Armor Helmets Shields DO NOT COLOR IRON (1587) "
+                "DULL COPPER (111) SHADOW (185) COPPER (0) BRONZE (187) GOLD (0) AGAPITE (59) "
+                "VERITE (48) VALORITE (47)")
+
+        self.assertEqual(self.picker.rows_from_text(text), [
+            "IRON (1587)", "DULL COPPER (111)", "SHADOW (185)", "COPPER (0)", "BRONZE (187)",
+            "GOLD (0)", "AGAPITE (59)", "VERITE (48)", "VALORITE (47)"])
+
+    def test_a_one_line_page_finds_the_row_by_text(self):
+        self.api.gump_contents[88] = ("EXIT DO NOT COLOR IRON (1587) DULL COPPER (111) "
+                                      "SHADOW (185) COPPER (0) BRONZE (187)")
+        opened, why = self.picker.select("bronze", 88)
+
+        self.assertIsNone(why)
+        self.assertEqual([button for button, _gump in self.api.replies], [7, 86])
+        self.assertFalse(any("stock order" in line for line in self.said))
+
+    def test_a_page_with_no_rows_falls_back_to_the_stock_order(self):
+        self.api.gump_contents[88] = "BLACKSMITHY"
+        opened, why = self.picker.select("copper", 88)
+
+        self.assertIsNone(why)
+        self.assertEqual([button for button, _gump in self.api.replies], [7, 66])
+        self.assertTrue(any("stock order" in line for line in self.said))
+
+    def test_a_page_with_no_rows_and_no_stock_row(self):
+        self.api.gump_contents[88] = ""
+        _opened, why = self.picker.select("valorite", 88)
+
+        self.assertEqual(why, "noMaterialRow")
 
     def test_no_row_says_what_it_saw(self):
         _opened, why = self.picker.select("valorite", 88)

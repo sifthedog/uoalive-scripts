@@ -1,14 +1,16 @@
 import unittest
 
 from bod.combine import DeedCombiner
-from bod.config import COMBINE_TEXT
+from bod.config import COMBINE_TEXT, LARGE_COMBINE_TEXT
 from test_support.uo import install, item
 
 DEED = 0x40001234
+BAG = 0x40002222
 GORGET = 0x40005678
+SECOND = 0x40005679
 
 CONFIG = {
-    "combine_button": 2,
+    "combine_button": 4,
     "gump_text": ["bulk order", "Combine this deed"],
     "gump_timeout": 1.0,
     "gump_poll": 0.2,
@@ -50,39 +52,44 @@ class DeedCombinerTest(unittest.TestCase):
         self.api.Target = lambda serial: (self.api.targeted.append((serial,)),
                                           self.api.hear(wording))
 
-    def test_opens_the_deed_presses_combine_and_targets_the_item(self):
-        self.answer("The item has been combined with the deed.")
+    def test_opens_the_deed_presses_combine_and_targets_the_bag(self):
+        self.api.Target = lambda serial: (self.api.targeted.append((serial,)),
+                                          self.api.take(GORGET))
 
-        self.assertEqual(self.combiner.combine(GORGET), "combined")
+        self.assertEqual(self.combiner.combine(BAG, [GORGET]), ("combined", [GORGET]))
         self.assertEqual(self.api.used, [DEED])
-        self.assertEqual(self.api.replies, [(2, 99)])
-        self.assertEqual(self.api.targeted, [(GORGET,)])
+        self.assertEqual(self.api.replies, [(4, 99)])
+        self.assertEqual(self.api.targeted, [(BAG,)])
         self.assertEqual(self.api.closed_gumps, 1)
 
-    def test_the_item_leaving_the_pack_is_proof_enough(self):
-        self.api.Target = lambda serial: self.api.take(serial)
+    def test_counts_the_pieces_that_left(self):
+        self.api.hold(item(serial=GORGET), item(serial=SECOND))
+        self.api.Target = lambda serial: self.api.take(GORGET)
+        self.answer("The item must be exceptional.")
+        self.api.Target = lambda serial: (self.api.take(GORGET),
+                                          self.api.hear("The item must be exceptional."))
 
-        self.assertEqual(self.combiner.combine(GORGET), "combined")
+        self.assertEqual(self.combiner.combine(BAG, [GORGET, SECOND]), ("combined", [GORGET]))
 
     def test_a_gump_in_the_way_is_closed_first(self):
         self.api.gump = 88
-        self.answer("The item has been combined with the deed.")
+        self.api.Target = lambda serial: self.api.take(GORGET)
 
-        self.combiner.combine(GORGET)
+        self.combiner.combine(BAG, [GORGET])
 
         self.assertEqual(self.api.closed_gumps, 2)
 
     def test_no_cursor(self):
         self.api.has_target = False
 
-        self.assertEqual(self.combiner.combine(GORGET), "noCursor")
+        self.assertEqual(self.combiner.combine(BAG, [GORGET]), ("noCursor", []))
         self.assertEqual(self.api.targeted, [])
         self.assertTrue(any("no cursor" in line for line in self.said))
 
     def test_no_gump(self):
         del self.api.opens[DEED]
 
-        self.assertEqual(self.combiner.combine(GORGET), "noGump")
+        self.assertEqual(self.combiner.combine(BAG, [GORGET]), ("noGump", []))
         self.assertEqual(self.api.replies, [])
 
     def test_each_refusal_reads_as_its_outcome(self):
@@ -98,8 +105,52 @@ class DeedCombinerTest(unittest.TestCase):
             self.api.has_target = True
             self.answer(wording)
 
-            self.assertEqual(self.combiner.combine(GORGET), outcome, wording)
+            self.assertEqual(self.combiner.combine(BAG, [GORGET]), (outcome, []), wording)
+
+    def test_a_success_wording_with_nothing_gone_waits_it_out(self):
+        self.answer("The item has been combined with the deed.")
+
+        self.assertEqual(self.combiner.combine(BAG, [GORGET]), (None, []))
 
     def test_nothing_readable_is_none_and_said(self):
-        self.assertIsNone(self.combiner.combine(GORGET))
+        self.assertEqual(self.combiner.combine(BAG, [GORGET]), (None, []))
         self.assertTrue(any("nothing readable" in line for line in self.said))
+
+
+class LargeCombineTest(unittest.TestCase):
+    """The large deed's gump with the small deed as the target, and no item book."""
+
+    def setUp(self):
+        self.api = install()
+        self.said = []
+        self.api.hold(item(serial=GORGET, name="a bulk order deed"))
+        self.api.opens[DEED] = 99
+        self.api.gump_text = ["A large bulk order", "Combine this deed with the item requested."]
+        self.api.has_target = True
+        config = dict(CONFIG)
+        config["combine_button"] = 2
+        self.combiner = DeedCombiner(FakeDeed(), None, LARGE_COMBINE_TEXT, config,
+                                     self.said.append)
+
+    def test_the_small_deed_leaving_the_pack_is_the_proof(self):
+        self.api.Target = lambda serial: (self.api.targeted.append((serial,)),
+                                          self.api.take(GORGET))
+
+        self.assertEqual(self.combiner.combine(GORGET, [GORGET]), ("combined", [GORGET]))
+        self.assertEqual(self.api.replies, [(2, 99)])
+        self.assertEqual(self.api.targeted, [(GORGET,)])
+
+    def test_the_refusals(self):
+        for wording, outcome in [
+            ("The order to combine with is not completed.", "notComplete"),
+            ("That is not a bulk order for this large request.", "wrongDeed"),
+            ("Both orders must be of exceptional quality.", "exceptionalMismatch"),
+            ("Both orders must use the same resource type.", "materialMismatch"),
+            ("The two orders have different requested amounts and cannot be combined.",
+             "amountMismatch"),
+        ]:
+            self.api.gump = 0
+            self.api.has_target = True
+            self.api.Target = lambda serial, wording=wording: self.api.hear(wording)
+
+            self.assertEqual(self.combiner.combine(GORGET, [GORGET]), (outcome, []), wording)

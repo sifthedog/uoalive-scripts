@@ -34,6 +34,8 @@ class FakeItem(object):
         self.Y = fields.get("y", 0)
         self.Z = fields.get("z", 0)
         self.Layer = fields.get("layer", "")
+        self.IsContainer = fields.get("is_container", False)
+        self.Opened = fields.get("opened", False)
 
 
 class FakeMobile(object):

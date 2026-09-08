@@ -1,27 +1,24 @@
 import API
 
-from bowcraft.config import (BANDS, BATCH_SIZE, BOWYER_TITLES, BUTTON_STRIDE, CATEGORY_BUTTON_TYPE,
-                             CATEGORY_NAMES, CONTAINER_RANGE, CONTEXT_TIMEOUT, CRAFT_POLL,
-                             CRAFT_SETTLE, CRAFT_TIMEOUT, CRAFT_TITLE, CRAFT_TITLE_FRAGMENTS,
-                             CRAFT_TITLE_TEXT, DATA_PATH, GUMP_POLL, GUMP_TIMEOUT, HEARTBEAT_EVERY,
-                             ITEM_BUTTON_TYPE, JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS,
-                             LAST_TEN_LABEL, LOG_EVERY, MAKE_LAST_BUTTON, MATERIAL_GRAPHICS,
-                             MAX_CATEGORIES, MAX_CYCLES, MAX_EMPTY_MOVES, MAX_ITEM_PROBES,
-                             MAX_ITEM_ROWS, MAX_NO_MATERIAL, MAX_NO_TOOL, MAX_PICKS,
-                             MAX_SELL_MISSES, MAX_THROTTLED, MAX_UNKNOWN, MAX_UNREADABLE_REPORTS,
-                             MIN_CRAFT_WOOD, MIN_SKILL, MOVE_DELAY, OPEN_DELAY, OPL_WAIT,
-                             OUTCOME_TEXT, PATHFIND_TIMEOUT, PICK_TIMEOUT, PRODUCT_GRAPHICS,
-                             PRODUCTS, RECIPES, REFUND_POLL, REFUND_SETTLE, RESTOCK_AT,
-                             RETURN_WRONG_WOOD, SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT, SAVING_TEXT,
-                             SELL_AT, SELL_ENTRY, SELL_PHRASE, SELL_POLL, SELL_RETRY_AFTER,
-                             SELL_TIMEOUT, SKILL_NAMES, SKILL_POLL, SKILL_TIMEOUT, STALL_STOP,
-                             STALL_WARN, STEP_DELAY, STOPPED, THROTTLE_BACKOFF,
-                             THROTTLE_BACKOFF_MAX, TOO_HEAVY_TEXT, TOOL_GRAPHICS, TOOL_NAME_WORDS,
-                             UNREADABLE_TEXT_LIMIT, VENDOR_RANGE, VENDOR_SCAN_RADIUS,
-                             VENDOR_SERIAL, VENDOR_STEPS, WOOD_HUES, WOOD_KINDS, WOOD_TYPE,
-                             WOOD_TYPES)
-from bowcraft.restock import Restock
-from bowcraft.sources import Sources
+from tinkering.config import (BANDS, BUTTON_STRIDE, CATEGORY_BUTTON_TYPE, CATEGORY_NAMES,
+                              CONTEXT_TIMEOUT, CRAFT_POLL, CRAFT_SETTLE, CRAFT_TIMEOUT, CRAFT_TITLE,
+                              CRAFT_TITLE_FRAGMENTS, CRAFT_TITLE_TEXT, DATA_PATH, GUMP_POLL,
+                              GUMP_TIMEOUT, HEARTBEAT_EVERY, INGOT_COST, INGOT_HUES, INGOT_TYPES,
+                              IRON, ITEM_BUTTON_TYPE, JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS,
+                              LAST_TEN_LABEL, LOG_EVERY, MAKE_LAST_BUTTON, MATERIAL_GRAPHICS,
+                              MAX_CATEGORIES, MAX_CYCLES, MAX_ITEM_PROBES, MAX_ITEM_ROWS,
+                              MAX_NO_MATERIAL, MAX_NO_TOOL, MAX_SELL_MISSES, MAX_THROTTLED,
+                              MAX_UNKNOWN, MAX_UNREADABLE_REPORTS, MIN_CRAFT_INGOTS, MIN_SKILL,
+                              MOVE_DELAY, OPL_WAIT, OUTCOME_TEXT, PATHFIND_TIMEOUT,
+                              PRODUCT_GRAPHICS, PRODUCTS, RECIPES, REFUND_POLL, REFUND_SETTLE,
+                              SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT, SAVING_TEXT, SELL_AT,
+                              SELL_ENTRY, SELL_PHRASE, SELL_POLL, SELL_RETRY_AFTER, SELL_TIMEOUT,
+                              SKILL_NAMES, SKILL_POLL, SKILL_TIMEOUT, STALL_STOP, STALL_WARN,
+                              STEP_DELAY, STOCK_KINDS, STOPPED, THROTTLE_BACKOFF,
+                              THROTTLE_BACKOFF_MAX, TOOL_GRAPHICS, TOOL_NAME_WORDS,
+                              UNREADABLE_TEXT_LIMIT, VENDOR_RANGE, VENDOR_SCAN_RADIUS,
+                              VENDOR_SERIAL, VENDOR_STEPS, VENDORS)
+from tinkering.ingots import cost_of, short_by
 from uo.craft import Crafter
 from uo.craftmenu import CraftMenu
 from uo.crafttool import CraftTool
@@ -39,7 +36,7 @@ from uo.stock import StockBook
 from uo.vendor import Vendor
 from uo.vitals import position_and_weight
 
-log = make_log("bowcraft")
+log = make_log("tinkering")
 heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "made", position_and_weight)
 stall = StallWatch("cycles without a craft", STALL_WARN, STALL_STOP, heartbeat, log)
 
@@ -53,40 +50,37 @@ if skill_name is None:
     API.Stop()
 
 skill = SkillReader(skill_name)
+product = None
 
 
 def stop_reason():
     return first_reason([stopped(STOPPED), dead(), skill_capped(skill_name)])
 
 
+# The band's product only: a provisioner will not take the tongs left from the band before, and
+# counting them would send the run selling every cycle
 def products_in_pack():
-    return count_of(PRODUCT_GRAPHICS)
+    return count_of(PRODUCTS[product] if product is not None else PRODUCT_GRAPHICS)
+
+
+def ingot_cost(item):
+    return cost_of(item, INGOT_COST, MIN_CRAFT_INGOTS)
+
+
+def ingots_short(item):
+    return short_by(item, stock.in_pack(), INGOT_COST, MIN_CRAFT_INGOTS)
 
 
 saves = SaveWatch(SAVING_TEXT, SAVE_DONE_TEXT, SAVE_WAIT, SAVE_POLL, log, heartbeat, stop_reason)
 
-tools = CraftTool("fletcher's tool", TOOL_GRAPHICS, TOOL_NAME_WORDS, log)
-wood = StockBook({
-    "noun": "wood",
-    "kinds": WOOD_KINDS,
-    "types": WOOD_TYPES,
-    "hues": WOOD_HUES,
-    "wanted": WOOD_TYPE,
+tools = CraftTool("tinker's tool", TOOL_GRAPHICS, TOOL_NAME_WORDS, log)
+stock = StockBook({
+    "noun": "ingots",
+    "kinds": STOCK_KINDS,
+    "types": INGOT_TYPES,
+    "hues": INGOT_HUES,
+    "wanted": IRON,
     "move_delay": MOVE_DELAY,
-}, log)
-sources = Sources(wood, {
-    "max_picks": MAX_PICKS,
-    "pick_timeout": PICK_TIMEOUT,
-    "open_delay": OPEN_DELAY,
-    "container_range": CONTAINER_RANGE,
-    "pathfind_timeout": PATHFIND_TIMEOUT,
-}, log)
-restock = Restock(wood, sources, {
-    "batch": BATCH_SIZE,
-    "move_delay": MOVE_DELAY,
-    "max_empty_moves": MAX_EMPTY_MOVES,
-    "return_wrong_wood": RETURN_WRONG_WOOD,
-    "heavy_text": TOO_HEAVY_TEXT,
 }, log)
 menu = CraftMenu(tools, {
     "stride": BUTTON_STRIDE,
@@ -97,13 +91,13 @@ menu = CraftMenu(tools, {
     "title": CRAFT_TITLE,
     "title_text": CRAFT_TITLE_TEXT,
     "title_fragments": CRAFT_TITLE_FRAGMENTS,
-    "tool_noun": "fletcher's tools",
+    "tool_noun": "tinker's tools",
     "gump_timeout": GUMP_TIMEOUT,
     "gump_poll": GUMP_POLL,
     "max_categories": MAX_CATEGORIES,
     "max_item_rows": MAX_ITEM_ROWS,
 }, log)
-crafter = Crafter(tools, menu, wood, OUTCOME_TEXT, {
+crafter = Crafter(tools, menu, stock, OUTCOME_TEXT, {
     "recipes": RECIPES,
     "products": PRODUCTS,
     "make_last_button": MAKE_LAST_BUTTON,
@@ -117,7 +111,7 @@ crafter = Crafter(tools, menu, wood, OUTCOME_TEXT, {
     "text_limit": UNREADABLE_TEXT_LIMIT,
     "tail_seconds": JOURNAL_TAIL_SECONDS,
     "tail_lines": JOURNAL_TAIL_LINES,
-    "material": WOOD_TYPE,
+    "material": IRON,
 }, log)
 vendor = Vendor(menu, {
     "serial": VENDOR_SERIAL,
@@ -136,8 +130,6 @@ vendor = Vendor(menu, {
 }, log, heartbeat, products_in_pack)
 
 start = skill.wait(SKILL_TIMEOUT, SKILL_POLL)
-
-# Before the cursor: a capped character has nothing to pick containers for
 capped = skill_capped(skill_name)()
 
 if start is None:
@@ -152,27 +144,30 @@ elif capped is not None:
     API.Stop()
 
 if tools.serial() is None:
-    log("no fletcher's tools in the pack")
+    log("no tinker's tools in the pack")
     API.Stop()
 
-sources.pick()
+stock.lift_from_bags()
 
-# A run that starts on the wood it is already carrying needed no cursor at all
-if len(sources.picked()) == 0 and wood.in_pack() == 0:
-    log("nothing picked and no wood in the pack")
+first = band_for(BANDS, start)
+
+if first is None:
+    log("%s reads %.1f and no band covers it" % (skill_name, start))
+    API.Stop()
+
+if ingots_short(first) > 0:
+    log("the pack holds %s, and one %s takes %d ingots"
+        % (stock.pack_report(), first, ingot_cost(first)))
     API.Stop()
 
 cap = skill.cap()
 
-log("%s at %.1f%s, %s in the pack, %s"
+log("%s at %.1f%s, %s in the pack"
     % (skill_name, start, "/%.1f" % cap if cap is not None and cap > 0 else "",
-       wood.pack_report(), sources.stock_line()))
-
-if wood.in_pack() < RESTOCK_AT:
-    restock.run()
+       stock.pack_report()))
 
 recorder = attempt_log(DATA_PATH, skill_name, log)
-materials = Materials(wood, MATERIAL_GRAPHICS)
+materials = Materials(stock, MATERIAL_GRAPHICS)
 
 stop = None
 tally = 0
@@ -187,7 +182,6 @@ sell_misses = 0
 sell_paused_until = 0
 reported = 0
 cycle = 0
-product = None
 last_skill = start
 
 
@@ -203,7 +197,9 @@ def end_cycle(phase):
 def sell_now():
     global sell_misses, sell_paused_until
 
-    if vendor.sell_trip(BOWYER_TITLES, "bowyer"):
+    noun, titles = VENDORS[product]
+
+    if vendor.sell_trip(titles, noun):
         sell_misses = 0
 
         return True
@@ -220,19 +216,9 @@ def sell_now():
     return False
 
 
-# A pack the shard will not load for weight is unloaded first, when there is anything in it to sell
-def sell_for_room():
-    if not restock.refused_for_weight() or cycle < sell_paused_until:
-        return False
-
-    held = products_in_pack()
-
-    if held == 0:
-        return False
-
-    log("selling %d before loading more wood" % held)
-
-    return sell_now()
+def out_of_ingots():
+    return ("out of %s ingots - %s in the pack, and one %s takes %d"
+            % (IRON, stock.pack_report(), product, ingot_cost(product)))
 
 
 # Measured either side of the craft rather than read off the recipe: a failure refunds part of it
@@ -278,32 +264,21 @@ try:
             stop = "%s reads %s and no band covers it" % (skill_name, reading(value))
             break
 
+        # The vendor changes with the band, so the paused trips get a fresh start too
         if wanted != product:
             log("%s at %s, making %s" % (skill_name, reading(value), wanted))
             product = wanted
             crafter.forget_last()
+            sell_misses = 0
+            sell_paused_until = 0
 
         if products_in_pack() >= SELL_AT and cycle >= sell_paused_until and sell_now():
             end_cycle("selling")
             continue
 
-        if wood.in_pack() < RESTOCK_AT:
-            # An unreachable container also pulls nothing, which the stall watch ends
-            pulled = restock.run()
-
-            if sell_for_room():
-                end_cycle("selling")
-                continue
-
-            if pulled == 0 and sources.stock_left() == 0 and wood.in_pack() < MIN_CRAFT_WOOD:
-                stop = ("out of %s wood - %s in the pack, none left in what you picked"
-                        % (WOOD_TYPE, wood.pack_report()))
-                break
-
-            # A short pack that can still make something crafts
-            if wood.in_pack() < MIN_CRAFT_WOOD:
-                end_cycle("restocking")
-                continue
+        if ingots_short(product) > 0:
+            stop = out_of_ingots()
+            break
 
         spent_before = materials.snapshot() if recorder.recording() else {}
         outcome = crafter.craft_once(product)
@@ -324,33 +299,27 @@ try:
             no_material = 0
             stall.progressed()
         elif outcome == "noMaterial":
-            pulled = restock.run()
-
-            if sell_for_room():
-                end_cycle("selling")
-                continue
-
-            if pulled > 0:
+            # A bag of ingots the craft cannot reach into is the one refusal the run can fix
+            if stock.lift_from_bags() > 0:
                 no_material = 0
                 stall.progressed()
-            elif wood.in_pack() < RESTOCK_AT and sources.stock_left() == 0:
-                stop = "the shard says there is not enough wood and there is none left to pull"
+            elif ingots_short(product) > 0:
+                stop = out_of_ingots()
                 break
             else:
-                # Wood in the pack, refused, nothing to add to it: the wrong kind of wood
                 no_material += 1
 
                 if no_material >= MAX_NO_MATERIAL:
                     stop = ("the shard refused %s in the pack %d times - read the gump's own words "
-                            "above; if it wants another wood, set WOOD_TYPE and the menu to match"
-                            % (wood.pack_report(), no_material))
+                            "above, and set the menu's material to %s"
+                            % (stock.pack_report(), no_material, IRON))
                     break
         elif outcome in ("wrongRow", "saving"):
             stall.progressed()
         elif outcome == "toolWorn":
             crafter.forget_last()
             stall.progressed()
-            log("the tools wore out, looking for another pair")
+            log("the tools wore out, looking for another set")
         elif outcome == "skillTooLow":
             stop = "the shard says you cannot make a %s at %s" % (product, reading(value))
             break
@@ -361,12 +330,12 @@ try:
             no_tool += 1
 
             if no_tool >= MAX_NO_TOOL:
-                stop = ("no fletcher's tools left" if outcome == "noTool"
+                stop = ("no tinker's tools left" if outcome == "noTool"
                         else "the craft menu will not open")
                 break
 
             log("%s (%d/%d), trying again"
-                % ("no fletcher's tools in the pack" if outcome == "noTool"
+                % ("no tinker's tools in the pack" if outcome == "noTool"
                    else "the tools opened no craft menu", no_tool, MAX_NO_TOOL))
             API.Pause(backoff_for(no_tool, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX))
         elif outcome == "throttled":
@@ -402,7 +371,7 @@ try:
             log(
                 "%d made, %d failed, %d throttled, %s at %s, %s left"
                 % (tally, fails, throttle_tally, skill_name, reading(value),
-                   wood.report(wood.pack_stock()))
+                   stock.report(stock.pack_stock()))
             )
 
         end_cycle(outcome if outcome is not None else "unknown")

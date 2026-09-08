@@ -1,7 +1,7 @@
 import unittest
 
-from bowcraft.materials import Materials
-from bowcraft.wood import WoodBook
+from uo.materials import Materials
+from uo.stock import StockBook
 from test_support.uo import install, item
 
 BOARDS = 0x1BD7
@@ -10,7 +10,8 @@ FEATHER = 0x1BD1
 
 
 def make():
-    wood = WoodBook({
+    stock = StockBook({
+        "noun": "wood",
         "kinds": [("logs", set([LOGS]), ["log"]), ("boards", set([BOARDS]), ["board"])],
         "types": ["oak", "yew"],
         "hues": {},
@@ -18,7 +19,7 @@ def make():
         "move_delay": 0.0,
     }, lambda text: None)
 
-    return Materials(wood, set([FEATHER]))
+    return Materials(stock, set([FEATHER]))
 
 
 class SnapshotTest(unittest.TestCase):
@@ -160,11 +161,11 @@ class SettledSnapshotTest(unittest.TestCase):
 
         self.assertEqual(self.materials.settled_snapshot(1.5, 0.25), {(BOARDS, 0): 93})
 
-    def test_wood_total_adds_up_only_the_wood(self):
+    def test_stock_total_adds_up_only_the_wood(self):
         self.api.hold(item(serial=1, graphic=BOARDS, amount=93, name="boards"),
                       item(serial=2, graphic=FEATHER, amount=40, name="feathers"))
 
-        self.assertEqual(self.materials.wood_total(self.materials.snapshot()), 93)
+        self.assertEqual(self.materials.stock_total(self.materials.snapshot()), 93)
 
     def test_gives_up_on_a_pack_that_will_not_settle(self):
         counts = [90, 89, 88, 87, 86, 85, 84, 83]

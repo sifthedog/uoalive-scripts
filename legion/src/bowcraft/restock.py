@@ -1,6 +1,6 @@
 import API
 
-from bowcraft.wood import total_of
+from uo.stock import total_of
 from uo.journal import matched_bucket
 from uo.pack import amount_of
 from uo.vitals import weight_reading

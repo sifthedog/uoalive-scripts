@@ -1,6 +1,6 @@
 import unittest
 
-from bowcraft.wood import WoodBook, total_of
+from uo.stock import StockBook, total_of
 from test_support.uo import install, item
 
 LOGS = set([0x1BDD])
@@ -10,14 +10,15 @@ TYPES = ["oak", "ash", "yew"]
 HUES = {0: "regular", 1191: "ash", 2010: "oak"}
 
 
-class WoodBookTest(unittest.TestCase):
+class StockBookTest(unittest.TestCase):
     def setUp(self):
         self.api = install()
         self.said = []
         self.kinds = [(name, set(graphics), words) for name, graphics, words in KINDS]
 
     def book(self, wanted="regular"):
-        return WoodBook({
+        return StockBook({
+            "noun": "wood",
             "kinds": self.kinds,
             "types": TYPES,
             "hues": HUES,
@@ -76,7 +77,7 @@ class WoodBookTest(unittest.TestCase):
         self.api.hold(item(serial=1, graphic=0x1BD7, hue=0, amount=10),
                       item(serial=2, graphic=0x1BDD, hue=0, amount=5))
 
-        self.assertEqual(self.book().report(self.book().pack_wood()), "5 logs, 10 boards")
+        self.assertEqual(self.book().report(self.book().pack_stock()), "5 logs, 10 boards")
 
     def test_the_hue_report_names_what_is_actually_in_there(self):
         self.api.hold(item(serial=1, graphic=0x1BD7, hue=2010, amount=300))
@@ -85,3 +86,43 @@ class WoodBookTest(unittest.TestCase):
 
     def test_totals_a_count_table(self):
         self.assertEqual(total_of({"logs": 5, "boards": 10}), 15)
+
+
+INGOTS = 0x1BF2
+INGOT_HUES = {0: "iron", 0x973: "dull copper", 0x96D: "copper"}
+
+
+class IngotBookTest(unittest.TestCase):
+    def setUp(self):
+        self.api = install()
+
+    def book(self):
+        return StockBook({
+            "noun": "ingots",
+            "kinds": [("ingots", set([INGOTS]), ["ingot", "ingots"])],
+            "types": sorted(set(INGOT_HUES.values())),
+            "hues": INGOT_HUES,
+            "wanted": "iron",
+            "move_delay": 0.0,
+        }, lambda text: None)
+
+    def test_a_two_word_type_is_not_taken_for_its_last_word(self):
+        self.assertEqual(self.book().type_of(item(graphic=INGOTS, name="Dull Copper Ingots")),
+                         "dull copper")
+        self.assertEqual(self.book().type_of(item(graphic=INGOTS, name="Copper Ingots")),
+                         "copper")
+
+    def test_the_hue_names_an_unnamed_stack(self):
+        self.assertEqual(self.book().type_of(item(graphic=INGOTS, name="", hue=0x973)),
+                         "dull copper")
+        self.assertEqual(self.book().type_of(item(graphic=INGOTS, name="", hue=0)), "iron")
+
+    def test_coloured_ingots_are_set_aside(self):
+        self.api.hold(item(serial=1, graphic=INGOTS, hue=0, amount=300, name="Ingots"),
+                      item(serial=2, graphic=INGOTS, hue=0x973, amount=40, name="Dull Copper Ingots"))
+
+        self.assertEqual(self.book().in_pack(), 300)
+        self.assertEqual(self.book().pack_report(), "300 ingots (40 dull copper set aside)")
+
+    def test_an_empty_pack_reads_as_no_ingots(self):
+        self.assertEqual(self.book().pack_report(), "no ingots")

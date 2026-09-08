@@ -7,22 +7,22 @@ from uo.pack import counts_by_graphic, diff_counts, hue_of, pack_contents
 class Materials(object):
     """What a craft spent, measured either side of it. Whitelisted: a potion drunk is not a cost."""
 
-    def __init__(self, wood, extra_graphics):
-        self._wood = wood
+    def __init__(self, stock, extra_graphics):
+        self._stock = stock
         self._extra = extra_graphics
         # Learned while the stack is there: the one that paid for a craft is often gone by the diff
         self._names = {}
 
     def _counted(self, item):
-        return self._wood.is_wood(item) or item.Graphic in self._extra
+        return self._stock.is_stock(item) or item.Graphic in self._extra
 
     def _name_of(self, item):
-        kind = self._wood.kind_of(item)
+        kind = self._stock.kind_of(item)
 
         if kind is not None:
-            wood = self._wood.type_of(item)
+            name = self._stock.type_of(item)
 
-            return kind if wood is None else "%s %s" % (wood, kind)
+            return kind if name is None else "%s %s" % (name, kind)
 
         return (getattr(item, "Name", "") or "").strip() or hex_of(item.Graphic)
 
@@ -57,8 +57,8 @@ class Materials(object):
 
         return last
 
-    def wood_total(self, counts):
-        return sum(counts[key] for key in counts if self._wood.is_wood_graphic(key[0]))
+    def stock_total(self, counts):
+        return sum(counts[key] for key in counts if self._stock.is_stock_graphic(key[0]))
 
     # The lost side only: the product lands in the same pack and is not a cost
     def spent(self, before, after):

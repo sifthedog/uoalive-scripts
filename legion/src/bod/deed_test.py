@@ -1,7 +1,7 @@
 import unittest
 
 from bod.config import ARTICLES, DEED_TEXT, PLAIN_MATERIAL
-from bod.deed import Deed, parse_deed
+from bod.deed import Deed, entry_request, parse_deed
 from test_support.uo import install
 
 CONFIG = {
@@ -29,6 +29,8 @@ class ParseDeedTest(unittest.TestCase):
 
         self.assertIsNone(why)
         self.assertEqual(request, {
+            "large": False,
+            "entries": [("platemail gorget", 3)],
             "item": "platemail gorget",
             "done": 3,
             "total": 20,
@@ -47,17 +49,33 @@ class ParseDeedTest(unittest.TestCase):
 
         self.assertEqual(request["item"], "dagger")
 
-    def test_a_large_deed_is_refused(self):
-        request, why = parse_deed(["large bulk order", "amount to make: 15"], CONFIG)
+    def test_a_large_deed_lists_its_entries(self):
+        request, why = parse_deed(["a bulk order deed", "large bulk order", "amount to make: 15",
+                                   "ringmail gloves: 15", "ringmail leggings: 0",
+                                   "ringmail sleeves: 0", "All items must be exceptional."],
+                                  CONFIG)
 
-        self.assertIsNone(request)
-        self.assertIn("large", why)
+        self.assertIsNone(why)
+        self.assertTrue(request["large"])
+        self.assertEqual(request["entries"], [("ringmail gloves", 15), ("ringmail leggings", 0),
+                                              ("ringmail sleeves", 0)])
+        self.assertNotIn("item", request)
 
     def test_two_item_lines_are_a_large_deed(self):
-        request, why = parse_deed(["amount to make: 15", "bascinet: 0", "close helmet: 0"], CONFIG)
+        request, _why = parse_deed(["amount to make: 15", "bascinet: 0", "close helmet: 0"], CONFIG)
 
-        self.assertIsNone(request)
-        self.assertIn("large", why)
+        self.assertTrue(request["large"])
+
+    def test_entry_request_is_a_small_of_the_large(self):
+        large, _why = parse_deed(["large bulk order", "amount to make: 15", "bascinet: 0",
+                                  "All items must be made with valorite ingots."], CONFIG)
+        small = entry_request(large, "bascinet", 4)
+
+        self.assertEqual(small["item"], "bascinet")
+        self.assertEqual(small["done"], 4)
+        self.assertEqual(small["total"], 15)
+        self.assertEqual(small["material"], "valorite")
+        self.assertFalse(small["large"])
 
     def test_no_amount_is_unreadable(self):
         request, why = parse_deed(["a bulk order deed", "platemail gorget: 3"], CONFIG)
@@ -85,6 +103,13 @@ class DeedTest(unittest.TestCase):
         self.assertEqual(request["done"], 3)
         self.assertEqual(self.deed.describe(),
                          "platemail gorget x20, 3 done, exceptional, dull copper")
+
+    def test_describe_a_large_deed(self):
+        self.api.props[0x40001234] = "large bulk order\namount to make: 15\nbascinet: 15\nhelmet: 0"
+        self.deed.read()
+
+        self.assertEqual(self.deed.describe(),
+                         "large deed x15: bascinet (15 done), helmet (0 done), iron")
 
     def test_a_tooltip_that_caught_up_is_taken(self):
         self.api.props[0x40001234] = "\n".join(STOCK)

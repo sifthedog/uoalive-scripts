@@ -51,6 +51,30 @@ class ToolTest(unittest.TestCase):
 
         self.assertEqual(len(self.said), 1)
 
+    def test_opens_a_bag_the_client_has_not_looked_into(self):
+        bag = item(serial=5, graphic=0x0E76, name="a bag", is_container=True)
+        self.api.hold(bag)
+        real = self.api.UseObject
+
+        def use(serial):
+            real(serial)
+            self.api.hold(item(serial=9, name="a pickaxe"))
+
+        self.api.UseObject = use
+
+        self.assertEqual(self.tool.find().Serial, 9)
+        self.assertEqual(self.api.used, [5])
+        self.assertEqual(self.said[0], "opening 1 bag(s) to look inside for a pickaxe")
+
+    def test_opens_a_bag_once_and_leaves_an_opened_one_alone(self):
+        self.api.hold(item(serial=5, name="a bag", is_container=True),
+                      item(serial=6, name="a pouch", is_container=True, opened=True))
+
+        self.tool.find()
+        self.tool.find()
+
+        self.assertEqual(self.api.used, [5])
+
     def test_reaches_into_the_spare_bag(self):
         spare = Tool("pickaxe", ["pickaxe"], [], ["onehanded"], 0x50000000, 3, 1.0, 0.25, self.said.append)
         self.api.containers[0x50000000] = [item(serial=9, name="a pickaxe")]

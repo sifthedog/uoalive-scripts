@@ -165,6 +165,16 @@ class CraftMenu(object):
 
         return (gump, None)
 
+    # Text only: the row's button, or None when this page does not name it
+    def named_row(self, product, gump):
+        rows = self.item_rows(gump)
+
+        for index in range(len(rows)):
+            if rows[index].lower() == product:
+                return self.button_id(self._config["item_type"], index)
+
+        return None
+
     # The text first: unlike a category, a wrong row crafts the wrong item and spends the wood
     def candidate_buttons(self, product, gump):
         rows = self.item_rows(gump)

@@ -27,6 +27,19 @@ class CraftToolTest(unittest.TestCase):
         self.assertTrue(self.tool.is_tool(item(serial=7, graphic=0x0FBB)))
         self.assertEqual(len(self.said), 1)
 
+    def test_a_preferred_art_wins_over_the_first_found(self):
+        tool = CraftTool("smith's tool", set([HAMMER, 0x0FBB]), [], self.said.append,
+                         prefer=set([0x0FBB]))
+        self.api.hold(item(serial=5, graphic=HAMMER), item(serial=6, graphic=0x0FBB))
+
+        self.assertEqual(tool.serial(), 6)
+
+    def test_every_tool_is_listed(self):
+        self.api.hold(item(serial=5, graphic=HAMMER), item(serial=6, graphic=HAMMER),
+                      item(serial=8, graphic=0x1439, name="war hammer"))
+
+        self.assertEqual(self.tool.serials(), [5, 6])
+
     def test_a_war_hammer_is_not_a_tool(self):
         self.api.hold(item(serial=8, graphic=0x1439, name="war hammer"))
 

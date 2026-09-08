@@ -24,3 +24,15 @@ def describe_plan(plan):
 def cycle_cost(stage, fallback_timeout, fallback_delay):
     return max(0.1, stage.get("cast_timeout", fallback_timeout)
                + stage.get("cast_delay", fallback_delay))
+
+
+# Ceilings are exclusive; None catches everything above the last one
+def band_for(bands, value):
+    if value is None:
+        return None
+
+    for ceiling, product in bands:
+        if ceiling is None or value < ceiling:
+            return product
+
+    return None

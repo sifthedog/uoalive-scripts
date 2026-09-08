@@ -6,11 +6,12 @@ from uo.text import word_in
 class CraftTool(object):
     """A crafting tool, used out of the pack rather than equipped."""
 
-    def __init__(self, noun, graphics, name_words, log):
+    def __init__(self, noun, graphics, name_words, log, prefer=None):
         self._noun = noun
         self._graphics = graphics
         self._name_words = name_words
         self._log = log
+        self._prefer = prefer or set()
 
     def is_tool(self, item):
         if item is None:
@@ -28,9 +29,20 @@ class CraftTool(object):
 
         return True
 
+    def serials(self):
+        return [item.Serial for item in pack_contents() if self.is_tool(item)]
+
     def serial(self):
+        found = None
+
         for item in pack_contents():
-            if self.is_tool(item):
+            if not self.is_tool(item):
+                continue
+
+            if item.Graphic in self._prefer:
                 return item.Serial
 
-        return None
+            if found is None:
+                found = item.Serial
+
+        return found

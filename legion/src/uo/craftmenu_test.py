@@ -76,6 +76,12 @@ class ItemRowsTest(unittest.TestCase):
 
         self.assertEqual(order[0], 22)
 
+    def test_named_row_is_text_only(self):
+        self._gump("Weapons", "bow", "crossbow")
+
+        self.assertEqual(self.menu.named_row("crossbow", 88), 22)
+        self.assertIsNone(self.menu.named_row("yumi", 88))
+
     def test_every_row_is_still_walked_after_the_named_one(self):
         self._gump("Weapons", "bow", "crossbow")
 

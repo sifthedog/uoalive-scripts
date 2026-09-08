@@ -1,7 +1,7 @@
 import unittest
 
 from bowcraft.restock import Restock
-from bowcraft.wood import WoodBook
+from uo.stock import StockBook
 from test_support.uo import install, item
 
 BOARDS = 0x1BD7
@@ -9,7 +9,7 @@ CHEST = 0x40001000
 PILE = 0x40001001
 
 
-class LiftingBook(WoodBook):
+class LiftingBook(StockBook):
     """A lift the inert fake cannot show: the bag's wood is already in the pack count."""
 
     def lift_from_bags(self):
@@ -58,6 +58,7 @@ class RunTest(unittest.TestCase):
         self.api.MoveItem = move
 
         wood = LiftingBook({
+            "noun": "wood",
             "kinds": [("boards", set([BOARDS]), ["board", "boards"])],
             "types": [],
             "hues": {0: "regular"},

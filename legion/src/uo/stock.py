@@ -2,22 +2,24 @@ import API
 
 from uo.entity import hex_of
 from uo.pack import amount_of, hue_of, pack_contents, pack_top_level
-from uo.text import word_in
+from uo.text import word_in, words_of
 
 
-class WoodBook(object):
-    """What in the pack is wood, which wood it is, and how much of it the menu will spend."""
+class StockBook(object):
+    """What in the pack is the craft's material, which type it is, and how much the menu will spend."""
 
     def __init__(self, config, log):
+        self._noun = config["noun"]
         self._kinds = config["kinds"]
-        self._types = config["types"]
+        # Longest first: 'copper' would otherwise take 'dull copper'
+        self._types = sorted(config["types"], key=lambda name: -len(words_of(name)))
         self._hues = config["hues"]
         self._wanted = config["wanted"]
         self._move_delay = config["move_delay"]
         self._log = log
 
     # For a snapshot key, which has no item left to read a name off
-    def is_wood_graphic(self, graphic):
+    def is_stock_graphic(self, graphic):
         for _kind, graphics, _words in self._kinds:
             if graphic in graphics:
                 return True
@@ -43,22 +45,27 @@ class WoodBook(object):
 
         return None
 
-    def is_wood(self, item):
+    def is_stock(self, item):
         return self.kind_of(item) is not None
 
     # The name is where the shard writes it; a hue in neither table is not guessed at
     def type_of(self, item):
-        for wood in self._types:
-            if word_in(item.Name, [wood]):
-                return wood
+        words = words_of(item.Name)
+
+        for name in self._types:
+            wanted = words_of(name)
+
+            for start in range(len(words) - len(wanted) + 1):
+                if words[start:start + len(wanted)] == wanted:
+                    return name
 
         return self._hues.get(hue_of(item))
 
     def usable(self, item):
-        return self.is_wood(item) and self.type_of(item) == self._wanted
+        return self.is_stock(item) and self.type_of(item) == self._wanted
 
     def wrong(self, item):
-        return self.is_wood(item) and self.type_of(item) != self._wanted
+        return self.is_stock(item) and self.type_of(item) != self._wanted
 
     # Only what the menu will spend: counting oak let a run sit on a full pack and craft none
     def counts(self, items):
@@ -81,14 +88,14 @@ class WoodBook(object):
             if not self.wrong(item):
                 continue
 
-            wood = self.type_of(item) or "unknown"
-            counts[wood] = counts.get(wood, 0) + amount_of(item)
+            name = self.type_of(item) or "unknown"
+            counts[name] = counts.get(name, 0) + amount_of(item)
 
         return counts
 
     def other_report(self, counts):
-        parts = ["%d %s" % (counts[wood], wood)
-                 for wood in sorted(counts, key=lambda name: -counts[name])]
+        parts = ["%d %s" % (counts[name], name)
+                 for name in sorted(counts, key=lambda name: -counts[name])]
 
         return ", ".join(parts)
 
@@ -100,24 +107,24 @@ class WoodBook(object):
             if counts.get(kind, 0) > 0:
                 parts.append("%d %s" % (counts[kind], kind))
 
-        return ", ".join(parts) if parts else "no wood"
+        return ", ".join(parts) if parts else "no %s" % self._noun
 
-    def pack_wood(self):
+    def pack_stock(self):
         return self.counts(pack_contents())
 
     def pack_other(self):
         return self.other_counts(pack_contents())
 
     def in_pack(self):
-        return total_of(self.pack_wood())
+        return total_of(self.pack_stock())
 
     def pack_report(self):
-        text = self.report(self.pack_wood())
+        text = self.report(self.pack_stock())
         other = self.other_report(self.pack_other())
 
         return text if not other else "%s (%s set aside)" % (text, other)
 
-    # By hue: oak, ash and yew are all 'boards' by graphic. Missing WOOD_HUES rows come from here.
+    # By hue: oak, ash and yew are all 'boards' by graphic. Missing hue rows come from here.
     def hue_report(self):
         counts = {}
 
@@ -133,7 +140,7 @@ class WoodBook(object):
         parts = ["%d %s %s hue %s" % (counts[key], key[2], key[0], hex_of(key[1]))
                  for key in sorted(counts, key=lambda pair: -counts[pair])]
 
-        return ", ".join(parts) if parts else "no wood"
+        return ", ".join(parts) if parts else "no %s" % self._noun
 
     def wrong_piles(self):
         return [item for item in pack_contents() if self.wrong(item)]
@@ -162,7 +169,7 @@ class WoodBook(object):
                 moved += gained
 
         if moved > 0:
-            self._log("brought %d wood up out of the bags in your pack" % moved)
+            self._log("brought %d %s up out of the bags in your pack" % (moved, self._noun))
 
         return moved
 

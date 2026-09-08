@@ -1,6 +1,6 @@
 import API
 
-from bowcraft.wood import total_of
+from uo.stock import total_of
 from uo.entity import chebyshev, hex_of, player
 from uo.pack import amount_of
 
@@ -135,7 +135,7 @@ class Sources(object):
         container = self.container_of(entry)
         items = API.ItemsInContainer(container, True) if container else None
 
-        return [item for item in items if self._wood.is_wood(item)] if items else []
+        return [item for item in items if self._wood.is_stock(item)] if items else []
 
     def counts(self, entry):
         return self._wood.counts(self.wood(entry))

@@ -1,6 +1,6 @@
 import unittest
 
-from bowcraft.craft import Crafter
+from uo.craft import Crafter
 from test_support.uo import install, item
 
 BOW = 0x13B2
@@ -21,7 +21,7 @@ CONFIG = {
     "text_limit": 160,
     "tail_seconds": 20.0,
     "tail_lines": 4,
-    "wood_type": "regular",
+    "material": "regular",
 }
 
 
@@ -30,7 +30,7 @@ class Tools(object):
         return 7
 
 
-class Wood(object):
+class Stock(object):
     def hue_report(self):
         return "no wood"
 
@@ -69,7 +69,7 @@ class MakeLastTest(unittest.TestCase):
     def setUp(self):
         self.api = install()
         self.menu = Menu(self.api)
-        self.crafter = Crafter(Tools(), self.menu, Wood(), [("made", ["You create the item"])],
+        self.crafter = Crafter(Tools(), self.menu, Stock(), [("made", ["You create the item"])],
                                CONFIG, lambda text: None)
 
     def test_a_proven_row_is_pressed_as_make_last_from_then_on(self):

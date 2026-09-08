@@ -1,7 +1,7 @@
 import API
 
 from bod.deed import strip_article
-from uo.pack import pack_top_level
+from uo.pack import amount_of, pack_contents
 from uo.text import word_in, words_of
 
 
@@ -15,7 +15,6 @@ class ItemBook(object):
         self._verdicts = {}
         self._asked = {}
         self._rejected = set()
-        self._primed = False
 
     def _material_names(self):
         material = self._request["material"]
@@ -37,6 +36,7 @@ class ItemBook(object):
 
     def _judge(self, lines):
         name = strip_article(lines[0].lower(), self._config["articles"])
+
         body = [line.lower() for line in lines[1:]]
         product = name in self._product_names()
         exceptional = word_in(" ".join(body), [self._config["exceptional_text"]])
@@ -68,45 +68,66 @@ class ItemBook(object):
             return None
 
         self._verdicts[serial] = self._judge(lines)
+        self._verdicts[serial]["name"] = lines[0]
 
         return self._verdicts[serial]
+
+    def name_of(self, serial):
+        verdict = self.look(serial)
+
+        return "(no tooltip)" if verdict is None else verdict["name"]
 
     def is_product(self, serial):
         verdict = self.look(serial)
 
         return None if verdict is None else verdict["product"]
 
-    def reject(self, serial):
-        self._rejected.add(serial)
+    def reject(self, *serials):
+        self._rejected.update(serials)
+
+    # Stacks and bags are never the product, and each tooltip read is a wait
+    def _candidates(self):
+        return [item for item in pack_contents()
+                if amount_of(item) == 1 and not getattr(item, "IsContainer", False)]
 
     def serials(self):
-        return set(item.Serial for item in pack_top_level())
+        return set(item.Serial for item in pack_contents())
 
     def new_since(self, before):
-        return [item for item in pack_top_level() if item.Serial not in before]
+        return [item for item in self._candidates() if item.Serial not in before]
 
-    # One request for the whole pack, so the first pass does not wait per item
+    # One request for every unread piece, so the reads below do not each wait their turn
     def prime(self):
-        if self._primed:
+        unread = [item.Serial for item in self._candidates()
+                  if item.Serial not in self._verdicts and item.Serial not in self._rejected
+                  and self._asked.get(item.Serial, 0) < self._config["asks"]]
+
+        if len(unread) == 0:
             return
 
-        self._primed = True
-        API.RequestOPLData(list(self.serials()))
+        API.RequestOPLData(unread)
         API.Pause(self._config["opl_settle"])
 
     def qualifying(self):
         self.prime()
+        found = []
 
-        for item in pack_top_level():
+        for item in self._candidates():
             if item.Serial in self._rejected:
                 continue
 
             verdict = self.look(item.Serial)
 
             if verdict is not None and verdict["qualifies"]:
-                return item.Serial
+                found.append(item.Serial)
 
-        return None
+        return found
+
+    # What a salvage would take: judged pieces the deed did not, or would not
+    def leftovers(self):
+        return [item.Serial for item in self._candidates()
+                if item.Serial in self._verdicts
+                and (item.Serial in self._rejected or not self._verdicts[item.Serial]["qualifies"])]
 
     # The shard reissues the serial of an item the deed took
     def forget_missing(self):

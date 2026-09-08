@@ -21,14 +21,14 @@ def parse_deed(lines, config):
     low = [line.strip().lower() for line in lines if line and line.strip()]
     total = None
     exceptional = False
+    large = False
     material = config["plain"]
     items = []
 
     for line in low:
         if text["large"] in line:
-            return None, "a large bulk order - only small deeds are handled"
-
-        if line.startswith(text["amount"]):
+            large = True
+        elif line.startswith(text["amount"]):
             total = to_int(line[len(text["amount"]):])
         elif text["exceptional"] in line:
             exceptional = True
@@ -42,19 +42,34 @@ def parse_deed(lines, config):
             if done is not None:
                 items.append((strip_article(name.strip(), config["articles"]), done))
 
-    if len(items) > 1:
-        return None, "lists %d items, which is a large deed" % len(items)
-
     if total is None or len(items) == 0:
         return None, "could not read it - the tooltip says '%s'" % " | ".join(low)
 
-    return {
-        "item": items[0][0],
-        "done": items[0][1],
+    request = {
+        "large": large or len(items) > 1,
+        "entries": items,
         "total": total,
         "exceptional": exceptional,
         "material": material,
-    }, None
+    }
+
+    if not request["large"]:
+        request["item"] = items[0][0]
+        request["done"] = items[0][1]
+
+    return request, None
+
+
+def entry_request(request, item, done):
+    return {
+        "large": False,
+        "entries": [(item, done)],
+        "item": item,
+        "done": done,
+        "total": request["total"],
+        "exceptional": request["exceptional"],
+        "material": request["material"],
+    }
 
 
 class Deed(object):
@@ -80,17 +95,29 @@ class Deed(object):
 
     def describe(self):
         request = self.request
+        flags = "%s, %s" % (", exceptional" if request["exceptional"] else "", request["material"])
 
-        return "%s x%d, %d done%s, %s" % (
-            request["item"], request["total"], request["done"],
-            ", exceptional" if request["exceptional"] else "", request["material"])
+        if request["large"]:
+            return "large deed x%d: %s%s" % (
+                request["total"],
+                ", ".join("%s (%d done)" % entry for entry in request["entries"]), flags)
+
+        return "%s x%d, %d done%s" % (request["item"], request["total"], request["done"], flags)
+
+    # Asked for once, then read as it stands: a wait per read would stretch the settle by its
+    # timeout on every poll
+    def _lines_now(self):
+        props = API.ItemNameAndProps(self.serial, False) or ""
+
+        return [line.strip() for line in props.splitlines() if line.strip()]
 
     # The pack proved the combine; the tooltip catches up later, or on some builds never
     def settle_after_combine(self, count):
         waited = 0.0
+        API.RequestOPLData([self.serial])
 
-        while True:
-            request, _why = parse_deed(self._lines(), self._config)
+        while not API.StopRequested:
+            request, _why = parse_deed(self._lines_now(), self._config)
 
             if request is not None and request["done"] >= count:
                 if request["done"] > count:
