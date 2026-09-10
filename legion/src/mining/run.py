@@ -2,7 +2,6 @@ import API
 
 from mining.beetle import Beetle
 from mining.combine import Combiner
-from mining.gathered import Gathered
 from mining.config import (AMBUSH_ALARM, AMBUSH_HOLD, AMBUSH_HOLD_BUTTON, AMBUSH_HOLD_HUE,
                            AMBUSH_HOLD_POLL, AMBUSH_HOLD_TEXT, AMBUSH_HUE, AMBUSH_NOTICES,
                            AMBUSH_REPEATS, AMBUSH_TEXT, AMBUSH_WARNING, BEETLE_SCAN_RADIUS,
@@ -26,6 +25,7 @@ from mining.metal import MetalBook
 from mining.ore import OrePack
 from mining.smelt import Smelter
 from uo.entity import hex_of
+from uo.gathered import Gathered
 from uo.guards import dead, first_reason, pack_full, skill_capped, stopped
 from uo.heartbeat import Heartbeat
 from uo.hold import Hold
@@ -90,8 +90,23 @@ class Run(object):
 
         skill = SkillReader(skill_name or SKILL_NAMES[0])
         recorder = attempt_log(DATA_PATH if skill_name else "", skill.name(), log)
-        gathered = Gathered(recorder, skill, ore, metals, skill_capped(skill_name), ORE_GRAPHICS,
-                            log)
+
+
+        def metal_name(item):
+            metal = metals.of(item)
+
+            return None if metal is None else "%s ore" % metal
+
+
+        gathered = Gathered(recorder, skill, skill_capped(skill_name), {
+            "is_resource": ore.is_ore,
+            "name_of": metal_name,
+            "resource_graphics": ORE_GRAPHICS,
+            "noun": "ore",
+            "tool": "pickaxe",
+            "converter_tool": "fire beetle",
+            "made": "smelted",
+        }, log)
         smelter = Smelter(ore, beetle, saves, {
             "attempts": SMELT_ATTEMPTS,
             "passes": MAX_SMELT_PASSES,
@@ -104,8 +119,8 @@ class Run(object):
             "ingot_graphics": INGOT_GRAPHICS,
             "throttled_text": THROTTLED_TEXT,
             "unskilled_text": SMELT_UNSKILLED_TEXT,
-            "about_to_convert": gathered.before_smelt,
-            "converted": gathered.after_smelt,
+            "about_to_convert": gathered.before_convert,
+            "converted": gathered.after_convert,
         }, log)
         threat = ThreatWatch({
             "watch": WATCH_FOR_TROUBLE,

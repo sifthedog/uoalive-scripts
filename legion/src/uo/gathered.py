@@ -3,15 +3,13 @@ from uo.pack import amount_of, hue_of, pack_contents
 
 
 class Gathered(object):
-    """What a swing and a smelt each put in the pack, as attempt rows, while the skill can still gain."""
+    """What a swing and a conversion each put in the pack, as attempt rows, while the skill can still gain."""
 
-    def __init__(self, recorder, skill, ore, metals, capped, ore_graphics, log):
+    def __init__(self, recorder, skill, capped, config, log):
         self._recorder = recorder
         self._skill = skill
-        self._ore = ore
-        self._metals = metals
         self._capped = capped
-        self._ore_graphics = ore_graphics
+        self._config = config
         self._log = log
         self._names = {}
         self._from = None
@@ -25,40 +23,40 @@ class Gathered(object):
 
         return value
 
-    def _ore_name(self, item):
-        metal = self._metals.of(item)
+    def _resource_name(self, item):
+        name = self._config["name_of"](item)
 
-        if metal is not None:
-            return "%s ore" % metal
+        if name is not None:
+            return name
 
-        return (getattr(item, "Name", "") or "").strip() or "ore"
+        return (getattr(item, "Name", "") or "").strip() or self._config["noun"]
 
-    # By hue rather than by (graphic, hue): an ore stack's art changes with its size, so the merge
-    # after a swing would read as one art lost and another gained
-    def _ore_by_hue(self):
+    # By hue rather than by (graphic, hue): a stack's art changes with its size, so the merge after a
+    # swing would read as one art lost and another gained
+    def _resource_by_hue(self):
         counts = {}
 
         for item in pack_contents():
-            if not self._ore.is_ore(item):
+            if not self._config["is_resource"](item):
                 continue
 
             hue = hue_of(item)
             counts[hue] = counts.get(hue, 0) + amount_of(item)
 
-            # The tooltip's metal is kept once seen: the pile that names it is often merged away
-            if hue not in self._names or self._metals.of(item) is not None:
-                self._names[hue] = (self._ore_name(item), item.Graphic)
+            # A name the caller vouches for is kept once seen: the pile carrying it is often merged away
+            if hue not in self._names or self._config["name_of"](item) is not None:
+                self._names[hue] = (self._resource_name(item), item.Graphic)
 
         return counts
 
     def before_swing(self):
-        return self._ore_by_hue() if self.recording() else None
+        return self._resource_by_hue() if self.recording() else None
 
     def after_swing(self, skill_from, outcome, before):
         if before is None:
             return
 
-        after = self._ore_by_hue()
+        after = self._resource_by_hue()
         rows = []
 
         for hue in sorted(after):
@@ -68,9 +66,9 @@ class Gathered(object):
                 name, graphic = self._names[hue]
                 rows.append((name, graphic, hue, delta))
 
-        self._recorder.record(skill_from, outcome, "pickaxe", gained=rows)
+        self._recorder.record(skill_from, outcome, self._config["tool"], gained=rows)
 
-    def before_smelt(self):
+    def before_convert(self):
         self._from = self._skill.read() if self.recording() else None
 
     def _product_name(self, graphic, hue):
@@ -83,34 +81,35 @@ class Gathered(object):
 
         return hex_of(graphic)
 
-    def after_smelt(self, gained, lost):
+    def after_convert(self, gained, lost):
         if self._from is None:
             return
 
         skill_from = self._from
         self._from = None
-        ore_lost = {}
-        ore_art = {}
+        graphics = self._config["resource_graphics"]
+        spent = {}
+        art = {}
         products = []
 
         for (graphic, hue), quantity in sorted(lost.items()):
-            if graphic in self._ore_graphics:
-                ore_lost[hue] = ore_lost.get(hue, 0) + quantity
-                ore_art[hue] = graphic
+            if graphic in graphics:
+                spent[hue] = spent.get(hue, 0) + quantity
+                art[hue] = graphic
 
         # A failed smelt halves the stack, and the smaller stack can wear another art
         for (graphic, hue), quantity in sorted(gained.items()):
-            if graphic in self._ore_graphics:
-                ore_lost[hue] = ore_lost.get(hue, 0) - quantity
+            if graphic in graphics:
+                spent[hue] = spent.get(hue, 0) - quantity
             else:
                 products.append((self._product_name(graphic, hue), graphic, hue, quantity))
 
         consumed = []
 
-        for hue in sorted(ore_lost):
-            if ore_lost[hue] > 0:
-                name = self._names.get(hue, ("ore", None))[0]
-                consumed.append((name, ore_art[hue], hue, ore_lost[hue]))
+        for hue in sorted(spent):
+            if spent[hue] > 0:
+                name = self._names.get(hue, (self._config["noun"], None))[0]
+                consumed.append((name, art[hue], hue, spent[hue]))
 
-        outcome = "smelted" if products else "failed"
-        self._recorder.record(skill_from, outcome, "fire beetle", consumed, products)
+        outcome = self._config["made"] if products else "failed"
+        self._recorder.record(skill_from, outcome, self._config["converter_tool"], consumed, products)

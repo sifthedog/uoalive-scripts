@@ -48,6 +48,18 @@ class WoodTest(unittest.TestCase):
 
         self.assertEqual([pile.Serial for pile in self.wood.board_piles()], [2])
 
+    def test_waits_until_the_logs_have_landed(self):
+        self.api.hold(item(serial=1, graphic=0x1BDD, amount=11))
+
+        self.assertTrue(self.wood.wait_for_logs(10, 1.5, 0.15))
+        self.assertEqual(self.api.pauses, [])
+
+    def test_gives_up_on_logs_that_never_land(self):
+        self.api.hold(item(serial=1, graphic=0x1BDD, amount=10))
+
+        self.assertFalse(self.wood.wait_for_logs(10, 0.3, 0.15))
+        self.assertEqual(self.api.pauses, [0.15, 0.15])
+
     def test_nothing_matches_a_missing_item(self):
         self.assertFalse(self.wood.is_log(None))
         self.assertFalse(self.wood.is_board(None))

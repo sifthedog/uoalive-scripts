@@ -84,6 +84,7 @@ craftmenu   a craft gump: opening it, walking the categories, reading and pressi
 crafttool   the tool a craft menu is opened with, found in the pack by art or by name
 dump        the container the products are unloaded into, and moving them there
 entity      hex, the guarded player read, Chebyshev, find-a-mobile
+gathered    what a swing and a conversion put in the pack, as attempt rows, below the cap
 gear        what is in either hand
 guards      the stop conditions, composed per script
 gump        waiting for a gump, and reading what it says
@@ -207,7 +208,7 @@ reports everything as unread is also crawling; fix the wording, not the timeout.
 
 ## The attempt log
 
-Eleven scripts append one JSON line per attempt to `DATA_PATH`; `skilldb.py` turns them into two CSV
+Twelve scripts append one JSON line per attempt to `DATA_PATH`; `skilldb.py` turns them into two CSV
 tables. A bare filename lands in TazUO's working directory, so set an absolute path. `DATA_PATH = ""`
 records nothing. The file is opened and closed per row; a run that cannot write says so once and
 carries on.
@@ -227,6 +228,7 @@ unread outcomes write nothing; a missing row shows in the closing tally, a guess
 | `inscription.py` | `made` | `failed` | the same, the mana waits, and the sell trips or unloading |
 | `fishing.py` | `caught` | `failed` | no cursor, not biting, out of reach, throttles, unread wordings |
 | `mining.py`, `mine-here.py` | `dug`, `smelted` | `failed`, for a swing or a smelt | everything else, and every row once Mining is at its cap |
+| `lumberjack.py` | `chopped`, `converted` | `failed`, for a chop or a conversion | everything else, and every row once Lumberjacking is at its cap |
 
 The row is buffered and written at the **next** skill read: the client applies a gain some time after
 the shard grants it, so a value read at the outcome is usually still the old one. Carrying both
@@ -244,9 +246,10 @@ item made, the creature, the weapon read. `to` is `null` where the client was no
 `consumed` appears only when something was measured, which the crafting scripts do; an
 `inscription.py` row carries one entry per kind spent, the blank scroll and each reagent. `gained`
 has the same shape and is what `fishing.py` writes: the catch as the pack received it, named off the
-journal line. A mining swing's `gained` is the ore per metal, measured after the consolidation so
-the arrival's own pile is not counted twice; a smelt row carries the ore spent in `consumed` and the
-ingots per type in `gained`, and a smelt that burned ore away with no ingot is a `failed` row.
+journal line. A swing's `gained` is the ore or logs per hue, named off the tooltip's metal or the
+pile's own name and measured once the pile has landed and been consolidated; a smelt or board
+conversion row carries the ore or logs spent in `consumed` and the ingots or boards per type in
+`gained`, and a conversion that spent the resource with nothing made is a `failed` row.
 
 ```
 python3 legion/skilldb.py convert ~/TazUO/LegionScripts/skill-attempts.jsonl --out legion/data
@@ -740,7 +743,8 @@ already over `HAUL_BUFFER`. Per cycle:
 
 | Outcome | What the loop does |
 | --- | --- |
-| `chopped` | Count it |
+| `chopped` | Count it, and record the logs it landed per hue |
+| `failed` | *You hack at the tree for a while, but fail to produce any useable wood*. A swing that landed, recorded |
 | `empty` | Parks the trunk, or the whole spot under `AIM_AT_SELF` |
 | `nothingNearby` | Always parks the ground within `CHOP_RANGE` |
 | `notTree` | Set the tree aside, and ban the art when the swing named it |
@@ -821,6 +825,10 @@ Every timing is in seconds except `PATHFIND_TIMEOUT`.
 | `HAUL_BUFFER` / `WEIGHT_BUFFER` | `120` / `40` | Headroom at which it hauls, and at which it stops. The first is wider so hauling gets its turn |
 | `MAX_EMPTY_HAULS` | `3` | Hauls that freed nothing before the animals are taken to be full |
 | `OUTCOME_TEXT` | guesses | `chopped` and `nothingNearby` are measured |
+| `LOG_SETTLE_TIMEOUT` / `_POLL` | `1.5` / `0.15` | How long a recorded swing waits for its logs, which land after the sentence announcing them |
+| `DATA_PATH` | `skill-attempts.jsonl` | Where each chop and each conversion is appended, while Lumberjacking is below its cap. `""` records nothing |
+| `SKILL_NAMES` | `Lumberjacking` | Tried in order. None reading means no rows, and the run says so |
+| `SKILL_TIMEOUT` / `SKILL_POLL` | `5.0` / `0.25` | How long the skill list is waited for at start-up |
 
 Trouble and stopping, the hold included, carry the same names and defaults as `mining.py`.
 

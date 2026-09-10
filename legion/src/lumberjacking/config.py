@@ -71,6 +71,18 @@ CHOP_PROMPT_TEXT = [
 # A short window for a refusal worded a moment late; the journal was cleared just before the swing
 NO_CURSOR_READ = 0.5
 
+# How long a swing's logs are waited for, which land after the sentence announcing them
+LOG_SETTLE_TIMEOUT = 1.5
+LOG_SETTLE_POLL = 0.15
+
+# Where each chop and each conversion is appended, while Lumberjacking is below its cap. A bare
+# filename lands in TazUO's working directory; "" records nothing
+DATA_PATH = "skill-attempts.jsonl"
+
+SKILL_NAMES = ["Lumberjacking"]
+SKILL_TIMEOUT = 5.0
+SKILL_POLL = 0.25
+
 # A stack's graphic changes with its size, so match a set rather than one graphic. Hue is
 # deliberately not part of the match: a shard with special woods hues its logs, and those still
 # count, still convert and still need hauling.
@@ -186,7 +198,10 @@ AMBUSH_HOLD_POLL = 0.5
 # Ordered, not a dict: InJournalAny answers yes/no, so the buckets are polled in order and the first
 # holding a match wins. Guesses for a RunUO-family shard - correct them against the real journal.
 OUTCOME_TEXT = [
-    ("chopped", ["You put", "You hack at the tree", "You chop some"]),
+    ("chopped", ["You put", "You chop some"]),
+    # RunUO's 'You hack at the tree for a while, but fail to produce any useable wood': a swing that
+    # landed and delivered nothing
+    ("failed", ["You hack at the tree"]),
     # About the trunk: how much ground it speaks for depends on how the swing was aimed
     (
         "empty",

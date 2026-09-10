@@ -9,9 +9,10 @@ from lumberjacking.config import (AIM_AT_SELF, AMBUSH_ALARM, AMBUSH_HOLD, AMBUSH
                                   BOARD_GRAPHICS, BOARD_NAME_WORDS, CHOP_PROMPT_TEXT, CHOP_RANGE,
                                   CHOP_TARGET_POLL, CHOP_TARGET_TIMEOUT, CHOP_TIMEOUT, CHOP_Z_RANGE,
                                   CONVERT_ATTEMPTS, CONVERT_DELAY, CONVERT_POLL, CONVERT_TIMEOUT,
-                                  EMPTY_HINT, EQUIP_ATTEMPTS, EQUIP_POLL, EQUIP_TIMEOUT,
+                                  DATA_PATH, EMPTY_HINT, EQUIP_ATTEMPTS, EQUIP_POLL, EQUIP_TIMEOUT,
                                   HAUL_BUFFER, HEARTBEAT_EVERY, IDLE_LOG_EVERY,
                                   IDLE_POLL, LOG_EVERY, LOG_GRAPHICS, LOG_NAME_WORDS,
+                                  LOG_SETTLE_POLL, LOG_SETTLE_TIMEOUT,
                                   MAX_CONVERT_PASSES, MAX_CYCLES, MAX_EMPTY_HAULS, MAX_NO_CURSOR,
                                   MAX_NO_TOOL, MAX_PATH_PROBES, MAX_PICKS, MAX_THROTTLED,
                                   MAX_TREE_WALKS, MAX_UNKNOWN, MOVE_DELAY, NO_CURSOR_READ,
@@ -20,7 +21,8 @@ from lumberjacking.config import (AIM_AT_SELF, AMBUSH_ALARM, AMBUSH_HOLD, AMBUSH
                                   PACK_ANIMAL_SERIALS, PACK_LIMIT, PACK_OPEN_DELAY,
                                   PATHFIND_TIMEOUT, PICK_PACK_ANIMALS, PICK_TIMEOUT,
                                   REGROW_DELAY, ROAM_RADIUS, SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT,
-                                  SAVING_TEXT, SCAN_RADIUS, SPARE_BAG_SERIAL, STALL_STOP,
+                                  SAVING_TEXT, SCAN_RADIUS, SKILL_NAMES, SKILL_POLL,
+                                  SKILL_TIMEOUT, SPARE_BAG_SERIAL, STALL_STOP,
                                   STALL_WARN, STEP_DELAY, STOPPED, SURVEY_ARTS, TARGET_TIMEOUT,
                                   THREAT_RANGE, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX,
                                   THROTTLED_TEXT, TOO_FAR_TEXT, TREE_GRAPHICS, TREE_NAME,
@@ -30,13 +32,16 @@ from lumberjacking.haul import Haul
 from lumberjacking.trees import Trees
 from lumberjacking.wood import Wood
 from uo.entity import hex_of
-from uo.guards import dead, first_reason, overweight, pack_full, stopped
+from uo.gathered import Gathered
+from uo.guards import dead, first_reason, overweight, pack_full, skill_capped, stopped
 from uo.heartbeat import Heartbeat
 from uo.hold import Hold
 from uo.log import make_log
 from uo.loop import StallWatch, backoff_for
+from uo.record import attempt_log
 from uo.roam import Roam
 from uo.save import SaveWatch
+from uo.skill import SkillReader, find_skill_name, reading
 from uo.threat import ThreatWatch
 from uo.tiles import TileMemory
 from uo.tool import Tool
@@ -63,6 +68,23 @@ hold = Hold({
 axe = Tool("axe", AXE_NAMES, NOT_AXE_NAMES, ["twohanded", "onehanded"], SPARE_BAG_SERIAL,
            EQUIP_ATTEMPTS, EQUIP_TIMEOUT, EQUIP_POLL, log)
 wood = Wood(LOG_GRAPHICS, LOG_NAME_WORDS, BOARD_GRAPHICS, BOARD_NAME_WORDS, log)
+
+skill_name = find_skill_name(SKILL_NAMES)
+
+if skill_name is None and DATA_PATH:
+    log("the client reports none of %s - not recording" % ", ".join(SKILL_NAMES))
+
+skill = SkillReader(skill_name or SKILL_NAMES[0])
+recorder = attempt_log(DATA_PATH if skill_name else "", skill.name(), log)
+gathered = Gathered(recorder, skill, skill_capped(skill_name), {
+    "is_resource": wood.is_log,
+    "name_of": lambda item: None,
+    "resource_graphics": LOG_GRAPHICS,
+    "noun": "logs",
+    "tool": "axe",
+    "converter_tool": "axe",
+    "made": "converted",
+}, log)
 boards = Boards(wood, axe, saves, {
     "attempts": CONVERT_ATTEMPTS,
     "passes": MAX_CONVERT_PASSES,
@@ -74,6 +96,8 @@ boards = Boards(wood, axe, saves, {
     "board_graphics": BOARD_GRAPHICS,
     "throttled_text": THROTTLED_TEXT,
     "unskilled_text": UNSKILLED_TEXT,
+    "about_to_convert": gathered.before_convert,
+    "converted": gathered.after_convert,
 }, log)
 haul = Haul(wood, boards, saves, {
     "serials": PACK_ANIMAL_SERIALS,
@@ -141,6 +165,14 @@ axe.learn(axe.held())
 
 log("%d logs in the pack to start, at %d,%d" % (wood.log_total(), API.Player.X, API.Player.Y))
 
+if recorder.recording():
+    start = skill.wait(SKILL_TIMEOUT, SKILL_POLL)
+    cap = skill.cap()
+    log("%s at %s%s%s" % (
+        skill.name(), reading(start),
+        "/%.1f" % cap if cap is not None and cap > 0 else "",
+        "" if gathered.recording() else ", capped - not recording"))
+
 # Read before anything acts, or a run that stops on its first cycle looks exactly like a script that
 # never started
 held = axe.held()
@@ -164,6 +196,7 @@ haul.haul_for_room()
 
 stop = None
 tally = 0
+fails = 0
 unknown = 0
 throttled = 0
 no_cursor = 0
@@ -244,6 +277,9 @@ try:
 
         tree = found[1]
 
+        value = gathered.settle()
+        before = gathered.before_swing()
+        logs_before = wood.log_total()
         outcome = chopper.chop_once(axe.serial(), tree)
 
         if outcome == "chopped":
@@ -252,6 +288,19 @@ try:
             throttled = 0
             barren = 0
             stall.progressed()
+
+            if before is not None:
+                wood.wait_for_logs(logs_before, LOG_SETTLE_TIMEOUT, LOG_SETTLE_POLL)
+                gathered.after_swing(value, "chopped", before)
+
+        elif outcome == "failed":
+            tally += 1
+            fails += 1
+            unknown = 0
+            throttled = 0
+            barren = 0
+            stall.progressed()
+            gathered.after_swing(value, "failed", before)
 
         elif outcome == "wornOut":
             log("axe worn out, swapping")
@@ -373,7 +422,9 @@ boards.make_boards()
 if haul.hauling():
     haul.unload()
 
+gathered.settle()
+
 # Chops rather than a log delta: hauled wood has left the pack, so the pack cannot total the run
-log("%d chops, %d logs still in the pack" % (tally, wood.log_total()))
+log("%d chops, %d failed, %d logs still in the pack" % (tally, fails, wood.log_total()))
 log("stopping - %s" % reason)
 API.Stop()

@@ -297,7 +297,7 @@ class Boards(object):
             "perform": self._perform,
             "blocked": self._no_axe_in_hand,
             "learn_product": self._learn_board,
-            "converted": self._nothing_to_note,
+            "converted": config["converted"],
             "nothing_to_do": self._say_nothing_to_convert,
             "about_to_convert": self._converting,
         }, log, saves)
@@ -363,9 +363,7 @@ class Boards(object):
 
     def _converting(self):
         self._reported_nothing = False
-
-    def _nothing_to_note(self, _gained, _lost):
-        pass
+        self._config["about_to_convert"]()
 
     def run(self):
         return self._converter.run()
@@ -584,6 +582,18 @@ CHOP_PROMPT_TEXT = [
 # A short window for a refusal worded a moment late; the journal was cleared just before the swing
 NO_CURSOR_READ = 0.5
 
+# How long a swing's logs are waited for, which land after the sentence announcing them
+LOG_SETTLE_TIMEOUT = 1.5
+LOG_SETTLE_POLL = 0.15
+
+# Where each chop and each conversion is appended, while Lumberjacking is below its cap. A bare
+# filename lands in TazUO's working directory; "" records nothing
+DATA_PATH = "skill-attempts.jsonl"
+
+SKILL_NAMES = ["Lumberjacking"]
+SKILL_TIMEOUT = 5.0
+SKILL_POLL = 0.25
+
 # A stack's graphic changes with its size, so match a set rather than one graphic. Hue is
 # deliberately not part of the match: a shard with special woods hues its logs, and those still
 # count, still convert and still need hauling.
@@ -699,7 +709,10 @@ AMBUSH_HOLD_POLL = 0.5
 # Ordered, not a dict: InJournalAny answers yes/no, so the buckets are polled in order and the first
 # holding a match wins. Guesses for a RunUO-family shard - correct them against the real journal.
 OUTCOME_TEXT = [
-    ("chopped", ["You put", "You hack at the tree", "You chop some"]),
+    ("chopped", ["You put", "You chop some"]),
+    # RunUO's 'You hack at the tree for a while, but fail to produce any useable wood': a swing that
+    # landed and delivered nothing
+    ("failed", ["You hack at the tree"]),
     # About the trunk: how much ground it speaks for depends on how the swing was aimed
     (
         "empty",
@@ -1478,6 +1491,133 @@ class Wood(object):
     def log_total(self):
         return sum(amount_of(item) for item in pack_contents() if self.is_log(item))
 
+    def wait_for_logs(self, before, timeout, poll):
+        waited = 0.0
+
+        while not API.StopRequested:
+            if self.log_total() > before:
+                return True
+
+            if waited >= timeout:
+                return False
+
+            API.Pause(poll)
+            waited += poll
+
+
+# src/uo/gathered.py
+class Gathered(object):
+    """What a swing and a conversion each put in the pack, as attempt rows, while the skill can still gain."""
+
+    def __init__(self, recorder, skill, capped, config, log):
+        self._recorder = recorder
+        self._skill = skill
+        self._capped = capped
+        self._config = config
+        self._log = log
+        self._names = {}
+        self._from = None
+
+    def recording(self):
+        return self._recorder.recording() and self._capped() is None
+
+    def settle(self):
+        value = self._skill.read()
+        self._recorder.settle(value)
+
+        return value
+
+    def _resource_name(self, item):
+        name = self._config["name_of"](item)
+
+        if name is not None:
+            return name
+
+        return (getattr(item, "Name", "") or "").strip() or self._config["noun"]
+
+    # By hue rather than by (graphic, hue): a stack's art changes with its size, so the merge after a
+    # swing would read as one art lost and another gained
+    def _resource_by_hue(self):
+        counts = {}
+
+        for item in pack_contents():
+            if not self._config["is_resource"](item):
+                continue
+
+            hue = hue_of(item)
+            counts[hue] = counts.get(hue, 0) + amount_of(item)
+
+            # A name the caller vouches for is kept once seen: the pile carrying it is often merged away
+            if hue not in self._names or self._config["name_of"](item) is not None:
+                self._names[hue] = (self._resource_name(item), item.Graphic)
+
+        return counts
+
+    def before_swing(self):
+        return self._resource_by_hue() if self.recording() else None
+
+    def after_swing(self, skill_from, outcome, before):
+        if before is None:
+            return
+
+        after = self._resource_by_hue()
+        rows = []
+
+        for hue in sorted(after):
+            delta = after[hue] - before.get(hue, 0)
+
+            if delta > 0:
+                name, graphic = self._names[hue]
+                rows.append((name, graphic, hue, delta))
+
+        self._recorder.record(skill_from, outcome, self._config["tool"], gained=rows)
+
+    def before_convert(self):
+        self._from = self._skill.read() if self.recording() else None
+
+    def _product_name(self, graphic, hue):
+        for item in pack_contents():
+            if item.Graphic == graphic and hue_of(item) == hue:
+                name = (getattr(item, "Name", "") or "").strip()
+
+                if name:
+                    return name
+
+        return hex_of(graphic)
+
+    def after_convert(self, gained, lost):
+        if self._from is None:
+            return
+
+        skill_from = self._from
+        self._from = None
+        graphics = self._config["resource_graphics"]
+        spent = {}
+        art = {}
+        products = []
+
+        for (graphic, hue), quantity in sorted(lost.items()):
+            if graphic in graphics:
+                spent[hue] = spent.get(hue, 0) + quantity
+                art[hue] = graphic
+
+        # A failed smelt halves the stack, and the smaller stack can wear another art
+        for (graphic, hue), quantity in sorted(gained.items()):
+            if graphic in graphics:
+                spent[hue] = spent.get(hue, 0) - quantity
+            else:
+                products.append((self._product_name(graphic, hue), graphic, hue, quantity))
+
+        consumed = []
+
+        for hue in sorted(spent):
+            if spent[hue] > 0:
+                name = self._names.get(hue, (self._config["noun"], None))[0]
+                consumed.append((name, art[hue], hue, spent[hue]))
+
+        outcome = self._config["made"] if products else "failed"
+        self._recorder.record(skill_from, outcome, self._config["converter_tool"], consumed, products)
+
 
 # src/uo/guards.py
 def first_reason(clauses):
@@ -1521,6 +1661,25 @@ def overweight(buffer):
             return None
 
         return "overweight at %d/%d" % (me.Weight, me.WeightMax)
+
+    return clause
+
+
+# The base, not Value: jewelry lifts Value past the cap while the skill is still gaining
+def skill_capped(name):
+    def clause():
+        skill = API.GetSkill(name) if name is not None else None
+
+        if skill is None:
+            return None
+
+        base = getattr(skill, "Base", None)
+        value = base if base is not None else skill.Value
+
+        if value > 0 and value >= skill.Cap:
+            return "%s is capped at %.1f" % (name, value)
+
+        return None
 
     return clause
 
@@ -1696,6 +1855,156 @@ class StallWatch(object):
         return self._reason
 
 
+# src/uo/record.py
+# Written by hand rather than with json.dumps, so the key order stays the one the README shows
+def quoted(text):
+    out = ['"']
+
+    for character in text:
+        code = ord(character)
+
+        if character == '"' or character == "\\":
+            out.append("\\" + character)
+        elif character == "\n":
+            out.append("\\n")
+        elif character == "\r":
+            out.append("\\r")
+        elif character == "\t":
+            out.append("\\t")
+        # Non-ASCII escaped rather than written through: a character name carrying an accent is
+        # ordinary here, and what encoding the runtime picked for the file is not knowable from in
+        # here
+        elif code < 0x20 or code > 0x7E:
+            out.append("\\u%04x" % code)
+        else:
+            out.append(character)
+
+    out.append('"')
+
+    return "".join(out)
+
+
+def skill_json(value):
+    return "null" if value is None else "%.1f" % value
+
+
+def append_line(path, line):
+    handle = open(path, "a")
+
+    try:
+        handle.write(line + "\n")
+    finally:
+        handle.close()
+
+
+class AttemptLog(object):
+    """One JSON object per attempt, appended as it happens.
+
+    A row is buffered when the attempt resolves and written on the *next* skill read, because the
+    client applies a gain some time after the outcome and a value read straight away is usually
+    still the old one. The cost of that is one row in the air at any moment, which a killed script
+    loses; the alternative is a file that under-reports every gain it exists to measure.
+    """
+
+    def __init__(self, path, character, serial, skill, log, append=None):
+        self._path = path or ""
+        self._character = character or ""
+        self._serial = serial
+        self._skill = skill
+        self._log = log
+        self._append = append if append is not None else append_line
+        self._off = not self._path
+        # Milliseconds, not seconds: two runs started inside the same second would mint the
+        # same ids, and the converter reads a repeated id as the same row arriving twice
+        self._run = int(now() * 1000)
+        self._seq = 0
+        self._pending = None
+        self._said = False
+
+    # Asked before an attempt so a caller can skip the work of measuring what it spent
+    def recording(self):
+        return not self._off
+
+    # used is what the attempt was made with: the spell, the product, the creature, the weapon.
+    # consumed and gained are lists of (name, graphic, hue, quantity) - measured, so an attempt that
+    # spent nothing passes nothing rather than a guess at what the recipe charges
+    def record(self, skill_from, outcome, used, consumed=None, gained=None):
+        if self._off or skill_from is None:
+            return
+
+        # A caller that records twice without settling in between would otherwise drop the first
+        # row. This later read is exactly what the missed settle would have passed.
+        self.settle(skill_from)
+
+        self._seq += 1
+        self._pending = {
+            "id": "%s/%d/%d" % (hex_of(self._serial), self._run, self._seq),
+            "at": now(),
+            "from": skill_from,
+            "used": used,
+            "outcome": outcome,
+            "consumed": list(consumed) if consumed else [],
+            "gained": list(gained) if gained else [],
+        }
+
+    def settle(self, skill_to):
+        pending = self._pending
+        self._pending = None
+
+        if pending is None or self._off:
+            return
+
+        self._write(pending, skill_to)
+
+    def _line(self, row, skill_to):
+        fields = [
+            '"v":1',
+            '"id":%s' % quoted(row["id"]),
+            '"t":%.3f' % row["at"],
+            '"char":%s' % quoted(self._character),
+            '"serial":%s' % quoted(hex_of(self._serial)),
+            '"skill":%s' % quoted(self._skill),
+            '"used":%s' % quoted(row["used"]),
+            '"from":%s' % skill_json(row["from"]),
+            '"to":%s' % skill_json(skill_to),
+            '"outcome":%s' % quoted(row["outcome"]),
+        ]
+
+        for key in ("consumed", "gained"):
+            if row[key]:
+                fields.append('"%s":[%s]' % (key, ",".join(
+                    '{"name":%s,"graphic":%s,"hue":%d,"qty":%d}'
+                    % (quoted(name), quoted(hex_of(graphic)), hue, quantity)
+                    for name, graphic, hue, quantity in row[key]
+                )))
+
+        return "{%s}" % ",".join(fields)
+
+    # A run that cannot write its log is still a run: the recorder retires itself and says so once,
+    # rather than ending the training over a file
+    def _write(self, row, skill_to):
+        try:
+            self._append(self._path, self._line(row, skill_to))
+        except Exception as error:
+            self._off = True
+
+            if not self._said:
+                self._said = True
+                self._log("cannot write %s (%s) - not recording this run" % (self._path, error))
+
+
+# The character is read once, here, rather than on every row: it cannot change under a running
+# script, and a client between world states answers None for the player without that meaning the
+# run should stop recording.
+def attempt_log(path, skill, log):
+    me = player()
+
+    if me is None and path:
+        log("the client is not reporting the character - rows will not name it")
+
+    return AttemptLog(path, getattr(me, "Name", ""), getattr(me, "Serial", 0), skill, log)
+
+
 # src/uo/roam.py
 class Roam(object):
     """Walking to the next spot, and waiting where there is nothing left but a clock."""
@@ -1827,6 +2136,74 @@ class SaveWatch(object):
 
         self._log("%s, carrying on" % (ended or "nothing said in %ds" % int(self._wait)))
         self._heartbeat.reset()
+
+
+# src/uo/skill.py
+# A name the client does not carry throws on some builds rather than answering None
+def find_skill_name(names):
+    for name in names:
+        try:
+            if API.GetSkill(name) is not None:
+                return name
+        except Exception:
+            if API.StopRequested:
+                raise
+
+            continue
+
+    return None
+
+
+def reading(value):
+    return "unknown" if value is None else "%.1f" % value
+
+
+class SkillReader(object):
+    """Value reads 0.0 before the skill list arrives, which is also a real skill value."""
+
+    def __init__(self, name):
+        self._name = name
+        self._seen = False
+
+    def read(self):
+        skill = API.GetSkill(self._name)
+
+        if skill is None:
+            return None
+
+        value = skill.Value
+
+        if value <= 0.0 and not self._seen:
+            return None
+
+        self._seen = True
+
+        return value
+
+    def name(self):
+        skill = API.GetSkill(self._name)
+
+        return skill.Name if skill is not None and skill.Name else self._name
+
+    def cap(self):
+        skill = API.GetSkill(self._name)
+
+        return skill.Cap if skill is not None else None
+
+    def wait(self, timeout, poll):
+        waited = 0.0
+
+        while not API.StopRequested:
+            value = self.read()
+
+            if value is not None:
+                return value
+
+            if waited >= timeout:
+                return None
+
+            API.Pause(poll)
+            waited += poll
 
 
 # src/uo/alert.py
@@ -2333,6 +2710,23 @@ hold = Hold({
 axe = Tool("axe", AXE_NAMES, NOT_AXE_NAMES, ["twohanded", "onehanded"], SPARE_BAG_SERIAL,
            EQUIP_ATTEMPTS, EQUIP_TIMEOUT, EQUIP_POLL, log)
 wood = Wood(LOG_GRAPHICS, LOG_NAME_WORDS, BOARD_GRAPHICS, BOARD_NAME_WORDS, log)
+
+skill_name = find_skill_name(SKILL_NAMES)
+
+if skill_name is None and DATA_PATH:
+    log("the client reports none of %s - not recording" % ", ".join(SKILL_NAMES))
+
+skill = SkillReader(skill_name or SKILL_NAMES[0])
+recorder = attempt_log(DATA_PATH if skill_name else "", skill.name(), log)
+gathered = Gathered(recorder, skill, skill_capped(skill_name), {
+    "is_resource": wood.is_log,
+    "name_of": lambda item: None,
+    "resource_graphics": LOG_GRAPHICS,
+    "noun": "logs",
+    "tool": "axe",
+    "converter_tool": "axe",
+    "made": "converted",
+}, log)
 boards = Boards(wood, axe, saves, {
     "attempts": CONVERT_ATTEMPTS,
     "passes": MAX_CONVERT_PASSES,
@@ -2344,6 +2738,8 @@ boards = Boards(wood, axe, saves, {
     "board_graphics": BOARD_GRAPHICS,
     "throttled_text": THROTTLED_TEXT,
     "unskilled_text": UNSKILLED_TEXT,
+    "about_to_convert": gathered.before_convert,
+    "converted": gathered.after_convert,
 }, log)
 haul = Haul(wood, boards, saves, {
     "serials": PACK_ANIMAL_SERIALS,
@@ -2411,6 +2807,14 @@ axe.learn(axe.held())
 
 log("%d logs in the pack to start, at %d,%d" % (wood.log_total(), API.Player.X, API.Player.Y))
 
+if recorder.recording():
+    start = skill.wait(SKILL_TIMEOUT, SKILL_POLL)
+    cap = skill.cap()
+    log("%s at %s%s%s" % (
+        skill.name(), reading(start),
+        "/%.1f" % cap if cap is not None and cap > 0 else "",
+        "" if gathered.recording() else ", capped - not recording"))
+
 # Read before anything acts, or a run that stops on its first cycle looks exactly like a script that
 # never started
 held = axe.held()
@@ -2434,6 +2838,7 @@ haul.haul_for_room()
 
 stop = None
 tally = 0
+fails = 0
 unknown = 0
 throttled = 0
 no_cursor = 0
@@ -2514,6 +2919,9 @@ try:
 
         tree = found[1]
 
+        value = gathered.settle()
+        before = gathered.before_swing()
+        logs_before = wood.log_total()
         outcome = chopper.chop_once(axe.serial(), tree)
 
         if outcome == "chopped":
@@ -2522,6 +2930,19 @@ try:
             throttled = 0
             barren = 0
             stall.progressed()
+
+            if before is not None:
+                wood.wait_for_logs(logs_before, LOG_SETTLE_TIMEOUT, LOG_SETTLE_POLL)
+                gathered.after_swing(value, "chopped", before)
+
+        elif outcome == "failed":
+            tally += 1
+            fails += 1
+            unknown = 0
+            throttled = 0
+            barren = 0
+            stall.progressed()
+            gathered.after_swing(value, "failed", before)
 
         elif outcome == "wornOut":
             log("axe worn out, swapping")
@@ -2643,7 +3064,9 @@ boards.make_boards()
 if haul.hauling():
     haul.unload()
 
+gathered.settle()
+
 # Chops rather than a log delta: hauled wood has left the pack, so the pack cannot total the run
-log("%d chops, %d logs still in the pack" % (tally, wood.log_total()))
+log("%d chops, %d failed, %d logs still in the pack" % (tally, fails, wood.log_total()))
 log("stopping - %s" % reason)
 API.Stop()

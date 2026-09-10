@@ -1,3 +1,5 @@
+import API
+
 from uo.entity import hex_of
 from uo.pack import amount_of, pack_contents, pack_top_level
 from uo.text import word_in
@@ -56,3 +58,16 @@ class Wood(object):
     # convert and still need hauling
     def log_total(self):
         return sum(amount_of(item) for item in pack_contents() if self.is_log(item))
+
+    def wait_for_logs(self, before, timeout, poll):
+        waited = 0.0
+
+        while not API.StopRequested:
+            if self.log_total() > before:
+                return True
+
+            if waited >= timeout:
+                return False
+
+            API.Pause(poll)
+            waited += poll

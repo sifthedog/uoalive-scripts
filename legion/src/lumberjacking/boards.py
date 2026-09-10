@@ -31,7 +31,7 @@ class Boards(object):
             "perform": self._perform,
             "blocked": self._no_axe_in_hand,
             "learn_product": self._learn_board,
-            "converted": self._nothing_to_note,
+            "converted": config["converted"],
             "nothing_to_do": self._say_nothing_to_convert,
             "about_to_convert": self._converting,
         }, log, saves)
@@ -97,9 +97,7 @@ class Boards(object):
 
     def _converting(self):
         self._reported_nothing = False
-
-    def _nothing_to_note(self, _gained, _lost):
-        pass
+        self._config["about_to_convert"]()
 
     def run(self):
         return self._converter.run()
