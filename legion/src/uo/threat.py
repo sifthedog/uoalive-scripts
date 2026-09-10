@@ -25,11 +25,12 @@ def hostiles_near(notoriety, within):
 
 
 class ThreatWatch(object):
-    def __init__(self, config, log, companion, friend_label):
+    def __init__(self, config, log, companion, friend_label, hold=None):
         self._config = config
         self._log = log
         self._companion = companion
         self._friend_label = friend_label
+        self._hold = hold
         self._alert = Launcher(log)
         self._last_hits = 0
         self._last_companion_hits = 0
@@ -41,6 +42,10 @@ class ThreatWatch(object):
     def _ambushed(self):
         text = self._config["ambush_text"]
         return bool(text) and matched_bucket([("ambushed", text)]) is not None
+
+    def _sound(self):
+        if self._alarm_left > 0 and self._alert.play(self._config["ambush_alarm"]):
+            self._alarm_left -= 1
 
     def _describe(self, hostile, friend):
         if hostile is not None:
@@ -93,6 +98,16 @@ class ThreatWatch(object):
             for command in self._config["ambush_notices"]:
                 self._alert.run(command)
 
+            # The scan above is stale once the hold returns; the next look reads the fight afresh
+            if self._hold is not None:
+                self._hold.wait(self._sound)
+                self._in_episode = False
+                self._trouble_seen = False
+                self._alarm_left = 0
+                self._alert.stop()
+
+                return
+
         if trouble:
             if not self._in_episode:
                 self._in_episode = True
@@ -108,5 +123,4 @@ class ThreatWatch(object):
             self._alert.stop()
             self._log("clear")
 
-        if self._alarm_left > 0 and self._alert.play(self._config["ambush_alarm"]):
-            self._alarm_left -= 1
+        self._sound()

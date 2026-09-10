@@ -109,6 +109,69 @@ class FakeGump(object):
         self.Children = children
 
 
+class FakeControl(object):
+    def __init__(self, kind, text=""):
+        self.kind = kind
+        self.text = text
+        self.children = []
+        self.rect = None
+        self.centered = 0
+        self.IsDisposed = False
+
+    def SetRect(self, x, y, width, height):
+        self.rect = (x, y, width, height)
+        return self
+
+    def SetPos(self, x, y):
+        self.rect = (x, y) + ((self.rect or (0, 0, 0, 0))[2:])
+        return self
+
+    def CenterXInViewPort(self):
+        self.centered += 1
+        return self
+
+    def CenterYInViewPort(self):
+        self.centered += 1
+        return self
+
+    def Add(self, child):
+        self.children.append(child)
+
+    def Dispose(self):
+        self.IsDisposed = True
+
+
+class FakeDrawnButton(FakeControl):
+    def __init__(self, text):
+        FakeControl.__init__(self, "button", text)
+        self.clicked = False
+        self.on_click = []
+
+
+class FakeGumps(object):
+    def __init__(self, api):
+        self._api = api
+
+    def CreateGump(self, acceptMouseInput=True, canMove=True, keepOpen=False):
+        return FakeControl("gump")
+
+    def CreateGumpColorBox(self, opacity=0.7, color="#000000"):
+        return FakeControl("box", color)
+
+    def CreateGumpLabel(self, text, hue=996):
+        return FakeControl("label", text)
+
+    def CreateSimpleButton(self, text, width, height):
+        return FakeDrawnButton(text)
+
+    def AddControlOnClick(self, control, onClick, leftOnly=True):
+        control.on_click.append(onClick)
+        return control
+
+    def AddGump(self, gump):
+        self._api.drawn.append(gump)
+
+
 class FakeAPI(object):
     def __init__(self):
         self.Player = FakePlayer()
@@ -116,6 +179,7 @@ class FakeAPI(object):
         self.Backpack = 0x40000000
         self.StopRequested = False
         self.Notoriety = FakeNotoriety
+        self.Gumps = FakeGumps(self)
 
         self.messages = []
         self.journal = []
@@ -155,6 +219,7 @@ class FakeAPI(object):
         self.opens = {}
         self.replies = []
         self.closed_gumps = 0
+        self.drawn = []
         self.pathfound = []
         self.reachable = False
         self.land = {}
@@ -369,6 +434,26 @@ class FakeAPI(object):
     def CloseGump(self, gump=None):
         self.closed_gumps += 1
         self.gump = 0
+
+    def ProcessCallbacks(self):
+        for button in self.drawn_buttons():
+            if button.clicked:
+                button.clicked = False
+
+                for callback in button.on_click:
+                    callback()
+
+    def drawn_buttons(self):
+        return [child for gump in self.drawn for child in gump.children
+                if isinstance(child, FakeDrawnButton)]
+
+    def press(self, text):
+        for button in self.drawn_buttons():
+            if button.text == text:
+                button.clicked = True
+
+    def close_drawn(self):
+        self.drawn[-1].Dispose()
 
     def Rename(self, serial, name):
         self.renamed.append((serial, name))

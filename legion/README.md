@@ -77,6 +77,7 @@ gear        what is in either hand
 guards      the stop conditions, composed per script
 gump        waiting for a gump, and reading what it says
 heartbeat   'still here', on the clock rather than per cycle
+hold        standing still behind a gump the script drew, until its button is pressed
 journal     the phrase table, the reverse lookup off it, and the tail of what was said
 log         the script's own prefix
 loop        the throttle backoff and the stall watchdog
@@ -153,6 +154,18 @@ What the typings do not say, learned on UOAlive. Script-specific notes sit under
   `DisplayGumpResponse` drops the socket for it ("Connection lost: Socket Error"); button 0 is
   always taken. Every press goes through `CraftMenu.reply`, which sends only to the menu's own id
   and only a button read off it, and a gump whose buttons cannot be read is pressed as before.
+- **A script can draw its own gump**, through `API.Gumps`: `CreateGump(mouse, movable, keepOpen)`,
+  filled with `CreateGumpColorBox`, `CreateGumpLabel` and `CreateSimpleButton`, shown with
+  `AddGump`. The flat `API.CreateGump` family still works but prints a deprecation each call.
+  `CreateGumpButton`'s default art is the classic APPLY button, with the text drawn behind it. A
+  press reaches the script through `Gumps.AddControlOnClick(control, fn)` and only when it calls
+  `API.ProcessCallbacks()`, which drains and returns. `gump.IsDisposed` goes true once it is
+  closed, and `keepOpen=False` takes it down when the script stops.
+- **Once the stop button is pressed every client call answers with nothing** rather than
+  throwing: a wait polling a gump or the journal spins until its next `API.Pause`, and a thread
+  the interrupt cannot reach is detached after two seconds and left running. A slice loop that
+  does anything outside the client - such as starting the alarm process - reads
+  `API.StopRequested` first.
 - **`API.ContextMenu(serial, text, timeout)` returns the moment a menu without the entry arrives**,
   so an entry that is not there *yet* looks like one that never will be.
 - **`API.ItemsInContainer(container, True)` reads the pack recursively.** Item-cap guards and the

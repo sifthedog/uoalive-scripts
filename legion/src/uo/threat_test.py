@@ -18,24 +18,46 @@ CONFIG = {
 }
 
 
-class ThreatWatchTest(unittest.TestCase):
+class Holding(object):
+    def __init__(self, api, slices):
+        self._api = api
+        self._slices = slices
+        self.waits = 0
+
+    def wait(self, each):
+        self.waits += 1
+
+        for _ in range(self._slices):
+            each()
+            self._api.processes[-1].HasExited = True
+
+
+class WatchCase(unittest.TestCase):
     def setUp(self):
         self.api = install()
         self.said = []
-        self.watch = self.build()
 
-    def build(self, **overrides):
-        return ThreatWatch(dict(CONFIG, **overrides), self.said.append, lambda: None,
-                           lambda friend: "pet")
+    def build(self, hold=None, companion=lambda: None, label=lambda friend: "pet", **overrides):
+        return ThreatWatch(dict(CONFIG, **overrides), self.said.append, companion, label, hold)
+
+    def pet(self):
+        return mobile(serial=0x00030000, name="a beetle", hits=40, hits_max=50)
 
     def ambush(self):
         self.api.hear("Doggess Sif: You have been ambushed!")
 
     def hostile(self):
-        self.api.see(mobile(serial=0x00020000, name="an orc", graphic=0x11, distance=3))
+        self.api.see(mobile(serial=0x00020000, name="an orc", graphic=0x11, distance=3,
+                            notoriety=self.api.Notoriety.Gray))
 
     def alarm_ends(self):
         self.api.processes[-1].HasExited = True
+
+
+class ThreatWatchTest(WatchCase):
+    def setUp(self):
+        WatchCase.setUp(self)
+        self.watch = self.build()
 
     def test_an_ambush_line_warns_notifies_and_starts_the_alarm(self):
         self.ambush()
@@ -133,3 +155,57 @@ class ThreatWatchTest(unittest.TestCase):
 
         self.assertEqual(self.api.launched, [])
         self.assertEqual(self.api.journal, ["Doggess Sif: You have been ambushed!"])
+
+    def test_an_ambush_with_the_companion_in_sight_names_it_by_the_label(self):
+        self.watch = self.build(companion=self.pet)
+        self.ambush()
+        self.watch.look()
+
+        self.assertEqual(self.said, ["ambushed - nothing in sight, you 100/100, pet 40/50"])
+        self.assertEqual(self.api.launched, [NOTICE, ALARM])
+
+    # What mining once passed: the label is called, so a bare string ends the run on the first
+    # ambush the companion is in sight for
+    def test_a_label_that_is_not_callable_throws_on_an_ambush(self):
+        self.watch = self.build(companion=self.pet, label="beetle")
+        self.ambush()
+
+        self.assertRaises(TypeError, self.watch.look)
+
+
+class ThreatWatchHoldTest(WatchCase):
+    def setUp(self):
+        WatchCase.setUp(self)
+        self.hold = Holding(self.api, 5)
+        self.watch = self.build(self.hold)
+
+    def test_an_ambush_holds_after_the_notices_and_the_alarm_restarts_while_it_waits(self):
+        self.ambush()
+        self.watch.look()
+
+        self.assertEqual(self.hold.waits, 1)
+        self.assertEqual(self.api.launched, [NOTICE] + [ALARM] * 3)
+        self.assertEqual(self.said, ["ambushed - nothing in sight, you 100/100"])
+
+    def test_the_hold_ending_silences_the_alarm_and_clears_the_episode(self):
+        self.ambush()
+        self.watch.look()
+        self.watch.look()
+
+        self.assertTrue(self.api.processes[-1].HasExited)
+        self.assertEqual(self.said, ["ambushed - nothing in sight, you 100/100"])
+
+    def test_a_hostile_still_there_after_the_hold_is_plain_trouble(self):
+        self.ambush()
+        self.hostile()
+        self.watch.look()
+        self.watch.look()
+
+        self.assertEqual(self.said[-1], "trouble - 'an orc' 0x11 3 tiles off, you 100/100")
+        self.assertEqual(len(self.api.launched), 4)
+
+    def test_plain_trouble_never_holds(self):
+        self.hostile()
+        self.watch.look()
+
+        self.assertEqual(self.hold.waits, 0)
