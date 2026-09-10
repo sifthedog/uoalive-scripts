@@ -11,15 +11,17 @@ class BandsTest(unittest.TestCase):
         self.assertEqual(band_for(BANDS, 30.0), "hammer")
         self.assertEqual(band_for(BANDS, 44.9), "tongs")
         self.assertEqual(band_for(BANDS, 45.0), "lockpick")
-        self.assertEqual(band_for(BANDS, 114.9), "ring")
-        self.assertEqual(band_for(BANDS, 115.0), "fancy wind chimes")
+        self.assertEqual(band_for(BANDS, 111.7), "ring")
+        self.assertEqual(band_for(BANDS, 111.8), "fancy wind chimes")
         self.assertEqual(band_for(BANDS, 120.0), "fancy wind chimes")
 
-    def test_every_band_has_a_product_a_cost_and_a_buyer(self):
+    def test_every_band_has_a_product_a_cost_and_a_buyer_or_none(self):
         for _ceiling, product in BANDS:
             self.assertIn(product, PRODUCTS)
             self.assertIn(product, INGOT_COST)
             self.assertIn(product, VENDORS)
+
+        self.assertIsNone(VENDORS["fancy wind chimes"])
 
 
 class OutcomeOrderTest(unittest.TestCase):

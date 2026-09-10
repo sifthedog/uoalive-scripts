@@ -54,7 +54,7 @@ BANDS = [
     (40.0, "hammer"),
     (45.0, "tongs"),
     (95.0, "lockpick"),
-    (115.0, "ring"),
+    (111.8, "ring"),
     (None, "fancy wind chimes"),
 ]
 
@@ -126,15 +126,29 @@ SELL_AT = 10
 TINKER_TITLES = ["tinker"]
 
 # Who buys each band's product: the noun for the log, and the titles matched against the name and
-# the tooltip. Stand near the right one for the band.
+# the tooltip. Stand near the right one for the band. None when nobody buys it - a tinker refused
+# the wind chimes - and it is unloaded into the container picked at the start instead.
 VENDORS = {
     "iron key": ("tinker", TINKER_TITLES),
     "hammer": ("tinker", TINKER_TITLES),
     "tongs": ("blacksmith or tinker", ["blacksmith", "tinker"]),
     "lockpick": ("provisioner", ["provisioner"]),
     "ring": ("jeweler", ["jeweler", "jeweller"]),
-    "fancy wind chimes": ("tinker", TINKER_TITLES),
+    "fancy wind chimes": None,
 }
+
+# Unsold products in the pack, counted as amounts, before they are unloaded
+DUMP_AT = 10
+
+# With nothing picked to unload into, the run ends once the pack holds this many unsold products
+MAX_HELD = 60
+
+# Unloads in a row that moved nothing before the run ends
+MAX_DUMP_MISSES = 3
+
+PICK_TIMEOUT = 60.0
+OPEN_DELAY = 0.6
+CONTAINER_RANGE = 2
 
 # The context entry first, matched by its text; the phrase for a menu with no such entry
 SELL_ENTRY = "sell"
@@ -172,9 +186,11 @@ CATEGORY_BUTTON_TYPE = 0
 ITEM_BUTTON_TYPE = 1
 MAKE_LAST_BUTTON = 47
 
-# (category button, row button). Empty on purpose: the walk finds each row and logs its button, and
-# a guessed table mis-presses on a shard whose rows are in another order. Copy the log lines in here.
-RECIPES = {}
+# (category button, row button), from the 'is the row on button' log lines. Item buttons count on
+# across the pages, ten rows a page: Misc's second page, third row, is index 12
+RECIPES = {
+    "fancy wind chimes": (101, 242),
+}
 
 MAX_CATEGORIES = 10
 
@@ -270,7 +286,7 @@ OUTCOME_TEXT = [
 ]
 
 
-# src/tinkering/ingots.py
+# src/uo/cost.py
 def cost_of(product, costs, fallback):
     return costs.get(product, fallback)
 
@@ -294,6 +310,9 @@ def journal_tail(seconds, limit):
     try:
         entries = API.GetJournalEntries(seconds)
     except Exception:
+        if API.StopRequested:
+            raise
+
         return []
 
     texts = []
@@ -658,11 +677,25 @@ def player():
     try:
         return API.Player
     except Exception:
+        if API.StopRequested:
+            raise
+
         return None
 
 
 def hex_of(value):
     return "0x%x" % (value & 0xFFFFFFFF)
+
+
+# unknown is what an unanswered client reads as, so the caller pathfinds and asks again rather than
+# treating silence as arm's length
+def chebyshev(x, y, unknown):
+    me = player()
+
+    if me is None:
+        return unknown
+
+    return max(abs(me.X - x), abs(me.Y - y))
 
 
 # src/uo/gump.py
@@ -682,7 +715,8 @@ def open_ids():
             if serial and serial not in found:
                 found.append(serial)
     except Exception:
-        pass
+        if API.StopRequested:
+            raise
 
     return found
 
@@ -720,6 +754,9 @@ def button_ids(ident):
 
         return found
     except Exception:
+        if API.StopRequested:
+            raise
+
         return None
 
 
@@ -1053,6 +1090,106 @@ class CraftTool(object):
         return found
 
 
+# src/uo/dump.py
+class Dump(object):
+    """The container the products are unloaded into: a trash barrel, or a chest."""
+
+    def __init__(self, sources, graphics, config, log):
+        self._sources = sources
+        self._graphics = graphics
+        self._config = config
+        self._log = log
+        self._entry = None
+        # Carpentry keeps: the deed art is also a house deed's
+        self._kept = (set(item.Serial for item in self._products())
+                      if config["keep_existing"] else set())
+
+    def _products(self):
+        return [item for item in pack_contents() if item.Graphic in self._graphics]
+
+    def items(self):
+        return [item for item in self._products() if item.Serial not in self._kept]
+
+    def held(self):
+        return sum(amount_of(item) for item in self.items())
+
+    def picked(self):
+        return self._entry is not None
+
+    def name(self):
+        return self._sources.name_of(self._entry) if self._entry is not None else "nothing"
+
+    def pick(self):
+        self._log("target the container to unload into, a trash barrel or a chest - ESC to keep "
+                  "everything in the pack")
+
+        if API.HasTarget():
+            API.CancelTarget()
+
+        serial = API.RequestTarget(self._config["pick_timeout"])
+
+        if API.HasTarget():
+            API.CancelTarget()
+
+        if not serial:
+            return None
+
+        if serial == API.Backpack:
+            self._log("that is your own pack")
+
+            return None
+
+        entry = self._sources.entry_for(serial)
+
+        if entry is None:
+            self._log("%s is neither a container nor a creature" % hex_of(serial))
+
+            return None
+
+        if self._sources.open(entry) is None:
+            self._log("'%s' has no backpack to unload into" % self._sources.name_of(entry))
+
+            return None
+
+        self._entry = entry
+        self._log("unloading into '%s' %s" % (self.name(), hex_of(serial)))
+
+        return entry
+
+    def run(self):
+        items = self.items()
+
+        if self._entry is None or len(items) == 0:
+            return 0
+
+        if not self._sources.reach(self._entry):
+            self._log("cannot reach '%s' to unload" % self.name())
+
+            return 0
+
+        container = self._sources.open(self._entry)
+
+        if container is None:
+            self._log("'%s' has no backpack to unload into" % self.name())
+
+            return 0
+
+        before = self.held()
+
+        for item in items:
+            API.MoveItem(item.Serial, container, amount_of(item))
+            API.Pause(self._config["move_delay"])
+
+        moved = before - self.held()
+
+        if moved > 0:
+            self._log("unloaded %d into '%s'" % (moved, self.name()))
+        else:
+            self._log("'%s' took nothing" % self.name())
+
+        return moved
+
+
 # src/uo/guards.py
 def first_reason(clauses):
     for clause in clauses:
@@ -1242,8 +1379,7 @@ class Materials(object):
 
 
 # src/uo/record.py
-# Written by hand rather than with json.dumps: the bundler admits API and time and nothing else, and
-# a row of numbers and two short strings is not worth relaxing that rule for.
+# Written by hand rather than with json.dumps, so the key order stays the one the README shows
 def quoted(text):
     out = ['"']
 
@@ -1438,6 +1574,9 @@ def find_skill_name(names):
             if API.GetSkill(name) is not None:
                 return name
         except Exception:
+            if API.StopRequested:
+                raise
+
             continue
 
     return None
@@ -1495,19 +1634,6 @@ class SkillReader(object):
             waited += poll
 
 
-# src/uo/stages.py
-# Ceilings are exclusive; None catches everything above the last one
-def band_for(bands, value):
-    if value is None:
-        return None
-
-    for ceiling, product in bands:
-        if ceiling is None or value < ceiling:
-            return product
-
-    return None
-
-
 # src/uo/stock.py
 class StockBook(object):
     """What in the pack is the craft's material, which type it is, and how much the menu will spend."""
@@ -1521,6 +1647,9 @@ class StockBook(object):
         self._wanted = config["wanted"]
         self._move_delay = config["move_delay"]
         self._log = log
+
+    def noun(self):
+        return self._noun
 
     # For a snapshot key, which has no item left to read a name off
     def is_stock_graphic(self, graphic):
@@ -1570,6 +1699,9 @@ class StockBook(object):
 
     def wrong(self, item):
         return self.is_stock(item) and self.type_of(item) != self._wanted
+
+    def usable_kind(self, item, kind):
+        return self.usable(item) and self.kind_of(item) == kind
 
     # Only what the menu will spend: counting oak let a run sit on a full pack and craft none
     def counts(self, items):
@@ -1682,6 +1814,204 @@ def total_of(counts):
     return sum(counts[kind] for kind in counts)
 
 
+# src/uo/sources.py
+class Sources(object):
+    """The containers and pack animals the wood is drawn from."""
+
+    def __init__(self, wood, config, log):
+        self._wood = wood
+        self._config = config
+        self._log = log
+        self._picked = []
+
+    def picked(self):
+        return self._picked
+
+    def name_of(self, entry):
+        return entry["name"] or hex_of(entry["serial"])
+
+    # Never UseObject the animal itself: on a rideable body that mounts you
+    def _animal_pack(self, serial):
+        animal = API.FindMobile(serial)
+
+        if animal is None:
+            return None
+
+        pack = getattr(animal, "Backpack", None)
+
+        if pack is None:
+            pack = API.FindLayer("backpack", serial)
+
+        if pack is None:
+            return None
+
+        return getattr(pack, "Serial", pack)
+
+    def container_of(self, entry):
+        if entry["kind"] == "mobile":
+            return self._animal_pack(entry["serial"])
+
+        return entry["serial"]
+
+    def entry_for(self, serial):
+        item = API.FindItem(serial)
+
+        if item is not None:
+            return {"kind": "item", "serial": serial, "name": item.Name or "?",
+                    "spot": (item.X, item.Y, item.Z)}
+
+        animal = API.FindMobile(serial)
+
+        if animal is None:
+            return None
+
+        return {"kind": "mobile", "serial": serial, "name": animal.Name or "?", "spot": None}
+
+    # ItemsInContainer reads nothing out of a container the client has never seen inside
+    def open(self, entry):
+        container = self.container_of(entry)
+
+        if container is None:
+            return None
+
+        API.UseObject(container)
+        API.Pause(self._config["open_delay"])
+
+        return container
+
+    def pick(self):
+        self._log("target every container or pack animal holding %s, ESC when done"
+                  % self._wood.noun())
+
+        me = player()
+        mine = me.Serial if me is not None else None
+
+        for _pick in range(self._config["max_picks"]):
+            if API.HasTarget():
+                API.CancelTarget()
+
+            serial = API.RequestTarget(self._config["pick_timeout"])
+
+            # ESC or a timed-out cursor, either ends the selection
+            if not serial:
+                break
+
+            if serial == API.Backpack or (mine is not None and serial == mine):
+                self._log("your own pack is always counted, no need to pick it")
+                continue
+
+            if serial in [entry["serial"] for entry in self._picked]:
+                continue
+
+            entry = self.entry_for(serial)
+
+            if entry is None:
+                self._log("%s is neither a container nor a creature" % hex_of(serial))
+                continue
+
+            # Opened now, while it is in reach
+            if self.open(entry) is None:
+                self._log("'%s' has no backpack to draw from" % self.name_of(entry))
+                continue
+
+            self._picked.append(entry)
+
+            other = self._wood.other_report(self._wood.other_counts(self.all_wood(entry)))
+
+            self._log("picked '%s' %s, %s in it%s"
+                      % (self.name_of(entry), hex_of(serial),
+                         self._wood.report(self.counts(entry)),
+                         "" if not other else " (%s it will not use)" % other))
+
+        if API.HasTarget():
+            API.CancelTarget()
+
+        return self._picked
+
+    # Only the type the menu is set to, and only one kind of it when a kind is named
+    def container_wood(self, serial, kind=None):
+        items = API.ItemsInContainer(serial, True)
+        piles = [item for item in (items or [])
+                 if (self._wood.usable(item) if kind is None
+                     else self._wood.usable_kind(item, kind))]
+        piles.sort(key=amount_of, reverse=True)
+
+        return piles
+
+    def wood(self, entry):
+        container = self.container_of(entry)
+
+        return [] if container is None else self.container_wood(container)
+
+    # Wrong type included, for the report lines
+    def all_wood(self, entry):
+        container = self.container_of(entry)
+        items = API.ItemsInContainer(container, True) if container else None
+
+        return [item for item in items if self._wood.is_stock(item)] if items else []
+
+    def counts(self, entry):
+        return self._wood.counts(self.wood(entry))
+
+    def total(self, entry):
+        return total_of(self.counts(entry))
+
+    def stock_left(self):
+        return sum(self.total(entry) for entry in self._picked)
+
+    def stock_line(self):
+        if len(self._picked) == 0:
+            return "nothing picked to restock from"
+
+        return "%d in the %d you picked" % (self.stock_left(), len(self._picked))
+
+    # Re-resolved after the walk: a pathfind that ends early leaves you short
+    def reach(self, entry):
+        within = self._config["container_range"]
+
+        if entry["kind"] == "mobile":
+            animal = API.FindMobile(entry["serial"])
+
+            if animal is None:
+                return False
+
+            if animal.Distance <= within:
+                return True
+
+            API.PathfindEntity(entry["serial"], within, True, self._config["pathfind_timeout"])
+            API.CancelPathfinding()
+
+            animal = API.FindMobile(entry["serial"])
+
+            return animal is not None and animal.Distance <= within
+
+        spot = entry["spot"]
+
+        # A container inside the pack has no world position
+        if spot is None or (spot[0] == 0 and spot[1] == 0):
+            return True
+
+        if chebyshev(spot[0], spot[1], within + 1) <= within:
+            return True
+
+        API.Pathfind(spot[0], spot[1], spot[2], within, True, self._config["pathfind_timeout"])
+
+        return chebyshev(spot[0], spot[1], within + 1) <= within
+
+
+# src/uo/stages.py
+# Ceilings are exclusive; None catches everything above the last one
+def band_for(bands, value):
+    if value is None:
+        return None
+
+    for ceiling, product in bands:
+        if ceiling is None or value < ceiling:
+            return product
+
+    return None
+
+
 # src/uo/menu.py
 # ContextMenu opens the menu itself, and cannot tell an entry that is missing from one that never
 # arrived - both come back False
@@ -1693,6 +2023,9 @@ def context_menu(serial, texts, timeout):
             if API.ContextMenu(serial, text, timeout):
                 return True
         except Exception:
+            if API.StopRequested:
+                raise
+
             continue
 
     return False
@@ -1703,6 +2036,9 @@ def tooltip_of(mobile):
     try:
         return mobile.NameAndProps(False) or ""
     except Exception:
+        if API.StopRequested:
+            raise
+
         return ""
 
 
@@ -1890,6 +2226,17 @@ def ingots_short(item):
     return short_by(item, stock.in_pack(), INGOT_COST, MIN_CRAFT_INGOTS)
 
 
+def unsold_ahead(value):
+    for ceiling, name in BANDS:
+        if VENDORS[name] is None and (ceiling is None or ceiling > value):
+            return True
+
+    return False
+
+
+UNSOLD_GRAPHICS = set().union(*[PRODUCTS[name] for name in VENDORS if VENDORS[name] is None])
+
+
 saves = SaveWatch(SAVING_TEXT, SAVE_DONE_TEXT, SAVE_WAIT, SAVE_POLL, log, heartbeat, stop_reason)
 
 tools = CraftTool("tinker's tool", TOOL_GRAPHICS, TOOL_NAME_WORDS, log)
@@ -1915,6 +2262,18 @@ menu = CraftMenu(tools, {
     "gump_poll": GUMP_POLL,
     "max_categories": MAX_CATEGORIES,
     "max_item_rows": MAX_ITEM_ROWS,
+}, log)
+sources = Sources(stock, {
+    "max_picks": 1,
+    "pick_timeout": PICK_TIMEOUT,
+    "open_delay": OPEN_DELAY,
+    "container_range": CONTAINER_RANGE,
+    "pathfind_timeout": PATHFIND_TIMEOUT,
+}, log)
+dump = Dump(sources, UNSOLD_GRAPHICS, {
+    "pick_timeout": PICK_TIMEOUT,
+    "move_delay": MOVE_DELAY,
+    "keep_existing": False,
 }, log)
 crafter = Crafter(tools, menu, stock, OUTCOME_TEXT, {
     "recipes": RECIPES,
@@ -1979,6 +2338,13 @@ if ingots_short(first) > 0:
         % (stock.pack_report(), first, ingot_cost(first)))
     API.Stop()
 
+if unsold_ahead(start):
+    dump.pick()
+
+    if not dump.picked():
+        log("nothing picked to unload into - the run ends once the pack holds %d unsold products"
+            % MAX_HELD)
+
 cap = skill.cap()
 
 log("%s at %.1f%s, %s in the pack"
@@ -1999,6 +2365,7 @@ throttle_tally = 0
 said_throttle = False
 sell_misses = 0
 sell_paused_until = 0
+dump_misses = 0
 reported = 0
 cycle = 0
 last_skill = start
@@ -2031,6 +2398,19 @@ def sell_now():
         sell_paused_until = cycle + SELL_RETRY_AFTER
         log("%d sell trips bought nothing - crafting on, and asking again in %d cycles"
             % (MAX_SELL_MISSES, SELL_RETRY_AFTER))
+
+    return False
+
+
+def unload_now():
+    global dump_misses
+
+    if dump.run() > 0:
+        dump_misses = 0
+
+        return True
+
+    dump_misses += 1
 
     return False
 
@@ -2090,7 +2470,22 @@ try:
             sell_misses = 0
             sell_paused_until = 0
 
-        if products_in_pack() >= SELL_AT and cycle >= sell_paused_until and sell_now():
+        if VENDORS[product] is None:
+            held = dump.held()
+
+            if held >= DUMP_AT and dump.picked():
+                if unload_now():
+                    end_cycle("unloading")
+                    continue
+
+                if dump_misses >= MAX_DUMP_MISSES:
+                    stop = ("%d unloads in a row moved nothing into '%s'"
+                            % (dump_misses, dump.name()))
+                    break
+            elif held >= MAX_HELD and not dump.picked():
+                stop = "the pack holds %d unsold and nothing was picked to unload into" % held
+                break
+        elif products_in_pack() >= SELL_AT and cycle >= sell_paused_until and sell_now():
             end_cycle("selling")
             continue
 

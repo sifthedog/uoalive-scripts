@@ -1,16 +1,18 @@
 import API
 
 from tinkering.config import (BANDS, BUTTON_STRIDE, CATEGORY_BUTTON_TYPE, CATEGORY_NAMES,
-                              CONTEXT_TIMEOUT, CRAFT_POLL, CRAFT_SETTLE, CRAFT_TIMEOUT, CRAFT_TITLE,
-                              CRAFT_TITLE_FRAGMENTS, CRAFT_TITLE_TEXT, DATA_PATH, GUMP_POLL,
+                              CONTAINER_RANGE, CONTEXT_TIMEOUT, CRAFT_POLL, CRAFT_SETTLE,
+                              CRAFT_TIMEOUT, CRAFT_TITLE, CRAFT_TITLE_FRAGMENTS, CRAFT_TITLE_TEXT,
+                              DATA_PATH, DUMP_AT, GUMP_POLL,
                               GUMP_TIMEOUT, HEARTBEAT_EVERY, INGOT_COST, INGOT_HUES, INGOT_TYPES,
                               IRON, ITEM_BUTTON_TYPE, JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS,
                               LAST_TEN_LABEL, LOG_EVERY, MAKE_LAST_BUTTON, MATERIAL_GRAPHICS,
-                              MAX_CATEGORIES, MAX_CYCLES, MAX_ITEM_PROBES, MAX_ITEM_ROWS,
-                              MAX_NO_MATERIAL, MAX_NO_TOOL, MAX_SELL_MISSES, MAX_THROTTLED,
-                              MAX_UNKNOWN, MAX_UNREADABLE_REPORTS, MIN_CRAFT_INGOTS, MIN_SKILL,
-                              MOVE_DELAY, OPL_WAIT, OUTCOME_TEXT, PATHFIND_TIMEOUT,
-                              PRODUCT_GRAPHICS, PRODUCTS, RECIPES, REFUND_POLL, REFUND_SETTLE,
+                              MAX_CATEGORIES, MAX_CYCLES, MAX_DUMP_MISSES, MAX_HELD,
+                              MAX_ITEM_PROBES, MAX_ITEM_ROWS, MAX_NO_MATERIAL, MAX_NO_TOOL,
+                              MAX_SELL_MISSES, MAX_THROTTLED, MAX_UNKNOWN, MAX_UNREADABLE_REPORTS,
+                              MIN_CRAFT_INGOTS, MIN_SKILL, MOVE_DELAY, OPEN_DELAY, OPL_WAIT,
+                              OUTCOME_TEXT, PATHFIND_TIMEOUT, PICK_TIMEOUT, PRODUCT_GRAPHICS,
+                              PRODUCTS, RECIPES, REFUND_POLL, REFUND_SETTLE,
                               SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT, SAVING_TEXT, SELL_AT,
                               SELL_ENTRY, SELL_PHRASE, SELL_POLL, SELL_RETRY_AFTER, SELL_TIMEOUT,
                               SKILL_NAMES, SKILL_POLL, SKILL_TIMEOUT, STALL_STOP, STALL_WARN,
@@ -22,6 +24,7 @@ from uo.cost import cost_of, short_by
 from uo.craft import Crafter
 from uo.craftmenu import CraftMenu
 from uo.crafttool import CraftTool
+from uo.dump import Dump
 from uo.guards import dead, first_reason, skill_capped, stopped
 from uo.heartbeat import Heartbeat
 from uo.log import make_log
@@ -31,6 +34,7 @@ from uo.pack import count_of
 from uo.record import attempt_log
 from uo.save import SaveWatch
 from uo.skill import SkillReader, find_skill_name, reading
+from uo.sources import Sources
 from uo.stages import band_for
 from uo.stock import StockBook
 from uo.vendor import Vendor
@@ -71,6 +75,17 @@ def ingots_short(item):
     return short_by(item, stock.in_pack(), INGOT_COST, MIN_CRAFT_INGOTS)
 
 
+def unsold_ahead(value):
+    for ceiling, name in BANDS:
+        if VENDORS[name] is None and (ceiling is None or ceiling > value):
+            return True
+
+    return False
+
+
+UNSOLD_GRAPHICS = set().union(*[PRODUCTS[name] for name in VENDORS if VENDORS[name] is None])
+
+
 saves = SaveWatch(SAVING_TEXT, SAVE_DONE_TEXT, SAVE_WAIT, SAVE_POLL, log, heartbeat, stop_reason)
 
 tools = CraftTool("tinker's tool", TOOL_GRAPHICS, TOOL_NAME_WORDS, log)
@@ -96,6 +111,18 @@ menu = CraftMenu(tools, {
     "gump_poll": GUMP_POLL,
     "max_categories": MAX_CATEGORIES,
     "max_item_rows": MAX_ITEM_ROWS,
+}, log)
+sources = Sources(stock, {
+    "max_picks": 1,
+    "pick_timeout": PICK_TIMEOUT,
+    "open_delay": OPEN_DELAY,
+    "container_range": CONTAINER_RANGE,
+    "pathfind_timeout": PATHFIND_TIMEOUT,
+}, log)
+dump = Dump(sources, UNSOLD_GRAPHICS, {
+    "pick_timeout": PICK_TIMEOUT,
+    "move_delay": MOVE_DELAY,
+    "keep_existing": False,
 }, log)
 crafter = Crafter(tools, menu, stock, OUTCOME_TEXT, {
     "recipes": RECIPES,
@@ -160,6 +187,13 @@ if ingots_short(first) > 0:
         % (stock.pack_report(), first, ingot_cost(first)))
     API.Stop()
 
+if unsold_ahead(start):
+    dump.pick()
+
+    if not dump.picked():
+        log("nothing picked to unload into - the run ends once the pack holds %d unsold products"
+            % MAX_HELD)
+
 cap = skill.cap()
 
 log("%s at %.1f%s, %s in the pack"
@@ -180,6 +214,7 @@ throttle_tally = 0
 said_throttle = False
 sell_misses = 0
 sell_paused_until = 0
+dump_misses = 0
 reported = 0
 cycle = 0
 last_skill = start
@@ -212,6 +247,19 @@ def sell_now():
         sell_paused_until = cycle + SELL_RETRY_AFTER
         log("%d sell trips bought nothing - crafting on, and asking again in %d cycles"
             % (MAX_SELL_MISSES, SELL_RETRY_AFTER))
+
+    return False
+
+
+def unload_now():
+    global dump_misses
+
+    if dump.run() > 0:
+        dump_misses = 0
+
+        return True
+
+    dump_misses += 1
 
     return False
 
@@ -271,7 +319,22 @@ try:
             sell_misses = 0
             sell_paused_until = 0
 
-        if products_in_pack() >= SELL_AT and cycle >= sell_paused_until and sell_now():
+        if VENDORS[product] is None:
+            held = dump.held()
+
+            if held >= DUMP_AT and dump.picked():
+                if unload_now():
+                    end_cycle("unloading")
+                    continue
+
+                if dump_misses >= MAX_DUMP_MISSES:
+                    stop = ("%d unloads in a row moved nothing into '%s'"
+                            % (dump_misses, dump.name()))
+                    break
+            elif held >= MAX_HELD and not dump.picked():
+                stop = "the pack holds %d unsold and nothing was picked to unload into" % held
+                break
+        elif products_in_pack() >= SELL_AT and cycle >= sell_paused_until and sell_now():
             end_cycle("selling")
             continue
 

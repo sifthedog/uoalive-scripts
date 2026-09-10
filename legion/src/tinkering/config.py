@@ -16,7 +16,7 @@ BANDS = [
     (40.0, "hammer"),
     (45.0, "tongs"),
     (95.0, "lockpick"),
-    (115.0, "ring"),
+    (111.8, "ring"),
     (None, "fancy wind chimes"),
 ]
 
@@ -88,15 +88,29 @@ SELL_AT = 10
 TINKER_TITLES = ["tinker"]
 
 # Who buys each band's product: the noun for the log, and the titles matched against the name and
-# the tooltip. Stand near the right one for the band.
+# the tooltip. Stand near the right one for the band. None when nobody buys it - a tinker refused
+# the wind chimes - and it is unloaded into the container picked at the start instead.
 VENDORS = {
     "iron key": ("tinker", TINKER_TITLES),
     "hammer": ("tinker", TINKER_TITLES),
     "tongs": ("blacksmith or tinker", ["blacksmith", "tinker"]),
     "lockpick": ("provisioner", ["provisioner"]),
     "ring": ("jeweler", ["jeweler", "jeweller"]),
-    "fancy wind chimes": ("tinker", TINKER_TITLES),
+    "fancy wind chimes": None,
 }
+
+# Unsold products in the pack, counted as amounts, before they are unloaded
+DUMP_AT = 10
+
+# With nothing picked to unload into, the run ends once the pack holds this many unsold products
+MAX_HELD = 60
+
+# Unloads in a row that moved nothing before the run ends
+MAX_DUMP_MISSES = 3
+
+PICK_TIMEOUT = 60.0
+OPEN_DELAY = 0.6
+CONTAINER_RANGE = 2
 
 # The context entry first, matched by its text; the phrase for a menu with no such entry
 SELL_ENTRY = "sell"
@@ -134,9 +148,11 @@ CATEGORY_BUTTON_TYPE = 0
 ITEM_BUTTON_TYPE = 1
 MAKE_LAST_BUTTON = 47
 
-# (category button, row button). Empty on purpose: the walk finds each row and logs its button, and
-# a guessed table mis-presses on a shard whose rows are in another order. Copy the log lines in here.
-RECIPES = {}
+# (category button, row button), from the 'is the row on button' log lines. Item buttons count on
+# across the pages, ten rows a page: Misc's second page, third row, is index 12
+RECIPES = {
+    "fancy wind chimes": (101, 242),
+}
 
 MAX_CATEGORIES = 10
 

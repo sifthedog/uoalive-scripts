@@ -72,6 +72,7 @@ cost        what one craft of a product takes, and how short the pack is of it
 craft       one craft through the menu: the row, MAKE LAST, and the outcome read three ways
 craftmenu   a craft gump: opening it, walking the categories, reading and pressing the rows
 crafttool   the tool a craft menu is opened with, found in the pack by art or by name
+dump        the container the products are unloaded into, and moving them there
 entity      hex, the guarded player read, Chebyshev, find-a-mobile
 gear        what is in either hand
 guards      the stop conditions, composed per script
@@ -1348,10 +1349,11 @@ when `DATA_PATH` is set.
 
 ## tinkering.py
 
-Trains Tinkering from 20 to cap on the iron ingots in your pack. There is no cursor and no restock:
-it makes the band's item until the pack is short of a craft, selling every `SELL_AT` items to the
-vendor that band names. Everything under the loop is shared with `bowcraft.py`, which is where the
-craft menu, the row walk and the outcomes are described.
+Trains Tinkering from 20 to cap on the iron ingots in your pack. There is no restock: it makes the
+band's item until the pack is short of a craft, selling every `SELL_AT` items to the vendor that
+band names, or unloading the ones nobody buys into the container you pick. Everything under the
+loop is shared with `bowcraft.py`, which is where the craft menu, the row walk and the outcomes are
+described.
 
 | Tinkering | Makes | Ingots | Sells to |
 | --- | --- | --- | --- |
@@ -1359,15 +1361,17 @@ craft menu, the row walk and the outcomes are described.
 | 30 – 40 | hammer | 1 | tinker |
 | 40 – 45 | tongs | 1 | blacksmith or tinker |
 | 45 – 95 | lockpick | 1 | provisioner |
-| 95 – 115 | ring | 3 | jeweler |
-| 115 – cap | fancy wind chimes | 15 | tinker |
+| 95 – 111.8 | ring | 3 | jeweler |
+| 111.8 – cap | fancy wind chimes | 15 | nobody: unloaded |
 
 Ceilings are exclusive; the first row the value is under wins. Each cycle:
 
 1. Read the skill. An uncovered band ends the run; a band change re-selects the row and gives the
    sell trips a fresh start, since the vendor changes with it.
 2. Sell once the pack holds `SELL_AT` of the band's product. Only that product is counted: tongs
-   left from the band before do not send the run to a provisioner that will not take them.
+   left from the band before do not send the run to a provisioner that will not take them. A band
+   with no buyer unloads every `DUMP_AT` instead, as `carpentry.py` does; with nothing picked, the
+   run ends at `MAX_HELD`.
 3. Stop when the pack holds fewer iron ingots than the band's recipe takes.
 4. Open the menu with the tinker's tools, press the row or `MAKE LAST`, and read the outcome.
 
@@ -1384,6 +1388,8 @@ then counts toward `MAX_NO_MATERIAL`, since a menu set to another metal is the o
 - **Stand near the band's vendor**, within `VENDOR_SCAN_RADIUS`. The run asks for the vendor by
   the title in `VENDORS` and pauses the trips when nobody answers, the way `bowcraft.py` does.
 - **The auto-sell agent has to be configured** for each product, per vendor.
+- **Something to unload wind chimes into**, in reach: the cursor asks for it at the start when that
+  band is ahead. A trash barrel destroys them; a chest keeps them.
 
 ### What to set
 
@@ -1392,11 +1398,12 @@ then counts toward `MAX_NO_MATERIAL`, since a menu set to another metal is the o
 | `BANDS` | see above | Ceiling and product |
 | `PRODUCTS` | table | Row name as the gump spells it, and the graphics it arrives as |
 | `INGOT_COST` / `MIN_CRAFT_INGOTS` | table / `1` | When the pack is too short to try |
-| `VENDORS` | table | Per product: the noun for the log, and the titles matched on name and tooltip |
+| `VENDORS` | table | Per product: the noun for the log, and the titles matched on name and tooltip. `None` when nobody buys it |
+| `DUMP_AT` / `MAX_HELD` | `10` / `60` | Unsold products before an unload, and the most kept with nowhere to put them |
 | `TOOL_GRAPHICS` / `TOOL_NAME_WORDS` | stock / `tinker` | An art learned by name joins the set |
 | `INGOT_HUES` | nine rows | Names the ingots set aside |
 | `CATEGORY_NAMES` | stock | Where the group rows end and the item rows begin |
-| `RECIPES` | empty | `(category button, row button)`. Copy the `is the row on button` lines in |
+| `RECIPES` | wind chimes | `(category button, row button)`. Copy the `is the row on button` lines in |
 | `MAX_CATEGORIES` / `MAX_ITEM_ROWS` | `10` / `24` | How far the walk goes; the Tools group runs past twenty rows |
 | `SELL_AT` | `10` | Products in the pack before a sell trip |
 | `DATA_PATH` | `skill-attempts.jsonl` | Where each craft is appended, with what it spent. `""` records nothing |
@@ -1410,12 +1417,14 @@ then counts toward `MAX_NO_MATERIAL`, since a menu set to another metal is the o
 - **`no jeweler within 18`**: said once per band. Walk to one; the trips retry on their own.
 - **`the gump text does not name 'iron key' on a row of its own`**: the row is spelled differently
   on this shard. `rows seen` lists what it read; fix `BANDS` and `PRODUCTS` to match.
+- **`the pack holds 60 unsold and nothing was picked to unload into`**: pick a container next time.
+- **`3 unloads in a row moved nothing`**: the container is full, locked down, or not a container.
 
 ### Unverified
 
 - The tool graphics and every product graphic but the iron key and the hammer are stock art.
 - `MAKE_LAST_BUTTON` and the button stride are assumed to be `bowcraft.py`'s, as the same gump.
-- Whether the SELECTIONS row says `iron key` or `key`, and which vendor buys wind chimes.
+- Whether the SELECTIONS row says `iron key` or `key`.
 - On a page whose rows cannot be split from the text, `ring` is also inside `earrings`, `springs`
   and `key ring`, and the fallback substring match could settle on the wrong category.
 
