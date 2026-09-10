@@ -113,10 +113,6 @@ vitals      position, weight and mana, as one phrase
 weight      the one place WeightMax is read
 ```
 
-Two throwaway diagnostics sit outside this: `probe-target.py` casts Bless three times and reports
-when the cursor appears and which pre-target types and answer calls the shard takes;
-`probe-craftgump.py` opens the smith menu and prints every page's text without crafting.
-
 ## Notes on the API
 
 What the typings do not say, learned on UOAlive. Script-specific notes sit under each script.
@@ -941,7 +937,7 @@ the one that worked, and says `the cursor answers to Target(player)` once.
 
 **Timing, measured.** A 3rd-circle cast raises its cursor at 1.6s and takes the mana at 1.8s.
 A `cast_timeout` of 1.2 read every cast as unreadable and left the cursor unanswered. Every row's
-timeout is now the measured time with a margin. `probe-target.py` measured it.
+timeout is now the measured time with a margin.
 
 **The mana wait** meditates with whatever is in hand. A refused trance retires meditation for the
 run and falls back on natural regeneration. `MEDITATE_TO_FULL` fills the pool, which matters most at
@@ -1089,7 +1085,6 @@ Everything below `STAGES` is `magery.py`'s block with the same defaults. These a
 - `"StoneForm"` as the `BuffIconType` name, read from the enum. The `title` fallback and the mana
   proof cover it either way.
 - A harmful self-target: whether the shard raises the cursor as `harmful` and accepts the caster.
-  `probe-target.py` settles it.
 - Whether the caster takes their own area damage.
 - The `formLocked` bucket, which no live run has produced.
 - The band bounds, the mana ladder, and the `cast_timeout` figures, scaled from Magery's 3rd circle.
@@ -1487,9 +1482,9 @@ small; the small leaving the pack is the proof. The run stops when every entry r
 - **`the deed's gump raised no cursor 3 times`**: button 4 is not the container combine here.
   Count the buttons and set `BOD_COMBINE_BUTTON`.
 - **`button 62 made 'ringmail leggings', not a 'ringmail tunic'`** then **`the row for … made
-  something else`**: the `RECIPES` entry is wrong. Run `probe-craftgump.py` and correct it.
+  something else`**: the `RECIPES` entry is wrong. Correct it, or drop it and let the walk find the row.
 - **`no row on button 1's page reads '…'`**: the item is not in `RECIPES` and the page's text does
-  not name it. Add the entry from what `probe-craftgump.py` prints.
+  not name it. Add the entry from the page text in that line.
 - **`the deed took none of the 5 offered (notRequested)`** on pieces that plainly are the item:
   the deed wants another graphic of the same name (female plate, gargish). Stop it and read the
   SELECTIONS rows.
