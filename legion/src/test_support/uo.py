@@ -236,6 +236,8 @@ class FakeAPI(object):
         self.launched = []
         self.processes = []
         self.launch_error = None
+        self.attacked = []
+        self.war_mode = None
 
     def SysMsg(self, text, hue=None):
         self.messages.append(text)
@@ -395,7 +397,14 @@ class FakeAPI(object):
     def GetAllMobiles(self, graphic=None, distance=None, notoriety=None):
         return [m for m in self.mobiles.values()
                 if (graphic is None or m.Graphic == graphic)
-                and (distance is None or m.Distance <= distance)]
+                and (distance is None or m.Distance <= distance)
+                and (notoriety is None or m.Notoriety in notoriety)]
+
+    def SetWarMode(self, enabled):
+        self.war_mode = enabled
+
+    def Attack(self, serial):
+        self.attacked.append(serial)
 
     def PathfindEntity(self, serial, within, wait=False, timeout=None, run=False):
         self.pathfound.append((serial, within))

@@ -11,6 +11,7 @@ repo targets the ClassicUO web client; nothing is shared between the two.
 | `mine-here.py` | Stands still and works the spot you are on until it runs dry, then smelts and stops |
 | `lumberjack.py` | Chops the nearest tree, turns the logs into boards, and loads the boards onto your pack animals |
 | `fishing.py` | Gets off the mount, says `all guard`, casts the fishing pole once at the nearest water and records what came out. Run it again for the next cast |
+| `attack.py` | Turns war mode on and attacks the nearest gray or red mobile within 10 tiles that is not your pet or, by its tooltip, anyone else's. Run it again for the next one |
 | `arms-lore.py` | Target a weapon, then read it every half second until Arms Lore caps |
 | `bowcraft.py` | Trains Bowcraft from 30 to cap: makes whatever the band still gains on, restocks wood from the containers and pack animals you pick, and sells to the nearest bowyer |
 | `tinkering.py` | Trains Tinkering from 20 to cap on the iron ingots you carry: makes whatever the band still gains on and sells it to the vendor that buys it |
@@ -939,6 +940,44 @@ skill value moves, because the client applies the gain after the outcome line. A
 - The cursor prompt and every wording in `OUTCOME_TEXT`.
 - That a pole in the pack is accepted without being equipped.
 - The catch line's shape on this shard. Anything past the first colon is the name.
+
+## attack.py
+
+One attack, then it stops: scan the mobiles within `RANGE`, keep the gray, criminal, enemy and
+murderer ones, drop yourself, the dead and your own pets, drop anything whose tooltip carries an
+`OWNED_PROP_WORDS` word, turn war mode on and attack the nearest one left. Run it again for the next
+one. There is no loop, no chase and no heartbeat: the client's own follow does the closing.
+
+1. Stop if you are dead.
+2. `GetAllMobiles` with the hostile notoriety list. Blue never comes back, and on ServUO a pet or
+   summon takes its owner's colour, so an innocent player's pets are out before anything is read.
+3. Skip yourself, the dead, and anything with `IsRenamable` set.
+4. Nearest first, read the tooltip and skip it if any `OWNED_PROP_WORDS` word is in it. Only the
+   ones in line are read.
+5. `SetWarMode(True)`, `Attack(serial)`, say who.
+
+### What to set
+
+| Setting | Default | What it is for |
+| --- | --- | --- |
+| `RANGE` | `10` | How far out it looks. The API's own `NearestMobile` default |
+| `OWNED_PROP_WORDS` | `(tame)`, `(summoned)`, `(bonded)` | Tooltip words that mark someone's creature. ServUO's `AddNameProperties` wording, case-insensitive |
+| `OPL_TIMEOUT` | `1.0` | How long a tooltip the client has not fetched yet is waited for |
+
+### When it goes wrong
+
+- **`nothing hostile within 10 tiles`**: nothing gray or red is in range, or everything in range
+  was yours, dead, or read as owned.
+- **It attacked a player's pet or summon**: read the pet's tooltip and put the shard's wording in
+  `OWNED_PROP_WORDS`.
+- **It attacked a gray or red player**: a player is not told from a monster. Only the tooltip words
+  screen anything that passes the notoriety scan.
+
+### Unverified
+
+- The three tooltip words on this shard. They are ServUO's, read off `BaseCreature`.
+- That `Attack` after `SetWarMode(True)` starts a swing without a target cursor.
+- That a gray pet of a criminal or murderer carries the same tooltip words as a blue one.
 
 ## arms-lore.py
 
