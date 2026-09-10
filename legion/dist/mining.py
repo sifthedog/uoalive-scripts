@@ -4,6 +4,7 @@ import API
 import time
 import clr
 import System
+import json
 
 
 # src/uo/phrases.py
@@ -60,6 +61,21 @@ PICKAXE_NAMES = ["pickaxe", "pickaxes"]
 # Worth setting only if the spares are somewhere ItemsInContainer's recursive read does not reach
 SPARE_BAG_SERIAL = None
 
+# Where each swing and each smelt is appended, while Mining is below its cap. A bare filename lands
+# in TazUO's working directory; "" records nothing
+DATA_PATH = "skill-attempts.jsonl"
+
+SKILL_NAMES = ["Mining"]
+SKILL_TIMEOUT = 5.0
+SKILL_POLL = 0.25
+
+# JSON Lines, one coordinate per line, read whole at the start and appended as ground is read. A
+# bare filename lands in TazUO's working directory; "" keeps nothing between runs
+MAP_PATH = "mining-map.jsonl"
+
+# The worked-out tiles and when they come back, so a restart does not walk them again
+PARKED_PATH = "mining-parked.jsonl"
+
 # Land carries no name, so the table is the whole answer for it. Stock RunUO bands and a hypothesis
 # about this shard - a dead-end run prints the arts it actually saw.
 ORE_TILE_GRAPHICS = set()
@@ -75,30 +91,41 @@ NOT_ORE_GRAPHICS = set()
 # over half the world, which is the cheap direction to be wrong in: the first swing bans the art.
 ORE_STATIC_NAME = ["cave", "rock", "mountain", "ore"]
 
-# Where walking stops and swinging starts, not a range the shard enforces - the swing names no tile
-MINE_RANGE = 2
+# The swing self-targets, and the shard is assumed - not measured - to harvest the 3x3 around the
+# character. A radius: 1 is 3x3
+MINE_FOOTPRINT = 1
+
+# The walk closes on the planned tile itself, since where you stand is what gets mined
+STAND_RANGE = 0
+
+# The planned spots as a journal map, once per plan
+PLAN_MAP = True
+
+# Ore tiles a spot's footprint has to hold to be worth walking to
+MIN_SPOT_ORE = 1
 
 # Distance is Chebyshev over x and y, so a mountain face 40 z up is 'one tile away' and the walk at
 # it never closes
 MINE_Z_RANGE = 20
 
 SCAN_RADIUS = 12
-
-# 'No harvestable resources nearby' is about the 8x8 block the character stands in, on RunUO-family
-# shards, so that is what it parks
-HARVEST_BANK = 8
 SURVEY_ARTS = 15
 
 # How long one blocking pathfind may take, in place of the web client's per-tile step budget
 PATHFIND_TIMEOUT = 10
 
-# Cycles spent walking to one vein before it is written off, where the web client counted single
+# Cycles spent walking to one spot before it is written off, where the web client counted single
 # steps: a blocking pathfind covers the whole route in one
 MAX_VEIN_WALKS = 4
 
-# GetPath costs a call per candidate, where the web client's flood fill answered every tile at
-# once, so only this many of the nearest matches are asked for a route
+# GetPath is a full A* per call, so one scan asks for at most this many routes before handing out a
+# spot unprobed. Every spot is probed under ONLY_CONNECTED_GROUND
 MAX_PATH_PROBES = 24
+
+# A spot whose route leaves the SCAN_RADIUS box is behind a wall or a cliff and is parked instead of
+# walked to; and once nothing on this ground is left the run ends rather than waiting for respawns
+ONLY_CONNECTED_GROUND = True
+STOP_WHEN_WORKED_OUT = True
 
 # Every timing here is in seconds - API.Pause takes seconds where the ClassicUO port took ms
 RESPAWN_DELAY = 25 * 60.0
@@ -242,6 +269,14 @@ AMBUSH_NOTICES = [
 ]
 AMBUSH_REPEATS = 30
 
+# The run stands still behind a gump until its button is pressed - no swing, no walk - with the
+# alarm restarting all the while
+AMBUSH_HOLD = True
+AMBUSH_HOLD_TEXT = "You have been ambushed. Press the button when it is safe"
+AMBUSH_HOLD_BUTTON = "Resume"
+AMBUSH_HOLD_HUE = 33
+AMBUSH_HOLD_POLL = 0.5
+
 # The smelt refusal is mining's own; the rest are the shard's general wording
 SMELT_UNSKILLED_TEXT = ["You have no idea how to smelt this strange ore"] + UNSKILLED_TEXT
 
@@ -249,7 +284,10 @@ SMELT_UNSKILLED_TEXT = ["You have no idea how to smelt this strange ore"] + UNSK
 # Ordered, not a dict: InJournalAny answers yes/no, so the buckets are polled in order and the first
 # holding a match wins. Guesses for a RunUO-family shard - correct them against the real journal.
 OUTCOME_TEXT = [
-    ("dug", ["You dig some", "You put", "You loosen some rocks"]),
+    ("dug", ["You dig some", "You put"]),
+    # RunUO's 'You loosen some rocks but fail to find any useable ore': a swing that landed and
+    # delivered nothing
+    ("failed", ["You loosen some rocks"]),
     # Both wordings are in the wild: RunUO says metal, some shards say ore
     (
         "empty",
@@ -259,8 +297,7 @@ OUTCOME_TEXT = [
             "You cannot mine there",
         ],
     ),
-    # The shard answering about everything in reach rather than about a tile, which is what parks
-    # the whole area and walks the character off
+    # The shard answering about everything in reach rather than about a tile; read as 'empty' is
     (
         "nothingNearby",
         ["There are no harvestable resources nearby", "There is nothing here to harvest"],
@@ -406,6 +443,11 @@ class Digger(object):
         return matched if matched is not None else self._silent_outcome(serial, ore_before)
 
 
+# src/uo/clock.py
+def now():
+    return time.time()
+
+
 # src/uo/entity.py
 # API.Player is None whenever the client is between world states - a recall, a server line change,
 # the moment around a death - and reading through it threw a live restock away
@@ -413,11 +455,439 @@ def player():
     try:
         return API.Player
     except Exception:
+        if API.StopRequested:
+            raise
+
         return None
 
 
 def hex_of(value):
     return "0x%x" % (value & 0xFFFFFFFF)
+
+
+# src/uo/scan.py
+def chebyshev_to(tile):
+    return max(abs(tile["x"] - API.Player.X), abs(tile["y"] - API.Player.Y))
+
+
+# A route that steps outside the box around the player goes round something - a wall, a cliff, a
+# ramp elsewhere - so its end is not on the ground the player stands on
+def route_leaves(path, radius):
+    x1 = API.Player.X - radius
+    y1 = API.Player.Y - radius
+    x2 = API.Player.X + radius
+    y2 = API.Player.Y + radius
+
+    for point in path:
+        if point.X < x1 or point.X > x2 or point.Y < y1 or point.Y > y2:
+            return True
+
+    return False
+
+
+# src/uo/tiles.py
+# Land and static tiledata are numbered in separate tables, so 1339 is a mountain band as land and a
+# cave floor as a static. Everything keyed on an art keys on the kind too.
+def art_key(graphic, is_land):
+    return "%s:%d" % ("land" if is_land else "static", graphic)
+
+
+def tile_key(tile):
+    return "%d,%d,%d,%s" % (tile["x"], tile["y"], tile["z"],
+                            art_key(tile["graphic"], tile["is_land"]))
+
+
+class TileMemory(object):
+    """What is worked out, what could not be reached, and which art is not the resource at all."""
+
+    def __init__(self, respawn_delay, unreachable_delay, noun, verb, log, saver=None):
+        self._respawn_delay = respawn_delay
+        self._unreachable_delay = unreachable_delay
+        self._noun = noun
+        self._verb = verb
+        self._log = log
+        self._saver = saver
+        self._blocked = {}
+        self._banned_arts = set()
+
+    def blocked_until(self, tile):
+        return self._blocked.get(tile_key(tile))
+
+    def is_blocked(self, tile):
+        until = self.blocked_until(tile)
+
+        return until is not None and now() < until
+
+    def block(self, tile, until):
+        self._blocked[tile_key(tile)] = until
+
+        if self._saver is not None and until != float("inf"):
+            self._saver(tile_key(tile), until)
+
+    def restore(self, key, until):
+        self._blocked[key] = until
+
+    def mark_depleted(self, tile):
+        self.block(tile, now() + self._respawn_delay)
+
+    def mark_unreachable(self, tile):
+        self.block(tile, now() + self._unreachable_delay)
+
+    def mark_unusable(self, tile, why):
+        self.block(tile, float("inf"))
+        self._log("the %s at %d,%d %s" % (self._noun, tile["x"], tile["y"], why))
+
+    def art_banned(self, graphic, is_land):
+        return art_key(graphic, is_land) in self._banned_arts
+
+    # About the art, not the tile: a wrong entry in the table is a whole band of the mountain
+    def ban_art(self, tile):
+        key = art_key(tile["graphic"], tile["is_land"])
+
+        if key in self._banned_arts:
+            return
+
+        self._banned_arts.add(key)
+        self._log("%s cannot be %s, skipping that art from here on"
+                  % (hex_of(tile["graphic"]), self._verb))
+
+
+# src/mining/plan.py
+SPOT_MARKS = "123456789abcdefghijklmnopqrstuvwxyz"
+
+
+def footprint(x, y, reach):
+    return [(x + dx, y + dy) for dy in range(-reach, reach + 1) for dx in range(-reach, reach + 1)]
+
+
+def _chebyshev(a, b):
+    return max(abs(a[0] - b[0]), abs(a[1] - b[1]))
+
+
+def _soonest(a, b):
+    if b is None or b == float("inf"):
+        return a
+
+    if a is None or b < a:
+        return b
+
+    return a
+
+
+def cover(ore, candidates, reach, min_ore, start):
+    near = set()
+
+    for x, y in ore:
+        near.update(footprint(x, y, reach))
+
+    pool = {}
+
+    for xy in candidates:
+        if xy in near:
+            pool[xy] = set(footprint(xy[0], xy[1], reach))
+
+    uncovered = set(ore)
+    picked = []
+
+    while pool and uncovered:
+        best = None
+        best_rank = None
+
+        for xy, foot in pool.items():
+            count = len(uncovered & foot)
+
+            if count < max(1, min_ore):
+                continue
+
+            rank = (-count, _chebyshev(xy, start), xy[1], xy[0])
+
+            if best_rank is None or rank < best_rank:
+                best = xy
+                best_rank = rank
+
+        if best is None:
+            break
+
+        picked.append(best)
+        uncovered -= pool.pop(best)
+
+    return picked
+
+
+def route(spots, start):
+    left = list(spots)
+    at = start
+    ordered = []
+
+    while left:
+        best = min(left, key=lambda xy: _chebyshev(xy, at))
+        ordered.append(best)
+        left.remove(best)
+        at = best
+
+    return ordered
+
+
+def ascii_map(bounds, ore, spots, player):
+    x1, y1, x2, y2 = bounds
+    marks = {}
+
+    for xy in ore:
+        marks[xy] = "#"
+
+    for index, xy in enumerate(spots):
+        marks[xy] = SPOT_MARKS[index] if index < len(SPOT_MARKS) else "+"
+
+    marks[player] = "@"
+
+    return ["".join(marks.get((x, y), ".") for x in range(x1, x2 + 1)) for y in range(y1, y2 + 1)]
+
+
+class Planner(object):
+    """Spots and ore keep separate memories: a spot on a cave floor is keyed as the ore under it,
+    and Roam writing the spot off would otherwise park the ore."""
+
+    def __init__(self, veins, terrain, memory, spots, config, log):
+        self._veins = veins
+        self._terrain = terrain
+        self._memory = memory
+        self._spots = spots
+        self._config = config
+        self._log = log
+        self._queue = []
+        self._current = None
+        self._skipped_unreachable = 0
+        self._unstandable = set()
+        self.stats = {}
+
+    def skipped_unreachable(self):
+        return self._skipped_unreachable
+
+    def survey(self, radius, limit):
+        self._veins.survey(radius, limit)
+
+    def _is_ore(self, tile):
+        return self._veins.matches(tile) and self._veins.within_z(tile["z"])
+
+    def _live_ore_at(self, x, y):
+        return [tile for tile in self._terrain.at(x, y)
+                if self._is_ore(tile) and not self._memory.is_blocked(tile)]
+
+    def _live_ore_in(self, x, y):
+        tiles = []
+
+        for cx, cy in footprint(x, y, self._config["reach"]):
+            tiles.extend(self._live_ore_at(cx, cy))
+
+        return tiles
+
+    # A matching static is a cave floor, which is both the ore and what you stand on
+    def _stand_tile(self, x, y):
+        land = None
+
+        for tile in self._terrain.at(x, y):
+            if not self._veins.within_z(tile["z"]):
+                continue
+
+            if not tile["is_land"]:
+                if self._veins.matches(tile):
+                    return tile
+            else:
+                land = tile
+
+        return land
+
+    def _bare_land(self, x, y):
+        tiles = self._terrain.at(x, y)
+
+        return len(tiles) == 1 and tiles[0]["is_land"]
+
+    def _with_distance(self, spot):
+        found = dict(spot)
+        found["distance"] = chebyshev_to(spot)
+
+        return found
+
+    def _count_probe(self):
+        self.stats["probes"] = self.stats.get("probes", 0) + 1
+
+    # Impassability is a property of the land art, so one refusal on bare land rules the art out
+    # for the run; a static could be the obstacle instead, so those only rule out the one spot
+    def _probe(self, spot):
+        self._count_probe()
+        path = API.GetPath(spot["x"], spot["y"], spot["z"], 0)
+
+        if path and self._config["connected"] and route_leaves(path, self._config["scan_radius"]):
+            self._skipped_unreachable += 1
+            self.stats["off_ground"] = self.stats.get("off_ground", 0) + 1
+            self._spots.mark_unreachable(spot)
+            self._log("the spot at %d,%d is off your ground, the route to it leaves the box"
+                      % (spot["x"], spot["y"]))
+
+            return False
+
+        if path:
+            return True
+
+        self._skipped_unreachable += 1
+        self.stats["walled"] = self.stats.get("walled", 0) + 1
+
+        if spot["is_land"] and self._bare_land(spot["x"], spot["y"]):
+            self._count_probe()
+
+            if API.GetPath(spot["x"], spot["y"], spot["z"], 1):
+                self._unstandable.add(art_key(spot["graphic"], True))
+                self._log("land %s cannot be stood on, planning beside it from here on"
+                          % hex_of(spot["graphic"]))
+
+                return False
+
+        self._spots.mark_unreachable(spot)
+
+        return False
+
+    def _replan(self):
+        radius = self._config["scan_radius"]
+        reach = self._config["reach"]
+        me = (API.Player.X, API.Player.Y)
+        ore = {}
+        parked = 0
+        cooling = None
+
+        for tile in self._terrain.box(radius):
+            if not self._is_ore(tile):
+                continue
+
+            until = self._memory.blocked_until(tile)
+
+            if until is not None and now() < until:
+                parked += 1
+                cooling = _soonest(cooling, until)
+                continue
+
+            ore[(tile["x"], tile["y"])] = tile
+
+        candidates = {}
+        inner = radius - reach
+
+        for x in range(me[0] - inner, me[0] + inner + 1):
+            for y in range(me[1] - inner, me[1] + inner + 1):
+                tile = self._stand_tile(x, y)
+
+                if tile is None or art_key(tile["graphic"], tile["is_land"]) in self._unstandable:
+                    continue
+
+                until = self._spots.blocked_until(tile)
+
+                if until is not None and now() < until:
+                    cooling = _soonest(cooling, until)
+                    continue
+
+                candidates[(x, y)] = tile
+
+        order = route(cover(set(ore), sorted(candidates), reach, self._config["min_ore"], me), me)
+        self._queue = [dict(candidates[xy]) for xy in order]
+        self.stats["spots"] = len(order)
+        self._log("plan: %d spot(s) over %d ore tile(s) within %d, %d parked"
+                  % (len(order), len(ore), radius, parked))
+
+        if ore and not order:
+            self._log("%d ore tile(s) with no spot to stand on" % len(ore))
+
+        if self._config["map"] and (ore or parked):
+            bounds = (me[0] - radius, me[1] - radius, me[0] + radius, me[1] + radius)
+            self._log("map: # ore, @ you, spots numbered in walking order, one row per line")
+
+            for row in ascii_map(bounds, ore, order, me):
+                self._log(row)
+
+        return cooling
+
+    def scan(self):
+        started = now()
+        reads = self._terrain.reads
+        self.stats = {}
+        self._skipped_unreachable = 0
+
+        try:
+            return self._scan()
+        finally:
+            self.stats["seconds"] = now() - started
+            self.stats["reads"] = self._terrain.reads - reads
+
+    def _scan(self):
+        min_ore = max(1, self._config["min_ore"])
+
+        if self._current is not None:
+            current = self._current
+
+            if self._spots.is_blocked(current) or len(self._live_ore_in(current["x"], current["y"])) < min_ore:
+                self._current = None
+            else:
+                return self._with_distance(current), None
+
+        budget = self._config["probes"]
+        cooling = None
+
+        # Bounded on the stop button: once it is pressed every client call answers with nothing, and
+        # a refused route would otherwise replan forever
+        while not API.StopRequested:
+            if not self._queue:
+                cooling = _soonest(cooling, self._replan())
+
+                if not self._queue:
+                    return None, cooling
+
+            spot = self._queue.pop(0)
+            until = self._spots.blocked_until(spot)
+
+            if until is not None and now() < until:
+                cooling = _soonest(cooling, until)
+                continue
+
+            if art_key(spot["graphic"], spot["is_land"]) in self._unstandable:
+                continue
+
+            if len(self._live_ore_in(spot["x"], spot["y"])) < min_ore:
+                continue
+
+            # Past the budget a spot goes out unprobed and Roam's no-movement check writes it off,
+            # unless the ground rule is on, whose whole point is that nothing unprobed is walked to
+            if chebyshev_to(spot) > 0 and (budget > 0 or self._config["connected"]):
+                budget -= 1
+
+                if not self._probe(spot):
+                    continue
+
+            self._current = spot
+
+            return self._with_distance(spot), None
+
+        return None, cooling
+
+    def lone_ore_art(self):
+        tiles = self._live_ore_in(API.Player.X, API.Player.Y)
+        keys = set(art_key(tile["graphic"], tile["is_land"]) for tile in tiles)
+
+        return tiles[0] if len(keys) == 1 else None
+
+    # Around the player rather than the planned spot: a walk that stopped short still parks what
+    # the shard answered about
+    def exhausted(self):
+        reach = self._config["reach"]
+        parked = 0
+
+        for tile in self._live_ore_in(API.Player.X, API.Player.Y):
+            self._memory.mark_depleted(tile)
+            parked += 1
+
+        self._current = None
+        side = 2 * reach + 1
+        self._log("worked out at %d,%d, parking %d ore tile(s) in the %dx%d for %dm, %d spot(s) left"
+                  % (API.Player.X, API.Player.Y, parked, side, side,
+                     max(1, int(round(self._config["respawn_delay"] / 60.0))), len(self._queue)))
+
+        return parked
 
 
 # src/uo/weight.py
@@ -880,6 +1350,121 @@ class Combiner(object):
         self._log("hit the %d combine attempt backstop" % self._config["attempts"])
 
 
+# src/mining/gathered.py
+class Gathered(object):
+    """What a swing and a smelt each put in the pack, as attempt rows, while the skill can still gain."""
+
+    def __init__(self, recorder, skill, ore, metals, capped, ore_graphics, log):
+        self._recorder = recorder
+        self._skill = skill
+        self._ore = ore
+        self._metals = metals
+        self._capped = capped
+        self._ore_graphics = ore_graphics
+        self._log = log
+        self._names = {}
+        self._from = None
+
+    def recording(self):
+        return self._recorder.recording() and self._capped() is None
+
+    def settle(self):
+        value = self._skill.read()
+        self._recorder.settle(value)
+
+        return value
+
+    def _ore_name(self, item):
+        metal = self._metals.of(item)
+
+        if metal is not None:
+            return "%s ore" % metal
+
+        return (getattr(item, "Name", "") or "").strip() or "ore"
+
+    # By hue rather than by (graphic, hue): an ore stack's art changes with its size, so the merge
+    # after a swing would read as one art lost and another gained
+    def _ore_by_hue(self):
+        counts = {}
+
+        for item in pack_contents():
+            if not self._ore.is_ore(item):
+                continue
+
+            hue = hue_of(item)
+            counts[hue] = counts.get(hue, 0) + amount_of(item)
+
+            # The tooltip's metal is kept once seen: the pile that names it is often merged away
+            if hue not in self._names or self._metals.of(item) is not None:
+                self._names[hue] = (self._ore_name(item), item.Graphic)
+
+        return counts
+
+    def before_swing(self):
+        return self._ore_by_hue() if self.recording() else None
+
+    def after_swing(self, skill_from, outcome, before):
+        if before is None:
+            return
+
+        after = self._ore_by_hue()
+        rows = []
+
+        for hue in sorted(after):
+            delta = after[hue] - before.get(hue, 0)
+
+            if delta > 0:
+                name, graphic = self._names[hue]
+                rows.append((name, graphic, hue, delta))
+
+        self._recorder.record(skill_from, outcome, "pickaxe", gained=rows)
+
+    def before_smelt(self):
+        self._from = self._skill.read() if self.recording() else None
+
+    def _product_name(self, graphic, hue):
+        for item in pack_contents():
+            if item.Graphic == graphic and hue_of(item) == hue:
+                name = (getattr(item, "Name", "") or "").strip()
+
+                if name:
+                    return name
+
+        return hex_of(graphic)
+
+    def after_smelt(self, gained, lost):
+        if self._from is None:
+            return
+
+        skill_from = self._from
+        self._from = None
+        ore_lost = {}
+        ore_art = {}
+        products = []
+
+        for (graphic, hue), quantity in sorted(lost.items()):
+            if graphic in self._ore_graphics:
+                ore_lost[hue] = ore_lost.get(hue, 0) + quantity
+                ore_art[hue] = graphic
+
+        # A failed smelt halves the stack, and the smaller stack can wear another art
+        for (graphic, hue), quantity in sorted(gained.items()):
+            if graphic in self._ore_graphics:
+                ore_lost[hue] = ore_lost.get(hue, 0) - quantity
+            else:
+                products.append((self._product_name(graphic, hue), graphic, hue, quantity))
+
+        consumed = []
+
+        for hue in sorted(ore_lost):
+            if ore_lost[hue] > 0:
+                name = self._names.get(hue, ("ore", None))[0]
+                consumed.append((name, ore_art[hue], hue, ore_lost[hue]))
+
+        outcome = "smelted" if products else "failed"
+        self._recorder.record(skill_from, outcome, "fire beetle", consumed, products)
+
+
 # src/uo/text.py
 def words_of(text):
     letters = []
@@ -1191,7 +1776,7 @@ class Converter(object):
             gained, lost = diff_counts(before, counts_by_graphic(pack_contents()))
 
             if gained or lost:
-                return gained
+                return gained, lost
 
         return None
 
@@ -1209,12 +1794,14 @@ class Converter(object):
 
             return
 
-        gained = self._wait_for_change(before)
+        changed = self._wait_for_change(before)
 
-        if gained is not None:
+        if changed is not None:
+            gained, lost = changed
             self._misses.pop(hue, None)
             self._progressed = True
             self._config["learn_product"](gained)
+            self._config["converted"](gained, lost)
 
             return
 
@@ -1310,8 +1897,9 @@ class Smelter(object):
             "perform": self._perform,
             "blocked": self._forge_gone,
             "learn_product": self._learn_ingot,
+            "converted": config["converted"],
             "nothing_to_do": self._say_what_is_left,
-            "about_to_convert": self._nothing_to_note,
+            "about_to_convert": config["about_to_convert"],
         }, log, saves)
 
     def written_off(self):
@@ -1330,9 +1918,6 @@ class Smelter(object):
 
             self._config["ingot_graphics"].add(graphic)
             self._log("ingot graphic is %s" % hex_of(graphic))
-
-    def _nothing_to_note(self):
-        pass
 
     def _say_what_is_left(self, written_off):
         piles = self._ore.piles()
@@ -1440,6 +2025,25 @@ def pack_full(limit):
     return clause
 
 
+# The base, not Value: jewelry lifts Value past the cap while the skill is still gaining
+def skill_capped(name):
+    def clause():
+        skill = API.GetSkill(name) if name is not None else None
+
+        if skill is None:
+            return None
+
+        base = getattr(skill, "Base", None)
+        value = base if base is not None else skill.Value
+
+        if value > 0 and value >= skill.Cap:
+            return "%s is capped at %.1f" % (name, value)
+
+        return None
+
+    return clause
+
+
 def hurt(floor):
     def clause():
         me = player()
@@ -1456,11 +2060,6 @@ def hurt(floor):
         return None
 
     return clause
-
-
-# src/uo/clock.py
-def now():
-    return time.time()
 
 
 # src/uo/heartbeat.py
@@ -1492,6 +2091,88 @@ class Heartbeat(object):
 
     def reset(self):
         self._last = now()
+
+
+# src/uo/hold.py
+WIDTH = 340
+HEIGHT = 110
+
+
+class Hold(object):
+    """Standing still behind a gump the script drew, until its button is pressed."""
+
+    def __init__(self, config, log, stop_reason, heartbeat):
+        self._config = config
+        self._log = log
+        self._stop_reason = stop_reason
+        self._heartbeat = heartbeat
+
+    def _show(self, on_press):
+        gump = API.Gumps.CreateGump(True, True)
+        gump.SetRect(0, 0, WIDTH, HEIGHT)
+        gump.CenterXInViewPort()
+        gump.CenterYInViewPort()
+
+        background = API.Gumps.CreateGumpColorBox(0.85, "#1E1E1E")
+        background.SetRect(0, 0, WIDTH, HEIGHT)
+        gump.Add(background)
+
+        label = API.Gumps.CreateGumpLabel(self._config["text"], self._config["hue"])
+        label.SetPos(16, 16)
+        gump.Add(label)
+
+        button = API.Gumps.CreateSimpleButton(self._config["button"], 120, 26)
+        button.SetPos(16, HEIGHT - 42)
+        API.Gumps.AddControlOnClick(button, on_press)
+        gump.Add(button)
+
+        API.Gumps.AddGump(gump)
+
+        return gump
+
+    # each() runs once a slice, so the caller's alarm can keep restarting while the gump is up
+    def wait(self, each):
+        if API.Pathfinding():
+            API.CancelPathfinding()
+
+        if API.HasTarget():
+            API.CancelTarget()
+
+        pressed = [False]
+
+        def on_press():
+            pressed[0] = True
+
+        gump = self._show(on_press)
+        self._log("holding - %s" % self._config["text"])
+        why = None
+
+        # The click only arrives through ProcessCallbacks, and a stopped script's client calls all
+        # answer with nothing, so the stop flag is the one read that still means something then
+        while why is None:
+            if API.StopRequested:
+                why = "the run is being stopped"
+                break
+
+            each()
+            API.ProcessCallbacks()
+
+            if pressed[0]:
+                why = "the button was pressed"
+            elif gump.IsDisposed:
+                why = "the gump was closed"
+            elif self._stop_reason() is not None:
+                why = "the run has a reason to stop"
+            else:
+                API.Pause(self._config["poll"])
+
+        if not gump.IsDisposed:
+            gump.Dispose()
+
+        self._heartbeat.reset()
+        self._log("%s, carrying on" % why)
+
+        return why in ("the button was pressed", "the gump was closed")
 
 
 # src/uo/log.py
@@ -1562,6 +2243,156 @@ def dismount(attempts, timeout, poll):
     return False
 
 
+# src/uo/record.py
+# Written by hand rather than with json.dumps, so the key order stays the one the README shows
+def quoted(text):
+    out = ['"']
+
+    for character in text:
+        code = ord(character)
+
+        if character == '"' or character == "\\":
+            out.append("\\" + character)
+        elif character == "\n":
+            out.append("\\n")
+        elif character == "\r":
+            out.append("\\r")
+        elif character == "\t":
+            out.append("\\t")
+        # Non-ASCII escaped rather than written through: a character name carrying an accent is
+        # ordinary here, and what encoding the runtime picked for the file is not knowable from in
+        # here
+        elif code < 0x20 or code > 0x7E:
+            out.append("\\u%04x" % code)
+        else:
+            out.append(character)
+
+    out.append('"')
+
+    return "".join(out)
+
+
+def skill_json(value):
+    return "null" if value is None else "%.1f" % value
+
+
+def append_line(path, line):
+    handle = open(path, "a")
+
+    try:
+        handle.write(line + "\n")
+    finally:
+        handle.close()
+
+
+class AttemptLog(object):
+    """One JSON object per attempt, appended as it happens.
+
+    A row is buffered when the attempt resolves and written on the *next* skill read, because the
+    client applies a gain some time after the outcome and a value read straight away is usually
+    still the old one. The cost of that is one row in the air at any moment, which a killed script
+    loses; the alternative is a file that under-reports every gain it exists to measure.
+    """
+
+    def __init__(self, path, character, serial, skill, log, append=None):
+        self._path = path or ""
+        self._character = character or ""
+        self._serial = serial
+        self._skill = skill
+        self._log = log
+        self._append = append if append is not None else append_line
+        self._off = not self._path
+        # Milliseconds, not seconds: two runs started inside the same second would mint the
+        # same ids, and the converter reads a repeated id as the same row arriving twice
+        self._run = int(now() * 1000)
+        self._seq = 0
+        self._pending = None
+        self._said = False
+
+    # Asked before an attempt so a caller can skip the work of measuring what it spent
+    def recording(self):
+        return not self._off
+
+    # used is what the attempt was made with: the spell, the product, the creature, the weapon.
+    # consumed and gained are lists of (name, graphic, hue, quantity) - measured, so an attempt that
+    # spent nothing passes nothing rather than a guess at what the recipe charges
+    def record(self, skill_from, outcome, used, consumed=None, gained=None):
+        if self._off or skill_from is None:
+            return
+
+        # A caller that records twice without settling in between would otherwise drop the first
+        # row. This later read is exactly what the missed settle would have passed.
+        self.settle(skill_from)
+
+        self._seq += 1
+        self._pending = {
+            "id": "%s/%d/%d" % (hex_of(self._serial), self._run, self._seq),
+            "at": now(),
+            "from": skill_from,
+            "used": used,
+            "outcome": outcome,
+            "consumed": list(consumed) if consumed else [],
+            "gained": list(gained) if gained else [],
+        }
+
+    def settle(self, skill_to):
+        pending = self._pending
+        self._pending = None
+
+        if pending is None or self._off:
+            return
+
+        self._write(pending, skill_to)
+
+    def _line(self, row, skill_to):
+        fields = [
+            '"v":1',
+            '"id":%s' % quoted(row["id"]),
+            '"t":%.3f' % row["at"],
+            '"char":%s' % quoted(self._character),
+            '"serial":%s' % quoted(hex_of(self._serial)),
+            '"skill":%s' % quoted(self._skill),
+            '"used":%s' % quoted(row["used"]),
+            '"from":%s' % skill_json(row["from"]),
+            '"to":%s' % skill_json(skill_to),
+            '"outcome":%s' % quoted(row["outcome"]),
+        ]
+
+        for key in ("consumed", "gained"):
+            if row[key]:
+                fields.append('"%s":[%s]' % (key, ",".join(
+                    '{"name":%s,"graphic":%s,"hue":%d,"qty":%d}'
+                    % (quoted(name), quoted(hex_of(graphic)), hue, quantity)
+                    for name, graphic, hue, quantity in row[key]
+                )))
+
+        return "{%s}" % ",".join(fields)
+
+    # A run that cannot write its log is still a run: the recorder retires itself and says so once,
+    # rather than ending the training over a file
+    def _write(self, row, skill_to):
+        try:
+            self._append(self._path, self._line(row, skill_to))
+        except Exception as error:
+            self._off = True
+
+            if not self._said:
+                self._said = True
+                self._log("cannot write %s (%s) - not recording this run" % (self._path, error))
+
+
+# The character is read once, here, rather than on every row: it cannot change under a running
+# script, and a client between world states answers None for the player without that meaning the
+# run should stop recording.
+def attempt_log(path, skill, log):
+    me = player()
+
+    if me is None and path:
+        log("the client is not reporting the character - rows will not name it")
+
+    return AttemptLog(path, getattr(me, "Name", ""), getattr(me, "Serial", 0), skill, log)
+
+
 # src/uo/save.py
 class SaveWatch(object):
     def __init__(self, saving_text, done_text, wait, poll, log, heartbeat, stop_reason):
@@ -1600,6 +2431,74 @@ class SaveWatch(object):
         self._heartbeat.reset()
 
 
+# src/uo/skill.py
+# A name the client does not carry throws on some builds rather than answering None
+def find_skill_name(names):
+    for name in names:
+        try:
+            if API.GetSkill(name) is not None:
+                return name
+        except Exception:
+            if API.StopRequested:
+                raise
+
+            continue
+
+    return None
+
+
+def reading(value):
+    return "unknown" if value is None else "%.1f" % value
+
+
+class SkillReader(object):
+    """Value reads 0.0 before the skill list arrives, which is also a real skill value."""
+
+    def __init__(self, name):
+        self._name = name
+        self._seen = False
+
+    def read(self):
+        skill = API.GetSkill(self._name)
+
+        if skill is None:
+            return None
+
+        value = skill.Value
+
+        if value <= 0.0 and not self._seen:
+            return None
+
+        self._seen = True
+
+        return value
+
+    def name(self):
+        skill = API.GetSkill(self._name)
+
+        return skill.Name if skill is not None and skill.Name else self._name
+
+    def cap(self):
+        skill = API.GetSkill(self._name)
+
+        return skill.Cap if skill is not None else None
+
+    def wait(self, timeout, poll):
+        waited = 0.0
+
+        while not API.StopRequested:
+            value = self.read()
+
+            if value is not None:
+                return value
+
+            if waited >= timeout:
+                return None
+
+            API.Pause(poll)
+            waited += poll
+
+
 # src/uo/alert.py
 class Launcher(object):
     def __init__(self, log):
@@ -1628,6 +2527,11 @@ class Launcher(object):
         try:
             return self._start(command)
         except Exception as error:
+            # The stop button's interrupt can land inside Process.Start, and swallowed here it would
+            # leave a detached thread restarting the alarm
+            if API.StopRequested:
+                raise
+
             if command[0] not in self._failed:
                 self._failed.add(command[0])
                 self._log("could not run %s - %s" % (command[0], error))
@@ -1693,11 +2597,12 @@ def hostiles_near(notoriety, within):
 
 
 class ThreatWatch(object):
-    def __init__(self, config, log, companion, friend_label):
+    def __init__(self, config, log, companion, friend_label, hold=None):
         self._config = config
         self._log = log
         self._companion = companion
         self._friend_label = friend_label
+        self._hold = hold
         self._alert = Launcher(log)
         self._last_hits = 0
         self._last_companion_hits = 0
@@ -1709,6 +2614,10 @@ class ThreatWatch(object):
     def _ambushed(self):
         text = self._config["ambush_text"]
         return bool(text) and matched_bucket([("ambushed", text)]) is not None
+
+    def _sound(self):
+        if self._alarm_left > 0 and self._alert.play(self._config["ambush_alarm"]):
+            self._alarm_left -= 1
 
     def _describe(self, hostile, friend):
         if hostile is not None:
@@ -1761,6 +2670,16 @@ class ThreatWatch(object):
             for command in self._config["ambush_notices"]:
                 self._alert.run(command)
 
+            # The scan above is stale once the hold returns; the next look reads the fight afresh
+            if self._hold is not None:
+                self._hold.wait(self._sound)
+                self._in_episode = False
+                self._trouble_seen = False
+                self._alarm_left = 0
+                self._alert.stop()
+
+                return
+
         if trouble:
             if not self._in_episode:
                 self._in_episode = True
@@ -1776,11 +2695,36 @@ class ThreatWatch(object):
             self._alert.stop()
             self._log("clear")
 
-        if self._alarm_left > 0 and self._alert.play(self._config["ambush_alarm"]):
-            self._alarm_left -= 1
+        self._sound()
 
 
 # src/uo/tool.py
+# Books carry the client's container flag, so the flag alone opens every spellbook in the pack
+NOT_BAG_GRAPHICS = set([
+    0x0EFA,  # spellbook
+    0x2253,  # necromancer spellbook
+    0x2252,  # book of chivalry
+    0x238C,  # book of bushido
+    0x23A0,  # book of ninjitsu
+    0x2D50,  # spellweaving spellbook
+    0x2D9D,  # mysticism spellbook
+    0x22C5,  # runebook
+    0x9C16,  # runic atlas
+    0x2259,  # bulk order book
+])
+NOT_BAG_NAMES = ["spellbook", "runebook", "book", "atlas"]
+
+
+def is_bag(item):
+    if not getattr(item, "IsContainer", False) or getattr(item, "Opened", False):
+        return False
+
+    if item.Graphic in NOT_BAG_GRAPHICS:
+        return False
+
+    return not word_in(item.Name, NOT_BAG_NAMES)
+
+
 class Tool(object):
     """Find it, learn its graphic, get it onto the hand, and notice when it breaks."""
 
@@ -1860,8 +2804,7 @@ class Tool(object):
 
     # A bag the client has not opened this session reads as empty, whatever is in it
     def _open_bags(self):
-        bags = [item for item in pack_contents()
-                if getattr(item, "IsContainer", False) and not getattr(item, "Opened", False)]
+        bags = [item for item in pack_contents() if is_bag(item)]
 
         if self._spare_bag is not None:
             spare = API.FindItem(self._spare_bag)
@@ -1972,6 +2915,12 @@ class Run(object):
 
 
         saves = SaveWatch(SAVING_TEXT, SAVE_DONE_TEXT, SAVE_WAIT, SAVE_POLL, log, heartbeat, stop_reason)
+        hold = Hold({
+            "text": AMBUSH_HOLD_TEXT,
+            "button": AMBUSH_HOLD_BUTTON,
+            "hue": AMBUSH_HOLD_HUE,
+            "poll": AMBUSH_HOLD_POLL,
+        }, log, stop_reason, heartbeat)
 
         pickaxe = Tool("pickaxe", PICKAXE_NAMES, [], ["onehanded"], SPARE_BAG_SERIAL,
                        EQUIP_ATTEMPTS, EQUIP_TIMEOUT, EQUIP_POLL, log)
@@ -1995,6 +2944,16 @@ class Run(object):
         }, log)
         beetle = Beetle(FIRE_BEETLE_GRAPHICS, FIRE_BEETLE_SERIAL, BEETLE_SCAN_RADIUS, SMELT_RANGE,
                         PATHFIND_TIMEOUT, PICK_TIMEOUT, log)
+
+        skill_name = find_skill_name(SKILL_NAMES)
+
+        if skill_name is None and DATA_PATH:
+            log("the client reports none of %s - not recording" % ", ".join(SKILL_NAMES))
+
+        skill = SkillReader(skill_name or SKILL_NAMES[0])
+        recorder = attempt_log(DATA_PATH if skill_name else "", skill.name(), log)
+        gathered = Gathered(recorder, skill, ore, metals, skill_capped(skill_name), ORE_GRAPHICS,
+                            log)
         smelter = Smelter(ore, beetle, saves, {
             "attempts": SMELT_ATTEMPTS,
             "passes": MAX_SMELT_PASSES,
@@ -2007,6 +2966,8 @@ class Run(object):
             "ingot_graphics": INGOT_GRAPHICS,
             "throttled_text": THROTTLED_TEXT,
             "unskilled_text": SMELT_UNSKILLED_TEXT,
+            "about_to_convert": gathered.before_smelt,
+            "converted": gathered.after_smelt,
         }, log)
         threat = ThreatWatch({
             "watch": WATCH_FOR_TROUBLE,
@@ -2017,7 +2978,7 @@ class Run(object):
             "ambush_warning": AMBUSH_WARNING,
             "ambush_hue": AMBUSH_HUE,
             "ambush_repeats": AMBUSH_REPEATS,
-        }, log, beetle.find, "beetle")
+        }, log, beetle.find, lambda friend: "beetle", hold if AMBUSH_HOLD else None)
 
         DIG_CONFIG = {
             "cursor_timeout": DIG_TARGET_TIMEOUT,
@@ -2037,6 +2998,14 @@ class Run(object):
         def say_where_we_stand():
             pickaxe.learn(pickaxe.held())
             log("%d ore in the pack to start, at %d,%d" % (ore.total(), API.Player.X, API.Player.Y))
+
+            if recorder.recording():
+                start = skill.wait(SKILL_TIMEOUT, SKILL_POLL)
+                cap = skill.cap()
+                log("%s at %s%s%s" % (
+                    skill.name(), reading(start),
+                    "/%.1f" % cap if cap is not None and cap > 0 else "",
+                    "" if gathered.recording() else ", capped - not recording"))
             held = pickaxe.held()
             log(
                 "mounted %s, hand %s, weight %d/%d"
@@ -2059,76 +3028,10 @@ class Run(object):
         self.beetle = beetle
         self.smelter = smelter
         self.threat = threat
+        self.gathered = gathered
         self.dig_config = DIG_CONFIG
         self.get_off_the_mount = get_off_the_mount
         self.say_where_we_stand = say_where_we_stand
-
-
-# src/uo/scan.py
-def chebyshev_to(tile):
-    return max(abs(tile["x"] - API.Player.X), abs(tile["y"] - API.Player.Y))
-
-
-# Moves, not points: the route the client returns starts with the tile you stand on
-def steps_to(tile, within):
-    path = API.GetPath(tile["x"], tile["y"], tile["z"], within)
-
-    return len(path) - 1 if path else None
-
-
-# GetPath costs a call per candidate, where the web client's flood fill answered every tile at once,
-# so only the nearest `probes` matches are asked for a route
-def pick_nearest(candidates, memory, probes, within, in_reach_is_free=False, stats=None):
-    """(the shortest route in reach, when the soonest cooling tile is back, how many were walled)"""
-    live = []
-    cooling = None
-
-    for tile in candidates:
-        until = memory.blocked_until(tile)
-
-        if until is not None and now() < until:
-            if until != float("inf") and (cooling is None or until < cooling):
-                cooling = until
-
-            continue
-
-        live.append(tile)
-
-    live.sort(key=chebyshev_to)
-
-    best = None
-    best_steps = None
-    walled = 0
-
-    for tile in live[:probes]:
-        # Sorted by crow flight, so once the best is at most this far nothing later can beat it
-        if best_steps is not None and best_steps <= max(0, chebyshev_to(tile) - within):
-            break
-
-        # Already in reach, so there is nothing to route and no probe worth paying for
-        if in_reach_is_free and chebyshev_to(tile) <= within:
-            steps = 0
-        else:
-            steps = steps_to(tile, within)
-
-            if stats is not None:
-                stats["probes"] = stats.get("probes", 0) + 1
-
-        # A refused route is a full A* on the client, so it is not asked for again for a while
-        if steps is None:
-            memory.mark_unreachable(tile)
-            walled += 1
-            continue
-
-        if best_steps is None or steps < best_steps:
-            best = tile
-            best_steps = steps
-
-    if best is not None:
-        best = dict(best)
-        best["distance"] = chebyshev_to(best)
-
-    return best, cooling, walled
 
 
 # src/uo/survey.py
@@ -2174,14 +3077,6 @@ class Veins(object):
         self._memory = memory
         self._config = config
         self._log = log
-        self._current = None
-        self._skipped_unreachable = 0
-        self._banks = {}
-        self._bank_cooling = None
-        self.stats = {}
-
-    def skipped_unreachable(self):
-        return self._skipped_unreachable
 
     # Refusals first, seeds second: the land table ships full, so asking it first made the ban
     # silently do nothing - it was recorded and ignored on the next scan
@@ -2204,148 +3099,119 @@ class Veins(object):
     def within_z(self, z):
         return abs(z - API.Player.Z) <= self._config["z_range"]
 
-    def _bank_key(self, x, y):
-        bank = self._config["bank"]
-
-        return (x // bank, y // bank)
-
-    def _bank_parked_until(self, tile):
-        until = self._banks.get(self._bank_key(tile["x"], tile["y"]))
-
-        if until is None:
-            return None
-
-        if now() >= until:
-            return None
-
-        return until
-
-    def is_parked(self, tile):
-        return self._memory.is_blocked(tile) or self._bank_parked_until(tile) is not None
-
-    def _candidates(self, radius, statics_only):
-        box = self._terrain.statics_box if statics_only else self._terrain.box
-
-        for tile in box(radius):
-            if not self.matches(tile) or not self.within_z(tile["z"]):
-                continue
-
-            until = self._bank_parked_until(tile)
-
-            if until is not None:
-                if self._bank_cooling is None or until < self._bank_cooling:
-                    self._bank_cooling = until
-
-                continue
-
-            yield tile
-
-    def scan_box(self, radius, statics_only=False):
-        self._bank_cooling = None
-        # The swing names no tile, so one already in reach needs no route
-        best, cooling, walled = pick_nearest(self._candidates(radius, statics_only), self._memory,
-                                             self._config["probes"], self._config["range"], True,
-                                             self.stats)
-        self._skipped_unreachable = walled
-        self.stats["walled"] = self.stats.get("walled", 0) + walled
-
-        if self._bank_cooling is not None and (cooling is None or self._bank_cooling < cooling):
-            cooling = self._bank_cooling
-
-        return best, cooling
-
-    # One pair of reads against the (2 * radius + 1) squared the box costs. The z and the art have
-    # to match as well as the coordinates: a tile carries several, and only one of them is the vein.
-    def _still_ore(self, vein):
-        if self.is_parked(vein):
-            return None
-
-        # The character has walked since this was picked, and the vein is now up a cliff
-        if not self.within_z(vein["z"]):
-            return None
-
-        for tile in self._terrain.at(vein["x"], vein["y"]):
-            if (
-                tile["z"] == vein["z"]
-                and tile["graphic"] == vein["graphic"]
-                and tile["is_land"] == vein["is_land"]
-            ):
-                if not self.matches(tile):
-                    return None
-
-                found = dict(vein)
-                found["distance"] = chebyshev_to(vein)
-
-                return found
-
-        return None
-
-    def _radii(self):
-        return range(self._config["range"], self._config["scan_radius"] + 1)
-
-    # Widened a ring at a time rather than swept, statics before land in each: the next vein is
-    # almost always close, a ring's statics are one read, and each land tile is a read of its own
-    def scan(self):
-        started = now()
-        reads = self._terrain.reads
-        self.stats = {}
-
-        try:
-            return self._scan()
-        finally:
-            self.stats["seconds"] = now() - started
-            self.stats["reads"] = self._terrain.reads - reads
-
-    def _scan(self):
-        if self._current is not None:
-            self._current = self._still_ore(self._current)
-
-            if self._current is not None:
-                return self._current, None
-
-        cooling = None
-
-        for radius in self._radii():
-            for statics_only in [True, False]:
-                found, cooling = self.scan_box(radius, statics_only)
-
-                if found is not None:
-                    self._current = found
-
-                    return found, None
-
-        self._current = None
-
-        return None, cooling
-
-    def forget_current(self):
-        self._current = None
-
-    # The sentence is about the bank the character stands in. The reach circle as well: a walk stops
-    # short of its target, which can leave the character in the bank swinging at a tile past its edge
-    def mark_area_depleted(self, reach):
-        until = now() + self._config["respawn_delay"]
-        bank = self._config["bank"]
-        self._banks[self._bank_key(API.Player.X, API.Player.Y)] = until
-        parked = 0
-
-        for tile in self._terrain.box(reach):
-            # The sentence is about what the shard can reach, so a tile 60 z up is not its claim
-            if not self.within_z(tile["z"]) or not self.matches(tile):
-                continue
-
-            self._memory.block(tile, until)
-            parked += 1
-
-        self._log("nothing harvestable at %d,%d, parking the %dx%d bank and %d tile(s) within %d "
-                  "for %dm"
-                  % (API.Player.X, API.Player.Y, bank, bank, parked, reach,
-                     max(1, int(round(self._config["respawn_delay"] / 60.0)))))
-
-        return parked
-
     def survey(self, radius, limit):
         survey(self._terrain.box(radius), radius, limit, self.matches, self._log)
+
+
+# src/uo/mapfile.py
+def _land_row(land):
+    return [land[0]["z"], land[0]["graphic"]] if land else None
+
+
+def _statics_row(statics):
+    return [[tile["z"], tile["graphic"], tile["name"]] for tile in statics]
+
+
+class MapFile(object):
+    """The ground a run has read, kept between runs so a known place costs no reads."""
+
+    def __init__(self, terrain, store, log):
+        self._terrain = terrain
+        self._store = store
+        self._log = log
+
+    def load(self):
+        if not self._store.on():
+            return 0
+
+        here = int(API.GetMap())
+        count = 0
+
+        for row in self._store.load():
+            try:
+                if row["m"] != here:
+                    continue
+
+                x = row["x"]
+                y = row["y"]
+                land = row["l"]
+                land = [{"x": x, "y": y, "z": land[0], "graphic": land[1], "is_land": True,
+                         "name": ""}] if land else []
+                statics = [{"x": x, "y": y, "z": s[0], "graphic": s[1], "is_land": False,
+                            "name": s[2]} for s in row["s"]]
+            except (KeyError, IndexError, TypeError):
+                continue
+
+            self._terrain.remember(x, y, land, statics)
+            count += 1
+
+        self._log("map: %d coordinate(s) remembered from %s" % (count, self._store.path()))
+
+        return count
+
+    def flush(self):
+        if not self._store.on():
+            return 0
+
+        fresh = self._terrain.fresh()
+
+        if not fresh:
+            return 0
+
+        here = int(API.GetMap())
+        self._store.append([{"m": here, "x": int(x), "y": int(y), "l": _land_row(land),
+                             "s": _statics_row(statics)} for (x, y), land, statics in fresh])
+
+        return len(fresh)
+
+
+# src/uo/parked.py
+class Parked(object):
+    """Timed parkings kept between runs. Permanent write-offs are not: a restart is how those are
+    cleared."""
+
+    def __init__(self, store, log):
+        self._store = store
+        self._log = log
+
+    # Rewritten pruned, so the file holds only what is still parked
+    def load(self, memory):
+        if not self._store.on():
+            return 0
+
+        here = int(API.GetMap())
+        kept = {}
+
+        for row in self._store.load():
+            key = row.get("t")
+            until = row.get("u")
+            where = row.get("m")
+
+            if not isinstance(key, str) or not isinstance(until, (int, float)):
+                continue
+
+            if now() >= until:
+                continue
+
+            kept[(where, key)] = {"m": where, "t": key, "u": until}
+
+        restored = 0
+
+        for (where, key), row in sorted(kept.items(), key=lambda item: item[1]["u"]):
+            if where == here:
+                memory.restore(key, row["u"])
+                restored += 1
+
+        self._store.rewrite(list(kept.values()))
+        self._log("%d tile(s) still parked from the last run" % restored)
+
+        return restored
+
+    def save(self, key, until):
+        if until == float("inf"):
+            return
+
+        self._store.append([{"m": int(API.GetMap()), "t": str(key), "u": float(until)}])
 
 
 # src/uo/roam.py
@@ -2388,6 +3254,11 @@ class Roam(object):
 
         if spot is None:
             if ready_at_or_none is not None:
+                if not self._config["wait"]:
+                    return ("stop", "%s, the soonest is back in %dm" % (
+                        self._config["worked_out"],
+                        max(1, int(round((ready_at_or_none - now()) / 60.0)))))
+
                 self._idle_until(ready_at_or_none)
 
                 return ("waited",)
@@ -2438,74 +3309,101 @@ class Roam(object):
         return ("walked",)
 
 
-# src/uo/tiles.py
-# Land and static tiledata are numbered in separate tables, so 1339 is a mountain band as land and a
-# cave floor as a static. Everything keyed on an art keys on the kind too.
-def art_key(graphic, is_land):
-    return "%s:%d" % ("land" if is_land else "static", graphic)
+# src/uo/store.py
+class Store(object):
+    """A JSON Lines file, read whole and appended a row at a time."""
 
-
-def tile_key(tile):
-    return "%d,%d,%d,%s" % (tile["x"], tile["y"], tile["z"],
-                            art_key(tile["graphic"], tile["is_land"]))
-
-
-class TileMemory(object):
-    """What is worked out, what could not be reached, and which art is not the resource at all."""
-
-    def __init__(self, respawn_delay, unreachable_delay, noun, verb, log):
-        self._respawn_delay = respawn_delay
-        self._unreachable_delay = unreachable_delay
-        self._noun = noun
-        self._verb = verb
+    def __init__(self, path, log):
+        self._path = path or ""
         self._log = log
-        self._blocked = {}
-        self._banned_arts = set()
+        self._complained = False
 
-    def blocked_until(self, tile):
-        return self._blocked.get(tile_key(tile))
+    def on(self):
+        return bool(self._path)
 
-    def is_blocked(self, tile):
-        until = self.blocked_until(tile)
+    def path(self):
+        return self._path
 
-        return until is not None and now() < until
-
-    def block(self, tile, until):
-        self._blocked[tile_key(tile)] = until
-
-    def mark_depleted(self, tile):
-        self.block(tile, now() + self._respawn_delay)
-
-    def mark_unreachable(self, tile):
-        self.block(tile, now() + self._unreachable_delay)
-
-    def mark_unusable(self, tile, why):
-        self.block(tile, float("inf"))
-        self._log("the %s at %d,%d %s" % (self._noun, tile["x"], tile["y"], why))
-
-    def art_banned(self, graphic, is_land):
-        return art_key(graphic, is_land) in self._banned_arts
-
-    # About the art, not the tile: a wrong entry in the table is a whole band of the mountain
-    def ban_art(self, tile):
-        key = art_key(tile["graphic"], tile["is_land"])
-
-        if key in self._banned_arts:
+    def _complain(self, verb, error):
+        if self._complained:
             return
 
-        self._banned_arts.add(key)
-        self._log("%s cannot be %s, skipping that art from here on"
-                  % (hex_of(tile["graphic"]), self._verb))
+        self._complained = True
+        self._log("could not %s %s (%s), carrying on without it" % (verb, self._path, error))
+
+    # A missing file is the first run, so it is not worth a line
+    def load(self):
+        if not self._path:
+            return []
+
+        try:
+            handle = open(self._path, "r")
+        except (IOError, OSError):
+            return []
+
+        rows = []
+        broken = 0
+
+        try:
+            for line in handle:
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    broken += 1
+                    continue
+
+                if isinstance(row, dict):
+                    rows.append(row)
+                else:
+                    broken += 1
+        finally:
+            handle.close()
+
+        if broken:
+            self._log("%d unreadable line(s) in %s skipped" % (broken, self._path))
+
+        return rows
+
+    def _write(self, mode, rows):
+        if not self._path:
+            return
+
+        # A row the encoder refuses is a bug in the caller, not a reason to end the run
+        try:
+            handle = open(self._path, mode)
+
+            try:
+                for row in rows:
+                    handle.write(json.dumps(row, sort_keys=True) + "\n")
+            finally:
+                handle.close()
+        except (IOError, OSError, TypeError, ValueError) as error:
+            self._complain("write", error)
+
+    def append(self, rows):
+        if rows:
+            self._write("a", rows)
+
+    def rewrite(self, rows):
+        self._write("w", rows)
 
 
 # src/uo/terrain.py
+# Plain Python types, not the client's sbyte and ushort: json cannot write those, and a .NET string
+# is only a str by courtesy
 def land_tile(x, y, land):
-    return {"x": x, "y": y, "z": land.Z, "graphic": land.Graphic, "is_land": True, "name": ""}
+    return {"x": int(x), "y": int(y), "z": int(land.Z), "graphic": int(land.Graphic),
+            "is_land": True, "name": ""}
 
 
 def static_tile(x, y, static):
-    return {"x": x, "y": y, "z": static.Z, "graphic": static.Graphic, "is_land": False,
-            "name": static.Name or ""}
+    return {"x": int(x), "y": int(y), "z": int(static.Z), "graphic": int(static.Graphic),
+            "is_land": False, "name": str(static.Name or "")}
 
 
 class Terrain(object):
@@ -2515,6 +3413,7 @@ class Terrain(object):
     def __init__(self):
         self._land = {}
         self._statics = {}
+        self._fresh = set()
         self.reads = 0
 
     def _land_at(self, x, y):
@@ -2525,6 +3424,7 @@ class Terrain(object):
             land = API.GetTile(x, y)
             cached = [land_tile(x, y, land)] if land is not None else []
             self._land[(x, y)] = cached
+            self._fresh.add((x, y))
 
         return cached
 
@@ -2535,6 +3435,7 @@ class Terrain(object):
             self.reads += 1
             cached = [static_tile(x, y, static) for static in API.GetStaticsAt(x, y) or []]
             self._statics[(x, y)] = cached
+            self._fresh.add((x, y))
 
         return cached
 
@@ -2554,6 +3455,18 @@ class Terrain(object):
         for x, y in missing:
             self._statics[(x, y)] = [static_tile(x, y, static)
                                      for static in by_coord.get((x, y), [])]
+            self._fresh.add((x, y))
+
+    def remember(self, x, y, land, statics):
+        self._land[(x, y)] = land
+        self._statics[(x, y)] = statics
+
+    # Coordinates read this session with both halves in, handed out once
+    def fresh(self):
+        done = [xy for xy in self._fresh if xy in self._land and xy in self._statics]
+        self._fresh.difference_update(done)
+
+        return [(xy, self._land[xy], self._statics[xy]) for xy in sorted(done)]
 
     def at(self, x, y):
         return self._land_at(x, y) + self._statics_at(x, y)
@@ -2598,26 +3511,37 @@ combiner = run.combiner
 beetle = run.beetle
 smelter = run.smelter
 threat = run.threat
+gathered = run.gathered
 get_off_the_mount = run.get_off_the_mount
 say_where_we_stand = run.say_where_we_stand
 
-memory = TileMemory(RESPAWN_DELAY, UNREACHABLE_DELAY, "vein", "mined", log)
-veins = Veins(Terrain(), memory, {
+terrain = Terrain()
+map_file = MapFile(terrain, Store(MAP_PATH, log), log)
+parked = Parked(Store(PARKED_PATH, log), log)
+memory = TileMemory(RESPAWN_DELAY, UNREACHABLE_DELAY, "vein", "mined", log, parked.save)
+spots = TileMemory(RESPAWN_DELAY, UNREACHABLE_DELAY, "spot", "stood on", log)
+veins = Veins(terrain, memory, {
     "tile_graphics": ORE_TILE_GRAPHICS,
     "not_ore_graphics": NOT_ORE_GRAPHICS,
     "static_names": ORE_STATIC_NAME,
     "z_range": MINE_Z_RANGE,
-    "range": MINE_RANGE,
+}, log)
+planner = Planner(veins, terrain, memory, spots, {
+    "reach": MINE_FOOTPRINT,
     "scan_radius": SCAN_RADIUS,
     "probes": MAX_PATH_PROBES,
+    "min_ore": MIN_SPOT_ORE,
+    "connected": ONLY_CONNECTED_GROUND,
+    "map": PLAN_MAP,
     "respawn_delay": RESPAWN_DELAY,
-    "bank": HARVEST_BANK,
 }, log)
-roam = Roam(veins, memory, saves, threat, {
-    "noun": "vein",
+roam = Roam(planner, spots, saves, threat, {
+    "noun": "spot",
     "idle_message": "everything in reach is worked out, waiting for a vein to come back",
     "none_left": "no ore in range",
-    "range": MINE_RANGE,
+    "wait": not STOP_WHEN_WORKED_OUT,
+    "worked_out": "the ground you stand on is worked out",
+    "range": STAND_RANGE,
     "scan_radius": SCAN_RADIUS,
     "z_range": MINE_Z_RANGE,
     "survey_arts": SURVEY_ARTS,
@@ -2630,6 +3554,8 @@ digger = Digger(ore, OUTCOME_TEXT, run.dig_config, log, True)
 relief = Relief(ore, combiner, smelter, saves, beetle.walk_to, "", log)
 
 say_where_we_stand()
+map_file.load()
+parked.load(memory)
 
 # Before the cursor, so the beetle you click is one standing next to you rather than the one you are
 # sitting on
@@ -2647,6 +3573,7 @@ if afoot and too_heavy():
 
 stop = None
 tally = 0
+fails = 0
 unknown = 0
 throttled = 0
 no_cursor = 0
@@ -2663,7 +3590,7 @@ def describe_spent():
     parts = []
 
     if "walk" in spent:
-        scan = veins.stats
+        scan = planner.stats
         parts.append("scan %.1fs (%d reads, %d probes, %d walled), walk %.1fs"
                      % (scan.get("seconds", 0.0), scan.get("reads", 0), scan.get("probes", 0),
                         scan.get("walled", 0), spent["walk"]))
@@ -2745,7 +3672,8 @@ try:
 
         started = now()
         found = roam.approach()
-        spent["walk"] = now() - started - veins.stats.get("seconds", 0.0)
+        spent["walk"] = now() - started - planner.stats.get("seconds", 0.0)
+        map_file.flush()
 
         if found[0] == "stop":
             stop = found[1]
@@ -2762,8 +3690,10 @@ try:
             end_cycle("walking")
             continue
 
-        vein = found[1]
+        spot = found[1]
 
+        value = gathered.settle()
+        before = gathered.before_swing()
         ore_before = ore.total()
         started = now()
         outcome = digger.dig_once(pickaxe.serial())
@@ -2781,6 +3711,16 @@ try:
             # swing keeps the pack at one pile per metal and the item cap out of reach
             ore.wait_for_ore(ore_before, ORE_SETTLE_TIMEOUT, ORE_SETTLE_POLL)
             combiner.group()
+            gathered.after_swing(value, "dug", before)
+
+        elif outcome == "failed":
+            tally += 1
+            fails += 1
+            unknown = 0
+            throttled = 0
+            barren = 0
+            stall.progressed()
+            gathered.after_swing(value, "failed", before)
 
         elif outcome == "wornOut":
             log("pickaxe worn out, swapping")
@@ -2812,42 +3752,31 @@ try:
             if no_cursor >= MAX_NO_CURSOR:
                 stop = "the shard never opened a target cursor"
 
-        # Worked out, not dead: mark_depleted times it out and the scan picks it up again
-        elif outcome == "empty":
+        # Both are about the footprint you stand in, and neither is dead: the parking times out
+        elif outcome == "empty" or outcome == "nothingNearby":
             unknown = 0
-            memory.mark_depleted(vein)
-            relief.group_and_smelt()
-
-        # The shard answering about where you stand rather than about a tile
-        elif outcome == "nothingNearby":
-            unknown = 0
-            veins.mark_area_depleted(MINE_RANGE)
+            planner.exhausted()
             barren += 1
-
-            # Said once, at the point it stops looking like bad luck
-            if barren == NOTHING_NEARBY_HINT:
-                log(
-                    "%d spots in a row had nothing to harvest - ORE_TILE_GRAPHICS is probably "
-                    "matching ground that carries no ore" % NOTHING_NEARBY_HINT
-                )
-                veins.survey(MINE_RANGE, SURVEY_ARTS)
-
             relief.group_and_smelt()
 
-        # A wrong band in ORE_TILE_GRAPHICS is a whole stretch of mountain, so ban the art rather
-        # than walking to its copies one at a time
+        # The swing named no tile, so the refused art is only known when the footprint holds one
         elif outcome == "notOre":
             unknown = 0
-            memory.ban_art(vein)
-            memory.mark_unusable(vein, "cannot be mined")
+            lone = planner.lone_ore_art()
+
+            if lone is not None:
+                memory.ban_art(lone)
+
+            spots.mark_unusable(spot, "cannot be mined from")
+            barren += 1
 
         elif outcome == "tooFar":
             unknown = 0
-            memory.mark_unusable(vein, "is out of reach at %d tiles" % vein["distance"])
+            spots.mark_unusable(spot, "is out of reach")
 
         elif outcome == "notSeen":
             unknown = 0
-            memory.mark_unusable(vein, "is not in line of sight")
+            spots.mark_unusable(spot, "is not in line of sight")
 
         # The ore this swing produced was destroyed rather than dropped, so a full pack is answered
         # by consolidating: forty piles of one become one pile of forty
@@ -2859,6 +3788,15 @@ try:
         else:
             unknown += 1
             log("unreadable outcome (%d/%d), check OUTCOME_TEXT" % (unknown, MAX_UNKNOWN))
+
+        # Said once, at the point it stops looking like bad luck
+        if barren == NOTHING_NEARBY_HINT:
+            log(
+                "%d spots in a row had nothing to mine - ORE_TILE_GRAPHICS is probably matching "
+                "ground that carries no ore, or the shard refuses a self-target"
+                % NOTHING_NEARBY_HINT
+            )
+            planner.survey(MINE_FOOTPRINT, SURVEY_ARTS)
 
         # Done here rather than inside each branch the way unknown is: every branch but one clears
         # it, and one added later would have to remember to
@@ -2892,6 +3830,7 @@ except Exception as error:
 if API.Pathfinding():
     API.CancelPathfinding()
 
+map_file.flush()
 reason = stop or "hit the %d working cycle backstop" % MAX_CYCLES
 
 # Smelted only if the run is ending over the limit: what is in the pack is a few swings' worth
@@ -2900,7 +3839,9 @@ combiner.group()
 if too_heavy():
     relief.smelt()
 
+gathered.settle()
+
 # Swings rather than an ore delta: smelted ore has left the pack, so the pack cannot total the run
-log("%d swings, %d ore still in the pack" % (tally, ore.total()))
+log("%d swings, %d failed, %d ore still in the pack" % (tally, fails, ore.total()))
 log("stopping - %s" % reason)
 API.Stop()

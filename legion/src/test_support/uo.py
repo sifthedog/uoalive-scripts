@@ -367,7 +367,12 @@ class FakeAPI(object):
     def GetPath(self, x, y, z, within=0):
         self.path_probes.append((x, y))
 
-        return self.paths.get((x, y))
+        return self.paths.get((x, y, within), self.paths.get((x, y)))
+
+    def Pathfind(self, x, y, z, within=0, wait=False, timeout=None):
+        self.pathfound.append(((x, y, z), within))
+
+        return True
 
     def ItemNameAndProps(self, serial, force=False, timeout=None):
         return self.props.get(serial, "")
@@ -570,6 +575,17 @@ def skill(value=0.0, cap=100.0):
 
 def static(x=0, y=0, z=0, graphic=0, name="", is_tree=False, is_vegetation=False):
     return FakeStatic(x, y, z, graphic, name, is_tree, is_vegetation)
+
+
+class FakePoint(object):
+    def __init__(self, x, y, z=0):
+        self.X = x
+        self.Y = y
+        self.Z = z
+
+
+def point(x, y, z=0):
+    return FakePoint(x, y, z)
 
 
 def tile(x, y, z=0, graphic=0, is_land=True, name=""):

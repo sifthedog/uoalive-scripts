@@ -104,6 +104,8 @@ roam = Roam(trees, memory, saves, threat, {
     "noun": "tree",
     "idle_message": "everything in reach is regrowing, waiting for the soonest one",
     "none_left": "no tree in range",
+    "wait": True,
+    "worked_out": "",
     "range": CHOP_RANGE,
     "scan_radius": SCAN_RADIUS,
     "z_range": CHOP_Z_RANGE,

@@ -2,9 +2,12 @@ import API
 
 from mining.beetle import Beetle
 from mining.combine import Combiner
-from mining.config import (AMBUSH_ALARM, AMBUSH_HUE, AMBUSH_NOTICES, AMBUSH_REPEATS,
-                           AMBUSH_TEXT, AMBUSH_WARNING, BEETLE_SCAN_RADIUS, COMBINE_DELAY, COMBINE_POLL,
-                           COMBINE_TIMEOUT, DIFFERENT_ORE_TEXT, DIG_PROMPT_TEXT,
+from mining.gathered import Gathered
+from mining.config import (AMBUSH_ALARM, AMBUSH_HOLD, AMBUSH_HOLD_BUTTON, AMBUSH_HOLD_HUE,
+                           AMBUSH_HOLD_POLL, AMBUSH_HOLD_TEXT, AMBUSH_HUE, AMBUSH_NOTICES,
+                           AMBUSH_REPEATS, AMBUSH_TEXT, AMBUSH_WARNING, BEETLE_SCAN_RADIUS,
+                           COMBINE_DELAY, COMBINE_POLL,
+                           COMBINE_TIMEOUT, DATA_PATH, DIFFERENT_ORE_TEXT, DIG_PROMPT_TEXT,
                            DIG_TARGET_POLL, DIG_TARGET_TIMEOUT, DIG_TIMEOUT, DISMOUNT_ATTEMPTS,
                            DISMOUNT_POLL, DISMOUNT_TIMEOUT, EQUIP_ATTEMPTS, EQUIP_POLL,
                            EQUIP_TIMEOUT, FIRE_BEETLE_GRAPHICS, FIRE_BEETLE_SERIAL,
@@ -14,6 +17,7 @@ from mining.config import (AMBUSH_ALARM, AMBUSH_HUE, AMBUSH_NOTICES, AMBUSH_REPE
                            NOT_METAL_WORDS, ORE_GRAPHICS, ORE_METALS, ORE_NAME_WORD,
                            OUTCOME_TEXT, PACK_LIMIT, PATHFIND_TIMEOUT, PICK_TIMEOUT, PICKAXE_NAMES,
                            PLAIN_METAL, SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT, SAVING_TEXT,
+                           SKILL_NAMES, SKILL_POLL, SKILL_TIMEOUT,
                            SMELT_ATTEMPTS, SMELT_DELAY, SMELT_POLL, SMELT_RANGE, SMELT_TIMEOUT,
                            SMELT_UNSKILLED_TEXT, SPARE_BAG_SERIAL, STALL_STOP, STALL_WARN, STOPPED,
                            TARGET_TIMEOUT, THREAT_RANGE, THROTTLED_TEXT,
@@ -22,12 +26,15 @@ from mining.metal import MetalBook
 from mining.ore import OrePack
 from mining.smelt import Smelter
 from uo.entity import hex_of
-from uo.guards import dead, first_reason, pack_full, stopped
+from uo.guards import dead, first_reason, pack_full, skill_capped, stopped
 from uo.heartbeat import Heartbeat
+from uo.hold import Hold
 from uo.log import make_log
 from uo.loop import StallWatch
 from uo.mount import dismount
+from uo.record import attempt_log
 from uo.save import SaveWatch
+from uo.skill import SkillReader, find_skill_name, reading
 from uo.threat import ThreatWatch
 from uo.tool import Tool
 from uo.vitals import position_and_weight
@@ -46,6 +53,12 @@ class Run(object):
 
 
         saves = SaveWatch(SAVING_TEXT, SAVE_DONE_TEXT, SAVE_WAIT, SAVE_POLL, log, heartbeat, stop_reason)
+        hold = Hold({
+            "text": AMBUSH_HOLD_TEXT,
+            "button": AMBUSH_HOLD_BUTTON,
+            "hue": AMBUSH_HOLD_HUE,
+            "poll": AMBUSH_HOLD_POLL,
+        }, log, stop_reason, heartbeat)
 
         pickaxe = Tool("pickaxe", PICKAXE_NAMES, [], ["onehanded"], SPARE_BAG_SERIAL,
                        EQUIP_ATTEMPTS, EQUIP_TIMEOUT, EQUIP_POLL, log)
@@ -69,6 +82,16 @@ class Run(object):
         }, log)
         beetle = Beetle(FIRE_BEETLE_GRAPHICS, FIRE_BEETLE_SERIAL, BEETLE_SCAN_RADIUS, SMELT_RANGE,
                         PATHFIND_TIMEOUT, PICK_TIMEOUT, log)
+
+        skill_name = find_skill_name(SKILL_NAMES)
+
+        if skill_name is None and DATA_PATH:
+            log("the client reports none of %s - not recording" % ", ".join(SKILL_NAMES))
+
+        skill = SkillReader(skill_name or SKILL_NAMES[0])
+        recorder = attempt_log(DATA_PATH if skill_name else "", skill.name(), log)
+        gathered = Gathered(recorder, skill, ore, metals, skill_capped(skill_name), ORE_GRAPHICS,
+                            log)
         smelter = Smelter(ore, beetle, saves, {
             "attempts": SMELT_ATTEMPTS,
             "passes": MAX_SMELT_PASSES,
@@ -81,6 +104,8 @@ class Run(object):
             "ingot_graphics": INGOT_GRAPHICS,
             "throttled_text": THROTTLED_TEXT,
             "unskilled_text": SMELT_UNSKILLED_TEXT,
+            "about_to_convert": gathered.before_smelt,
+            "converted": gathered.after_smelt,
         }, log)
         threat = ThreatWatch({
             "watch": WATCH_FOR_TROUBLE,
@@ -91,7 +116,7 @@ class Run(object):
             "ambush_warning": AMBUSH_WARNING,
             "ambush_hue": AMBUSH_HUE,
             "ambush_repeats": AMBUSH_REPEATS,
-        }, log, beetle.find, "beetle")
+        }, log, beetle.find, lambda friend: "beetle", hold if AMBUSH_HOLD else None)
 
         DIG_CONFIG = {
             "cursor_timeout": DIG_TARGET_TIMEOUT,
@@ -111,6 +136,14 @@ class Run(object):
         def say_where_we_stand():
             pickaxe.learn(pickaxe.held())
             log("%d ore in the pack to start, at %d,%d" % (ore.total(), API.Player.X, API.Player.Y))
+
+            if recorder.recording():
+                start = skill.wait(SKILL_TIMEOUT, SKILL_POLL)
+                cap = skill.cap()
+                log("%s at %s%s%s" % (
+                    skill.name(), reading(start),
+                    "/%.1f" % cap if cap is not None and cap > 0 else "",
+                    "" if gathered.recording() else ", capped - not recording"))
             held = pickaxe.held()
             log(
                 "mounted %s, hand %s, weight %d/%d"
@@ -133,6 +166,7 @@ class Run(object):
         self.beetle = beetle
         self.smelter = smelter
         self.threat = threat
+        self.gathered = gathered
         self.dig_config = DIG_CONFIG
         self.get_off_the_mount = get_off_the_mount
         self.say_where_we_stand = say_where_we_stand

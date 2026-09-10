@@ -22,6 +22,7 @@ combiner = run.combiner
 beetle = run.beetle
 smelter = run.smelter
 threat = run.threat
+gathered = run.gathered
 get_off_the_mount = run.get_off_the_mount
 say_where_we_stand = run.say_where_we_stand
 
@@ -50,6 +51,7 @@ if afoot and too_heavy():
 
 stop = None
 tally = 0
+fails = 0
 unknown = 0
 throttled = 0
 no_cursor = 0
@@ -118,6 +120,8 @@ try:
             API.Pause(STEP_DELAY)
             continue
 
+        value = gathered.settle()
+        before = gathered.before_swing()
         ore_before = ore.total()
         outcome = digger.dig_once(pickaxe.serial())
 
@@ -131,6 +135,15 @@ try:
             # swing keeps the pack at one pile per metal and the item cap out of reach
             ore.wait_for_ore(ore_before, ORE_SETTLE_TIMEOUT, ORE_SETTLE_POLL)
             combiner.group()
+            gathered.after_swing(value, "dug", before)
+
+        elif outcome == "failed":
+            tally += 1
+            fails += 1
+            unknown = 0
+            throttled = 0
+            stall.progressed()
+            gathered.after_swing(value, "failed", before)
 
         elif outcome == "wornOut":
             log("pickaxe worn out, swapping")
@@ -230,8 +243,10 @@ combiner.group()
 if too_heavy():
     relief.smelt()
 
+gathered.settle()
+
 # Swings rather than an ore delta: smelted ore has left the pack, so the pack cannot total the run
-log("%d swings, %d ore still in the pack" % (tally, ore.total()))
+log("%d swings, %d failed, %d ore still in the pack" % (tally, fails, ore.total()))
 
 if reason == WORKED_OUT and tally == 0:
     log("no swing ever landed - the character is probably not standing next to a vein")

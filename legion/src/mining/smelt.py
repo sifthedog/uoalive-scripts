@@ -31,8 +31,9 @@ class Smelter(object):
             "perform": self._perform,
             "blocked": self._forge_gone,
             "learn_product": self._learn_ingot,
+            "converted": config["converted"],
             "nothing_to_do": self._say_what_is_left,
-            "about_to_convert": self._nothing_to_note,
+            "about_to_convert": config["about_to_convert"],
         }, log, saves)
 
     def written_off(self):
@@ -51,9 +52,6 @@ class Smelter(object):
 
             self._config["ingot_graphics"].add(graphic)
             self._log("ingot graphic is %s" % hex_of(graphic))
-
-    def _nothing_to_note(self):
-        pass
 
     def _say_what_is_left(self, written_off):
         piles = self._ore.piles()

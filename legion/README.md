@@ -7,7 +7,7 @@ repo targets the ClassicUO web client; nothing is shared between the two.
 | --- | --- |
 | `tame.py` | Target one animal, then work through every animal of that type in reach: tame it, rename it, and set it on something |
 | `buffs.py` | Watches the buff bar and recasts Consecrate Weapon and Divine Fury as each lapses |
-| `mining.py` | Walks to the nearest vein, swings, consolidates the ore, and smelts it against a fire beetle |
+| `mining.py` | Maps the ore around you, plans the stand spots that cover it, walks them in order, swings, consolidates the ore, and smelts it against a fire beetle |
 | `mine-here.py` | Stands still and works the spot you are on until it runs dry, then smelts and stops |
 | `lumberjack.py` | Chops the nearest tree, turns the logs into boards, and loads the boards onto your pack animals |
 | `fishing.py` | Gets off the mount, says `all guard`, casts the fishing pole once at the nearest water and records what came out. Run it again for the next cast |
@@ -212,6 +212,7 @@ unread outcomes write nothing; a missing row shows in the closing tally, a guess
 | `bowcraft.py` | `made` | `failed` | `noMaterial`, `wrongRow`, a worn tool, the sell trips |
 | `tinkering.py` | `made` | `failed` | the same |
 | `fishing.py` | `caught` | `failed` | no cursor, not biting, out of reach, throttles, unread wordings |
+| `mining.py`, `mine-here.py` | `dug`, `smelted` | `failed`, for a swing or a smelt | everything else, and every row once Mining is at its cap |
 
 The row is buffered and written at the **next** skill read: the client applies a gain some time after
 the shard grants it, so a value read at the outcome is usually still the old one. Carrying both
@@ -228,7 +229,9 @@ values is what lets a scroll of alacrity's 0.2 to 0.5 jump be told from several 
 item made, the creature, the weapon read. `to` is `null` where the client was not answering.
 `consumed` appears only when something was measured, which the two crafting scripts do. `gained`
 has the same shape and is what `fishing.py` writes: the catch as the pack received it, named off the
-journal line.
+journal line. A mining swing's `gained` is the ore per metal, measured after the consolidation so
+the arrival's own pile is not counted twice; a smelt row carries the ore spent in `consumed` and the
+ingots per type in `gained`, and a smelt that burned ore away with no ingot is a `failed` row.
 
 ```
 python3 legion/skilldb.py convert ~/TazUO/LegionScripts/skill-attempts.jsonl --out legion/data
@@ -452,9 +455,13 @@ Every timing is in seconds.
 
 ## mining.py
 
-Dismounts, finds the nearest vein, walks to it, swings, consolidates the ore, and smelts it against a
-**fire beetle**, a pet that works as a portable forge. It dismounts because the beetle is usually the
-ride, and a beetle you sit on cannot be targeted.
+Dismounts, maps the ore around you, plans the stand spots whose 3x3 footprints cover it, walks them
+nearest-first, swings, consolidates the ore, and smelts it against a **fire beetle**, a pet that works
+as a portable forge. It dismounts because the beetle is usually the ride, and a beetle you sit on
+cannot be targeted.
+
+The swing answers the cursor with yourself, so the shard mines where you **stand**; the plan is about
+where to stand, and a spot is worked until the shard says its footprint is empty.
 
 **`ORE_TILE_GRAPHICS` ships as a stock RunUO guess** and is the one setting that ends runs when wrong.
 A dead end prints every art it saw, hex and decimal, with `MATCHES` beside the accepted ones.
@@ -466,19 +473,25 @@ cycle:
 2. Sit out a world save.
 3. Dismount and equip a pickaxe, both every cycle, so a remount or a broken tool costs one cycle.
 4. Smelt if the pack is genuinely over the limit.
-5. Scan for a vein within `SCAN_RADIUS` and `MINE_Z_RANGE`, skipping parked tiles and tiles
-   `API.GetPath` finds no route to.
-6. Walk to it if further than `MINE_RANGE`.
+5. Plan, when there is no spot left: read every tile within `SCAN_RADIUS` and `MINE_Z_RANGE`, pick
+   the stand spots whose `MINE_FOOTPRINT` squares cover the most unparked ore (greedy), order them
+   nearest-first from where you stand, and print the map. Each spot handed out is probed once with
+   `API.GetPath`; one with no route is parked, and past `MAX_PATH_PROBES` in a scan the next goes out
+   unprobed. Under `ONLY_CONNECTED_GROUND` every spot is probed, and one whose route steps outside
+   the `SCAN_RADIUS` box is parked as off your ground: the client found a way, but round a wall, a
+   cliff or up a ramp elsewhere. When nothing on this ground is left, `STOP_WHEN_WORKED_OUT` ends
+   the run with the soonest respawn in the reason instead of idling for it.
+6. Walk onto it if you are not standing on it (`STAND_RANGE`).
 7. Swing, and branch on what the shard says.
 
 | Outcome | What the loop does |
 | --- | --- |
 | `dug` | Wait for the ore to land, then consolidate to one pile per metal |
-| `empty` | Park the tile for `RESPAWN_DELAY`, and smelt |
-| `nothingNearby` | Park the `HARVEST_BANK` block and everything within `MINE_RANGE`, and smelt |
-| `notOre` | Ban the whole graphic: a wrong band in `ORE_TILE_GRAPHICS` is a whole stretch of mountain |
-| `tooFar` | Set the tile aside |
-| `notSeen` | Line of sight. Permanent |
+| `failed` | *You loosen some rocks but fail to find any useable ore*. A swing that landed, recorded, nothing to wait for |
+| `empty`, `nothingNearby` | Park every ore tile in the footprint you stand in for `RESPAWN_DELAY`, drop the spot, and smelt |
+| `notOre` | Write the spot off. The graphic is banned only when the footprint holds a single ore art, since the swing named no tile |
+| `tooFar` | Write the spot off |
+| `notSeen` | Line of sight. Write the spot off |
 | `packFull` | Consolidate: forty piles of one become one pile of forty |
 | `wornOut` | The next cycle equips a spare |
 | `saving` | Sit it out, no counter charged |
@@ -488,6 +501,24 @@ cycle:
 
 Smelting happens when a spot runs dry, since the character is about to walk anyway and the beetle
 has been following. The smelt asks whether any pile is worth it before looking for the beetle.
+
+**Reading the map.** `#` is ore, `@` is you, and the spots are numbered `1`-`9` then `a`-`z` in
+walking order (`+` past that). One journal line per row, `2 * SCAN_RADIUS + 1` characters wide; the
+journal font is not monospaced, so paste the rows into an editor if they do not line up. Ore on the
+outer ring of the box is only covered from inside it, and gets its turn after a walk moves the box.
+
+Spots and ore are parked in separate memories: a spot on a cave floor is the same tile as the ore
+under it, and a walk that fails writes off the spot for `UNREACHABLE_DELAY` without touching the ore.
+
+**What survives a restart.** Every coordinate the run reads goes to `MAP_PATH`, one JSON line each
+(`m` map, `x`, `y`, `l` land `[z, graphic]`, `s` statics `[[z, graphic, name], ...]`), written
+after each cycle that read new ground. The next start reads the file whole and says
+`map: N coordinate(s) remembered`, so a plan over known ground costs no client reads. Every timed
+parking goes to `PARKED_PATH` (`t` tile key, `u` when it is back) as it happens; a start prunes the
+expired rows and says `N tile(s) still parked from the last run`. Both files are per map: rows for
+another facet are kept but ignored. Delete `MAP_PATH` if the shard changes its ground.
+A refused route onto bare land that `API.GetPath` will answer for one tile short is read as the land
+art itself being impassable, and that art is planned beside rather than on for the rest of the run.
 
 ### Before you run it
 
@@ -507,12 +538,14 @@ ore, so there is no scan, walk or respawn wait.
 | Outcome | What the loop does |
 | --- | --- |
 | `dug` | Wait for the ore, then consolidate |
+| `failed` | A swing that found nothing. Recorded, no wait |
 | `empty`, `nothingNearby` | Worked out. Consolidate, smelt, stop |
 | `notOre`, `tooFar`, `notSeen` | Nothing here answers to moving, so each stops |
 | `packFull` | Consolidate |
 | `wornOut`, `saving`, `throttled`, `noCursor`, unreadable | As `mining.py` |
 
-**It never moves.** `grep -c 'Pathfind\|GetPath' legion/dist/mine-here.py` must answer `0`. It smelts
+**It never moves.** Nothing in `legion/dist/mine-here.py` calls `API.Pathfind` or `API.GetPath`; the
+`PathfindEntity` in it is `Beetle.walk_to`, which this run never calls. It smelts
 against a beetle inside `SMELT_RANGE` and otherwise keeps the ore and says so, which makes weight a
 real ending: call the beetle over and run it again.
 
@@ -534,15 +567,21 @@ Every timing is in seconds except `PATHFIND_TIMEOUT`.
 | `ORE_TILE_GRAPHICS` | stock RunUO bands | **The important one.** The land tiles the shard calls mountain or cave floor. Fill it in from a dead-end listing |
 | `NOT_ORE_GRAPHICS` | empty | A seed only; refusals learned on the shard go to the run's memory |
 | `ORE_STATIC_NAME` | `cave`, `rock`, `mountain`, `ore` | Cave floors are statics, matched by name. `rock` also matches pebbles, but a wrong match costs one `notOre` swing and the art is banned |
-| `MINE_RANGE` | `2` | Where walking stops and swinging starts. The swing names no tile, so the shard does not enforce it |
+| `MINE_FOOTPRINT` | `1` | The radius a self-target is assumed to harvest: `1` is 3x3. Not measured on the shard |
+| `STAND_RANGE` | `0` | How close the walk has to get to the planned tile. `0` stands on it |
+| `MIN_SPOT_ORE` | `1` | Ore tiles a footprint has to hold before its spot is worth walking to |
+| `PLAN_MAP` | `True` | Print the map to the journal once per plan |
+| `MAP_PATH` | `mining-map.jsonl` | Where read ground is kept between runs. A bare filename lands in TazUO's working directory; `""` keeps nothing |
+| `PARKED_PATH` | `mining-parked.jsonl` | Where worked-out tiles and their return times are kept between runs. `""` keeps nothing |
 | `MINE_Z_RANGE` | `20` | How far above or below you a tile may sit. A face 40 z up passes the 2D test and the walk never closes |
-| `SCAN_RADIUS` / `SURVEY_ARTS` | `12` / `15` | How far the loop looks, and how many arts a dead end lists |
+| `SCAN_RADIUS` / `SURVEY_ARTS` | `12` / `15` | How far a plan looks, and how many arts a dead end lists. The first plan reads every land tile in the box, one client frame each: 625 at `12` |
 | `PATHFIND_TIMEOUT` | `10` | How long one blocking `API.Pathfind` may take |
-| `MAX_VEIN_WALKS` | `4` | Cycles walking to one vein before it is written off |
-| `MAX_PATH_PROBES` | `24` | Nearest matches a sweep pays an `API.GetPath` for. Stops early once no farther match can be shorter |
-| `HARVEST_BANK` | `8` | The block *no harvestable resources nearby* is about on RunUO shards |
-| `RESPAWN_DELAY` / `UNREACHABLE_DELAY` | `1500.0` / `300.0` | How long a worked-out tile, and a routeless tile, are left alone |
-| `NOTHING_NEARBY_HINT` | `5` | Empty spots in a row before it says `ORE_TILE_GRAPHICS` is probably wrong |
+| `MAX_VEIN_WALKS` | `4` | Cycles walking to one spot before it is written off |
+| `MAX_PATH_PROBES` | `24` | Routes one scan asks `API.GetPath` for before handing a spot out unprobed. Not applied under the ground rule |
+| `ONLY_CONNECTED_GROUND` | `True` | A spot whose route leaves the scan box is parked, not walked to |
+| `STOP_WHEN_WORKED_OUT` | `True` | End the run once nothing on this ground is left. `False` idles until the soonest respawn, as `lumberjack.py` does |
+| `RESPAWN_DELAY` / `UNREACHABLE_DELAY` | `1500.0` / `300.0` | How long a worked-out ore tile, and a routeless spot, are left alone |
+| `NOTHING_NEARBY_HINT` | `5` | Spots in a row with nothing to mine before it says `ORE_TILE_GRAPHICS` is probably wrong |
 
 #### The tool
 
@@ -577,6 +616,14 @@ Every timing is in seconds except `PATHFIND_TIMEOUT`.
 | `DIFFERENT_ORE_TEXT` | RunUO's wording | The shard refusing two piles as different metals. Backstop for a pile no tooltip named |
 | `INGOT_GRAPHICS` | four arts | A seed; the real graphic is learned by diffing the pack across the first smelt |
 
+#### The attempt log
+
+| Setting | Default | What it is for |
+| --- | --- | --- |
+| `DATA_PATH` | `skill-attempts.jsonl` | Where each swing and each smelt is appended, while Mining is below its cap. `""` records nothing |
+| `SKILL_NAMES` | `Mining` | Tried in order. None reading means no rows, and the run says so |
+| `SKILL_TIMEOUT` / `SKILL_POLL` | `5.0` / `0.25` | How long the skill list is waited for at start-up |
+
 #### Trouble and stopping
 
 `WATCH_FOR_TROUBLE` scans `THREAT_RANGE` for a hostile each cycle, watches your hits and the beetle's,
@@ -590,14 +637,28 @@ deliberately no weight guard, which would fire before the smelt could run.
 | `AMBUSH_ALARM` | `afplay` on a system sound | Run on this Mac, outside the game. Restarted while trouble lasts, never layered |
 | `AMBUSH_NOTICES` | one `osascript` notification | Commands run once per ambush. `["say", "ambushed"]` is a spoken one |
 | `AMBUSH_REPEATS` | `30` | Starts the alarm gets. Stops sooner once the hostile has gone |
+| `AMBUSH_HOLD` | `True` | Stand still behind the gump on an ambush. `False` is the alarm alone |
+| `AMBUSH_HOLD_TEXT` / `AMBUSH_HOLD_BUTTON` | a sentence / `Resume` | What the gump says, and what its button says |
+| `AMBUSH_HOLD_HUE` | `33` | The text's hue |
+| `AMBUSH_HOLD_POLL` | `0.5` | How often the button is read while it waits |
+
+An ambush holds the run: the walk and any cursor are cancelled, a gump goes up in the middle of the
+screen, and nothing moves until its button is pressed or the gump is closed. The alarm keeps
+restarting for as long as it is up and stops the moment it comes down. Dying, or the stop button,
+ends the hold as well.
 
 ### When it goes wrong
 
 - **`no ore in range` on a mountain**: `ORE_TILE_GRAPHICS` does not match this shard. Read the
   printed arts.
-- **`n vein(s) matched but had no walkable route`**: a few is ordinary. All of them, somewhere you
-  can plainly walk, means `GetPath` will not answer for a tile you can only stand beside.
-- **Five spots in a row with nothing to harvest**: same cause as the first, caught earlier.
+- **`n spot(s) matched but had no walkable route`**: a few is ordinary. All of them, somewhere you
+  can plainly walk, means `GetPath` will not answer for the tile itself; raise `STAND_RANGE` to `1`.
+- **`land 0x… cannot be stood on, planning beside it from here on`**: a mountain face. Expected once
+  per land art. Every art in the box, in a cave, means the cave floor here is land, not a static.
+- **Five spots in a row with nothing to mine**: same cause as the first, caught earlier, or a shard
+  that refuses a self-target; the journal after a swing says which.
+- **`n ore tile(s) with no spot to stand on`**: every tile that could reach the ore is parked or
+  impassable. Ordinary at the edge of a face; wait for a walk to move the box.
 - **`unreadable outcome, check OUTCOME_TEXT`**: read the journal after a swing and correct it.
 - **`no target cursor (n/20), backing off`**: a run of them with a pickaxe in hand means a refusal
   worded outside `THROTTLED_TEXT`; add it. If *Where do you wish to dig?* is on screen, correct
@@ -625,8 +686,17 @@ deliberately no weight guard, which would fire before the smelt could run.
   `You cannot mine there` sits in `empty` but on most shards means `notOre`; `There is nothing here
   to harvest` and `There is no ore here to mine` are close enough that a hybrid lands in whichever
   comes first.
-- Whether `API.GetPath` answers for a tile you can only stand beside, and whether `API.Pathfind`
-  closes on a face 20 z up.
+- That a self-target harvests the 3x3 around the character. `MINE_FOOTPRINT` is a guess; on a shard
+  where *no harvestable resources nearby* is really about the 8x8 bank, every spot in a bank costs
+  a swing and a smelt trip before its footprint is parked.
+- Whether `API.GetPath` with `within=1` answers for an impassable goal, which is what tells a land
+  art off from a single blocked spot. If not, the run degrades to parking spots one at a time.
+- Whether `API.Pathfind` closes on a face 20 z up. `MINE_Z_RANGE` is read from where you stand when
+  the plan is made, so a footprint tile 20 z above its spot counts as covered.
+- That the beetle standing on a planned spot only costs the two cycles it takes Roam to write the
+  spot off.
+- That `import json` resolves under the client's IronPython. The standard library is on `sys.path`,
+  and `json` is pure Python there, but this is the first bundle to lean on it.
 - Whether `API.GetTile` answers the land tile or the topmost object. The survey says so if not.
 - Whether `ApiStatic.IsCave` beats the name list. The survey prints it; nothing branches on it.
 - Whether `"onehanded"` is a pickaxe's layer, and whether `Amount` reads 0 for a stack the client

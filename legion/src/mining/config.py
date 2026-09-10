@@ -9,6 +9,21 @@ PICKAXE_NAMES = ["pickaxe", "pickaxes"]
 # Worth setting only if the spares are somewhere ItemsInContainer's recursive read does not reach
 SPARE_BAG_SERIAL = None
 
+# Where each swing and each smelt is appended, while Mining is below its cap. A bare filename lands
+# in TazUO's working directory; "" records nothing
+DATA_PATH = "skill-attempts.jsonl"
+
+SKILL_NAMES = ["Mining"]
+SKILL_TIMEOUT = 5.0
+SKILL_POLL = 0.25
+
+# JSON Lines, one coordinate per line, read whole at the start and appended as ground is read. A
+# bare filename lands in TazUO's working directory; "" keeps nothing between runs
+MAP_PATH = "mining-map.jsonl"
+
+# The worked-out tiles and when they come back, so a restart does not walk them again
+PARKED_PATH = "mining-parked.jsonl"
+
 # Land carries no name, so the table is the whole answer for it. Stock RunUO bands and a hypothesis
 # about this shard - a dead-end run prints the arts it actually saw.
 ORE_TILE_GRAPHICS = set()
@@ -24,30 +39,41 @@ NOT_ORE_GRAPHICS = set()
 # over half the world, which is the cheap direction to be wrong in: the first swing bans the art.
 ORE_STATIC_NAME = ["cave", "rock", "mountain", "ore"]
 
-# Where walking stops and swinging starts, not a range the shard enforces - the swing names no tile
-MINE_RANGE = 2
+# The swing self-targets, and the shard is assumed - not measured - to harvest the 3x3 around the
+# character. A radius: 1 is 3x3
+MINE_FOOTPRINT = 1
+
+# The walk closes on the planned tile itself, since where you stand is what gets mined
+STAND_RANGE = 0
+
+# The planned spots as a journal map, once per plan
+PLAN_MAP = True
+
+# Ore tiles a spot's footprint has to hold to be worth walking to
+MIN_SPOT_ORE = 1
 
 # Distance is Chebyshev over x and y, so a mountain face 40 z up is 'one tile away' and the walk at
 # it never closes
 MINE_Z_RANGE = 20
 
 SCAN_RADIUS = 12
-
-# 'No harvestable resources nearby' is about the 8x8 block the character stands in, on RunUO-family
-# shards, so that is what it parks
-HARVEST_BANK = 8
 SURVEY_ARTS = 15
 
 # How long one blocking pathfind may take, in place of the web client's per-tile step budget
 PATHFIND_TIMEOUT = 10
 
-# Cycles spent walking to one vein before it is written off, where the web client counted single
+# Cycles spent walking to one spot before it is written off, where the web client counted single
 # steps: a blocking pathfind covers the whole route in one
 MAX_VEIN_WALKS = 4
 
-# GetPath costs a call per candidate, where the web client's flood fill answered every tile at
-# once, so only this many of the nearest matches are asked for a route
+# GetPath is a full A* per call, so one scan asks for at most this many routes before handing out a
+# spot unprobed. Every spot is probed under ONLY_CONNECTED_GROUND
 MAX_PATH_PROBES = 24
+
+# A spot whose route leaves the SCAN_RADIUS box is behind a wall or a cliff and is parked instead of
+# walked to; and once nothing on this ground is left the run ends rather than waiting for respawns
+ONLY_CONNECTED_GROUND = True
+STOP_WHEN_WORKED_OUT = True
 
 # Every timing here is in seconds - API.Pause takes seconds where the ClassicUO port took ms
 RESPAWN_DELAY = 25 * 60.0
@@ -191,6 +217,14 @@ AMBUSH_NOTICES = [
 ]
 AMBUSH_REPEATS = 30
 
+# The run stands still behind a gump until its button is pressed - no swing, no walk - with the
+# alarm restarting all the while
+AMBUSH_HOLD = True
+AMBUSH_HOLD_TEXT = "You have been ambushed. Press the button when it is safe"
+AMBUSH_HOLD_BUTTON = "Resume"
+AMBUSH_HOLD_HUE = 33
+AMBUSH_HOLD_POLL = 0.5
+
 # The smelt refusal is mining's own; the rest are the shard's general wording
 SMELT_UNSKILLED_TEXT = ["You have no idea how to smelt this strange ore"] + UNSKILLED_TEXT
 
@@ -198,7 +232,10 @@ SMELT_UNSKILLED_TEXT = ["You have no idea how to smelt this strange ore"] + UNSK
 # Ordered, not a dict: InJournalAny answers yes/no, so the buckets are polled in order and the first
 # holding a match wins. Guesses for a RunUO-family shard - correct them against the real journal.
 OUTCOME_TEXT = [
-    ("dug", ["You dig some", "You put", "You loosen some rocks"]),
+    ("dug", ["You dig some", "You put"]),
+    # RunUO's 'You loosen some rocks but fail to find any useable ore': a swing that landed and
+    # delivered nothing
+    ("failed", ["You loosen some rocks"]),
     # Both wordings are in the wild: RunUO says metal, some shards say ore
     (
         "empty",
@@ -208,8 +245,7 @@ OUTCOME_TEXT = [
             "You cannot mine there",
         ],
     ),
-    # The shard answering about everything in reach rather than about a tile, which is what parks
-    # the whole area and walks the character off
+    # The shard answering about everything in reach rather than about a tile; read as 'empty' is
     (
         "nothingNearby",
         ["There are no harvestable resources nearby", "There is nothing here to harvest"],

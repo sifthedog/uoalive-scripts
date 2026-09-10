@@ -1,8 +1,8 @@
 import unittest
 
 import uo.clock
-from test_support.uo import install, tile
-from uo.scan import chebyshev_to, pick_nearest
+from test_support.uo import install, point, tile
+from uo.scan import chebyshev_to, pick_nearest, route_leaves
 from uo.tiles import TileMemory
 
 
@@ -140,3 +140,22 @@ class PickNearestTest(unittest.TestCase):
         pick_nearest(candidates, self.memory, 3, 2)
 
         self.assertEqual(self.api.path_probes, [(101, 100), (102, 100), (103, 100)])
+
+
+class RouteLeavesTest(unittest.TestCase):
+    def setUp(self):
+        self.api = install()
+        self.api.Player.X = 100
+        self.api.Player.Y = 100
+
+    def test_a_route_inside_the_box_stays(self):
+        self.assertFalse(route_leaves([point(100, 100), point(103, 97), point(104, 96)], 4))
+
+    def test_the_edge_is_inside(self):
+        self.assertFalse(route_leaves([point(96, 104), point(104, 96)], 4))
+
+    def test_one_point_past_the_edge_leaves(self):
+        self.assertTrue(route_leaves([point(100, 100), point(100, 105), point(103, 103)], 4))
+
+    def test_an_empty_route_stays(self):
+        self.assertFalse(route_leaves([], 4))

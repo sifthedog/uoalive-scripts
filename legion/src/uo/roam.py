@@ -43,6 +43,11 @@ class Roam(object):
 
         if spot is None:
             if ready_at_or_none is not None:
+                if not self._config["wait"]:
+                    return ("stop", "%s, the soonest is back in %dm" % (
+                        self._config["worked_out"],
+                        max(1, int(round((ready_at_or_none - now()) / 60.0)))))
+
                 self._idle_until(ready_at_or_none)
 
                 return ("waited",)

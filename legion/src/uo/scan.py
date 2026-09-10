@@ -14,6 +14,21 @@ def steps_to(tile, within):
     return len(path) - 1 if path else None
 
 
+# A route that steps outside the box around the player goes round something - a wall, a cliff, a
+# ramp elsewhere - so its end is not on the ground the player stands on
+def route_leaves(path, radius):
+    x1 = API.Player.X - radius
+    y1 = API.Player.Y - radius
+    x2 = API.Player.X + radius
+    y2 = API.Player.Y + radius
+
+    for point in path:
+        if point.X < x1 or point.X > x2 or point.Y < y1 or point.Y > y2:
+            return True
+
+    return False
+
+
 # GetPath costs a call per candidate, where the web client's flood fill answered every tile at once,
 # so only the nearest `probes` matches are asked for a route
 def pick_nearest(candidates, memory, probes, within, in_reach_is_free=False, stats=None):

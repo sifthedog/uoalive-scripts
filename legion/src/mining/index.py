@@ -1,19 +1,26 @@
 import API
 
-from mining.config import (HARVEST_BANK, LOG_EVERY, MAX_CYCLES, MAX_NO_CURSOR, MAX_NO_TOOL,
-                           MAX_THROTTLED, MAX_UNKNOWN, MAX_VEIN_WALKS, MAX_PATH_PROBES, MINE_RANGE,
-                           MINE_Z_RANGE, NOT_ORE_GRAPHICS, NOTHING_NEARBY_HINT, ORE_SETTLE_POLL,
-                           ORE_SETTLE_TIMEOUT, ORE_STATIC_NAME, ORE_TILE_GRAPHICS, OUTCOME_TEXT,
-                           PATHFIND_TIMEOUT, PICK_BEETLE, RESPAWN_DELAY, SCAN_RADIUS, SLOW_CYCLE,
-                           STEP_DELAY, SURVEY_ARTS, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX,
-                           UNREACHABLE_DELAY, IDLE_LOG_EVERY, IDLE_POLL)
+from mining.config import (LOG_EVERY, MAP_PATH, MAX_CYCLES, MAX_NO_CURSOR, MAX_NO_TOOL,
+                           MAX_THROTTLED, MAX_UNKNOWN, MAX_VEIN_WALKS, MAX_PATH_PROBES, MIN_SPOT_ORE,
+                           MINE_FOOTPRINT, MINE_Z_RANGE, NOT_ORE_GRAPHICS, NOTHING_NEARBY_HINT,
+                           ONLY_CONNECTED_GROUND,
+                           ORE_SETTLE_POLL, ORE_SETTLE_TIMEOUT, ORE_STATIC_NAME, ORE_TILE_GRAPHICS,
+                           OUTCOME_TEXT, PARKED_PATH, PATHFIND_TIMEOUT, PICK_BEETLE, PLAN_MAP,
+                           RESPAWN_DELAY, SCAN_RADIUS, SLOW_CYCLE, STAND_RANGE, STEP_DELAY,
+                           STOP_WHEN_WORKED_OUT, SURVEY_ARTS,
+                           THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX, UNREACHABLE_DELAY,
+                           IDLE_LOG_EVERY, IDLE_POLL)
 from mining.dig import Digger
+from mining.plan import Planner
 from mining.relieve import Relief
 from mining.run import Run
 from mining.vein import Veins
 from uo.clock import now
 from uo.loop import backoff_for
+from uo.mapfile import MapFile
+from uo.parked import Parked
 from uo.roam import Roam
+from uo.store import Store
 from uo.tiles import TileMemory
 from uo.terrain import Terrain
 from uo.weight import too_heavy
@@ -31,26 +38,37 @@ combiner = run.combiner
 beetle = run.beetle
 smelter = run.smelter
 threat = run.threat
+gathered = run.gathered
 get_off_the_mount = run.get_off_the_mount
 say_where_we_stand = run.say_where_we_stand
 
-memory = TileMemory(RESPAWN_DELAY, UNREACHABLE_DELAY, "vein", "mined", log)
-veins = Veins(Terrain(), memory, {
+terrain = Terrain()
+map_file = MapFile(terrain, Store(MAP_PATH, log), log)
+parked = Parked(Store(PARKED_PATH, log), log)
+memory = TileMemory(RESPAWN_DELAY, UNREACHABLE_DELAY, "vein", "mined", log, parked.save)
+spots = TileMemory(RESPAWN_DELAY, UNREACHABLE_DELAY, "spot", "stood on", log)
+veins = Veins(terrain, memory, {
     "tile_graphics": ORE_TILE_GRAPHICS,
     "not_ore_graphics": NOT_ORE_GRAPHICS,
     "static_names": ORE_STATIC_NAME,
     "z_range": MINE_Z_RANGE,
-    "range": MINE_RANGE,
+}, log)
+planner = Planner(veins, terrain, memory, spots, {
+    "reach": MINE_FOOTPRINT,
     "scan_radius": SCAN_RADIUS,
     "probes": MAX_PATH_PROBES,
+    "min_ore": MIN_SPOT_ORE,
+    "connected": ONLY_CONNECTED_GROUND,
+    "map": PLAN_MAP,
     "respawn_delay": RESPAWN_DELAY,
-    "bank": HARVEST_BANK,
 }, log)
-roam = Roam(veins, memory, saves, threat, {
-    "noun": "vein",
+roam = Roam(planner, spots, saves, threat, {
+    "noun": "spot",
     "idle_message": "everything in reach is worked out, waiting for a vein to come back",
     "none_left": "no ore in range",
-    "range": MINE_RANGE,
+    "wait": not STOP_WHEN_WORKED_OUT,
+    "worked_out": "the ground you stand on is worked out",
+    "range": STAND_RANGE,
     "scan_radius": SCAN_RADIUS,
     "z_range": MINE_Z_RANGE,
     "survey_arts": SURVEY_ARTS,
@@ -63,6 +81,8 @@ digger = Digger(ore, OUTCOME_TEXT, run.dig_config, log, True)
 relief = Relief(ore, combiner, smelter, saves, beetle.walk_to, "", log)
 
 say_where_we_stand()
+map_file.load()
+parked.load(memory)
 
 # Before the cursor, so the beetle you click is one standing next to you rather than the one you are
 # sitting on
@@ -80,6 +100,7 @@ if afoot and too_heavy():
 
 stop = None
 tally = 0
+fails = 0
 unknown = 0
 throttled = 0
 no_cursor = 0
@@ -96,7 +117,7 @@ def describe_spent():
     parts = []
 
     if "walk" in spent:
-        scan = veins.stats
+        scan = planner.stats
         parts.append("scan %.1fs (%d reads, %d probes, %d walled), walk %.1fs"
                      % (scan.get("seconds", 0.0), scan.get("reads", 0), scan.get("probes", 0),
                         scan.get("walled", 0), spent["walk"]))
@@ -178,7 +199,8 @@ try:
 
         started = now()
         found = roam.approach()
-        spent["walk"] = now() - started - veins.stats.get("seconds", 0.0)
+        spent["walk"] = now() - started - planner.stats.get("seconds", 0.0)
+        map_file.flush()
 
         if found[0] == "stop":
             stop = found[1]
@@ -195,8 +217,10 @@ try:
             end_cycle("walking")
             continue
 
-        vein = found[1]
+        spot = found[1]
 
+        value = gathered.settle()
+        before = gathered.before_swing()
         ore_before = ore.total()
         started = now()
         outcome = digger.dig_once(pickaxe.serial())
@@ -214,6 +238,16 @@ try:
             # swing keeps the pack at one pile per metal and the item cap out of reach
             ore.wait_for_ore(ore_before, ORE_SETTLE_TIMEOUT, ORE_SETTLE_POLL)
             combiner.group()
+            gathered.after_swing(value, "dug", before)
+
+        elif outcome == "failed":
+            tally += 1
+            fails += 1
+            unknown = 0
+            throttled = 0
+            barren = 0
+            stall.progressed()
+            gathered.after_swing(value, "failed", before)
 
         elif outcome == "wornOut":
             log("pickaxe worn out, swapping")
@@ -245,42 +279,31 @@ try:
             if no_cursor >= MAX_NO_CURSOR:
                 stop = "the shard never opened a target cursor"
 
-        # Worked out, not dead: mark_depleted times it out and the scan picks it up again
-        elif outcome == "empty":
+        # Both are about the footprint you stand in, and neither is dead: the parking times out
+        elif outcome == "empty" or outcome == "nothingNearby":
             unknown = 0
-            memory.mark_depleted(vein)
-            relief.group_and_smelt()
-
-        # The shard answering about where you stand rather than about a tile
-        elif outcome == "nothingNearby":
-            unknown = 0
-            veins.mark_area_depleted(MINE_RANGE)
+            planner.exhausted()
             barren += 1
-
-            # Said once, at the point it stops looking like bad luck
-            if barren == NOTHING_NEARBY_HINT:
-                log(
-                    "%d spots in a row had nothing to harvest - ORE_TILE_GRAPHICS is probably "
-                    "matching ground that carries no ore" % NOTHING_NEARBY_HINT
-                )
-                veins.survey(MINE_RANGE, SURVEY_ARTS)
-
             relief.group_and_smelt()
 
-        # A wrong band in ORE_TILE_GRAPHICS is a whole stretch of mountain, so ban the art rather
-        # than walking to its copies one at a time
+        # The swing named no tile, so the refused art is only known when the footprint holds one
         elif outcome == "notOre":
             unknown = 0
-            memory.ban_art(vein)
-            memory.mark_unusable(vein, "cannot be mined")
+            lone = planner.lone_ore_art()
+
+            if lone is not None:
+                memory.ban_art(lone)
+
+            spots.mark_unusable(spot, "cannot be mined from")
+            barren += 1
 
         elif outcome == "tooFar":
             unknown = 0
-            memory.mark_unusable(vein, "is out of reach at %d tiles" % vein["distance"])
+            spots.mark_unusable(spot, "is out of reach")
 
         elif outcome == "notSeen":
             unknown = 0
-            memory.mark_unusable(vein, "is not in line of sight")
+            spots.mark_unusable(spot, "is not in line of sight")
 
         # The ore this swing produced was destroyed rather than dropped, so a full pack is answered
         # by consolidating: forty piles of one become one pile of forty
@@ -292,6 +315,15 @@ try:
         else:
             unknown += 1
             log("unreadable outcome (%d/%d), check OUTCOME_TEXT" % (unknown, MAX_UNKNOWN))
+
+        # Said once, at the point it stops looking like bad luck
+        if barren == NOTHING_NEARBY_HINT:
+            log(
+                "%d spots in a row had nothing to mine - ORE_TILE_GRAPHICS is probably matching "
+                "ground that carries no ore, or the shard refuses a self-target"
+                % NOTHING_NEARBY_HINT
+            )
+            planner.survey(MINE_FOOTPRINT, SURVEY_ARTS)
 
         # Done here rather than inside each branch the way unknown is: every branch but one clears
         # it, and one added later would have to remember to
@@ -325,6 +357,7 @@ except Exception as error:
 if API.Pathfinding():
     API.CancelPathfinding()
 
+map_file.flush()
 reason = stop or "hit the %d working cycle backstop" % MAX_CYCLES
 
 # Smelted only if the run is ending over the limit: what is in the pack is a few swings' worth
@@ -333,7 +366,9 @@ combiner.group()
 if too_heavy():
     relief.smelt()
 
+gathered.settle()
+
 # Swings rather than an ore delta: smelted ore has left the pack, so the pack cannot total the run
-log("%d swings, %d ore still in the pack" % (tally, ore.total()))
+log("%d swings, %d failed, %d ore still in the pack" % (tally, fails, ore.total()))
 log("stopping - %s" % reason)
 API.Stop()

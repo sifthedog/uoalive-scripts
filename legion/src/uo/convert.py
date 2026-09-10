@@ -56,7 +56,7 @@ class Converter(object):
             gained, lost = diff_counts(before, counts_by_graphic(pack_contents()))
 
             if gained or lost:
-                return gained
+                return gained, lost
 
         return None
 
@@ -74,12 +74,14 @@ class Converter(object):
 
             return
 
-        gained = self._wait_for_change(before)
+        changed = self._wait_for_change(before)
 
-        if gained is not None:
+        if changed is not None:
+            gained, lost = changed
             self._misses.pop(hue, None)
             self._progressed = True
             self._config["learn_product"](gained)
+            self._config["converted"](gained, lost)
 
             return
 
