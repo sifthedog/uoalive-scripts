@@ -20,6 +20,7 @@ repo targets the ClassicUO web client; nothing is shared between the two.
 | `magery.py` | Trains Magery on the four spells that gain without a victim, meditating when the pool runs dry |
 | `mysticism.py` | Trains Mysticism on the five spells that gain without a victim, meditating when the pool runs dry |
 | `bod.py` | Target a Blacksmithing bulk order deed, small or large: crafts what it asks for from the ingots in your pack, combines the pieces, and for a large deed gets the smalls from the Bulk Order Deed Box and fills them one by one |
+| `inventory.py` | Target a bag or chest: writes one JSON line per item in it - name, tier, durability, weight and every tooltip property, parsed and verbatim |
 
 ## How to run it
 
@@ -28,8 +29,12 @@ repo targets the ClassicUO web client; nothing is shared between the two.
 3. Answer the cursor. `tame.py` wants an animal, and another after each tame; `mining.py` and
    `mine-here.py` want your fire beetle; `lumberjack.py` wants your pack animals, one after another;
    `arms-lore.py` wants the weapon; `bowcraft.py` wants every container or pack animal holding wood,
-   or none if you carry it; `bod.py` wants the deed. `magery.py`, `mysticism.py`, `buffs.py`,
-   `tinkering.py` and `fishing.py` raise none. ESC declines, and each script says what it does instead.
+   or none if you carry it; `carpentry.py` wants the same, then the container to unload into;
+   `tinkering.py` wants that container once a band nobody buys from is ahead; `inscription.py`
+   wants the containers holding scrolls and reagents, then draws a gump asking whether the scrolls
+   made are sold, unloaded or kept, and wants the unload container if you press Unload; `bod.py`
+   wants the deed; `inventory.py` wants the bag. `magery.py`, `mysticism.py`, `buffs.py`, `fishing.py` and `attack.py` raise none. ESC
+   declines, and each script says what it does instead.
 
 ## How it is built
 
@@ -113,6 +118,7 @@ threat      noticing trouble and sounding the ambush alarm, without ending the r
 tiles       what is worked out, unreachable, or not the resource at all
 timings     the constants the scripts agreed on
 tool        find it, learn its graphic, equip it, notice it break
+tooltip     an item's property lines, read into numbers, ranges, flags and text
 travel      chasing a mobile, and following one between the slices of a wait
 vendor      finding the one who buys, walking up, and selling through the context menu
 vitals      position, weight and mana, as one phrase
@@ -1850,3 +1856,77 @@ small; the small leaving the pack is the proof. The run stops when every entry r
   `API.PromptResponse` are seen working on a live run.
 - The large flow, all of it: that `API.MoveItem` into the box is accepted, that `0x2258` is the
   deed art here, that button 2 on the large gump is the combine, and the stock ServUO wordings.
+
+## inventory.py
+
+Target a bag or chest, and every item in it is written to `DATA_PATH`, one JSON line each. The
+backpack itself, a bag inside it, or a chest on the ground all serve; ESC at the cursor stops.
+
+1. The container is opened, then listed. With `RECURSIVE` each bag inside is opened and listed too,
+   breadth first, up to `MAX_CONTAINERS`.
+2. The tooltips are asked for `OPL_BATCH` items at a time, `OPL_WAIT` apart, and each is read with
+   `OPL_TIMEOUT` to arrive. A row is written the moment its tooltip is read, so a stop halfway keeps
+   what was read.
+3. What did not come is asked again `RETRIES` times, then written anyway with the client's name,
+   `"lines":[]` and `"unread":true`.
+4. The closing line says how many rows went out, from how many containers, and how many had no
+   tooltip.
+
+```json
+{"v":1,"scan":"0x40001000/1757030000123","t":1757030042.5,"char":"Kaldor",
+ "bag":"0x40001000","serial":"0x40012345","graphic":"0xf61","hue":0,"amount":1,
+ "container":"0x40001000","name":"Longsword","tier":"Greater Artifact",
+ "durability":{"current":45,"max":50},"weight":3,
+ "props":{"antique":true,"hit chance increase":15,"weapon damage":[13,15],"weapon speed":2.5},
+ "lines":["Longsword","Greater Artifact","Durability 45 / 50","Weight: 3 Stones",
+          "Hit Chance Increase 15%","Weapon Damage 13 - 15","Weapon Speed 2.5s","Antique"]}
+```
+
+`scan` is `bag serial/run-start-ms`, the same for every row of one run. `container` is the bag the
+item sits in, so a nested bag reconstructs. `lines` is the tooltip as read, and the rest is parsed
+off it: the first line is `name`; a line that is one of `TIER_TEXT` is `tier`; a line starting with
+`DURABILITY_TEXT` gives `current` and `max`; one starting with `WEIGHT_TEXT` gives the number.
+Everything else lands in `props`, keyed by the lowercased text before the number: a trailing number
+(`15%`, `+20%`, `-10`, `2.5s`) is the value, a `13 - 15` is a pair, a line with a colon and no number
+keeps its text (`"skill required": "Swordsmanship"`), a line starting with `PREFIX_TEXT` keeps the
+rest as text (`"crafted by": "Kaldor"`), and a line with none of that is a flag (`"antique": true`).
+`tier`, `durability` and `weight` are `null` where the tooltip has no such line. Keys in `props` are
+sorted, and a repeated key keeps the last value.
+
+### What to set
+
+| Setting | Default | What it is for |
+| --- | --- | --- |
+| `DATA_PATH` | `bag-items.jsonl` | Where each row is appended. `""` records nothing. A bare name lands in TazUO's working directory |
+| `RECURSIVE` | `True` | Open and read the bags inside the bag |
+| `MAX_CONTAINERS` | `50` | How many containers one run opens, the target included |
+| `OPEN_DELAY` | `0.6` | Seconds after opening a container before it is listed |
+| `OPL_BATCH` | `25` | Tooltips asked for in one request |
+| `OPL_WAIT` | `1.0` | Seconds given a batch to arrive |
+| `OPL_TIMEOUT` | `1` | Whole seconds one read waits for its tooltip. The API takes an int |
+| `RETRIES` | `2` | Further ask-and-read rounds for what did not come |
+| `PICK_TIMEOUT` | `30.0` | How long the opening cursor waits for you |
+| `TIER_TEXT` | the ServUO ItemPower lines | Matched as the whole line, case ignored, kept as the shard wrote it |
+| `DURABILITY_TEXT` | `["durability"]` | Line starts read as current and max |
+| `WEIGHT_TEXT` | `["weight"]` | Line starts read as the weight |
+| `PREFIX_TEXT` | `["crafted by"]` | Line starts whose remainder is text |
+
+### When it goes wrong
+
+- **`nothing targeted - stopping`**: the cursor timed out or was declined.
+- **`0x... is not an item - target a bag or chest`**: a mobile or the ground was targeted.
+- **`reading 0 items`**: the container listed empty. A bag out of reach opens nothing; stand next
+  to a chest, and raise `OPEN_DELAY` if the client is slow to draw it.
+- **`N without a tooltip`**: the rows are there with `"unread":true`. Raise `OPL_WAIT` or
+  `RETRIES`, or run it again on the same bag: the tooltips the client has seen once come back at
+  once.
+- **`cannot write ...`**: said once; the run reads on without recording. Check `DATA_PATH`.
+
+### Unverified
+
+- That `UseObject` on a bag inside a chest on the ground opens it for the listing, as it does for
+  one in the pack.
+- The ItemPower wording on this shard. `TIER_TEXT` carries both `Minor` and `Lesser` because the
+  stock names are not certain; a tier that does not match lands in `props` as a flag, so the
+  tooltip line is never lost.
+- Whether tooltips here carry a `Weight:` line at all, and whether durability reads `45 / 50`.

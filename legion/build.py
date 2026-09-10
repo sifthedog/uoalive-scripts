@@ -28,6 +28,7 @@ ENTRIES = [
     {"in": "src/carpentry/index.py", "out": "carpentry"},
     {"in": "src/inscription/index.py", "out": "inscription"},
     {"in": "src/bod/index.py", "out": "bod"},
+    {"in": "src/inventory/index.py", "out": "inventory"},
 ]
 
 # Legion strips these from the script it loads and injects API as a builtin, so the artifact
