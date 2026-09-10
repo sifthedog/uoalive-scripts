@@ -1,6 +1,8 @@
 import API
 
 from uo.entity import hex_of
+from uo.journal import forget, said
+from uo.pack import amount_of
 from uo.weight import over_buffer
 
 
@@ -26,6 +28,7 @@ class Haul(object):
 
         # Never cleared: what empties a pack horse is a trip to the bank, and that ends the run
         self._overloaded = set()
+        self._opened = set()
         self._said_all_full = False
         self._hauling = True
         self._empty_hauls = 0
@@ -141,7 +144,15 @@ class Haul(object):
 
         here = API.FindMobile(serial)
 
-        if here is None or here.Distance > self._config["unload_range"]:
+        if here is None:
+            self._log("lost track of %s" % hex_of(serial))
+
+            return None
+
+        if here.Distance > self._config["unload_range"]:
+            self._log("could not get within %d of '%s', it is %d tiles off"
+                      % (self._config["unload_range"], here.Name or "?", here.Distance))
+
             return None
 
         return here
@@ -157,33 +168,82 @@ class Haul(object):
 
         return API.FindLayer("backpack", animal.Serial)
 
+    # Opened once a run: ItemsInContainer reads nothing out of a pack the client has never seen
+    # inside, and the pack item is safe to double-click where the animal itself is not
+    def _room_in(self, pack_serial):
+        if pack_serial not in self._opened:
+            self._opened.add(pack_serial)
+            API.UseObject(pack_serial)
+            API.Pause(self._config["open_delay"])
+
+        items = API.ItemsInContainer(pack_serial, True)
+
+        # Unreadable is not empty: moving whole stacks is what the shard's refusal already handles
+        if items is None:
+            return self._config["capacity"]
+
+        return max(0, self._config["capacity"] - self._wood.board_amount(items))
+
+    def _out_of_reach(self, serial):
+        here = API.FindMobile(serial)
+
+        return here is None or here.Distance > self._config["unload_range"]
+
     # Moves are asynchronous, so rescan between passes rather than trusting MoveItem's return value.
-    # A pass that shifts nothing means this animal is full, which the caller reports.
-    def _move_all(self, pack_serial):
+    # A pet that walked off mid-pass has every move refused and looks exactly as full.
+    def _move_all(self, serial, pack_serial):
         previous = None
 
         while not API.StopRequested:
             stacks = self._wood.board_piles()
+            total = self._wood.board_amount(stacks)
 
-            if len(stacks) == 0 or (previous is not None and len(stacks) >= previous):
-                return
+            if total == 0:
+                return "clear"
 
-            previous = len(stacks)
+            if previous is not None and total >= previous:
+                if self._out_of_reach(serial) or said(self._config["too_far_text"]):
+                    return "lost"
+
+                return "full"
+
+            if self._walk_to(serial) is None:
+                return "lost"
+
+            room = self._room_in(pack_serial)
+
+            if room == 0:
+                return "full"
+
+            previous = total
+            forget(self._config["too_far_text"])
 
             for stack in stacks:
-                API.MoveItem(stack.Serial, pack_serial)
+                part = min(amount_of(stack), room)
+
+                if part == 0:
+                    break
+
+                API.MoveItem(stack.Serial, pack_serial, part)
                 API.Pause(self._config["move_delay"])
+                room -= part
+
+        return "lost"
 
     # Works down the animals until the pack is clear or every one has had a turn. An animal that
-    # stops accepting is full rather than broken, so what is left goes to the next one and the one
-    # that took nothing at all is remembered rather than walked to again.
+    # stops accepting is full rather than broken, so what is left goes to the next one and that
+    # animal is remembered rather than walked to again.
     def _unload_to(self, animals):
+        attempted = False
+        reached = False
+
         for animal in animals:
-            before = len(self._wood.board_piles())
+            before = self._wood.board_total()
 
             if before == 0:
                 break
 
+            attempted = True
             here = self._walk_to(animal.Serial)
 
             if here is None:
@@ -192,28 +252,41 @@ class Haul(object):
             pack = self._animal_pack(here)
 
             if pack is None:
+                reached = True
                 self._log("'%s' has no reachable backpack" % (here.Name or "?"))
                 continue
 
-            self._move_all(pack.Serial)
+            verdict = self._move_all(animal.Serial, pack.Serial)
 
-            after = len(self._wood.board_piles())
-            moved = before - after
+            moved = before - self._wood.board_total()
             name = here.Name or "?"
 
-            if moved == 0:
-                # A save refuses every move at once, and the caller only asks afterwards - read as
-                # this animal's verdict it would sit out the rest of the run over a five second wait
-                if self._saves.is_saving():
-                    self._log("'%s' took nothing while the world is saving, trying the next" % name)
-                else:
-                    self._overloaded.add(animal.Serial)
-                    self._log("'%s' took nothing, leaving it out of the rest of the run" % name)
-            elif after > 0:
-                self._log("'%s' took %d of %d stack(s), trying the next" % (name, moved, before))
+            if verdict == "lost":
+                self._log("'%s' moved out of reach while loading, trying it again next haul" % name)
+                continue
 
-    # Answers whether an animal was found, not whether anything moved: only a missing animal is
-    # worth giving up the search for, and one that took nothing has already been dropped
+            reached = True
+
+            if verdict != "full":
+                continue
+
+            # A save refuses every move at once, and the caller only asks afterwards - read as
+            # this animal's verdict it would sit out the rest of the run over a five second wait
+            if self._saves.is_saving():
+                self._log("'%s' took nothing while the world is saving, trying the next" % name)
+            elif moved == 0:
+                self._overloaded.add(animal.Serial)
+                self._log("'%s' took nothing, leaving it out of the rest of the run" % name)
+            else:
+                self._overloaded.add(animal.Serial)
+                self._log("'%s' took %d of %d boards and is full, leaving it out of the rest of "
+                          "the run" % (name, moved, before))
+
+        # Nothing to load is not a failure to reach anyone
+        return reached or not attempted
+
+    # Answers whether an animal was found and reached, not whether anything moved: only a missing
+    # animal is worth giving up the search for, and one that took nothing has already been dropped
     def unload(self):
         animals = self.find()
 
@@ -222,20 +295,21 @@ class Haul(object):
                 self._reported_no_animal = True
                 self._log("no pack animal nearby")
 
-            return False
+            return "none"
 
         self._reported_no_animal = False
 
         # Filtered here rather than in find, which also feeds the trouble watch its companion - an
         # animal that is full is still one worth watching
         spare = [animal for animal in animals if animal.Serial not in self._overloaded]
+        reached = True
 
         if len(spare) == 0:
             if not self._said_all_full:
                 self._said_all_full = True
                 self._log("all %d pack animal(s) are full, nothing left to load" % len(animals))
         else:
-            self._unload_to(spare)
+            reached = self._unload_to(spare)
 
         # A log that leaves as a log never comes back as a board, so what would not convert waits
         # for the next haul to try it again. Asked once every animal has had its turn at the boards.
@@ -245,14 +319,14 @@ class Haul(object):
             if left > 0:
                 self._log("%d logs would not convert, keeping them in the pack" % left)
 
-        return True
+        return "tried" if reached else "unreached"
 
     def haul_now(self):
         before = API.Player.Weight
 
         self._boards.make_boards()
 
-        saw_animal = self.unload()
+        outcome = self.unload()
 
         # A save freezes every part of a haul at once - the conversion is silent, the animal takes
         # nothing, the weight does not move. Read as an ordinary result it latches hauling off.
@@ -261,9 +335,16 @@ class Haul(object):
 
             return "hauling"
 
-        if not saw_animal:
+        if outcome == "none":
             self._hauling = False
             self._log("no pack animal found, carrying on until overweight")
+
+            return "hauling"
+
+        # Not counted against the animals: a haul that never got a pass in range says nothing about
+        # whether they are full, and the pets do come back
+        if outcome == "unreached":
+            self._log("no pack animal in reach this haul, trying again next time")
 
             return "hauling"
 

@@ -47,6 +47,9 @@ class HaulTest(unittest.TestCase):
             "graphics": ANIMALS,
             "radius": 18,
             "unload_range": 2,
+            "too_far_text": ["That is too far away"],
+            "capacity": 1600,
+            "open_delay": 0.6,
             "pathfind_timeout": 10,
             "move_delay": 0.7,
             "max_picks": 8,
@@ -110,8 +113,8 @@ class HaulTest(unittest.TestCase):
     def test_says_once_when_there_is_no_animal(self):
         haul = self.build()
 
-        self.assertFalse(haul.unload())
-        self.assertFalse(haul.unload())
+        self.assertEqual(haul.unload(), "none")
+        self.assertEqual(haul.unload(), "none")
         self.assertEqual(self.said.count("no pack animal nearby"), 1)
 
     def test_moves_the_boards_onto_the_animal(self):
@@ -126,8 +129,69 @@ class HaulTest(unittest.TestCase):
 
         self.api.MoveItem = move
 
-        self.assertTrue(self.build().unload())
-        self.assertEqual(self.api.moved, [(1, 1005, -1)])
+        self.assertEqual(self.build().unload(), "tried")
+        self.assertEqual(self.api.moved, [(1, 1005, 20)])
+
+    def test_moves_only_the_slice_the_animal_still_has_room_for(self):
+        self._animal()
+        self.api.containers[1005] = [item(serial=2, graphic=0x1BD7, amount=1580)]
+        held = item(serial=1, graphic=0x1BD7, amount=100)
+        self.api.hold(held)
+
+        def move(serial, container, amount=-1):
+            self.api.moved.append((serial, container, amount))
+            held.Amount -= amount
+            self.api.containers[1005][0].Amount += amount
+
+            return True
+
+        self.api.MoveItem = move
+        haul = self.build()
+        haul.unload()
+
+        self.assertEqual(self.api.moved, [(1, 1005, 20)])
+        self.assertTrue(any("took 20 of 100 boards and is full" in line for line in self.said))
+
+        haul.unload()
+
+        self.assertEqual(len(self.api.moved), 1)
+        self.assertTrue(any("all 1 pack animal(s) are full" in line for line in self.said))
+
+    def test_a_stack_that_fits_goes_whole_and_the_rest_waits_for_the_next_animal(self):
+        self._animal(serial=5, distance=1)
+        self._animal(serial=6, distance=2)
+        self.api.containers[1005] = [item(serial=3, graphic=0x1BD7, amount=1550)]
+        first = item(serial=1, graphic=0x1BD7, amount=30)
+        second = item(serial=2, graphic=0x1BD7, amount=40)
+        self.api.hold(first, second)
+
+        def move(serial, container, amount=-1):
+            self.api.moved.append((serial, container, amount))
+            stack = self.api.items[serial]
+            stack.Amount -= amount
+
+            if stack.Amount == 0:
+                self.api.containers[self.api.Backpack].remove(stack)
+
+            if container == 1005:
+                self.api.containers[1005][0].Amount += amount
+
+            return True
+
+        self.api.MoveItem = move
+        self.build().unload()
+
+        self.assertEqual(self.api.moved, [(1, 1005, 30), (2, 1005, 20), (2, 1006, 20)])
+
+    def test_a_pack_is_opened_once_a_run_before_it_is_read(self):
+        self._animal()
+        self.api.hold(item(serial=1, graphic=0x1BD7, amount=20))
+        haul = self.build()
+        haul.unload()
+        haul.unload()
+
+        self.assertEqual(self.api.used, [1005])
+        self.assertEqual(self.api.moved[0], (1, 1005, 20))
 
     def test_an_animal_that_takes_nothing_is_left_out_of_the_rest_of_the_run(self):
         self._animal()
@@ -136,6 +200,70 @@ class HaulTest(unittest.TestCase):
         haul.unload()
 
         self.assertTrue(any("took nothing, leaving it out" in line for line in self.said))
+
+    def test_an_animal_it_cannot_reach_is_not_read_as_full(self):
+        self._animal(distance=5)
+        self.api.hold(item(serial=1, graphic=0x1BD7, amount=20))
+        haul = self.build()
+
+        self.assertEqual(haul.unload(), "unreached")
+        self.assertTrue(any("could not get within 2 of 'a pack horse'" in line
+                            for line in self.said))
+        self.assertFalse(any("took nothing" in line for line in self.said))
+        self.assertEqual(self.api.moved, [])
+
+    def test_an_animal_that_walks_off_mid_load_is_tried_again_next_haul(self):
+        beast = self._animal()
+        self.api.hold(item(serial=1, graphic=0x1BD7, amount=20))
+
+        def move(serial, container, amount=-1):
+            self.api.moved.append((serial, container, amount))
+            beast.Distance = 6
+
+            return True
+
+        self.api.MoveItem = move
+        haul = self.build()
+
+        self.assertEqual(haul.unload(), "unreached")
+        self.assertTrue(any("moved out of reach while loading" in line for line in self.said))
+        self.assertFalse(any("leaving it out" in line for line in self.said))
+
+        beast.Distance = 1
+
+        def move_for_real(serial, container, amount=-1):
+            self.api.moved.append((serial, container, amount))
+            self.api.containers[self.api.Backpack] = []
+
+            return True
+
+        self.api.MoveItem = move_for_real
+
+        self.assertEqual(haul.unload(), "tried")
+        self.assertEqual(len(self.api.moved), 2)
+
+    def test_the_shard_saying_too_far_is_not_read_as_full(self):
+        self._animal()
+        self.api.hold(item(serial=1, graphic=0x1BD7, amount=20))
+
+        def move(serial, container, amount=-1):
+            self.api.journal.append("That is too far away.")
+
+            return True
+
+        self.api.MoveItem = move
+        self.build().unload()
+
+        self.assertTrue(any("moved out of reach while loading" in line for line in self.said))
+        self.assertFalse(any("leaving it out" in line for line in self.said))
+
+    def test_a_stale_too_far_line_does_not_answer_for_the_animal(self):
+        self._animal()
+        self.api.hold(item(serial=1, graphic=0x1BD7, amount=20))
+        self.api.journal.append("That is too far away.")
+        self.build().unload()
+
+        self.assertTrue(any("leaving it out" in line for line in self.said))
 
     def test_a_save_is_not_read_as_the_animals_verdict(self):
         self._animal()
@@ -163,6 +291,20 @@ class HaulTest(unittest.TestCase):
             haul.haul_now()
 
         self.assertFalse(haul.hauling())
+
+    def test_hauls_that_could_not_reach_an_animal_do_not_count_as_full(self):
+        self._animal(distance=5)
+        self.api.hold(item(serial=1, graphic=0x1BD7, amount=20))
+        self.api.Player.Weight = 350
+        haul = self.build()
+
+        for _attempt in range(3):
+            haul.haul_now()
+
+        self.assertTrue(haul.hauling())
+        self.assertFalse(any("freed nothing" in line for line in self.said))
+        self.assertEqual(self.said.count("no pack animal in reach this haul, trying again next time"),
+                         3)
 
     def test_a_haul_that_freed_weight_forgives_the_count(self):
         self._animal()

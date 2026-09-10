@@ -2,8 +2,9 @@ import API
 
 from lumberjacking.boards import Boards
 from lumberjacking.chop import Chopper
-from lumberjacking.config import (AIM_AT_SELF, AMBUSH_ALARM, AMBUSH_HUE, AMBUSH_NOTICES,
-                                  AMBUSH_REPEATS, AMBUSH_TEXT, AMBUSH_WARNING,
+from lumberjacking.config import (AIM_AT_SELF, AMBUSH_ALARM, AMBUSH_HOLD, AMBUSH_HOLD_BUTTON,
+                                  AMBUSH_HOLD_HUE, AMBUSH_HOLD_POLL, AMBUSH_HOLD_TEXT, AMBUSH_HUE,
+                                  AMBUSH_NOTICES, AMBUSH_REPEATS, AMBUSH_TEXT, AMBUSH_WARNING,
                                   ANIMAL_SCAN_RADIUS, AXE_NAMES,
                                   BOARD_GRAPHICS, BOARD_NAME_WORDS, CHOP_PROMPT_TEXT, CHOP_RANGE,
                                   CHOP_TARGET_POLL, CHOP_TARGET_TIMEOUT, CHOP_TIMEOUT, CHOP_Z_RANGE,
@@ -15,13 +16,14 @@ from lumberjacking.config import (AIM_AT_SELF, AMBUSH_ALARM, AMBUSH_HUE, AMBUSH_
                                   MAX_NO_TOOL, MAX_PATH_PROBES, MAX_PICKS, MAX_THROTTLED,
                                   MAX_TREE_WALKS, MAX_UNKNOWN, MOVE_DELAY, NO_CURSOR_READ,
                                   NOT_AXE_NAMES, NOT_TREE_GRAPHICS,
-                                  OUTCOME_TEXT, PACK_ANIMAL_GRAPHICS, PACK_ANIMAL_SERIALS,
-                                  PACK_LIMIT, PATHFIND_TIMEOUT, PICK_PACK_ANIMALS, PICK_TIMEOUT,
+                                  OUTCOME_TEXT, PACK_ANIMAL_BOARDS, PACK_ANIMAL_GRAPHICS,
+                                  PACK_ANIMAL_SERIALS, PACK_LIMIT, PACK_OPEN_DELAY,
+                                  PATHFIND_TIMEOUT, PICK_PACK_ANIMALS, PICK_TIMEOUT,
                                   REGROW_DELAY, ROAM_RADIUS, SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT,
                                   SAVING_TEXT, SCAN_RADIUS, SPARE_BAG_SERIAL, STALL_STOP,
                                   STALL_WARN, STEP_DELAY, STOPPED, SURVEY_ARTS, TARGET_TIMEOUT,
                                   THREAT_RANGE, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX,
-                                  THROTTLED_TEXT, TREE_GRAPHICS, TREE_NAME,
+                                  THROTTLED_TEXT, TOO_FAR_TEXT, TREE_GRAPHICS, TREE_NAME,
                                   UNLOAD_RANGE, UNREACHABLE_DELAY, UNSKILLED_TEXT,
                                   WATCH_FOR_TROUBLE, WEIGHT_BUFFER)
 from lumberjacking.haul import Haul
@@ -30,6 +32,7 @@ from lumberjacking.wood import Wood
 from uo.entity import hex_of
 from uo.guards import dead, first_reason, overweight, pack_full, stopped
 from uo.heartbeat import Heartbeat
+from uo.hold import Hold
 from uo.log import make_log
 from uo.loop import StallWatch, backoff_for
 from uo.roam import Roam
@@ -50,6 +53,12 @@ def stop_reason():
 
 
 saves = SaveWatch(SAVING_TEXT, SAVE_DONE_TEXT, SAVE_WAIT, SAVE_POLL, log, heartbeat, stop_reason)
+hold = Hold({
+    "text": AMBUSH_HOLD_TEXT,
+    "button": AMBUSH_HOLD_BUTTON,
+    "hue": AMBUSH_HOLD_HUE,
+    "poll": AMBUSH_HOLD_POLL,
+}, log, stop_reason, heartbeat)
 
 axe = Tool("axe", AXE_NAMES, NOT_AXE_NAMES, ["twohanded", "onehanded"], SPARE_BAG_SERIAL,
            EQUIP_ATTEMPTS, EQUIP_TIMEOUT, EQUIP_POLL, log)
@@ -71,6 +80,9 @@ haul = Haul(wood, boards, saves, {
     "graphics": PACK_ANIMAL_GRAPHICS,
     "radius": ANIMAL_SCAN_RADIUS,
     "unload_range": UNLOAD_RANGE,
+    "too_far_text": TOO_FAR_TEXT,
+    "capacity": PACK_ANIMAL_BOARDS,
+    "open_delay": PACK_OPEN_DELAY,
     "pathfind_timeout": PATHFIND_TIMEOUT,
     "move_delay": MOVE_DELAY,
     "max_picks": MAX_PICKS,
@@ -99,7 +111,8 @@ threat = ThreatWatch({
     "ambush_warning": AMBUSH_WARNING,
     "ambush_hue": AMBUSH_HUE,
     "ambush_repeats": AMBUSH_REPEATS,
-}, log, haul.companion, lambda friend: "'%s'" % (friend.Name or "?"))
+}, log, haul.companion, lambda friend: "'%s'" % (friend.Name or "?"),
+    hold if AMBUSH_HOLD else None)
 roam = Roam(trees, memory, saves, threat, {
     "noun": "tree",
     "idle_message": "everything in reach is regrowing, waiting for the soonest one",

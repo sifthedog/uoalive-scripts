@@ -125,6 +125,15 @@ ANIMAL_SCAN_RADIUS = 18
 
 UNLOAD_RANGE = 2
 
+# Boards a pack animal takes before it refuses the next one, seen on UOAlive. A stack bigger than
+# what is left is refused whole, so the haul moves only the slice that still fits.
+PACK_ANIMAL_BOARDS = 1600
+
+PACK_OPEN_DELAY = 0.6
+
+# Also what the shard says to a board dropped on an animal that walked off mid-load
+TOO_FAR_TEXT = ["That is too far away", "You cannot reach that"]
+
 # Deliberately wider than WEIGHT_BUFFER, so hauling always gets its turn before the overweight stop
 HAUL_BUFFER = 120
 
@@ -165,6 +174,14 @@ AMBUSH_NOTICES = [
 ]
 AMBUSH_REPEATS = 30
 
+# The run stands still behind a gump until its button is pressed - no swing, no walk - with the
+# alarm restarting all the while
+AMBUSH_HOLD = True
+AMBUSH_HOLD_TEXT = "You have been ambushed. Press the button when it is safe"
+AMBUSH_HOLD_BUTTON = "Resume"
+AMBUSH_HOLD_HUE = 33
+AMBUSH_HOLD_POLL = 0.5
+
 
 # Ordered, not a dict: InJournalAny answers yes/no, so the buckets are polled in order and the first
 # holding a match wins. Guesses for a RunUO-family shard - correct them against the real journal.
@@ -203,7 +220,7 @@ OUTCOME_TEXT = [
             "You cannot chop",
         ],
     ),
-    ("tooFar", ["That is too far away", "You cannot reach that"]),
+    ("tooFar", TOO_FAR_TEXT),
     # Line of sight, not range: the tile is inside CHOP_RANGE and no amount of walking closer or
     # waiting fixes it
     ("notSeen", ["Target cannot be seen"]),

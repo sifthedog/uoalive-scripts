@@ -46,6 +46,12 @@ class Wood(object):
     def board_piles(self):
         return [item for item in pack_top_level() if self.is_board(item)]
 
+    def board_total(self):
+        return self.board_amount(pack_top_level())
+
+    def board_amount(self, items):
+        return sum(amount_of(item) for item in items if self.is_board(item))
+
     # Hue-blind on purpose: a shard with special woods hues its logs, and those still count, still
     # convert and still need hauling
     def log_total(self):

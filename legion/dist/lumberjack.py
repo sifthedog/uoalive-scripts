@@ -160,7 +160,7 @@ class Converter(object):
             gained, lost = diff_counts(before, counts_by_graphic(pack_contents()))
 
             if gained or lost:
-                return gained
+                return gained, lost
 
         return None
 
@@ -178,12 +178,14 @@ class Converter(object):
 
             return
 
-        gained = self._wait_for_change(before)
+        changed = self._wait_for_change(before)
 
-        if gained is not None:
+        if changed is not None:
+            gained, lost = changed
             self._misses.pop(hue, None)
             self._progressed = True
             self._config["learn_product"](gained)
+            self._config["converted"](gained, lost)
 
             return
 
@@ -259,6 +261,9 @@ def player():
     try:
         return API.Player
     except Exception:
+        if API.StopRequested:
+            raise
+
         return None
 
 
@@ -292,6 +297,7 @@ class Boards(object):
             "perform": self._perform,
             "blocked": self._no_axe_in_hand,
             "learn_product": self._learn_board,
+            "converted": self._nothing_to_note,
             "nothing_to_do": self._say_nothing_to_convert,
             "about_to_convert": self._converting,
         }, log, saves)
@@ -357,6 +363,9 @@ class Boards(object):
 
     def _converting(self):
         self._reported_nothing = False
+
+    def _nothing_to_note(self, _gained, _lost):
+        pass
 
     def run(self):
         return self._converter.run()
@@ -629,6 +638,15 @@ ANIMAL_SCAN_RADIUS = 18
 
 UNLOAD_RANGE = 2
 
+# Boards a pack animal takes before it refuses the next one, seen on UOAlive. A stack bigger than
+# what is left is refused whole, so the haul moves only the slice that still fits.
+PACK_ANIMAL_BOARDS = 1600
+
+PACK_OPEN_DELAY = 0.6
+
+# Also what the shard says to a board dropped on an animal that walked off mid-load
+TOO_FAR_TEXT = ["That is too far away", "You cannot reach that"]
+
 # Deliberately wider than WEIGHT_BUFFER, so hauling always gets its turn before the overweight stop
 HAUL_BUFFER = 120
 
@@ -669,6 +687,14 @@ AMBUSH_NOTICES = [
 ]
 AMBUSH_REPEATS = 30
 
+# The run stands still behind a gump until its button is pressed - no swing, no walk - with the
+# alarm restarting all the while
+AMBUSH_HOLD = True
+AMBUSH_HOLD_TEXT = "You have been ambushed. Press the button when it is safe"
+AMBUSH_HOLD_BUTTON = "Resume"
+AMBUSH_HOLD_HUE = 33
+AMBUSH_HOLD_POLL = 0.5
+
 
 # Ordered, not a dict: InJournalAny answers yes/no, so the buckets are polled in order and the first
 # holding a match wins. Guesses for a RunUO-family shard - correct them against the real journal.
@@ -707,7 +733,7 @@ OUTCOME_TEXT = [
             "You cannot chop",
         ],
     ),
-    ("tooFar", ["That is too far away", "You cannot reach that"]),
+    ("tooFar", TOO_FAR_TEXT),
     # Line of sight, not range: the tile is inside CHOP_RANGE and no amount of walking closer or
     # waiting fixes it
     ("notSeen", ["Target cannot be seen"]),
@@ -757,6 +783,7 @@ class Haul(object):
 
         # Never cleared: what empties a pack horse is a trip to the bank, and that ends the run
         self._overloaded = set()
+        self._opened = set()
         self._said_all_full = False
         self._hauling = True
         self._empty_hauls = 0
@@ -872,7 +899,15 @@ class Haul(object):
 
         here = API.FindMobile(serial)
 
-        if here is None or here.Distance > self._config["unload_range"]:
+        if here is None:
+            self._log("lost track of %s" % hex_of(serial))
+
+            return None
+
+        if here.Distance > self._config["unload_range"]:
+            self._log("could not get within %d of '%s', it is %d tiles off"
+                      % (self._config["unload_range"], here.Name or "?", here.Distance))
+
             return None
 
         return here
@@ -888,33 +923,82 @@ class Haul(object):
 
         return API.FindLayer("backpack", animal.Serial)
 
+    # Opened once a run: ItemsInContainer reads nothing out of a pack the client has never seen
+    # inside, and the pack item is safe to double-click where the animal itself is not
+    def _room_in(self, pack_serial):
+        if pack_serial not in self._opened:
+            self._opened.add(pack_serial)
+            API.UseObject(pack_serial)
+            API.Pause(self._config["open_delay"])
+
+        items = API.ItemsInContainer(pack_serial, True)
+
+        # Unreadable is not empty: moving whole stacks is what the shard's refusal already handles
+        if items is None:
+            return self._config["capacity"]
+
+        return max(0, self._config["capacity"] - self._wood.board_amount(items))
+
+    def _out_of_reach(self, serial):
+        here = API.FindMobile(serial)
+
+        return here is None or here.Distance > self._config["unload_range"]
+
     # Moves are asynchronous, so rescan between passes rather than trusting MoveItem's return value.
-    # A pass that shifts nothing means this animal is full, which the caller reports.
-    def _move_all(self, pack_serial):
+    # A pet that walked off mid-pass has every move refused and looks exactly as full.
+    def _move_all(self, serial, pack_serial):
         previous = None
 
         while not API.StopRequested:
             stacks = self._wood.board_piles()
+            total = self._wood.board_amount(stacks)
 
-            if len(stacks) == 0 or (previous is not None and len(stacks) >= previous):
-                return
+            if total == 0:
+                return "clear"
 
-            previous = len(stacks)
+            if previous is not None and total >= previous:
+                if self._out_of_reach(serial) or said(self._config["too_far_text"]):
+                    return "lost"
+
+                return "full"
+
+            if self._walk_to(serial) is None:
+                return "lost"
+
+            room = self._room_in(pack_serial)
+
+            if room == 0:
+                return "full"
+
+            previous = total
+            forget(self._config["too_far_text"])
 
             for stack in stacks:
-                API.MoveItem(stack.Serial, pack_serial)
+                part = min(amount_of(stack), room)
+
+                if part == 0:
+                    break
+
+                API.MoveItem(stack.Serial, pack_serial, part)
                 API.Pause(self._config["move_delay"])
+                room -= part
+
+        return "lost"
 
     # Works down the animals until the pack is clear or every one has had a turn. An animal that
-    # stops accepting is full rather than broken, so what is left goes to the next one and the one
-    # that took nothing at all is remembered rather than walked to again.
+    # stops accepting is full rather than broken, so what is left goes to the next one and that
+    # animal is remembered rather than walked to again.
     def _unload_to(self, animals):
+        attempted = False
+        reached = False
+
         for animal in animals:
-            before = len(self._wood.board_piles())
+            before = self._wood.board_total()
 
             if before == 0:
                 break
 
+            attempted = True
             here = self._walk_to(animal.Serial)
 
             if here is None:
@@ -923,28 +1007,41 @@ class Haul(object):
             pack = self._animal_pack(here)
 
             if pack is None:
+                reached = True
                 self._log("'%s' has no reachable backpack" % (here.Name or "?"))
                 continue
 
-            self._move_all(pack.Serial)
+            verdict = self._move_all(animal.Serial, pack.Serial)
 
-            after = len(self._wood.board_piles())
-            moved = before - after
+            moved = before - self._wood.board_total()
             name = here.Name or "?"
 
-            if moved == 0:
-                # A save refuses every move at once, and the caller only asks afterwards - read as
-                # this animal's verdict it would sit out the rest of the run over a five second wait
-                if self._saves.is_saving():
-                    self._log("'%s' took nothing while the world is saving, trying the next" % name)
-                else:
-                    self._overloaded.add(animal.Serial)
-                    self._log("'%s' took nothing, leaving it out of the rest of the run" % name)
-            elif after > 0:
-                self._log("'%s' took %d of %d stack(s), trying the next" % (name, moved, before))
+            if verdict == "lost":
+                self._log("'%s' moved out of reach while loading, trying it again next haul" % name)
+                continue
 
-    # Answers whether an animal was found, not whether anything moved: only a missing animal is
-    # worth giving up the search for, and one that took nothing has already been dropped
+            reached = True
+
+            if verdict != "full":
+                continue
+
+            # A save refuses every move at once, and the caller only asks afterwards - read as
+            # this animal's verdict it would sit out the rest of the run over a five second wait
+            if self._saves.is_saving():
+                self._log("'%s' took nothing while the world is saving, trying the next" % name)
+            elif moved == 0:
+                self._overloaded.add(animal.Serial)
+                self._log("'%s' took nothing, leaving it out of the rest of the run" % name)
+            else:
+                self._overloaded.add(animal.Serial)
+                self._log("'%s' took %d of %d boards and is full, leaving it out of the rest of "
+                          "the run" % (name, moved, before))
+
+        # Nothing to load is not a failure to reach anyone
+        return reached or not attempted
+
+    # Answers whether an animal was found and reached, not whether anything moved: only a missing
+    # animal is worth giving up the search for, and one that took nothing has already been dropped
     def unload(self):
         animals = self.find()
 
@@ -953,20 +1050,21 @@ class Haul(object):
                 self._reported_no_animal = True
                 self._log("no pack animal nearby")
 
-            return False
+            return "none"
 
         self._reported_no_animal = False
 
         # Filtered here rather than in find, which also feeds the trouble watch its companion - an
         # animal that is full is still one worth watching
         spare = [animal for animal in animals if animal.Serial not in self._overloaded]
+        reached = True
 
         if len(spare) == 0:
             if not self._said_all_full:
                 self._said_all_full = True
                 self._log("all %d pack animal(s) are full, nothing left to load" % len(animals))
         else:
-            self._unload_to(spare)
+            reached = self._unload_to(spare)
 
         # A log that leaves as a log never comes back as a board, so what would not convert waits
         # for the next haul to try it again. Asked once every animal has had its turn at the boards.
@@ -976,14 +1074,14 @@ class Haul(object):
             if left > 0:
                 self._log("%d logs would not convert, keeping them in the pack" % left)
 
-        return True
+        return "tried" if reached else "unreached"
 
     def haul_now(self):
         before = API.Player.Weight
 
         self._boards.make_boards()
 
-        saw_animal = self.unload()
+        outcome = self.unload()
 
         # A save freezes every part of a haul at once - the conversion is silent, the animal takes
         # nothing, the weight does not move. Read as an ordinary result it latches hauling off.
@@ -992,9 +1090,16 @@ class Haul(object):
 
             return "hauling"
 
-        if not saw_animal:
+        if outcome == "none":
             self._hauling = False
             self._log("no pack animal found, carrying on until overweight")
+
+            return "hauling"
+
+        # Not counted against the animals: a haul that never got a pass in range says nothing about
+        # whether they are full, and the pets do come back
+        if outcome == "unreached":
+            self._log("no pack animal in reach this haul, trying again next time")
 
             return "hauling"
 
@@ -1362,6 +1467,12 @@ class Wood(object):
     def board_piles(self):
         return [item for item in pack_top_level() if self.is_board(item)]
 
+    def board_total(self):
+        return self.board_amount(pack_top_level())
+
+    def board_amount(self, items):
+        return sum(amount_of(item) for item in items if self.is_board(item))
+
     # Hue-blind on purpose: a shard with special woods hues its logs, and those still count, still
     # convert and still need hauling
     def log_total(self):
@@ -1463,6 +1574,88 @@ class Heartbeat(object):
         self._last = now()
 
 
+# src/uo/hold.py
+WIDTH = 340
+HEIGHT = 110
+
+
+class Hold(object):
+    """Standing still behind a gump the script drew, until its button is pressed."""
+
+    def __init__(self, config, log, stop_reason, heartbeat):
+        self._config = config
+        self._log = log
+        self._stop_reason = stop_reason
+        self._heartbeat = heartbeat
+
+    def _show(self, on_press):
+        gump = API.Gumps.CreateGump(True, True)
+        gump.SetRect(0, 0, WIDTH, HEIGHT)
+        gump.CenterXInViewPort()
+        gump.CenterYInViewPort()
+
+        background = API.Gumps.CreateGumpColorBox(0.85, "#1E1E1E")
+        background.SetRect(0, 0, WIDTH, HEIGHT)
+        gump.Add(background)
+
+        label = API.Gumps.CreateGumpLabel(self._config["text"], self._config["hue"])
+        label.SetPos(16, 16)
+        gump.Add(label)
+
+        button = API.Gumps.CreateSimpleButton(self._config["button"], 120, 26)
+        button.SetPos(16, HEIGHT - 42)
+        API.Gumps.AddControlOnClick(button, on_press)
+        gump.Add(button)
+
+        API.Gumps.AddGump(gump)
+
+        return gump
+
+    # each() runs once a slice, so the caller's alarm can keep restarting while the gump is up
+    def wait(self, each):
+        if API.Pathfinding():
+            API.CancelPathfinding()
+
+        if API.HasTarget():
+            API.CancelTarget()
+
+        pressed = [False]
+
+        def on_press():
+            pressed[0] = True
+
+        gump = self._show(on_press)
+        self._log("holding - %s" % self._config["text"])
+        why = None
+
+        # The click only arrives through ProcessCallbacks, and a stopped script's client calls all
+        # answer with nothing, so the stop flag is the one read that still means something then
+        while why is None:
+            if API.StopRequested:
+                why = "the run is being stopped"
+                break
+
+            each()
+            API.ProcessCallbacks()
+
+            if pressed[0]:
+                why = "the button was pressed"
+            elif gump.IsDisposed:
+                why = "the gump was closed"
+            elif self._stop_reason() is not None:
+                why = "the run has a reason to stop"
+            else:
+                API.Pause(self._config["poll"])
+
+        if not gump.IsDisposed:
+            gump.Dispose()
+
+        self._heartbeat.reset()
+        self._log("%s, carrying on" % why)
+
+        return why in ("the button was pressed", "the gump was closed")
+
+
 # src/uo/log.py
 def make_log(prefix):
     def log(message):
@@ -1543,6 +1736,11 @@ class Roam(object):
 
         if spot is None:
             if ready_at_or_none is not None:
+                if not self._config["wait"]:
+                    return ("stop", "%s, the soonest is back in %dm" % (
+                        self._config["worked_out"],
+                        max(1, int(round((ready_at_or_none - now()) / 60.0)))))
+
                 self._idle_until(ready_at_or_none)
 
                 return ("waited",)
@@ -1659,6 +1857,11 @@ class Launcher(object):
         try:
             return self._start(command)
         except Exception as error:
+            # The stop button's interrupt can land inside Process.Start, and swallowed here it would
+            # leave a detached thread restarting the alarm
+            if API.StopRequested:
+                raise
+
             if command[0] not in self._failed:
                 self._failed.add(command[0])
                 self._log("could not run %s - %s" % (command[0], error))
@@ -1724,11 +1927,12 @@ def hostiles_near(notoriety, within):
 
 
 class ThreatWatch(object):
-    def __init__(self, config, log, companion, friend_label):
+    def __init__(self, config, log, companion, friend_label, hold=None):
         self._config = config
         self._log = log
         self._companion = companion
         self._friend_label = friend_label
+        self._hold = hold
         self._alert = Launcher(log)
         self._last_hits = 0
         self._last_companion_hits = 0
@@ -1740,6 +1944,10 @@ class ThreatWatch(object):
     def _ambushed(self):
         text = self._config["ambush_text"]
         return bool(text) and matched_bucket([("ambushed", text)]) is not None
+
+    def _sound(self):
+        if self._alarm_left > 0 and self._alert.play(self._config["ambush_alarm"]):
+            self._alarm_left -= 1
 
     def _describe(self, hostile, friend):
         if hostile is not None:
@@ -1792,6 +2000,16 @@ class ThreatWatch(object):
             for command in self._config["ambush_notices"]:
                 self._alert.run(command)
 
+            # The scan above is stale once the hold returns; the next look reads the fight afresh
+            if self._hold is not None:
+                self._hold.wait(self._sound)
+                self._in_episode = False
+                self._trouble_seen = False
+                self._alarm_left = 0
+                self._alert.stop()
+
+                return
+
         if trouble:
             if not self._in_episode:
                 self._in_episode = True
@@ -1807,8 +2025,7 @@ class ThreatWatch(object):
             self._alert.stop()
             self._log("clear")
 
-        if self._alarm_left > 0 and self._alert.play(self._config["ambush_alarm"]):
-            self._alarm_left -= 1
+        self._sound()
 
 
 # src/uo/tiles.py
@@ -1826,12 +2043,13 @@ def tile_key(tile):
 class TileMemory(object):
     """What is worked out, what could not be reached, and which art is not the resource at all."""
 
-    def __init__(self, respawn_delay, unreachable_delay, noun, verb, log):
+    def __init__(self, respawn_delay, unreachable_delay, noun, verb, log, saver=None):
         self._respawn_delay = respawn_delay
         self._unreachable_delay = unreachable_delay
         self._noun = noun
         self._verb = verb
         self._log = log
+        self._saver = saver
         self._blocked = {}
         self._banned_arts = set()
 
@@ -1845,6 +2063,12 @@ class TileMemory(object):
 
     def block(self, tile, until):
         self._blocked[tile_key(tile)] = until
+
+        if self._saver is not None and until != float("inf"):
+            self._saver(tile_key(tile), until)
+
+    def restore(self, key, until):
+        self._blocked[key] = until
 
     def mark_depleted(self, tile):
         self.block(tile, now() + self._respawn_delay)
@@ -1886,6 +2110,32 @@ def settled(timeout, poll, landed):
 
 
 # src/uo/tool.py
+# Books carry the client's container flag, so the flag alone opens every spellbook in the pack
+NOT_BAG_GRAPHICS = set([
+    0x0EFA,  # spellbook
+    0x2253,  # necromancer spellbook
+    0x2252,  # book of chivalry
+    0x238C,  # book of bushido
+    0x23A0,  # book of ninjitsu
+    0x2D50,  # spellweaving spellbook
+    0x2D9D,  # mysticism spellbook
+    0x22C5,  # runebook
+    0x9C16,  # runic atlas
+    0x2259,  # bulk order book
+])
+NOT_BAG_NAMES = ["spellbook", "runebook", "book", "atlas"]
+
+
+def is_bag(item):
+    if not getattr(item, "IsContainer", False) or getattr(item, "Opened", False):
+        return False
+
+    if item.Graphic in NOT_BAG_GRAPHICS:
+        return False
+
+    return not word_in(item.Name, NOT_BAG_NAMES)
+
+
 class Tool(object):
     """Find it, learn its graphic, get it onto the hand, and notice when it breaks."""
 
@@ -1965,8 +2215,7 @@ class Tool(object):
 
     # A bag the client has not opened this session reads as empty, whatever is in it
     def _open_bags(self):
-        bags = [item for item in pack_contents()
-                if getattr(item, "IsContainer", False) and not getattr(item, "Opened", False)]
+        bags = [item for item in pack_contents() if is_bag(item)]
 
         if self._spare_bag is not None:
             spare = API.FindItem(self._spare_bag)
@@ -2074,6 +2323,12 @@ def stop_reason():
 
 
 saves = SaveWatch(SAVING_TEXT, SAVE_DONE_TEXT, SAVE_WAIT, SAVE_POLL, log, heartbeat, stop_reason)
+hold = Hold({
+    "text": AMBUSH_HOLD_TEXT,
+    "button": AMBUSH_HOLD_BUTTON,
+    "hue": AMBUSH_HOLD_HUE,
+    "poll": AMBUSH_HOLD_POLL,
+}, log, stop_reason, heartbeat)
 
 axe = Tool("axe", AXE_NAMES, NOT_AXE_NAMES, ["twohanded", "onehanded"], SPARE_BAG_SERIAL,
            EQUIP_ATTEMPTS, EQUIP_TIMEOUT, EQUIP_POLL, log)
@@ -2095,6 +2350,9 @@ haul = Haul(wood, boards, saves, {
     "graphics": PACK_ANIMAL_GRAPHICS,
     "radius": ANIMAL_SCAN_RADIUS,
     "unload_range": UNLOAD_RANGE,
+    "too_far_text": TOO_FAR_TEXT,
+    "capacity": PACK_ANIMAL_BOARDS,
+    "open_delay": PACK_OPEN_DELAY,
     "pathfind_timeout": PATHFIND_TIMEOUT,
     "move_delay": MOVE_DELAY,
     "max_picks": MAX_PICKS,
@@ -2123,11 +2381,14 @@ threat = ThreatWatch({
     "ambush_warning": AMBUSH_WARNING,
     "ambush_hue": AMBUSH_HUE,
     "ambush_repeats": AMBUSH_REPEATS,
-}, log, haul.companion, lambda friend: "'%s'" % (friend.Name or "?"))
+}, log, haul.companion, lambda friend: "'%s'" % (friend.Name or "?"),
+    hold if AMBUSH_HOLD else None)
 roam = Roam(trees, memory, saves, threat, {
     "noun": "tree",
     "idle_message": "everything in reach is regrowing, waiting for the soonest one",
     "none_left": "no tree in range",
+    "wait": True,
+    "worked_out": "",
     "range": CHOP_RANGE,
     "scan_radius": SCAN_RADIUS,
     "z_range": CHOP_Z_RANGE,

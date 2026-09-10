@@ -742,6 +742,11 @@ When nothing within `ROAM_RADIUS` is choppable but something is regrowing, the l
 soonest is due, in `IDLE_POLL` slices so the stop button and the threat watch keep working. However
 the run ends, it makes boards and unloads once more.
 
+An ambush holds the run: the walk and any cursor are cancelled, a gump goes up in the middle of the
+screen, and nothing moves until its button is pressed or the gump is closed. The alarm keeps
+restarting for as long as it is up and stops the moment it comes down. Dying, or the stop button,
+ends the hold as well.
+
 **How the swing is aimed.** `AIM_AT_SELF = True` uses `API.TargetSelf()`: the shard takes a
 self-target as *harvest what is in reach* and picks the tree, so the scan only decides where to
 stand. Then `empty` is about the spot and parks every tree within `CHOP_RANGE` (parking one tile
@@ -802,7 +807,7 @@ Every timing is in seconds except `PATHFIND_TIMEOUT`.
 | `MAX_EMPTY_HAULS` | `3` | Hauls that freed nothing before the animals are taken to be full |
 | `OUTCOME_TEXT` | guesses | `chopped` and `nothingNearby` are measured |
 
-Trouble and stopping carry the same names and defaults as `mining.py`.
+Trouble and stopping, the hold included, carry the same names and defaults as `mining.py`.
 
 ### When it goes wrong
 
@@ -846,6 +851,7 @@ Trouble and stopping carry the same names and defaults as `mining.py`.
 - The pack animal bodies, and whether `Backpack` or `FindLayer` resolves for another mobile. Neither
   means no hauling; pin `PACK_ANIMAL_SERIALS`.
 - Whether `API.RequestTarget` returning falsy is ESC rather than a timeout, which ends the multi-pick.
+- The hold gump's layout, and that a right-click close sets `IsDisposed`.
 - `"twohanded"` and `"onehanded"` as the axe layers.
 - What `API.GetStaticsInArea` costs at `ROAM_RADIUS`, 49 tiles a side through interop.
 
