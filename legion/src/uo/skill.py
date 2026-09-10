@@ -8,6 +8,9 @@ def find_skill_name(names):
             if API.GetSkill(name) is not None:
                 return name
         except Exception:
+            if API.StopRequested:
+                raise
+
             continue
 
     return None

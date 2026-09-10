@@ -17,7 +17,8 @@ def open_ids():
             if serial and serial not in found:
                 found.append(serial)
     except Exception:
-        pass
+        if API.StopRequested:
+            raise
 
     return found
 
@@ -55,6 +56,9 @@ def button_ids(ident):
 
         return found
     except Exception:
+        if API.StopRequested:
+            raise
+
         return None
 
 

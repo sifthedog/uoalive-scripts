@@ -10,6 +10,9 @@ def tooltip_of(mobile):
     try:
         return mobile.NameAndProps(False) or ""
     except Exception:
+        if API.StopRequested:
+            raise
+
         return ""
 
 

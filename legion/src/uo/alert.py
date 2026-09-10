@@ -1,3 +1,4 @@
+import API
 import clr
 import System
 
@@ -29,6 +30,11 @@ class Launcher(object):
         try:
             return self._start(command)
         except Exception as error:
+            # The stop button's interrupt can land inside Process.Start, and swallowed here it would
+            # leave a detached thread restarting the alarm
+            if API.StopRequested:
+                raise
+
             if command[0] not in self._failed:
                 self._failed.add(command[0])
                 self._log("could not run %s - %s" % (command[0], error))

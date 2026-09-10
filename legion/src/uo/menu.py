@@ -11,6 +11,9 @@ def context_menu(serial, texts, timeout):
             if API.ContextMenu(serial, text, timeout):
                 return True
         except Exception:
+            if API.StopRequested:
+                raise
+
             continue
 
     return False

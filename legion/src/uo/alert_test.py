@@ -62,3 +62,9 @@ class LauncherTest(unittest.TestCase):
 
         self.assertEqual(self.said, ["could not run afplay - no such file"])
         self.assertEqual(self.api.launched, [])
+
+    def test_a_failure_while_the_script_is_stopping_is_not_swallowed(self):
+        self.api.launch_error = RuntimeError("interrupted")
+        self.api.StopRequested = True
+
+        self.assertRaises(RuntimeError, self.launcher.run, NOTICE)

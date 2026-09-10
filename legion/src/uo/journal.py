@@ -15,6 +15,9 @@ def journal_tail(seconds, limit):
     try:
         entries = API.GetJournalEntries(seconds)
     except Exception:
+        if API.StopRequested:
+            raise
+
         return []
 
     texts = []
