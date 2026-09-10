@@ -153,6 +153,9 @@ class FakeGumps(object):
         self._api = api
 
     def CreateGump(self, acceptMouseInput=True, canMove=True, keepOpen=False):
+        if self._api.StopRequested:
+            return None
+
         return FakeControl("gump")
 
     def CreateGumpColorBox(self, opacity=0.7, color="#000000"):

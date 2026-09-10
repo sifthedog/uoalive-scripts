@@ -4,49 +4,6 @@ import API
 import time
 
 
-# src/uo/journal.py
-def said(texts):
-    for text in texts:
-        if API.InJournal(text, False):
-            return True
-
-    return False
-
-
-# matchingText is left off on purpose: the client only applies it as a regex, so a plain string
-# there filters everything out
-def journal_tail(seconds, limit):
-    try:
-        entries = API.GetJournalEntries(seconds)
-    except Exception:
-        if API.StopRequested:
-            raise
-
-        return []
-
-    texts = []
-
-    for entry in entries if entries else []:
-        text = getattr(entry, "Text", None)
-
-        if text and text.strip():
-            texts.append(text.strip())
-
-    return texts[-limit:]
-
-
-# Line by line rather than the whole journal: a wholesale clear before every swing wiped the ambush
-# warning before the threat watch got its once-a-cycle look at it
-def forget(phrases):
-    for text in phrases:
-        API.ClearJournal(text)
-
-
-def forget_outcomes(buckets):
-    for _name, phrases in buckets:
-        forget(phrases)
-
-
 # src/uo/text.py
 def words_of(text):
     letters = []
@@ -75,6 +32,53 @@ def any_in(text, fragments):
             return True
 
     return False
+
+
+# src/uo/journal.py
+def said(texts):
+    for text in texts:
+        if API.InJournal(text, False):
+            return True
+
+    return False
+
+
+# A craft's mana coming back gains Meditation and Focus, which buries the one line that matters
+SKILL_GAIN_TEXT = ["your skill in", "has changed by"]
+
+
+# matchingText is left off on purpose: the client only applies it as a regex, so a plain string
+# there filters everything out
+def journal_tail(seconds, limit):
+    try:
+        entries = API.GetJournalEntries(seconds)
+    except Exception:
+        if API.StopRequested:
+            raise
+
+        return []
+
+    texts = []
+
+    for entry in entries if entries else []:
+        text = getattr(entry, "Text", None)
+
+        if text and text.strip() and not any_in(text, SKILL_GAIN_TEXT):
+            texts.append(text.strip())
+
+    return texts[-limit:]
+
+
+# Line by line rather than the whole journal: a wholesale clear before every swing wiped the ambush
+# warning before the threat watch got its once-a-cycle look at it
+def forget(phrases):
+    for text in phrases:
+        API.ClearJournal(text)
+
+
+def forget_outcomes(buckets):
+    for _name, phrases in buckets:
+        forget(phrases)
 
 
 # src/fishing/angler.py

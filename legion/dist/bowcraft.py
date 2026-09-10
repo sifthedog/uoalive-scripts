@@ -396,6 +396,17 @@ def word_in(text, words):
     return False
 
 
+def phrase_in(text, phrase):
+    found = words_of(text)
+    wanted = words_of(phrase)
+
+    for start in range(len(found) - len(wanted) + 1):
+        if found[start:start + len(wanted)] == wanted:
+            return True
+
+    return len(wanted) == 0
+
+
 def any_in(text, fragments):
     low = (text or "").lower()
 
@@ -404,6 +415,21 @@ def any_in(text, fragments):
             return True
 
     return False
+
+
+def untagged(text):
+    kept = []
+    inside = False
+
+    for char in text or "":
+        if char == "<":
+            inside = True
+        elif char == ">":
+            inside = False
+        elif not inside:
+            kept.append(char)
+
+    return "".join(kept)
 
 
 def clipped(text, limit):
@@ -601,6 +627,10 @@ def said(texts):
     return False
 
 
+# A craft's mana coming back gains Meditation and Focus, which buries the one line that matters
+SKILL_GAIN_TEXT = ["your skill in", "has changed by"]
+
+
 # matchingText is left off on purpose: the client only applies it as a regex, so a plain string
 # there filters everything out
 def journal_tail(seconds, limit):
@@ -617,7 +647,7 @@ def journal_tail(seconds, limit):
     for entry in entries if entries else []:
         text = getattr(entry, "Text", None)
 
-        if text and text.strip():
+        if text and text.strip() and not any_in(text, SKILL_GAIN_TEXT):
             texts.append(text.strip())
 
     return texts[-limit:]
@@ -984,19 +1014,36 @@ class Crafter(object):
         self._make_last = False
         self._said_unreadable = 0
         self._said_no_make_last = False
+        self._heard = ""
         # Products the recipe table got wrong on this shard, which the walk owns from then on
         self._walked = set()
 
     def forget_last(self):
         self._make_last = False
 
+    # The phrase is kept so a made that never landed can say what was believed and where
+    def _journal_bucket(self):
+        for name, phrases in self._buckets:
+            for phrase in phrases:
+                # clearMatches, or a line already read answers the next wait as well
+                if API.InJournalAny([phrase], True):
+                    self._heard = "the journal said '%s'" % phrase
+
+                    return name
+
+        return None
+
     def _notice_bucket(self, gump):
         if not gump:
             return None
 
+        text = API.GetGumpContents(gump)
+
         for name, phrases in self._buckets:
             for phrase in phrases:
-                if API.GumpContains(phrase, gump):
+                if any_in(text, [phrase.lower()]) or API.GumpContains(phrase, gump):
+                    self._heard = "the gump said '%s'" % phrase
+
                     return name
 
         return None
@@ -1008,9 +1055,11 @@ class Crafter(object):
 
         while not API.StopRequested:
             if landed():
+                self._heard = "the pack gained it"
+
                 return "made"
 
-            hit = matched_bucket(self._buckets)
+            hit = self._journal_bucket()
 
             if hit is None:
                 hit = self._notice_bucket(opened)
@@ -1032,7 +1081,7 @@ class Crafter(object):
 
         self._said_unreadable += 1
 
-        text = (clipped(" ".join(self._menu.lines(gump)), self._config["text_limit"])
+        text = (clipped(untagged(" ".join(self._menu.lines(gump))), self._config["text_limit"])
                 if gump else "")
         lines = journal_tail(self._config["tail_seconds"], self._config["tail_lines"])
 
@@ -1099,8 +1148,23 @@ class Crafter(object):
         if button is not None:
             return button, None
 
-        order = self._menu.candidate_buttons(product, gump)
         probe = self._item_probes.get(product, 0)
+        found = self._menu.find_row(product, gump) if probe == 0 else None
+
+        if found is None:
+            order = self._menu.candidate_buttons(product, gump)
+        else:
+            gump, button = found
+
+            if not gump:
+                return None, "noGump"
+
+            if button is not None:
+                self._item_buttons[product] = button
+
+                return button, None
+
+            order = []
 
         if probe < min(self._config["max_probes"], len(order)):
             return order[probe], None
@@ -1127,6 +1191,33 @@ class Crafter(object):
 
         return "wrongRow"
 
+    def _named_for(self, item, product):
+        props = API.ItemNameAndProps(item.Serial) or ""
+        name = props.split("\n")[0] if props else (item.Name or "")
+
+        return phrase_in(name, product)
+
+    # The shard said made and the table's art never landed: a new art in the pack whose name says
+    # the product is it under this shard's number. UOAlive's lightning scroll is not stock 0x1F4B.
+    def _learn_art(self, product, held):
+        items = pack_contents()
+        gained, _lost = diff_counts(held, counts_by_graphic(items))
+        arts = set()
+
+        for item in items:
+            if (item.Graphic, item.Hue) in gained and self._named_for(item, product):
+                arts.add(item.Graphic)
+
+        if len(arts) != 1:
+            return False
+
+        art = arts.pop()
+        self._config["products"][product].add(art)
+        self._log("'%s' landed as %s, not the art in the table - put %s in it"
+                  % (product, hex_of(art), hex_of(art)))
+
+        return True
+
     # Something was made and none of it was the product, so a row was wrong - unless the press was
     # MAKE LAST, which the shard forgets on its own and which says nothing about the proven row
     def _wrong_product(self, product, button):
@@ -1136,7 +1227,8 @@ class Crafter(object):
 
             return "wrongRow"
 
-        self._log("button %d did not make a '%s', trying the next row" % (button, product))
+        self._log("button %d did not make a '%s' - %s - trying the next row"
+                  % (button, product, self._heard))
 
         return self._walk_instead(product)
 
@@ -1155,8 +1247,12 @@ class Crafter(object):
         if button is None:
             return outcome
 
+        # The details pages may have taken the menu down and brought it back
+        gump = self._menu.current_id() or gump
+
         graphics = self._config["products"][product]
         before = count_of(graphics)
+        held = counts_by_graphic(pack_contents())
 
         def made_one():
             return count_of(graphics) > before
@@ -1179,6 +1275,12 @@ class Crafter(object):
             return "made"
 
         if outcome == "made":
+            if self._learn_art(product, held):
+                self._item_buttons[product] = button
+                self._make_last = True
+
+                return "made"
+
             return self._wrong_product(product, button)
 
         if outcome == "noMaterial":
@@ -1291,6 +1393,7 @@ class CraftMenu(object):
         self._said_gump_text = False
         self._said_no_category = False
         self._said_no_row = set()
+        self._said_no_details = False
         self._said_no_button = set()
         self._said_not_menu = False
         self._category_buttons = {}
@@ -1444,7 +1547,8 @@ class CraftMenu(object):
 
         return [] if start is None else lines[start:]
 
-    # Whole row, never a substring: "crossbow" is inside "crossbow bolt", in another category
+    # Whole row, never a substring: "crossbow" is inside "crossbow bolt", in another category.
+    # A menu that reads as one line has no rows, and GumpContains is case-sensitive
     def page_has(self, product, gump):
         rows = self.item_rows(gump)
 
@@ -1452,7 +1556,10 @@ class CraftMenu(object):
             if row.lower() == product:
                 return True
 
-        return len(rows) == 0 and API.GumpContains(product, gump)
+        if len(rows) > 0:
+            return False
+
+        return phrase_in(API.GetGumpContents(gump), product) or API.GumpContains(product, gump)
 
     def remember_category(self, product, button):
         self._category_buttons[product] = button
@@ -1500,6 +1607,64 @@ class CraftMenu(object):
             self._said_no_category = True
             self._log("no category lists '%s' - check the name against the SELECTIONS rows"
                       % product)
+
+        return (gump, None)
+
+    # The pen is used again when the details page took the menu down with it
+    def _back_to(self, category):
+        menu = self.open()
+
+        if not menu:
+            return 0
+
+        return self.press(category, menu, self._config["gump_timeout"])
+
+    # A row's details page is its button plus one and costs nothing to open, and the rows carry on
+    # across the pages the client splits a long category into. None sends the caller to the walk;
+    # (gump, None) is a category that has no such row.
+    def find_row(self, product, gump):
+        category = self._category_buttons.get(product)
+
+        if category is None or button_ids(gump) is None:
+            return None
+
+        for index in range(self._config["max_item_rows"]):
+            button = self.button_id(self._config["item_type"], index)
+
+            if not self.has_button(button, gump):
+                continue
+
+            if not self.has_button(button + 1, gump):
+                return None
+
+            before = self.lines(gump)
+            details = self.press_page(button + 1, gump, self._config["gump_timeout"])
+
+            if not details:
+                return None
+
+            text = self.lines(details)
+
+            if text == before:
+                if not self._said_no_details:
+                    self._said_no_details = True
+                    self._log("button %d opened no details page, walking the rows instead"
+                              % (button + 1))
+
+                return None
+
+            named = phrase_in(" ".join(text), product)
+            API.CloseGump(details)
+            gump = self._back_to(category)
+
+            if not gump:
+                return (0, None)
+
+            if named:
+                self._log("'%s' is the row on button %d - its details page names it"
+                          % (product, button))
+
+                return (gump, button)
 
         return (gump, None)
 

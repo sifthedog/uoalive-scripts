@@ -17,6 +17,17 @@ def word_in(text, words):
     return False
 
 
+def phrase_in(text, phrase):
+    found = words_of(text)
+    wanted = words_of(phrase)
+
+    for start in range(len(found) - len(wanted) + 1):
+        if found[start:start + len(wanted)] == wanted:
+            return True
+
+    return len(wanted) == 0
+
+
 def any_in(text, fragments):
     low = (text or "").lower()
 
@@ -25,6 +36,21 @@ def any_in(text, fragments):
             return True
 
     return False
+
+
+def untagged(text):
+    kept = []
+    inside = False
+
+    for char in text or "":
+        if char == "<":
+            inside = True
+        elif char == ">":
+            inside = False
+        elif not inside:
+            kept.append(char)
+
+    return "".join(kept)
 
 
 def clipped(text, limit):

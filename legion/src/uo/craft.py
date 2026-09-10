@@ -1,9 +1,10 @@
 import API
 
-from uo.journal import journal_tail, matched_bucket
-from uo.pack import count_of
+from uo.journal import journal_tail
+from uo.entity import hex_of
+from uo.pack import count_of, counts_by_graphic, diff_counts, pack_contents
 from uo.retry import settled
-from uo.text import clipped
+from uo.text import any_in, clipped, phrase_in, untagged
 
 
 class Crafter(object):
@@ -19,19 +20,36 @@ class Crafter(object):
         self._make_last = False
         self._said_unreadable = 0
         self._said_no_make_last = False
+        self._heard = ""
         # Products the recipe table got wrong on this shard, which the walk owns from then on
         self._walked = set()
 
     def forget_last(self):
         self._make_last = False
 
+    # The phrase is kept so a made that never landed can say what was believed and where
+    def _journal_bucket(self):
+        for name, phrases in self._buckets:
+            for phrase in phrases:
+                # clearMatches, or a line already read answers the next wait as well
+                if API.InJournalAny([phrase], True):
+                    self._heard = "the journal said '%s'" % phrase
+
+                    return name
+
+        return None
+
     def _notice_bucket(self, gump):
         if not gump:
             return None
 
+        text = API.GetGumpContents(gump)
+
         for name, phrases in self._buckets:
             for phrase in phrases:
-                if API.GumpContains(phrase, gump):
+                if any_in(text, [phrase.lower()]) or API.GumpContains(phrase, gump):
+                    self._heard = "the gump said '%s'" % phrase
+
                     return name
 
         return None
@@ -43,9 +61,11 @@ class Crafter(object):
 
         while not API.StopRequested:
             if landed():
+                self._heard = "the pack gained it"
+
                 return "made"
 
-            hit = matched_bucket(self._buckets)
+            hit = self._journal_bucket()
 
             if hit is None:
                 hit = self._notice_bucket(opened)
@@ -67,7 +87,7 @@ class Crafter(object):
 
         self._said_unreadable += 1
 
-        text = (clipped(" ".join(self._menu.lines(gump)), self._config["text_limit"])
+        text = (clipped(untagged(" ".join(self._menu.lines(gump))), self._config["text_limit"])
                 if gump else "")
         lines = journal_tail(self._config["tail_seconds"], self._config["tail_lines"])
 
@@ -134,8 +154,23 @@ class Crafter(object):
         if button is not None:
             return button, None
 
-        order = self._menu.candidate_buttons(product, gump)
         probe = self._item_probes.get(product, 0)
+        found = self._menu.find_row(product, gump) if probe == 0 else None
+
+        if found is None:
+            order = self._menu.candidate_buttons(product, gump)
+        else:
+            gump, button = found
+
+            if not gump:
+                return None, "noGump"
+
+            if button is not None:
+                self._item_buttons[product] = button
+
+                return button, None
+
+            order = []
 
         if probe < min(self._config["max_probes"], len(order)):
             return order[probe], None
@@ -162,6 +197,33 @@ class Crafter(object):
 
         return "wrongRow"
 
+    def _named_for(self, item, product):
+        props = API.ItemNameAndProps(item.Serial) or ""
+        name = props.split("\n")[0] if props else (item.Name or "")
+
+        return phrase_in(name, product)
+
+    # The shard said made and the table's art never landed: a new art in the pack whose name says
+    # the product is it under this shard's number. UOAlive's lightning scroll is not stock 0x1F4B.
+    def _learn_art(self, product, held):
+        items = pack_contents()
+        gained, _lost = diff_counts(held, counts_by_graphic(items))
+        arts = set()
+
+        for item in items:
+            if (item.Graphic, item.Hue) in gained and self._named_for(item, product):
+                arts.add(item.Graphic)
+
+        if len(arts) != 1:
+            return False
+
+        art = arts.pop()
+        self._config["products"][product].add(art)
+        self._log("'%s' landed as %s, not the art in the table - put %s in it"
+                  % (product, hex_of(art), hex_of(art)))
+
+        return True
+
     # Something was made and none of it was the product, so a row was wrong - unless the press was
     # MAKE LAST, which the shard forgets on its own and which says nothing about the proven row
     def _wrong_product(self, product, button):
@@ -171,7 +233,8 @@ class Crafter(object):
 
             return "wrongRow"
 
-        self._log("button %d did not make a '%s', trying the next row" % (button, product))
+        self._log("button %d did not make a '%s' - %s - trying the next row"
+                  % (button, product, self._heard))
 
         return self._walk_instead(product)
 
@@ -190,8 +253,12 @@ class Crafter(object):
         if button is None:
             return outcome
 
+        # The details pages may have taken the menu down and brought it back
+        gump = self._menu.current_id() or gump
+
         graphics = self._config["products"][product]
         before = count_of(graphics)
+        held = counts_by_graphic(pack_contents())
 
         def made_one():
             return count_of(graphics) > before
@@ -214,6 +281,12 @@ class Crafter(object):
             return "made"
 
         if outcome == "made":
+            if self._learn_art(product, held):
+                self._item_buttons[product] = button
+                self._make_last = True
+
+                return "made"
+
             return self._wrong_product(product, button)
 
         if outcome == "noMaterial":

@@ -65,9 +65,10 @@ class SpellsTest(unittest.TestCase):
             self.assertEqual(len(arts), 8)
 
     def test_the_art_is_the_stock_offset_from_the_spell_id(self):
-        self.assertEqual(SPELLS["recall"][1], 0x1F4D)
-        self.assertEqual(SPELLS["energy bolt"][1], 0x1F57)
-        self.assertEqual(SPELLS["gate travel"][1], 0x1F61)
+        self.assertEqual(SPELLS["lightning"][1], 8010)
+        self.assertEqual(SPELLS["recall"][1], 0x1F4C)
+        self.assertEqual(SPELLS["energy bolt"][1], 0x1F56)
+        self.assertEqual(SPELLS["gate travel"][1], 0x1F60)
 
 
 class OutcomeOrderTest(unittest.TestCase):

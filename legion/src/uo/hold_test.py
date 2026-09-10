@@ -64,6 +64,14 @@ class HoldTest(unittest.TestCase):
         self.assertEqual(self.slices, [2])
         self.assertEqual(self.said[-1], "the run is being stopped, carrying on")
 
+    def test_a_run_already_being_stopped_draws_nothing(self):
+        self.api.StopRequested = True
+
+        self.assertFalse(self.hold.wait(self.each))
+        self.assertEqual(self.slices, [0])
+        self.assertEqual(self.said, ["not holding - the run is being stopped"])
+        self.assertEqual(self.api.drawn, [])
+
     def test_the_walk_and_the_cursor_are_cancelled_before_the_gump_goes_up(self):
         self.api.pathfinding = True
         self.api.has_target = True

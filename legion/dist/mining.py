@@ -313,6 +313,36 @@ OUTCOME_TEXT = [
 ]
 
 
+# src/uo/text.py
+def words_of(text):
+    letters = []
+
+    for char in (text or "").lower():
+        letters.append(char if char.isalnum() else " ")
+
+    return "".join(letters).split()
+
+
+def word_in(text, words):
+    found = words_of(text)
+
+    for word in words:
+        if word in found:
+            return True
+
+    return False
+
+
+def any_in(text, fragments):
+    low = (text or "").lower()
+
+    for fragment in fragments:
+        if fragment in low:
+            return True
+
+    return False
+
+
 # src/uo/journal.py
 def said(texts):
     for text in texts:
@@ -1350,36 +1380,6 @@ class Combiner(object):
         self._log("hit the %d combine attempt backstop" % self._config["attempts"])
 
 
-# src/uo/text.py
-def words_of(text):
-    letters = []
-
-    for char in (text or "").lower():
-        letters.append(char if char.isalnum() else " ")
-
-    return "".join(letters).split()
-
-
-def word_in(text, words):
-    found = words_of(text)
-
-    for word in words:
-        if word in found:
-            return True
-
-    return False
-
-
-def any_in(text, fragments):
-    low = (text or "").lower()
-
-    for fragment in fragments:
-        if fragment in low:
-            return True
-
-    return False
-
-
 # src/mining/metal.py
 class MetalBook(object):
     """What the tooltip says each pile is made of, and how much that answer is trusted."""
@@ -2108,6 +2108,10 @@ class Hold(object):
 
     def _show(self, on_press):
         gump = API.Gumps.CreateGump(True, True)
+
+        if gump is None:
+            return None
+
         gump.SetRect(0, 0, WIDTH, HEIGHT)
         gump.CenterXInViewPort()
         gump.CenterYInViewPort()
@@ -2143,6 +2147,12 @@ class Hold(object):
             pressed[0] = True
 
         gump = self._show(on_press)
+
+        # API.Stop() only lands at the next Pause, and every client call before it answers nothing
+        if gump is None:
+            self._log("not holding - the run is being stopped")
+            return False
+
         self._log("holding - %s" % self._config["text"])
         why = None
 

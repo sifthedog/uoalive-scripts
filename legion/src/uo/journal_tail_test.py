@@ -16,6 +16,12 @@ class JournalTailTest(unittest.TestCase):
 
         self.assertEqual(journal_tail(20.0, 3), ["three", "four", "five"])
 
+    def test_leaves_out_skill_gains(self):
+        self.api.hear("You fail", "Your skill in Meditation has increased by 0.1.  It is now 30.1.",
+                      "Your dexterity has changed by 1.  It is now 17.")
+
+        self.assertEqual(journal_tail(20.0, 4), ["You fail"])
+
     def test_leaves_out_blank_lines(self):
         self.api.hear("one", "   ", "two")
 

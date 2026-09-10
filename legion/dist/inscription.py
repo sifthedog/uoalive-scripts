@@ -78,7 +78,8 @@ BLANK = "blank scrolls"
 # Stock art, unverified on UOAlive; an art learned by name joins its set. Whole words, so 'ash' is
 # not a name word: ash boards carry it too.
 STOCK_KINDS = [
-    (BLANK, set([0x0EF3]), ["blank scroll", "blank scrolls"]),
+    # 0x0E34 is the same scroll turned the other way
+    (BLANK, set([0x0EF3, 0x0E34]), ["blank scroll", "blank scrolls"]),
     (BLACK_PEARL, set([0x0F7A]), ["black pearl", "pearl"]),
     (BLOODMOSS, set([0x0F7B]), ["bloodmoss", "blood moss"]),
     (GARLIC, set([0x0F84]), ["garlic"]),
@@ -95,48 +96,49 @@ KIND_ORDER = [kind for kind, _graphics, _words in STOCK_KINDS]
 MANA_BY_CIRCLE = {4: 11, 5: 14, 6: 20, 7: 40, 8: 50}
 
 # Row name as the SELECTIONS row spells it: circle, the scroll's art, and its reagents. The art is
-# 0x1F2E plus the spell's id in stock RunUO (recall 0x1F4D, energy bolt 0x1F57 confirm it).
+# 0x1F2D plus the spell's id: stock RunUO puts reactive armor out of sequence at 0x1F2D and every
+# scroll after it one under 0x1F2E plus the id. UOAlive's lightning scroll reads 0x1F4A (8010).
 SPELLS = {
-    "arch cure": (4, 0x1F46, [GARLIC, GINSENG, MANDRAKE]),
-    "arch protection": (4, 0x1F47, [GARLIC, GINSENG, MANDRAKE, ASH]),
-    "curse": (4, 0x1F48, [GARLIC, NIGHTSHADE, ASH]),
-    "fire field": (4, 0x1F49, [BLACK_PEARL, SILK, ASH]),
-    "greater heal": (4, 0x1F4A, [GARLIC, GINSENG, MANDRAKE, SILK]),
-    "lightning": (4, 0x1F4B, [MANDRAKE, ASH]),
-    "mana drain": (4, 0x1F4C, [BLACK_PEARL, MANDRAKE, SILK]),
-    "recall": (4, 0x1F4D, [BLACK_PEARL, BLOODMOSS, MANDRAKE]),
-    "blade spirits": (5, 0x1F4E, [BLACK_PEARL, MANDRAKE, NIGHTSHADE]),
-    "dispel field": (5, 0x1F4F, [BLACK_PEARL, GARLIC, SILK, ASH]),
-    "incognito": (5, 0x1F50, [BLOODMOSS, GARLIC, NIGHTSHADE]),
-    "magic reflection": (5, 0x1F51, [GARLIC, MANDRAKE, SILK]),
-    "mind blast": (5, 0x1F52, [BLACK_PEARL, MANDRAKE, NIGHTSHADE, ASH]),
-    "paralyze": (5, 0x1F53, [GARLIC, MANDRAKE, SILK]),
-    "poison field": (5, 0x1F54, [BLACK_PEARL, NIGHTSHADE, SILK]),
-    "summon creature": (5, 0x1F55, [BLOODMOSS, MANDRAKE, SILK]),
-    "dispel": (6, 0x1F56, [GARLIC, MANDRAKE, ASH]),
-    "energy bolt": (6, 0x1F57, [BLACK_PEARL, NIGHTSHADE]),
-    "explosion": (6, 0x1F58, [BLOODMOSS, MANDRAKE, NIGHTSHADE]),
-    "invisibility": (6, 0x1F59, [BLOODMOSS, NIGHTSHADE]),
-    "mark": (6, 0x1F5A, [BLACK_PEARL, BLOODMOSS, MANDRAKE]),
-    "mass curse": (6, 0x1F5B, [GARLIC, MANDRAKE, NIGHTSHADE, ASH]),
-    "paralyze field": (6, 0x1F5C, [BLACK_PEARL, GINSENG, SILK]),
-    "reveal": (6, 0x1F5D, [BLOODMOSS, ASH]),
-    "chain lightning": (7, 0x1F5E, [BLACK_PEARL, BLOODMOSS, MANDRAKE, ASH]),
-    "energy field": (7, 0x1F5F, [BLACK_PEARL, MANDRAKE, SILK, ASH]),
-    "flamestrike": (7, 0x1F60, [SILK, ASH]),
-    "gate travel": (7, 0x1F61, [BLACK_PEARL, MANDRAKE, ASH]),
-    "mana vampire": (7, 0x1F62, [BLACK_PEARL, BLOODMOSS, MANDRAKE, SILK]),
-    "mass dispel": (7, 0x1F63, [BLACK_PEARL, GARLIC, MANDRAKE, ASH]),
-    "meteor swarm": (7, 0x1F64, [BLOODMOSS, MANDRAKE, SILK, ASH]),
-    "polymorph": (7, 0x1F65, [BLOODMOSS, MANDRAKE, SILK]),
-    "earthquake": (8, 0x1F66, [BLOODMOSS, GINSENG, MANDRAKE, ASH]),
-    "energy vortex": (8, 0x1F67, [BLACK_PEARL, BLOODMOSS, MANDRAKE, NIGHTSHADE]),
-    "resurrection": (8, 0x1F68, [BLOODMOSS, GARLIC, GINSENG]),
-    "air elemental": (8, 0x1F69, [BLOODMOSS, MANDRAKE, SILK]),
-    "summon daemon": (8, 0x1F6A, [BLOODMOSS, MANDRAKE, SILK, ASH]),
-    "earth elemental": (8, 0x1F6B, [BLOODMOSS, MANDRAKE, SILK]),
-    "fire elemental": (8, 0x1F6C, [BLOODMOSS, MANDRAKE, SILK, ASH]),
-    "water elemental": (8, 0x1F6D, [BLOODMOSS, MANDRAKE, SILK]),
+    "arch cure": (4, 0x1F45, [GARLIC, GINSENG, MANDRAKE]),
+    "arch protection": (4, 0x1F46, [GARLIC, GINSENG, MANDRAKE, ASH]),
+    "curse": (4, 0x1F47, [GARLIC, NIGHTSHADE, ASH]),
+    "fire field": (4, 0x1F48, [BLACK_PEARL, SILK, ASH]),
+    "greater heal": (4, 0x1F49, [GARLIC, GINSENG, MANDRAKE, SILK]),
+    "lightning": (4, 0x1F4A, [MANDRAKE, ASH]),
+    "mana drain": (4, 0x1F4B, [BLACK_PEARL, MANDRAKE, SILK]),
+    "recall": (4, 0x1F4C, [BLACK_PEARL, BLOODMOSS, MANDRAKE]),
+    "blade spirits": (5, 0x1F4D, [BLACK_PEARL, MANDRAKE, NIGHTSHADE]),
+    "dispel field": (5, 0x1F4E, [BLACK_PEARL, GARLIC, SILK, ASH]),
+    "incognito": (5, 0x1F4F, [BLOODMOSS, GARLIC, NIGHTSHADE]),
+    "magic reflection": (5, 0x1F50, [GARLIC, MANDRAKE, SILK]),
+    "mind blast": (5, 0x1F51, [BLACK_PEARL, MANDRAKE, NIGHTSHADE, ASH]),
+    "paralyze": (5, 0x1F52, [GARLIC, MANDRAKE, SILK]),
+    "poison field": (5, 0x1F53, [BLACK_PEARL, NIGHTSHADE, SILK]),
+    "summon creature": (5, 0x1F54, [BLOODMOSS, MANDRAKE, SILK]),
+    "dispel": (6, 0x1F55, [GARLIC, MANDRAKE, ASH]),
+    "energy bolt": (6, 0x1F56, [BLACK_PEARL, NIGHTSHADE]),
+    "explosion": (6, 0x1F57, [BLOODMOSS, MANDRAKE, NIGHTSHADE]),
+    "invisibility": (6, 0x1F58, [BLOODMOSS, NIGHTSHADE]),
+    "mark": (6, 0x1F59, [BLACK_PEARL, BLOODMOSS, MANDRAKE]),
+    "mass curse": (6, 0x1F5A, [GARLIC, MANDRAKE, NIGHTSHADE, ASH]),
+    "paralyze field": (6, 0x1F5B, [BLACK_PEARL, GINSENG, SILK]),
+    "reveal": (6, 0x1F5C, [BLOODMOSS, ASH]),
+    "chain lightning": (7, 0x1F5D, [BLACK_PEARL, BLOODMOSS, MANDRAKE, ASH]),
+    "energy field": (7, 0x1F5E, [BLACK_PEARL, MANDRAKE, SILK, ASH]),
+    "flamestrike": (7, 0x1F5F, [SILK, ASH]),
+    "gate travel": (7, 0x1F60, [BLACK_PEARL, MANDRAKE, ASH]),
+    "mana vampire": (7, 0x1F61, [BLACK_PEARL, BLOODMOSS, MANDRAKE, SILK]),
+    "mass dispel": (7, 0x1F62, [BLACK_PEARL, GARLIC, MANDRAKE, ASH]),
+    "meteor swarm": (7, 0x1F63, [BLOODMOSS, MANDRAKE, SILK, ASH]),
+    "polymorph": (7, 0x1F64, [BLOODMOSS, MANDRAKE, SILK]),
+    "earthquake": (8, 0x1F65, [BLOODMOSS, GINSENG, MANDRAKE, ASH]),
+    "energy vortex": (8, 0x1F66, [BLACK_PEARL, BLOODMOSS, MANDRAKE, NIGHTSHADE]),
+    "resurrection": (8, 0x1F67, [BLOODMOSS, GARLIC, GINSENG]),
+    "air elemental": (8, 0x1F68, [BLOODMOSS, MANDRAKE, SILK]),
+    "summon daemon": (8, 0x1F69, [BLOODMOSS, MANDRAKE, SILK, ASH]),
+    "earth elemental": (8, 0x1F6A, [BLOODMOSS, MANDRAKE, SILK]),
+    "fire elemental": (8, 0x1F6B, [BLOODMOSS, MANDRAKE, SILK, ASH]),
+    "water elemental": (8, 0x1F6C, [BLOODMOSS, MANDRAKE, SILK]),
 }
 
 
@@ -154,8 +156,11 @@ PRODUCT_GRAPHICS = set().union(*PRODUCTS.values())
 NEEDS = dict((name, needs_of(SPELLS[name][2])) for name in SPELLS)
 MANA = dict((name, MANA_BY_CIRCLE[SPELLS[name][0]]) for name in SPELLS)
 
-# The CATEGORIES rows, lowercased: where the group block ends and the item rows begin
-CATEGORY_NAMES = ["first circle", "second circle", "third circle", "fourth circle",
+# The CATEGORIES rows, lowercased: where the group block ends and the item rows begin. The
+# paired names are UOAlive's
+CATEGORY_NAMES = ["first - second circle", "third - fourth circle", "fifth - sixth circle",
+                  "seventh - eighth circle", "spells of necromancy", "spells of mysticism",
+                  "first circle", "second circle", "third circle", "fourth circle",
                   "fifth circle", "sixth circle", "seventh circle", "eighth circle",
                   "necromancy", "mysticism", "spellweaving", "other", "runebooks", "spellbooks",
                   "1st circle", "2nd circle", "3rd circle", "4th circle", "5th circle",
@@ -270,14 +275,21 @@ CATEGORY_BUTTON_TYPE = 0
 ITEM_BUTTON_TYPE = 1
 MAKE_LAST_BUTTON = 47
 
-# (category button, row button). Empty on purpose: the walk finds each row and logs its button, and
-# a guessed table mis-presses on a shard whose rows are in another order. Copy the log lines in here.
-RECIPES = {}
+# (category button, row button) on UOAlive, whose menu pairs the circles at 1, 21, 41, 61 and lists
+# each pair in spell order over sixteen rows. Lightning is read off the gump; the rest follow the
+# same layout, and a wrong one costs one craft before the details pages find the row
+RECIPES = {
+    "lightning": (21, 262),
+    "magic reflection": (41, 62),
+    "reveal": (41, 302),
+    "flamestrike": (61, 42),
+    "resurrection": (61, 202),
+}
 
 MAX_CATEGORIES = 14
 
-# Eight spells a circle
-MAX_ITEM_ROWS = 8
+# UOAlive pairs the circles, sixteen rows over two pages
+MAX_ITEM_ROWS = 16
 
 # Each miss costs one scroll's worth of materials, which is why the gump text is read first
 MAX_ITEM_PROBES = 8
@@ -315,7 +327,7 @@ MAX_NO_MATERIAL = 3
 
 # What an unreadable outcome reports before it goes quiet, and how much of it
 MAX_UNREADABLE_REPORTS = 2
-UNREADABLE_TEXT_LIMIT = 160
+UNREADABLE_TEXT_LIMIT = 400
 JOURNAL_TAIL_SECONDS = 20.0
 JOURNAL_TAIL_LINES = 4
 
@@ -324,6 +336,7 @@ OUTCOME_TEXT = [
     (
         "failed",
         [
+            "You fail to inscribe the scroll",
             "You failed to create the item",
             "You fail to create",
             "You have failed to create",
@@ -333,6 +346,7 @@ OUTCOME_TEXT = [
     (
         "made",
         [
+            "You inscribe the spell and put the scroll",
             "You create the item",
             "You put the",
         ],
@@ -448,6 +462,10 @@ class Choice(object):
         width = max(CHOICE_WIDTH, 16 + len(options) * (CHOICE_BUTTON_WIDTH + CHOICE_GAP) + 8)
 
         gump = API.Gumps.CreateGump(True, True)
+
+        if gump is None:
+            return None
+
         gump.SetRect(0, 0, width, height)
         gump.CenterXInViewPort()
         gump.CenterYInViewPort()
@@ -491,6 +509,12 @@ class Choice(object):
             chosen[0] = key
 
         gump = self._show(options, on_press)
+
+        # API.Stop() only lands at the next Pause, and every client call before it answers nothing
+        if gump is None:
+            self._log("not asking - the run is being stopped")
+            return None
+
         self._log("asking - %s" % self._config["text"])
         waited = 0.0
         why = None
@@ -558,6 +582,68 @@ def shortfall_report(short, order):
     return ", ".join(parts)
 
 
+# src/uo/text.py
+def words_of(text):
+    letters = []
+
+    for char in (text or "").lower():
+        letters.append(char if char.isalnum() else " ")
+
+    return "".join(letters).split()
+
+
+def word_in(text, words):
+    found = words_of(text)
+
+    for word in words:
+        if word in found:
+            return True
+
+    return False
+
+
+def phrase_in(text, phrase):
+    found = words_of(text)
+    wanted = words_of(phrase)
+
+    for start in range(len(found) - len(wanted) + 1):
+        if found[start:start + len(wanted)] == wanted:
+            return True
+
+    return len(wanted) == 0
+
+
+def any_in(text, fragments):
+    low = (text or "").lower()
+
+    for fragment in fragments:
+        if fragment in low:
+            return True
+
+    return False
+
+
+def untagged(text):
+    kept = []
+    inside = False
+
+    for char in text or "":
+        if char == "<":
+            inside = True
+        elif char == ">":
+            inside = False
+        elif not inside:
+            kept.append(char)
+
+    return "".join(kept)
+
+
+def clipped(text, limit):
+    flat = " ".join((text or "").split())
+
+    return flat if len(flat) <= limit else flat[:limit] + "..."
+
+
 # src/uo/journal.py
 def said(texts):
     for text in texts:
@@ -565,6 +651,10 @@ def said(texts):
             return True
 
     return False
+
+
+# A craft's mana coming back gains Meditation and Focus, which buries the one line that matters
+SKILL_GAIN_TEXT = ["your skill in", "has changed by"]
 
 
 # matchingText is left off on purpose: the client only applies it as a regex, so a plain string
@@ -583,7 +673,7 @@ def journal_tail(seconds, limit):
     for entry in entries if entries else []:
         text = getattr(entry, "Text", None)
 
-        if text and text.strip():
+        if text and text.strip() and not any_in(text, SKILL_GAIN_TEXT):
             texts.append(text.strip())
 
     return texts[-limit:]
@@ -623,6 +713,34 @@ def read_outcome(buckets, budget, poll, between=None):
 
         API.Pause(poll)
         waited += poll
+
+
+# src/uo/entity.py
+# API.Player is None whenever the client is between world states - a recall, a server line change,
+# the moment around a death - and reading through it threw a live restock away
+def player():
+    try:
+        return API.Player
+    except Exception:
+        if API.StopRequested:
+            raise
+
+        return None
+
+
+def hex_of(value):
+    return "0x%x" % (value & 0xFFFFFFFF)
+
+
+# unknown is what an unanswered client reads as, so the caller pathfinds and asks again rather than
+# treating silence as arm's length
+def chebyshev(x, y, unknown):
+    me = player()
+
+    if me is None:
+        return unknown
+
+    return max(abs(me.X - x), abs(me.Y - y))
 
 
 # src/uo/pack.py
@@ -694,42 +812,6 @@ def settled(timeout, poll, landed):
     return False
 
 
-# src/uo/text.py
-def words_of(text):
-    letters = []
-
-    for char in (text or "").lower():
-        letters.append(char if char.isalnum() else " ")
-
-    return "".join(letters).split()
-
-
-def word_in(text, words):
-    found = words_of(text)
-
-    for word in words:
-        if word in found:
-            return True
-
-    return False
-
-
-def any_in(text, fragments):
-    low = (text or "").lower()
-
-    for fragment in fragments:
-        if fragment in low:
-            return True
-
-    return False
-
-
-def clipped(text, limit):
-    flat = " ".join((text or "").split())
-
-    return flat if len(flat) <= limit else flat[:limit] + "..."
-
-
 # src/uo/craft.py
 class Crafter(object):
     def __init__(self, tools, menu, stock, buckets, config, log):
@@ -744,19 +826,36 @@ class Crafter(object):
         self._make_last = False
         self._said_unreadable = 0
         self._said_no_make_last = False
+        self._heard = ""
         # Products the recipe table got wrong on this shard, which the walk owns from then on
         self._walked = set()
 
     def forget_last(self):
         self._make_last = False
 
+    # The phrase is kept so a made that never landed can say what was believed and where
+    def _journal_bucket(self):
+        for name, phrases in self._buckets:
+            for phrase in phrases:
+                # clearMatches, or a line already read answers the next wait as well
+                if API.InJournalAny([phrase], True):
+                    self._heard = "the journal said '%s'" % phrase
+
+                    return name
+
+        return None
+
     def _notice_bucket(self, gump):
         if not gump:
             return None
 
+        text = API.GetGumpContents(gump)
+
         for name, phrases in self._buckets:
             for phrase in phrases:
-                if API.GumpContains(phrase, gump):
+                if any_in(text, [phrase.lower()]) or API.GumpContains(phrase, gump):
+                    self._heard = "the gump said '%s'" % phrase
+
                     return name
 
         return None
@@ -768,9 +867,11 @@ class Crafter(object):
 
         while not API.StopRequested:
             if landed():
+                self._heard = "the pack gained it"
+
                 return "made"
 
-            hit = matched_bucket(self._buckets)
+            hit = self._journal_bucket()
 
             if hit is None:
                 hit = self._notice_bucket(opened)
@@ -792,7 +893,7 @@ class Crafter(object):
 
         self._said_unreadable += 1
 
-        text = (clipped(" ".join(self._menu.lines(gump)), self._config["text_limit"])
+        text = (clipped(untagged(" ".join(self._menu.lines(gump))), self._config["text_limit"])
                 if gump else "")
         lines = journal_tail(self._config["tail_seconds"], self._config["tail_lines"])
 
@@ -859,8 +960,23 @@ class Crafter(object):
         if button is not None:
             return button, None
 
-        order = self._menu.candidate_buttons(product, gump)
         probe = self._item_probes.get(product, 0)
+        found = self._menu.find_row(product, gump) if probe == 0 else None
+
+        if found is None:
+            order = self._menu.candidate_buttons(product, gump)
+        else:
+            gump, button = found
+
+            if not gump:
+                return None, "noGump"
+
+            if button is not None:
+                self._item_buttons[product] = button
+
+                return button, None
+
+            order = []
 
         if probe < min(self._config["max_probes"], len(order)):
             return order[probe], None
@@ -887,6 +1003,33 @@ class Crafter(object):
 
         return "wrongRow"
 
+    def _named_for(self, item, product):
+        props = API.ItemNameAndProps(item.Serial) or ""
+        name = props.split("\n")[0] if props else (item.Name or "")
+
+        return phrase_in(name, product)
+
+    # The shard said made and the table's art never landed: a new art in the pack whose name says
+    # the product is it under this shard's number. UOAlive's lightning scroll is not stock 0x1F4B.
+    def _learn_art(self, product, held):
+        items = pack_contents()
+        gained, _lost = diff_counts(held, counts_by_graphic(items))
+        arts = set()
+
+        for item in items:
+            if (item.Graphic, item.Hue) in gained and self._named_for(item, product):
+                arts.add(item.Graphic)
+
+        if len(arts) != 1:
+            return False
+
+        art = arts.pop()
+        self._config["products"][product].add(art)
+        self._log("'%s' landed as %s, not the art in the table - put %s in it"
+                  % (product, hex_of(art), hex_of(art)))
+
+        return True
+
     # Something was made and none of it was the product, so a row was wrong - unless the press was
     # MAKE LAST, which the shard forgets on its own and which says nothing about the proven row
     def _wrong_product(self, product, button):
@@ -896,7 +1039,8 @@ class Crafter(object):
 
             return "wrongRow"
 
-        self._log("button %d did not make a '%s', trying the next row" % (button, product))
+        self._log("button %d did not make a '%s' - %s - trying the next row"
+                  % (button, product, self._heard))
 
         return self._walk_instead(product)
 
@@ -915,8 +1059,12 @@ class Crafter(object):
         if button is None:
             return outcome
 
+        # The details pages may have taken the menu down and brought it back
+        gump = self._menu.current_id() or gump
+
         graphics = self._config["products"][product]
         before = count_of(graphics)
+        held = counts_by_graphic(pack_contents())
 
         def made_one():
             return count_of(graphics) > before
@@ -939,6 +1087,12 @@ class Crafter(object):
             return "made"
 
         if outcome == "made":
+            if self._learn_art(product, held):
+                self._item_buttons[product] = button
+                self._make_last = True
+
+                return "made"
+
             return self._wrong_product(product, button)
 
         if outcome == "noMaterial":
@@ -951,34 +1105,6 @@ class Crafter(object):
                 self._log("MAKE LAST made nothing, pressing the row itself next time")
 
         return outcome
-
-
-# src/uo/entity.py
-# API.Player is None whenever the client is between world states - a recall, a server line change,
-# the moment around a death - and reading through it threw a live restock away
-def player():
-    try:
-        return API.Player
-    except Exception:
-        if API.StopRequested:
-            raise
-
-        return None
-
-
-def hex_of(value):
-    return "0x%x" % (value & 0xFFFFFFFF)
-
-
-# unknown is what an unanswered client reads as, so the caller pathfinds and asks again rather than
-# treating silence as arm's length
-def chebyshev(x, y, unknown):
-    me = player()
-
-    if me is None:
-        return unknown
-
-    return max(abs(me.X - x), abs(me.Y - y))
 
 
 # src/uo/gump.py
@@ -1079,6 +1205,7 @@ class CraftMenu(object):
         self._said_gump_text = False
         self._said_no_category = False
         self._said_no_row = set()
+        self._said_no_details = False
         self._said_no_button = set()
         self._said_not_menu = False
         self._category_buttons = {}
@@ -1232,7 +1359,8 @@ class CraftMenu(object):
 
         return [] if start is None else lines[start:]
 
-    # Whole row, never a substring: "crossbow" is inside "crossbow bolt", in another category
+    # Whole row, never a substring: "crossbow" is inside "crossbow bolt", in another category.
+    # A menu that reads as one line has no rows, and GumpContains is case-sensitive
     def page_has(self, product, gump):
         rows = self.item_rows(gump)
 
@@ -1240,7 +1368,10 @@ class CraftMenu(object):
             if row.lower() == product:
                 return True
 
-        return len(rows) == 0 and API.GumpContains(product, gump)
+        if len(rows) > 0:
+            return False
+
+        return phrase_in(API.GetGumpContents(gump), product) or API.GumpContains(product, gump)
 
     def remember_category(self, product, button):
         self._category_buttons[product] = button
@@ -1288,6 +1419,64 @@ class CraftMenu(object):
             self._said_no_category = True
             self._log("no category lists '%s' - check the name against the SELECTIONS rows"
                       % product)
+
+        return (gump, None)
+
+    # The pen is used again when the details page took the menu down with it
+    def _back_to(self, category):
+        menu = self.open()
+
+        if not menu:
+            return 0
+
+        return self.press(category, menu, self._config["gump_timeout"])
+
+    # A row's details page is its button plus one and costs nothing to open, and the rows carry on
+    # across the pages the client splits a long category into. None sends the caller to the walk;
+    # (gump, None) is a category that has no such row.
+    def find_row(self, product, gump):
+        category = self._category_buttons.get(product)
+
+        if category is None or button_ids(gump) is None:
+            return None
+
+        for index in range(self._config["max_item_rows"]):
+            button = self.button_id(self._config["item_type"], index)
+
+            if not self.has_button(button, gump):
+                continue
+
+            if not self.has_button(button + 1, gump):
+                return None
+
+            before = self.lines(gump)
+            details = self.press_page(button + 1, gump, self._config["gump_timeout"])
+
+            if not details:
+                return None
+
+            text = self.lines(details)
+
+            if text == before:
+                if not self._said_no_details:
+                    self._said_no_details = True
+                    self._log("button %d opened no details page, walking the rows instead"
+                              % (button + 1))
+
+                return None
+
+            named = phrase_in(" ".join(text), product)
+            API.CloseGump(details)
+            gump = self._back_to(category)
+
+            if not gump:
+                return (0, None)
+
+            if named:
+                self._log("'%s' is the row on button %d - its details page names it"
+                          % (product, button))
+
+                return (gump, button)
 
         return (gump, None)
 

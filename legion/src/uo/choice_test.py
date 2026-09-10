@@ -61,3 +61,10 @@ class ChoiceTest(unittest.TestCase):
 
         self.assertIsNone(self.choice.ask(OPTIONS))
         self.assertEqual(self.said[-1], "the run is being stopped")
+
+    def test_a_run_already_being_stopped_draws_nothing(self):
+        self.api.StopRequested = True
+
+        self.assertIsNone(self.choice.ask(OPTIONS))
+        self.assertEqual(self.said, ["not asking - the run is being stopped"])
+        self.assertEqual(self.api.drawn, [])

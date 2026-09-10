@@ -1,5 +1,7 @@
 import API
 
+from uo.text import any_in
+
 
 def said(texts):
     for text in texts:
@@ -7,6 +9,10 @@ def said(texts):
             return True
 
     return False
+
+
+# A craft's mana coming back gains Meditation and Focus, which buries the one line that matters
+SKILL_GAIN_TEXT = ["your skill in", "has changed by"]
 
 
 # matchingText is left off on purpose: the client only applies it as a regex, so a plain string
@@ -25,7 +31,7 @@ def journal_tail(seconds, limit):
     for entry in entries if entries else []:
         text = getattr(entry, "Text", None)
 
-        if text and text.strip():
+        if text and text.strip() and not any_in(text, SKILL_GAIN_TEXT):
             texts.append(text.strip())
 
     return texts[-limit:]

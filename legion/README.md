@@ -1374,10 +1374,13 @@ material by hand.
 **21** Ammunition, **41** Weapons), the arrow on a `SELECTIONS` row is type 1, and `MAKE LAST` is
 **47**, read off this shard's menu. `RECIPES` names the buttons for known rows; it is a shortcut, and
 the pack is still what proves a craft. Anything else walks the categories: each is pressed until a
-page lists the product, the row is read from `GetGumpContents` as the text past the last category
-name, and proved by the pack. A craft that added none of the product's graphics tries the next
-candidate, up to `MAX_ITEM_PROBES`, then the next category. Matches are whole-row: `crossbow` is
-inside `crossbow bolt`, and a substring match finds Ammunition first. Once a row has made the item,
+page lists the product, then each row's details page (its button plus one, which spends nothing) is
+opened until one names the product, and the pack proves the craft. Rows carry on across the pages
+the client splits a long category into, so `MAX_ITEM_ROWS` counts the category, not a page. A menu
+with no details pages falls back to reading the row off `GetGumpContents` as the text past the last
+category name, and a craft that added none of the product's graphics tries the next candidate, up
+to `MAX_ITEM_PROBES`, then the next category. Matches are whole-row: `crossbow` is inside `crossbow
+bolt`, and a substring match finds Ammunition first. Once a row has made the item,
 every craft after is `MAKE LAST`, when the menu has that button; a band change, a worn tool or a
 wrong graphic sends it back. A `RECIPES` button the menu does not have is never sent: the product
 goes to the walk instead.
@@ -1740,9 +1743,9 @@ counts the band's scroll by art, so it does count one you carried in.
 | `MEDITATE` / `MEDITATE_TO_FULL` | `True` / `True` | As `magery.py` |
 | `MAX_DRY` | `5` | Mana waits in a row that brought nothing before the run ends |
 | `TOOL_GRAPHICS` / `TOOL_NAME_WORDS` | stock / `pen` | An art learned by name joins the set |
-| `CATEGORY_NAMES` | the circles, spelled two ways | Where the group rows end and the item rows begin |
-| `RECIPES` | empty | `(category button, row button)`. Copy the `is the row on button` lines in |
-| `MAX_CATEGORIES` / `MAX_ITEM_ROWS` | `14` / `8` | How far the walk goes; eight spells a circle |
+| `CATEGORY_NAMES` | UOAlive's paired circles, and the singles | Where the group rows end and the item rows begin |
+| `RECIPES` | the five bands | `(category button, row button)` on UOAlive. Copy the `is the row on button` lines in for any other spell |
+| `MAX_CATEGORIES` / `MAX_ITEM_ROWS` | `14` / `16` | How far the walk goes; UOAlive pairs the circles, sixteen rows over two pages |
 | `DATA_PATH` | `skill-attempts.jsonl` | Where each craft is appended, with what it spent. `""` records nothing |
 
 ### When it goes wrong
@@ -1763,11 +1766,28 @@ counts the band's scroll by art, so it does count one you carried in.
 
 ### Unverified
 
-- Every wording in `OUTCOME_TEXT` and `MEDITATE_OUTCOME_TEXT` but the trance line, and every art:
-  the pen, the blank scroll, the reagents and the scrolls are stock RunUO, none read off UOAlive.
-- The scroll art is `0x1F2E` plus the spell id, which holds for recall and energy bolt in stock;
-  a shard that renumbers costs one `wrongRow` per band before the pack diff sorts it out.
-- The circle category names and whether the row says `magic reflection` or `magic reflect`.
+- Every wording in `OUTCOME_TEXT` and `MEDITATE_OUTCOME_TEXT` but the trance line, the success and
+  the failure, and every art: the pen, the blank scroll, the reagents and the scrolls are stock
+  RunUO, none read off UOAlive.
+- Whether the row says `magic reflection` or `magic reflect`.
+
+### Notes
+
+- UOAlive's menu pairs the circles: **1** First - Second, **21** Third - Fourth, **41** Fifth -
+  Sixth, **61** Seventh - Eighth, then Necromancy, Other and Mysticism. `GetGumpContents` hands it
+  back as one line, every page included, and the row buttons of the second page are in the gump
+  from the start: lightning is row 13 of Third - Fourth, button 262, without turning a page.
+- A success says `You inscribe the spell and put the scroll in your backpack` and a failure
+  `You fail to inscribe the scroll, and the scroll is ruined`, both in the gump's NOTICES panel
+  only, never in the journal. The notice is read off `GetGumpContents` as well as
+  `GumpContains`, and the unreadable report drops the Meditation and Focus gains that the spent
+  mana's regeneration writes over it.
+- The scroll art is `0x1F2D` plus the spell id: stock RunUO has reactive armor out of sequence
+  at `0x1F2D` and every later scroll one under `0x1F2E` plus the id. Lightning reads `0x1F4A`
+  (8010) on UOAlive, which is that formula. A made whose table art never lands is still checked
+  against the whole pack, and a new art whose name says the product is taken as it for the rest
+  of the run, with a line naming it to put in `SPELLS`.
+- The blank scroll is `0x0EF3` or `0x0E34`, the same scroll turned the other way.
 - The mana figures, and whether the shard checks mana before or after spending the reagents.
 - `MAKE_LAST_BUTTON` and the button stride are assumed to be `bowcraft.py`'s, as the same gump.
 - Whether a mage buys scrolls on this shard, and which. Unload is the safe answer.

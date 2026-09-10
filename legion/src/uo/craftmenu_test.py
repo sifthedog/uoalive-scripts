@@ -61,6 +61,12 @@ class ItemRowsTest(unittest.TestCase):
 
         self.assertEqual(self.menu.item_rows(88), [])
 
+    def test_a_one_line_menu_matches_the_phrase_in_any_case(self):
+        self._gump("<CENTER>INSCRIPTION MENU</CENTER> LAST TEN Bless Lightning NEXT PAGE Recall")
+
+        self.assertTrue(self.menu.page_has("lightning", 88))
+        self.assertFalse(self.menu.page_has("chain lightning", 88))
+
     def test_a_whole_row_matches_and_a_substring_does_not(self):
         self._gump("Weapons", "crossbow bolt")
 
@@ -315,3 +321,86 @@ class PressTest(unittest.TestCase):
 
     def test_a_page_press_the_menu_answers_itself(self):
         self.assertEqual(self.menu.press_page(3, 88, 1.0), 88)
+
+
+class FindRowTest(unittest.TestCase):
+    """The menu reads as one line, the pen is 7, and a details press replaces the menu with 200."""
+
+    def setUp(self):
+        self.api = install()
+        self.said = []
+        self.menu = CraftMenu(FakeTool(), CONFIG, self.said.append)
+        self.details = {}
+        self.api.gump = 88
+        self.api.opens[7] = 88
+        self.api.gump_contents[88] = "BOWCRAFT AND FLETCHING Materials Ammunition Weapons"
+        self.api.gump_buttons[88] = set([1, 21, 41] + [2 + n * 20 for n in range(12)]
+                                        + [3 + n * 20 for n in range(12)])
+        self.menu.open()
+
+        def reply(button, gump=None):
+            self.api.replies.append((button, gump))
+
+            if button in self.details:
+                self.api.gump = 200
+                self.api.gump_contents[200] = self.details[button]
+            elif button == 41:
+                self.api.gump_contents[88] = ("BOWCRAFT AND FLETCHING Materials Ammunition Weapons "
+                                              "bow NEXT PAGE PREV PAGE crossbow")
+
+            return True
+
+        self.api.ReplyGump = reply
+        self.menu.find_category("crossbow", 88)
+        self.api.replies[:] = []
+        self.said[:] = []
+
+    def pressed(self):
+        return [button for button, _gump in self.api.replies]
+
+    def test_the_details_page_that_names_the_product_is_the_row(self):
+        self.details = {3: "ITEM bow SKILLS MATERIALS BACK", 23: "ITEM crossbow SKILLS BACK"}
+
+        self.assertEqual(self.menu.find_row("crossbow", 88), (88, 22))
+        self.assertEqual(self.pressed(), [3, 41, 23, 41])
+        self.assertEqual(self.api.used, [7, 7])
+        self.assertEqual(self.said, ["'crossbow' is the row on button 22 - its details page names it"])
+
+    def test_rows_past_the_first_page_are_reached(self):
+        self.details = dict((3 + n * 20, "ITEM bow BACK") for n in range(12))
+        self.details[203] = "ITEM crossbow BACK"
+
+        self.assertEqual(self.menu.find_row("crossbow", 88), (88, 202))
+
+    def test_a_category_with_no_such_row_answers_no_button(self):
+        self.details = dict((3 + n * 20, "ITEM bow BACK") for n in range(12))
+
+        self.assertEqual(self.menu.find_row("crossbow", 88), (88, None))
+        self.assertEqual(len(self.pressed()), 24)
+
+    def test_unreadable_buttons_send_it_to_the_walk(self):
+        del self.api.gump_buttons[88]
+
+        self.assertIsNone(self.menu.find_row("crossbow", 88))
+        self.assertEqual(self.pressed(), [])
+
+    def test_a_menu_without_details_buttons_sends_it_to_the_walk(self):
+        self.api.gump_buttons[88] = set([1, 21, 41, 2, 22])
+
+        self.assertIsNone(self.menu.find_row("crossbow", 88))
+        self.assertEqual(self.pressed(), [])
+
+    def test_a_details_button_that_redraws_nothing_sends_it_to_the_walk_and_says_so_once(self):
+        self.assertIsNone(self.menu.find_row("crossbow", 88))
+        self.assertIsNone(self.menu.find_row("crossbow", 88))
+        self.assertEqual(self.pressed(), [3, 3])
+        self.assertEqual(self.said, ["button 3 opened no details page, walking the rows instead"])
+
+    def test_a_menu_that_does_not_come_back_is_no_gump(self):
+        self.details = {3: "ITEM bow BACK"}
+        del self.api.opens[7]
+
+        self.assertEqual(self.menu.find_row("crossbow", 88), (0, None))
+
+    def test_a_product_whose_category_is_unknown_goes_to_the_walk(self):
+        self.assertIsNone(self.menu.find_row("yumi", 88))

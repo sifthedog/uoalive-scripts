@@ -34,7 +34,8 @@ BLANK = "blank scrolls"
 # Stock art, unverified on UOAlive; an art learned by name joins its set. Whole words, so 'ash' is
 # not a name word: ash boards carry it too.
 STOCK_KINDS = [
-    (BLANK, set([0x0EF3]), ["blank scroll", "blank scrolls"]),
+    # 0x0E34 is the same scroll turned the other way
+    (BLANK, set([0x0EF3, 0x0E34]), ["blank scroll", "blank scrolls"]),
     (BLACK_PEARL, set([0x0F7A]), ["black pearl", "pearl"]),
     (BLOODMOSS, set([0x0F7B]), ["bloodmoss", "blood moss"]),
     (GARLIC, set([0x0F84]), ["garlic"]),
@@ -51,48 +52,49 @@ KIND_ORDER = [kind for kind, _graphics, _words in STOCK_KINDS]
 MANA_BY_CIRCLE = {4: 11, 5: 14, 6: 20, 7: 40, 8: 50}
 
 # Row name as the SELECTIONS row spells it: circle, the scroll's art, and its reagents. The art is
-# 0x1F2E plus the spell's id in stock RunUO (recall 0x1F4D, energy bolt 0x1F57 confirm it).
+# 0x1F2D plus the spell's id: stock RunUO puts reactive armor out of sequence at 0x1F2D and every
+# scroll after it one under 0x1F2E plus the id. UOAlive's lightning scroll reads 0x1F4A (8010).
 SPELLS = {
-    "arch cure": (4, 0x1F46, [GARLIC, GINSENG, MANDRAKE]),
-    "arch protection": (4, 0x1F47, [GARLIC, GINSENG, MANDRAKE, ASH]),
-    "curse": (4, 0x1F48, [GARLIC, NIGHTSHADE, ASH]),
-    "fire field": (4, 0x1F49, [BLACK_PEARL, SILK, ASH]),
-    "greater heal": (4, 0x1F4A, [GARLIC, GINSENG, MANDRAKE, SILK]),
-    "lightning": (4, 0x1F4B, [MANDRAKE, ASH]),
-    "mana drain": (4, 0x1F4C, [BLACK_PEARL, MANDRAKE, SILK]),
-    "recall": (4, 0x1F4D, [BLACK_PEARL, BLOODMOSS, MANDRAKE]),
-    "blade spirits": (5, 0x1F4E, [BLACK_PEARL, MANDRAKE, NIGHTSHADE]),
-    "dispel field": (5, 0x1F4F, [BLACK_PEARL, GARLIC, SILK, ASH]),
-    "incognito": (5, 0x1F50, [BLOODMOSS, GARLIC, NIGHTSHADE]),
-    "magic reflection": (5, 0x1F51, [GARLIC, MANDRAKE, SILK]),
-    "mind blast": (5, 0x1F52, [BLACK_PEARL, MANDRAKE, NIGHTSHADE, ASH]),
-    "paralyze": (5, 0x1F53, [GARLIC, MANDRAKE, SILK]),
-    "poison field": (5, 0x1F54, [BLACK_PEARL, NIGHTSHADE, SILK]),
-    "summon creature": (5, 0x1F55, [BLOODMOSS, MANDRAKE, SILK]),
-    "dispel": (6, 0x1F56, [GARLIC, MANDRAKE, ASH]),
-    "energy bolt": (6, 0x1F57, [BLACK_PEARL, NIGHTSHADE]),
-    "explosion": (6, 0x1F58, [BLOODMOSS, MANDRAKE, NIGHTSHADE]),
-    "invisibility": (6, 0x1F59, [BLOODMOSS, NIGHTSHADE]),
-    "mark": (6, 0x1F5A, [BLACK_PEARL, BLOODMOSS, MANDRAKE]),
-    "mass curse": (6, 0x1F5B, [GARLIC, MANDRAKE, NIGHTSHADE, ASH]),
-    "paralyze field": (6, 0x1F5C, [BLACK_PEARL, GINSENG, SILK]),
-    "reveal": (6, 0x1F5D, [BLOODMOSS, ASH]),
-    "chain lightning": (7, 0x1F5E, [BLACK_PEARL, BLOODMOSS, MANDRAKE, ASH]),
-    "energy field": (7, 0x1F5F, [BLACK_PEARL, MANDRAKE, SILK, ASH]),
-    "flamestrike": (7, 0x1F60, [SILK, ASH]),
-    "gate travel": (7, 0x1F61, [BLACK_PEARL, MANDRAKE, ASH]),
-    "mana vampire": (7, 0x1F62, [BLACK_PEARL, BLOODMOSS, MANDRAKE, SILK]),
-    "mass dispel": (7, 0x1F63, [BLACK_PEARL, GARLIC, MANDRAKE, ASH]),
-    "meteor swarm": (7, 0x1F64, [BLOODMOSS, MANDRAKE, SILK, ASH]),
-    "polymorph": (7, 0x1F65, [BLOODMOSS, MANDRAKE, SILK]),
-    "earthquake": (8, 0x1F66, [BLOODMOSS, GINSENG, MANDRAKE, ASH]),
-    "energy vortex": (8, 0x1F67, [BLACK_PEARL, BLOODMOSS, MANDRAKE, NIGHTSHADE]),
-    "resurrection": (8, 0x1F68, [BLOODMOSS, GARLIC, GINSENG]),
-    "air elemental": (8, 0x1F69, [BLOODMOSS, MANDRAKE, SILK]),
-    "summon daemon": (8, 0x1F6A, [BLOODMOSS, MANDRAKE, SILK, ASH]),
-    "earth elemental": (8, 0x1F6B, [BLOODMOSS, MANDRAKE, SILK]),
-    "fire elemental": (8, 0x1F6C, [BLOODMOSS, MANDRAKE, SILK, ASH]),
-    "water elemental": (8, 0x1F6D, [BLOODMOSS, MANDRAKE, SILK]),
+    "arch cure": (4, 0x1F45, [GARLIC, GINSENG, MANDRAKE]),
+    "arch protection": (4, 0x1F46, [GARLIC, GINSENG, MANDRAKE, ASH]),
+    "curse": (4, 0x1F47, [GARLIC, NIGHTSHADE, ASH]),
+    "fire field": (4, 0x1F48, [BLACK_PEARL, SILK, ASH]),
+    "greater heal": (4, 0x1F49, [GARLIC, GINSENG, MANDRAKE, SILK]),
+    "lightning": (4, 0x1F4A, [MANDRAKE, ASH]),
+    "mana drain": (4, 0x1F4B, [BLACK_PEARL, MANDRAKE, SILK]),
+    "recall": (4, 0x1F4C, [BLACK_PEARL, BLOODMOSS, MANDRAKE]),
+    "blade spirits": (5, 0x1F4D, [BLACK_PEARL, MANDRAKE, NIGHTSHADE]),
+    "dispel field": (5, 0x1F4E, [BLACK_PEARL, GARLIC, SILK, ASH]),
+    "incognito": (5, 0x1F4F, [BLOODMOSS, GARLIC, NIGHTSHADE]),
+    "magic reflection": (5, 0x1F50, [GARLIC, MANDRAKE, SILK]),
+    "mind blast": (5, 0x1F51, [BLACK_PEARL, MANDRAKE, NIGHTSHADE, ASH]),
+    "paralyze": (5, 0x1F52, [GARLIC, MANDRAKE, SILK]),
+    "poison field": (5, 0x1F53, [BLACK_PEARL, NIGHTSHADE, SILK]),
+    "summon creature": (5, 0x1F54, [BLOODMOSS, MANDRAKE, SILK]),
+    "dispel": (6, 0x1F55, [GARLIC, MANDRAKE, ASH]),
+    "energy bolt": (6, 0x1F56, [BLACK_PEARL, NIGHTSHADE]),
+    "explosion": (6, 0x1F57, [BLOODMOSS, MANDRAKE, NIGHTSHADE]),
+    "invisibility": (6, 0x1F58, [BLOODMOSS, NIGHTSHADE]),
+    "mark": (6, 0x1F59, [BLACK_PEARL, BLOODMOSS, MANDRAKE]),
+    "mass curse": (6, 0x1F5A, [GARLIC, MANDRAKE, NIGHTSHADE, ASH]),
+    "paralyze field": (6, 0x1F5B, [BLACK_PEARL, GINSENG, SILK]),
+    "reveal": (6, 0x1F5C, [BLOODMOSS, ASH]),
+    "chain lightning": (7, 0x1F5D, [BLACK_PEARL, BLOODMOSS, MANDRAKE, ASH]),
+    "energy field": (7, 0x1F5E, [BLACK_PEARL, MANDRAKE, SILK, ASH]),
+    "flamestrike": (7, 0x1F5F, [SILK, ASH]),
+    "gate travel": (7, 0x1F60, [BLACK_PEARL, MANDRAKE, ASH]),
+    "mana vampire": (7, 0x1F61, [BLACK_PEARL, BLOODMOSS, MANDRAKE, SILK]),
+    "mass dispel": (7, 0x1F62, [BLACK_PEARL, GARLIC, MANDRAKE, ASH]),
+    "meteor swarm": (7, 0x1F63, [BLOODMOSS, MANDRAKE, SILK, ASH]),
+    "polymorph": (7, 0x1F64, [BLOODMOSS, MANDRAKE, SILK]),
+    "earthquake": (8, 0x1F65, [BLOODMOSS, GINSENG, MANDRAKE, ASH]),
+    "energy vortex": (8, 0x1F66, [BLACK_PEARL, BLOODMOSS, MANDRAKE, NIGHTSHADE]),
+    "resurrection": (8, 0x1F67, [BLOODMOSS, GARLIC, GINSENG]),
+    "air elemental": (8, 0x1F68, [BLOODMOSS, MANDRAKE, SILK]),
+    "summon daemon": (8, 0x1F69, [BLOODMOSS, MANDRAKE, SILK, ASH]),
+    "earth elemental": (8, 0x1F6A, [BLOODMOSS, MANDRAKE, SILK]),
+    "fire elemental": (8, 0x1F6B, [BLOODMOSS, MANDRAKE, SILK, ASH]),
+    "water elemental": (8, 0x1F6C, [BLOODMOSS, MANDRAKE, SILK]),
 }
 
 
@@ -110,8 +112,11 @@ PRODUCT_GRAPHICS = set().union(*PRODUCTS.values())
 NEEDS = dict((name, needs_of(SPELLS[name][2])) for name in SPELLS)
 MANA = dict((name, MANA_BY_CIRCLE[SPELLS[name][0]]) for name in SPELLS)
 
-# The CATEGORIES rows, lowercased: where the group block ends and the item rows begin
-CATEGORY_NAMES = ["first circle", "second circle", "third circle", "fourth circle",
+# The CATEGORIES rows, lowercased: where the group block ends and the item rows begin. The
+# paired names are UOAlive's
+CATEGORY_NAMES = ["first - second circle", "third - fourth circle", "fifth - sixth circle",
+                  "seventh - eighth circle", "spells of necromancy", "spells of mysticism",
+                  "first circle", "second circle", "third circle", "fourth circle",
                   "fifth circle", "sixth circle", "seventh circle", "eighth circle",
                   "necromancy", "mysticism", "spellweaving", "other", "runebooks", "spellbooks",
                   "1st circle", "2nd circle", "3rd circle", "4th circle", "5th circle",
@@ -226,14 +231,21 @@ CATEGORY_BUTTON_TYPE = 0
 ITEM_BUTTON_TYPE = 1
 MAKE_LAST_BUTTON = 47
 
-# (category button, row button). Empty on purpose: the walk finds each row and logs its button, and
-# a guessed table mis-presses on a shard whose rows are in another order. Copy the log lines in here.
-RECIPES = {}
+# (category button, row button) on UOAlive, whose menu pairs the circles at 1, 21, 41, 61 and lists
+# each pair in spell order over sixteen rows. Lightning is read off the gump; the rest follow the
+# same layout, and a wrong one costs one craft before the details pages find the row
+RECIPES = {
+    "lightning": (21, 262),
+    "magic reflection": (41, 62),
+    "reveal": (41, 302),
+    "flamestrike": (61, 42),
+    "resurrection": (61, 202),
+}
 
 MAX_CATEGORIES = 14
 
-# Eight spells a circle
-MAX_ITEM_ROWS = 8
+# UOAlive pairs the circles, sixteen rows over two pages
+MAX_ITEM_ROWS = 16
 
 # Each miss costs one scroll's worth of materials, which is why the gump text is read first
 MAX_ITEM_PROBES = 8
@@ -271,7 +283,7 @@ MAX_NO_MATERIAL = 3
 
 # What an unreadable outcome reports before it goes quiet, and how much of it
 MAX_UNREADABLE_REPORTS = 2
-UNREADABLE_TEXT_LIMIT = 160
+UNREADABLE_TEXT_LIMIT = 400
 JOURNAL_TAIL_SECONDS = 20.0
 JOURNAL_TAIL_LINES = 4
 
@@ -280,6 +292,7 @@ OUTCOME_TEXT = [
     (
         "failed",
         [
+            "You fail to inscribe the scroll",
             "You failed to create the item",
             "You fail to create",
             "You have failed to create",
@@ -289,6 +302,7 @@ OUTCOME_TEXT = [
     (
         "made",
         [
+            "You inscribe the spell and put the scroll",
             "You create the item",
             "You put the",
         ],

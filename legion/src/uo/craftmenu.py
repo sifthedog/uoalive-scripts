@@ -2,7 +2,7 @@ import API
 
 from uo.entity import hex_of
 from uo.gump import await_gump, await_recognised, button_ids, is_open, open_ids
-from uo.text import any_in
+from uo.text import any_in, phrase_in
 
 
 class CraftMenu(object):
@@ -18,6 +18,7 @@ class CraftMenu(object):
         self._said_gump_text = False
         self._said_no_category = False
         self._said_no_row = set()
+        self._said_no_details = False
         self._said_no_button = set()
         self._said_not_menu = False
         self._category_buttons = {}
@@ -171,7 +172,8 @@ class CraftMenu(object):
 
         return [] if start is None else lines[start:]
 
-    # Whole row, never a substring: "crossbow" is inside "crossbow bolt", in another category
+    # Whole row, never a substring: "crossbow" is inside "crossbow bolt", in another category.
+    # A menu that reads as one line has no rows, and GumpContains is case-sensitive
     def page_has(self, product, gump):
         rows = self.item_rows(gump)
 
@@ -179,7 +181,10 @@ class CraftMenu(object):
             if row.lower() == product:
                 return True
 
-        return len(rows) == 0 and API.GumpContains(product, gump)
+        if len(rows) > 0:
+            return False
+
+        return phrase_in(API.GetGumpContents(gump), product) or API.GumpContains(product, gump)
 
     def remember_category(self, product, button):
         self._category_buttons[product] = button
@@ -227,6 +232,64 @@ class CraftMenu(object):
             self._said_no_category = True
             self._log("no category lists '%s' - check the name against the SELECTIONS rows"
                       % product)
+
+        return (gump, None)
+
+    # The pen is used again when the details page took the menu down with it
+    def _back_to(self, category):
+        menu = self.open()
+
+        if not menu:
+            return 0
+
+        return self.press(category, menu, self._config["gump_timeout"])
+
+    # A row's details page is its button plus one and costs nothing to open, and the rows carry on
+    # across the pages the client splits a long category into. None sends the caller to the walk;
+    # (gump, None) is a category that has no such row.
+    def find_row(self, product, gump):
+        category = self._category_buttons.get(product)
+
+        if category is None or button_ids(gump) is None:
+            return None
+
+        for index in range(self._config["max_item_rows"]):
+            button = self.button_id(self._config["item_type"], index)
+
+            if not self.has_button(button, gump):
+                continue
+
+            if not self.has_button(button + 1, gump):
+                return None
+
+            before = self.lines(gump)
+            details = self.press_page(button + 1, gump, self._config["gump_timeout"])
+
+            if not details:
+                return None
+
+            text = self.lines(details)
+
+            if text == before:
+                if not self._said_no_details:
+                    self._said_no_details = True
+                    self._log("button %d opened no details page, walking the rows instead"
+                              % (button + 1))
+
+                return None
+
+            named = phrase_in(" ".join(text), product)
+            API.CloseGump(details)
+            gump = self._back_to(category)
+
+            if not gump:
+                return (0, None)
+
+            if named:
+                self._log("'%s' is the row on button %d - its details page names it"
+                          % (product, button))
+
+                return (gump, button)
 
         return (gump, None)
 

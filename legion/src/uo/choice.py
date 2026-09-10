@@ -19,6 +19,10 @@ class Choice(object):
         width = max(CHOICE_WIDTH, 16 + len(options) * (CHOICE_BUTTON_WIDTH + CHOICE_GAP) + 8)
 
         gump = API.Gumps.CreateGump(True, True)
+
+        if gump is None:
+            return None
+
         gump.SetRect(0, 0, width, height)
         gump.CenterXInViewPort()
         gump.CenterYInViewPort()
@@ -62,6 +66,12 @@ class Choice(object):
             chosen[0] = key
 
         gump = self._show(options, on_press)
+
+        # API.Stop() only lands at the next Pause, and every client call before it answers nothing
+        if gump is None:
+            self._log("not asking - the run is being stopped")
+            return None
+
         self._log("asking - %s" % self._config["text"])
         waited = 0.0
         why = None
