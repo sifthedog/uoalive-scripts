@@ -300,6 +300,9 @@ def player():
     try:
         return API.Player
     except Exception:
+        if API.StopRequested:
+            raise
+
         return None
 
 
@@ -423,6 +426,9 @@ class StockBook(object):
         self._move_delay = config["move_delay"]
         self._log = log
 
+    def noun(self):
+        return self._noun
+
     # For a snapshot key, which has no item left to read a name off
     def is_stock_graphic(self, graphic):
         for _kind, graphics, _words in self._kinds:
@@ -471,6 +477,9 @@ class StockBook(object):
 
     def wrong(self, item):
         return self.is_stock(item) and self.type_of(item) != self._wanted
+
+    def usable_kind(self, item, kind):
+        return self.usable(item) and self.kind_of(item) == kind
 
     # Only what the menu will spend: counting oak let a run sit on a full pack and craft none
     def counts(self, items):
@@ -598,6 +607,9 @@ def journal_tail(seconds, limit):
     try:
         entries = API.GetJournalEntries(seconds)
     except Exception:
+        if API.StopRequested:
+            raise
+
         return []
 
     texts = []
@@ -644,7 +656,7 @@ def position_and_weight():
     return "%s, %s" % (where(), weight_reading())
 
 
-# src/bowcraft/restock.py
+# src/uo/restock.py
 class Restock(object):
     def __init__(self, wood, sources, config, log):
         self._wood = wood
@@ -674,17 +686,60 @@ class Restock(object):
 
         return moved
 
+    # One pool by default; a table of kind -> fill-to pulls each kind on its own, so a craft that
+    # spends several things does not fill the pack with whichever pile the container lists first
+    def _targets(self, targets):
+        if targets is None:
+            return [(None, self._config["batch"] - self._wood.in_pack())]
+
+        held = self._wood.pack_stock()
+
+        return [(kind, targets[kind] - held.get(kind, 0)) for kind in sorted(targets)]
+
+    def _pull(self, container, kind, wanted):
+        moved = 0
+        stalled = 0
+
+        while moved < wanted and stalled < self._config["max_empty_moves"]:
+            piles = self._sources.container_wood(container, kind)
+
+            if len(piles) == 0:
+                break
+
+            before = self._wood.in_pack()
+
+            API.MoveItem(piles[0].Serial, API.Backpack,
+                         min(wanted - moved, amount_of(piles[0])))
+            API.Pause(self._config["move_delay"])
+
+            gained = self._wood.in_pack() - before
+
+            # Every container answers the same, so the first refusal ends the whole pull
+            if gained <= 0 and matched_bucket([("heavy", self._config["heavy_text"])]):
+                self._heavy = True
+                self._log("the shard will not load more %s - too heavy at %s"
+                          % (self._wood.noun(), weight_reading()))
+                break
+
+            if gained <= 0:
+                stalled += 1
+            else:
+                stalled = 0
+                moved += gained
+
+        return moved
+
     # Moves are asynchronous: the pack is re-counted after each rather than MoveItem's return read
-    def run(self):
+    def run(self, targets=None):
         self._heavy = False
         lifted = self._wood.lift_from_bags()
 
         # After the lift: in_pack reads bags too, and counting the lift twice left it short
-        wanted = self._config["batch"] - self._wood.in_pack()
+        wanted = dict(self._targets(targets))
         moved = 0
 
         for entry in self._sources.picked():
-            if moved >= wanted or self._heavy:
+            if max(wanted.values()) <= 0 or self._heavy:
                 break
 
             if not self._sources.reach(entry):
@@ -700,43 +755,23 @@ class Restock(object):
             if self._config["return_wrong_wood"]:
                 self._put_back(container)
 
-            stalled = 0
+            for kind in sorted(wanted, key=lambda name: name or ""):
+                if wanted[kind] <= 0 or self._heavy:
+                    continue
 
-            while moved < wanted and stalled < self._config["max_empty_moves"]:
-                piles = self._sources.container_wood(container)
-
-                if len(piles) == 0:
-                    break
-
-                before = self._wood.in_pack()
-
-                API.MoveItem(piles[0].Serial, API.Backpack,
-                             min(wanted - moved, amount_of(piles[0])))
-                API.Pause(self._config["move_delay"])
-
-                gained = self._wood.in_pack() - before
-
-                # Every container answers the same, so the first refusal ends the whole pull
-                if gained <= 0 and matched_bucket([("heavy", self._config["heavy_text"])]):
-                    self._heavy = True
-                    self._log("the shard will not load more wood - too heavy at %s"
-                              % weight_reading())
-                    break
-
-                if gained <= 0:
-                    stalled += 1
-                else:
-                    stalled = 0
-                    moved += gained
+                pulled = self._pull(container, kind, wanted[kind])
+                wanted[kind] -= pulled
+                moved += pulled
 
         if moved > 0:
-            self._log("pulled %d wood, %s in the pack, %d left in what you picked"
-                      % (moved, self._wood.pack_report(), self._sources.stock_left()))
+            self._log("pulled %d %s, %s in the pack, %d left in what you picked"
+                      % (moved, self._wood.noun(), self._wood.pack_report(),
+                         self._sources.stock_left()))
 
         return lifted + moved
 
 
-# src/bowcraft/sources.py
+# src/uo/sources.py
 class Sources(object):
     """The containers and pack animals the wood is drawn from."""
 
@@ -775,7 +810,7 @@ class Sources(object):
 
         return entry["serial"]
 
-    def _entry_for(self, serial):
+    def entry_for(self, serial):
         item = API.FindItem(serial)
 
         if item is not None:
@@ -802,7 +837,8 @@ class Sources(object):
         return container
 
     def pick(self):
-        self._log("target every container or pack animal holding logs or boards, ESC when done")
+        self._log("target every container or pack animal holding %s, ESC when done"
+                  % self._wood.noun())
 
         me = player()
         mine = me.Serial if me is not None else None
@@ -824,7 +860,7 @@ class Sources(object):
             if serial in [entry["serial"] for entry in self._picked]:
                 continue
 
-            entry = self._entry_for(serial)
+            entry = self.entry_for(serial)
 
             if entry is None:
                 self._log("%s is neither a container nor a creature" % hex_of(serial))
@@ -849,10 +885,12 @@ class Sources(object):
 
         return self._picked
 
-    # Only the type the menu is set to
-    def container_wood(self, serial):
+    # Only the type the menu is set to, and only one kind of it when a kind is named
+    def container_wood(self, serial, kind=None):
         items = API.ItemsInContainer(serial, True)
-        piles = [item for item in (items or []) if self._wood.usable(item)]
+        piles = [item for item in (items or [])
+                 if (self._wood.usable(item) if kind is None
+                     else self._wood.usable_kind(item, kind))]
         piles.sort(key=amount_of, reverse=True)
 
         return piles
@@ -1172,7 +1210,8 @@ def open_ids():
             if serial and serial not in found:
                 found.append(serial)
     except Exception:
-        pass
+        if API.StopRequested:
+            raise
 
     return found
 
@@ -1210,6 +1249,9 @@ def button_ids(ident):
 
         return found
     except Exception:
+        if API.StopRequested:
+            raise
+
         return None
 
 
@@ -1732,8 +1774,7 @@ class Materials(object):
 
 
 # src/uo/record.py
-# Written by hand rather than with json.dumps: the bundler admits API and time and nothing else, and
-# a row of numbers and two short strings is not worth relaxing that rule for.
+# Written by hand rather than with json.dumps, so the key order stays the one the README shows
 def quoted(text):
     out = ['"']
 
@@ -1928,6 +1969,9 @@ def find_skill_name(names):
             if API.GetSkill(name) is not None:
                 return name
         except Exception:
+            if API.StopRequested:
+                raise
+
             continue
 
     return None
@@ -2009,6 +2053,9 @@ def context_menu(serial, texts, timeout):
             if API.ContextMenu(serial, text, timeout):
                 return True
         except Exception:
+            if API.StopRequested:
+                raise
+
             continue
 
     return False
@@ -2019,6 +2066,9 @@ def tooltip_of(mobile):
     try:
         return mobile.NameAndProps(False) or ""
     except Exception:
+        if API.StopRequested:
+            raise
+
         return ""
 
 

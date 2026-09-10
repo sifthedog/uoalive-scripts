@@ -11,6 +11,9 @@ def player():
     try:
         return API.Player
     except Exception:
+        if API.StopRequested:
+            raise
+
         return None
 
 
@@ -408,6 +411,9 @@ def context_menu(serial, texts, timeout):
             if API.ContextMenu(serial, text, timeout):
                 return True
         except Exception:
+            if API.StopRequested:
+                raise
+
             continue
 
     return False
@@ -709,8 +715,7 @@ class Pace(object):
 
 
 # src/uo/record.py
-# Written by hand rather than with json.dumps: the bundler admits API and time and nothing else, and
-# a row of numbers and two short strings is not worth relaxing that rule for.
+# Written by hand rather than with json.dumps, so the key order stays the one the README shows
 def quoted(text):
     out = ['"']
 
