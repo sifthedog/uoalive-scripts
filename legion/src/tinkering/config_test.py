@@ -1,6 +1,7 @@
 import unittest
 
-from tinkering.config import BANDS, INGOT_COST, OUTCOME_TEXT, PRODUCTS, VENDORS
+from tinkering.config import (BANDS, INGOT_COST, OUTCOME_TEXT, OUTPUT_CHOICE, OUTPUT_OPTIONS,
+                              PRODUCTS, VENDORS)
 from uo.stages import band_for
 
 
@@ -30,3 +31,9 @@ class OutcomeOrderTest(unittest.TestCase):
 
         self.assertLess(names.index("failed"), names.index("made"))
         self.assertEqual(names[-1], "throttled")
+
+
+class OutputChoiceTest(unittest.TestCase):
+    def test_every_button_answers_with_a_key_the_loop_branches_on(self):
+        self.assertEqual([key for key, _caption in OUTPUT_OPTIONS], ["sell", "unload", "keep"])
+        self.assertEqual(sorted(OUTPUT_CHOICE), ["hue", "poll", "text", "timeout"])

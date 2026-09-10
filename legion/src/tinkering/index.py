@@ -11,7 +11,8 @@ from tinkering.config import (BANDS, BUTTON_STRIDE, CATEGORY_BUTTON_TYPE, CATEGO
                               MAX_ITEM_PROBES, MAX_ITEM_ROWS, MAX_NO_MATERIAL, MAX_NO_TOOL,
                               MAX_SELL_MISSES, MAX_THROTTLED, MAX_UNKNOWN, MAX_UNREADABLE_REPORTS,
                               MIN_CRAFT_INGOTS, MIN_SKILL, MOVE_DELAY, OPEN_DELAY, OPL_WAIT,
-                              OUTCOME_TEXT, PATHFIND_TIMEOUT, PICK_TIMEOUT, PRODUCT_GRAPHICS,
+                              OUTCOME_TEXT, OUTPUT_CHOICE, OUTPUT_OPTIONS, PATHFIND_TIMEOUT,
+                              PICK_TIMEOUT, PRODUCT_GRAPHICS,
                               PRODUCTS, RECIPES, REFUND_POLL, REFUND_SETTLE,
                               SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT, SAVING_TEXT, SELL_AT,
                               SELL_ENTRY, SELL_PHRASE, SELL_POLL, SELL_RETRY_AFTER, SELL_TIMEOUT,
@@ -20,6 +21,7 @@ from tinkering.config import (BANDS, BUTTON_STRIDE, CATEGORY_BUTTON_TYPE, CATEGO
                               THROTTLE_BACKOFF_MAX, TOOL_GRAPHICS, TOOL_NAME_WORDS,
                               UNREADABLE_TEXT_LIMIT, VENDOR_RANGE, VENDOR_SCAN_RADIUS,
                               VENDOR_SERIAL, VENDOR_STEPS, VENDORS)
+from uo.choice import Choice
 from uo.cost import cost_of, short_by
 from uo.craft import Crafter
 from uo.craftmenu import CraftMenu
@@ -119,11 +121,6 @@ sources = Sources(stock, {
     "container_range": CONTAINER_RANGE,
     "pathfind_timeout": PATHFIND_TIMEOUT,
 }, log)
-dump = Dump(sources, UNSOLD_GRAPHICS, {
-    "pick_timeout": PICK_TIMEOUT,
-    "move_delay": MOVE_DELAY,
-    "keep_existing": False,
-}, log)
 crafter = Crafter(tools, menu, stock, OUTCOME_TEXT, {
     "recipes": RECIPES,
     "products": PRODUCTS,
@@ -155,6 +152,7 @@ vendor = Vendor(menu, {
     "opl_wait": OPL_WAIT,
     "text_limit": UNREADABLE_TEXT_LIMIT,
 }, log, heartbeat, products_in_pack)
+choice = Choice(OUTPUT_CHOICE, log, stop_reason)
 
 start = skill.wait(SKILL_TIMEOUT, SKILL_POLL)
 capped = skill_capped(skill_name)()
@@ -187,12 +185,33 @@ if ingots_short(first) > 0:
         % (stock.pack_report(), first, ingot_cost(first)))
     API.Stop()
 
-if unsold_ahead(start):
+output = choice.ask(OUTPUT_OPTIONS)
+
+# Kept: a key carried in is a house key, not the run's, and it is never unloaded into a barrel
+dump = Dump(sources, UNSOLD_GRAPHICS if output == "sell" else PRODUCT_GRAPHICS, {
+    "pick_timeout": PICK_TIMEOUT,
+    "move_delay": MOVE_DELAY,
+    "keep_existing": True,
+}, log)
+
+if output == "unload":
     dump.pick()
 
     if not dump.picked():
-        log("nothing picked to unload into - the run ends once the pack holds %d unsold products"
-            % MAX_HELD)
+        output = "keep"
+
+if output == "sell":
+    log("selling every %d to the band's vendor" % SELL_AT)
+
+    if unsold_ahead(start):
+        dump.pick()
+
+        if not dump.picked():
+            log("nothing picked to unload into - the run ends once the pack holds %d unsold products"
+                % MAX_HELD)
+elif output != "unload":
+    output = "keep"
+    log("keeping what is made - the run ends once the pack holds %d" % MAX_HELD)
 
 cap = skill.cap()
 
@@ -319,10 +338,10 @@ try:
             sell_misses = 0
             sell_paused_until = 0
 
-        if VENDORS[product] is None:
-            held = dump.held()
+        held = dump.held()
 
-            if held >= DUMP_AT and dump.picked():
+        if output == "unload":
+            if held >= DUMP_AT:
                 if unload_now():
                     end_cycle("unloading")
                     continue
@@ -331,12 +350,26 @@ try:
                     stop = ("%d unloads in a row moved nothing into '%s'"
                             % (dump_misses, dump.name()))
                     break
-            elif held >= MAX_HELD and not dump.picked():
-                stop = "the pack holds %d unsold and nothing was picked to unload into" % held
-                break
-        elif products_in_pack() >= SELL_AT and cycle >= sell_paused_until and sell_now():
-            end_cycle("selling")
-            continue
+        elif output == "sell":
+            if VENDORS[product] is None:
+                if held >= DUMP_AT and dump.picked():
+                    if unload_now():
+                        end_cycle("unloading")
+                        continue
+
+                    if dump_misses >= MAX_DUMP_MISSES:
+                        stop = ("%d unloads in a row moved nothing into '%s'"
+                                % (dump_misses, dump.name()))
+                        break
+                elif held >= MAX_HELD and not dump.picked():
+                    stop = "the pack holds %d unsold and nothing was picked to unload into" % held
+                    break
+            elif products_in_pack() >= SELL_AT and cycle >= sell_paused_until and sell_now():
+                end_cycle("selling")
+                continue
+        elif held >= MAX_HELD:
+            stop = "the pack holds %d and nothing was picked to unload into" % held
+            break
 
         if ingots_short(product) > 0:
             stop = out_of_ingots()

@@ -99,10 +99,21 @@ VENDORS = {
     "fancy wind chimes": None,
 }
 
-# Unsold products in the pack, counted as amounts, before they are unloaded
+# Answered by the gump at the start; ESC on the unload cursor and a closed gump both mean keep. Sell
+# still asks for the container once a band nobody buys from is ahead.
+OUTPUT_CHOICE = {
+    "text": "Sell what is made to the vendor that buys it, unload it into a container, or keep it?",
+    "hue": 996,
+    "poll": 0.5,
+    "timeout": 60.0,
+}
+OUTPUT_OPTIONS = [("sell", "Sell"), ("unload", "Unload"), ("keep", "Keep")]
+
+# Products the run made, counted as amounts, before they are unloaded: every band under Unload, the
+# unsold ones under Sell
 DUMP_AT = 10
 
-# With nothing picked to unload into, the run ends once the pack holds this many unsold products
+# Keeping them, or selling with nowhere to put the unsold, the run ends once the pack holds this many
 MAX_HELD = 60
 
 # Unloads in a row that moved nothing before the run ends

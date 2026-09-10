@@ -137,10 +137,21 @@ VENDORS = {
     "fancy wind chimes": None,
 }
 
-# Unsold products in the pack, counted as amounts, before they are unloaded
+# Answered by the gump at the start; ESC on the unload cursor and a closed gump both mean keep. Sell
+# still asks for the container once a band nobody buys from is ahead.
+OUTPUT_CHOICE = {
+    "text": "Sell what is made to the vendor that buys it, unload it into a container, or keep it?",
+    "hue": 996,
+    "poll": 0.5,
+    "timeout": 60.0,
+}
+OUTPUT_OPTIONS = [("sell", "Sell"), ("unload", "Unload"), ("keep", "Keep")]
+
+# Products the run made, counted as amounts, before they are unloaded: every band under Unload, the
+# unsold ones under Sell
 DUMP_AT = 10
 
-# With nothing picked to unload into, the run ends once the pack holds this many unsold products
+# Keeping them, or selling with nowhere to put the unsold, the run ends once the pack holds this many
 MAX_HELD = 60
 
 # Unloads in a row that moved nothing before the run ends
@@ -284,6 +295,112 @@ OUTCOME_TEXT = [
     ("saving", SAVING_TEXT),
     ("throttled", THROTTLED_TEXT),
 ]
+
+
+# src/uo/choice.py
+CHOICE_WIDTH = 340
+CHOICE_BUTTON_WIDTH = 96
+CHOICE_BUTTON_HEIGHT = 26
+CHOICE_GAP = 8
+
+
+class Choice(object):
+    """A gump the script draws with one button per option, answered by the first press."""
+
+    def __init__(self, config, log, stop_reason):
+        self._config = config
+        self._log = log
+        self._stop_reason = stop_reason
+
+    def _show(self, options, on_press):
+        height = 16 + 20 + 16 + CHOICE_BUTTON_HEIGHT + 16
+        width = max(CHOICE_WIDTH, 16 + len(options) * (CHOICE_BUTTON_WIDTH + CHOICE_GAP) + 8)
+
+        gump = API.Gumps.CreateGump(True, True)
+
+        if gump is None:
+            return None
+
+        gump.SetRect(0, 0, width, height)
+        gump.CenterXInViewPort()
+        gump.CenterYInViewPort()
+
+        background = API.Gumps.CreateGumpColorBox(0.85, "#1E1E1E")
+        background.SetRect(0, 0, width, height)
+        gump.Add(background)
+
+        label = API.Gumps.CreateGumpLabel(self._config["text"], self._config["hue"])
+        label.SetPos(16, 16)
+        gump.Add(label)
+
+        for index in range(len(options)):
+            key, caption = options[index]
+            button = API.Gumps.CreateSimpleButton(caption, CHOICE_BUTTON_WIDTH,
+                                                  CHOICE_BUTTON_HEIGHT)
+            button.SetPos(16 + index * (CHOICE_BUTTON_WIDTH + CHOICE_GAP),
+                          height - CHOICE_BUTTON_HEIGHT - 16)
+            API.Gumps.AddControlOnClick(button, self._presser(key, on_press))
+            gump.Add(button)
+
+        API.Gumps.AddGump(gump)
+
+        return gump
+
+    # A closure per button rather than one in the loop: the loop variable would be the last key
+    def _presser(self, key, on_press):
+        def press():
+            on_press(key)
+
+        return press
+
+    # The pressed key, or None when the gump was closed, timed out, or the run has a reason to stop
+    def ask(self, options):
+        if API.HasTarget():
+            API.CancelTarget()
+
+        chosen = [None]
+
+        def on_press(key):
+            chosen[0] = key
+
+        gump = self._show(options, on_press)
+
+        # API.Stop() only lands at the next Pause, and every client call before it answers nothing
+        if gump is None:
+            self._log("not asking - the run is being stopped")
+            return None
+
+        self._log("asking - %s" % self._config["text"])
+        waited = 0.0
+        why = None
+
+        # The click only arrives through ProcessCallbacks, and a stopped script's client calls all
+        # answer with nothing, so the stop flag is the one read that still means something then
+        while why is None:
+            if API.StopRequested:
+                why = "the run is being stopped"
+                break
+
+            API.ProcessCallbacks()
+
+            if chosen[0] is not None:
+                why = "'%s' was pressed" % dict(options)[chosen[0]]
+            elif gump.IsDisposed:
+                why = "the gump was closed"
+            elif self._stop_reason() is not None:
+                why = "the run has a reason to stop"
+            elif waited >= self._config["timeout"]:
+                why = "nothing was pressed in %.0fs" % self._config["timeout"]
+            else:
+                API.Pause(self._config["poll"])
+                waited += self._config["poll"]
+
+        if not gump.IsDisposed:
+            gump.Dispose()
+
+        self._log(why)
+
+        return chosen[0]
 
 
 # src/uo/cost.py
@@ -2439,11 +2556,6 @@ sources = Sources(stock, {
     "container_range": CONTAINER_RANGE,
     "pathfind_timeout": PATHFIND_TIMEOUT,
 }, log)
-dump = Dump(sources, UNSOLD_GRAPHICS, {
-    "pick_timeout": PICK_TIMEOUT,
-    "move_delay": MOVE_DELAY,
-    "keep_existing": False,
-}, log)
 crafter = Crafter(tools, menu, stock, OUTCOME_TEXT, {
     "recipes": RECIPES,
     "products": PRODUCTS,
@@ -2475,6 +2587,7 @@ vendor = Vendor(menu, {
     "opl_wait": OPL_WAIT,
     "text_limit": UNREADABLE_TEXT_LIMIT,
 }, log, heartbeat, products_in_pack)
+choice = Choice(OUTPUT_CHOICE, log, stop_reason)
 
 start = skill.wait(SKILL_TIMEOUT, SKILL_POLL)
 capped = skill_capped(skill_name)()
@@ -2507,12 +2620,33 @@ if ingots_short(first) > 0:
         % (stock.pack_report(), first, ingot_cost(first)))
     API.Stop()
 
-if unsold_ahead(start):
+output = choice.ask(OUTPUT_OPTIONS)
+
+# Kept: a key carried in is a house key, not the run's, and it is never unloaded into a barrel
+dump = Dump(sources, UNSOLD_GRAPHICS if output == "sell" else PRODUCT_GRAPHICS, {
+    "pick_timeout": PICK_TIMEOUT,
+    "move_delay": MOVE_DELAY,
+    "keep_existing": True,
+}, log)
+
+if output == "unload":
     dump.pick()
 
     if not dump.picked():
-        log("nothing picked to unload into - the run ends once the pack holds %d unsold products"
-            % MAX_HELD)
+        output = "keep"
+
+if output == "sell":
+    log("selling every %d to the band's vendor" % SELL_AT)
+
+    if unsold_ahead(start):
+        dump.pick()
+
+        if not dump.picked():
+            log("nothing picked to unload into - the run ends once the pack holds %d unsold products"
+                % MAX_HELD)
+elif output != "unload":
+    output = "keep"
+    log("keeping what is made - the run ends once the pack holds %d" % MAX_HELD)
 
 cap = skill.cap()
 
@@ -2639,10 +2773,10 @@ try:
             sell_misses = 0
             sell_paused_until = 0
 
-        if VENDORS[product] is None:
-            held = dump.held()
+        held = dump.held()
 
-            if held >= DUMP_AT and dump.picked():
+        if output == "unload":
+            if held >= DUMP_AT:
                 if unload_now():
                     end_cycle("unloading")
                     continue
@@ -2651,12 +2785,26 @@ try:
                     stop = ("%d unloads in a row moved nothing into '%s'"
                             % (dump_misses, dump.name()))
                     break
-            elif held >= MAX_HELD and not dump.picked():
-                stop = "the pack holds %d unsold and nothing was picked to unload into" % held
-                break
-        elif products_in_pack() >= SELL_AT and cycle >= sell_paused_until and sell_now():
-            end_cycle("selling")
-            continue
+        elif output == "sell":
+            if VENDORS[product] is None:
+                if held >= DUMP_AT and dump.picked():
+                    if unload_now():
+                        end_cycle("unloading")
+                        continue
+
+                    if dump_misses >= MAX_DUMP_MISSES:
+                        stop = ("%d unloads in a row moved nothing into '%s'"
+                                % (dump_misses, dump.name()))
+                        break
+                elif held >= MAX_HELD and not dump.picked():
+                    stop = "the pack holds %d unsold and nothing was picked to unload into" % held
+                    break
+            elif products_in_pack() >= SELL_AT and cycle >= sell_paused_until and sell_now():
+                end_cycle("selling")
+                continue
+        elif held >= MAX_HELD:
+            stop = "the pack holds %d and nothing was picked to unload into" % held
+            break
 
         if ingots_short(product) > 0:
             stop = out_of_ingots()

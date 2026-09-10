@@ -14,7 +14,7 @@ repo targets the ClassicUO web client; nothing is shared between the two.
 | `attack.py` | Turns war mode on and attacks the nearest gray or red mobile within 10 tiles that is not your pet or, by its tooltip, anyone else's. Run it again for the next one |
 | `arms-lore.py` | Target a weapon, then read it every half second until Arms Lore caps |
 | `bowcraft.py` | Trains Bowcraft from 30 to cap: makes whatever the band still gains on, restocks wood from the containers and pack animals you pick, and sells to the nearest bowyer |
-| `tinkering.py` | Trains Tinkering from 20 to cap on the iron ingots you carry: makes whatever the band still gains on and sells it to the vendor that buys it |
+| `tinkering.py` | Trains Tinkering from 20 to cap on the iron ingots you carry: makes whatever the band still gains on, and sells it to the vendor that buys it, unloads it or keeps it as a gump at the start decides |
 | `carpentry.py` | Trains Carpentry from 0 to cap on the cheapest recipe each band still gains on, restocks wood the way `bowcraft.py` does, and unloads what it made into the container you pick |
 | `inscription.py` | Trains Inscription from 30 to cap on the spell scroll with the fewest reagents each circle gains on, meditating when the pool is short, restocking scrolls and reagents the way `carpentry.py` does, and selling or unloading the scrolls as a gump at the start decides |
 | `magery.py` | Trains Magery on the four spells that gain without a victim, meditating when the pool runs dry |
@@ -31,9 +31,10 @@ repo targets the ClassicUO web client; nothing is shared between the two.
    `mine-here.py` want your fire beetle; `lumberjack.py` wants your pack animals, one after another;
    `arms-lore.py` wants the weapon; `bowcraft.py` wants every container or pack animal holding wood,
    or none if you carry it; `carpentry.py` wants the same, then the container to unload into;
-   `tinkering.py` wants that container once a band nobody buys from is ahead; `inscription.py`
-   wants the containers holding scrolls and reagents, then draws a gump asking whether the scrolls
-   made are sold, unloaded or kept, and wants the unload container if you press Unload; `bod.py`
+   `tinkering.py` draws a gump asking whether what it makes is sold, unloaded or kept, wants the
+   unload container if you press Unload, and under Sell wants it once a band nobody buys from is
+   ahead; `inscription.py` wants the containers holding scrolls and reagents, then draws the same
+   gump and wants the unload container if you press Unload; `bod.py`
    wants the deed; `inventory.py` wants the bag. `magery.py`, `mysticism.py`, `buffs.py`, `fishing.py` and `attack.py` raise none. ESC
    declines, and each script says what it does instead.
 
@@ -230,7 +231,7 @@ paladin who never once failed.
 | `tame.py` | `tamed` | `failed` | `pending` |
 | `arms-lore.py` | `read` | `missed` | a use that raised no cursor, unread wordings |
 | `bowcraft.py` | `made` | `failed` | `noMaterial`, `wrongRow`, a worn tool, the sell trips |
-| `tinkering.py` | `made` | `failed` | the same |
+| `tinkering.py` | `made` | `failed` | the same, and the unloading |
 | `carpentry.py` | `made` | `failed` | the same, and the unloading |
 | `inscription.py` | `made` | `failed` | the same, the mana waits, and the sell trips or unloading |
 | `fishing.py` | `caught` | `failed` | no cursor, not biting, out of reach, throttles, unread wordings |
@@ -1538,10 +1539,9 @@ when `DATA_PATH` is set.
 ## tinkering.py
 
 Trains Tinkering from 20 to cap on the iron ingots in your pack. There is no restock: it makes the
-band's item until the pack is short of a craft, selling every `SELL_AT` items to the vendor that
-band names, or unloading the ones nobody buys into the container you pick. Everything under the
-loop is shared with `bowcraft.py`, which is where the craft menu, the row walk and the outcomes are
-described.
+band's item until the pack is short of a craft, and does with it what the gump at the start says.
+Everything under the loop is shared with `bowcraft.py`, which is where the craft menu, the row walk
+and the outcomes are described.
 
 | Tinkering | Makes | Ingots | Sells to |
 | --- | --- | --- | --- |
@@ -1552,14 +1552,19 @@ described.
 | 95 – 111.8 | ring | 3 | jeweler |
 | 111.8 – cap | fancy wind chimes | 15 | nobody: unloaded |
 
-Ceilings are exclusive; the first row the value is under wins. Each cycle:
+Ceilings are exclusive; the first row the value is under wins. Before the loop: the tools, then a
+gump with **Sell**, **Unload** and **Keep**. Unload asks for the container; Sell asks for it only
+when a band nobody buys from is ahead. A closed gump, no press in `OUTPUT_CHOICE.timeout`, or ESC at
+the Unload cursor all mean keep. Each cycle:
 
 1. Read the skill. An uncovered band ends the run; a band change re-selects the row and gives the
    sell trips a fresh start, since the vendor changes with it.
-2. Sell once the pack holds `SELL_AT` of the band's product. Only that product is counted: tongs
-   left from the band before do not send the run to a provisioner that will not take them. A band
-   with no buyer unloads every `DUMP_AT` instead, as `carpentry.py` does; with nothing picked, the
-   run ends at `MAX_HELD`.
+2. Selling, sell once the pack holds `SELL_AT` of the band's product. Only that product is counted:
+   tongs left from the band before do not send the run to a provisioner that will not take them. A
+   band with no buyer unloads every `DUMP_AT` instead, as `carpentry.py` does; with nothing picked,
+   the run ends at `MAX_HELD`. Unloading, every band unloads at `DUMP_AT`. Keeping, the run ends at
+   `MAX_HELD`. What is unloaded or counted toward `MAX_HELD` is only what the run made: a key carried
+   in stays in the pack.
 3. Stop when the pack holds fewer iron ingots than the band's recipe takes.
 4. Open the menu with the tinker's tools, press the row or `MAKE LAST`, and read the outcome.
 
@@ -1576,8 +1581,8 @@ then counts toward `MAX_NO_MATERIAL`, since a menu set to another metal is the o
 - **Stand near the band's vendor**, within `VENDOR_SCAN_RADIUS`. The run asks for the vendor by
   the title in `VENDORS` and pauses the trips when nobody answers, the way `bowcraft.py` does.
 - **The auto-sell agent has to be configured** for each product, per vendor.
-- **Something to unload wind chimes into**, in reach: the cursor asks for it at the start when that
-  band is ahead. A trash barrel destroys them; a chest keeps them.
+- **Something to unload into**, in reach: the cursor asks for it on Unload, and on Sell when the
+  wind chimes band is ahead. A trash barrel destroys them; a chest keeps them.
 
 ### What to set
 
@@ -1587,7 +1592,8 @@ then counts toward `MAX_NO_MATERIAL`, since a menu set to another metal is the o
 | `PRODUCTS` | table | Row name as the gump spells it, and the graphics it arrives as |
 | `INGOT_COST` / `MIN_CRAFT_INGOTS` | table / `1` | When the pack is too short to try |
 | `VENDORS` | table | Per product: the noun for the log, and the titles matched on name and tooltip. `None` when nobody buys it |
-| `DUMP_AT` / `MAX_HELD` | `10` / `60` | Unsold products before an unload, and the most kept with nowhere to put them |
+| `OUTPUT_CHOICE` / `OUTPUT_OPTIONS` | a sentence, three buttons | The gump at the start |
+| `DUMP_AT` / `MAX_HELD` | `10` / `60` | Products before an unload, and where a keeping run, or a Sell run with nowhere to put the unsold, ends |
 | `TOOL_GRAPHICS` / `TOOL_NAME_WORDS` | stock / `tinker` | An art learned by name joins the set |
 | `INGOT_HUES` | nine rows | Names the ingots set aside |
 | `CATEGORY_NAMES` | stock | Where the group rows end and the item rows begin |
@@ -1605,7 +1611,10 @@ then counts toward `MAX_NO_MATERIAL`, since a menu set to another metal is the o
 - **`no jeweler within 18`**: said once per band. Walk to one; the trips retry on their own.
 - **`the gump text does not name 'iron key' on a row of its own`**: the row is spelled differently
   on this shard. `rows seen` lists what it read; fix `BANDS` and `PRODUCTS` to match.
-- **`the pack holds 60 unsold and nothing was picked to unload into`**: pick a container next time.
+- **`the pack holds 60 unsold and nothing was picked to unload into`**, or **`the pack holds 60 and
+  nothing was picked to unload into`** on a keeping run: pick a container next time.
+- **`nothing was pressed in 60s`**: the gump timed out, so everything is kept. Press faster, or
+  raise `OUTPUT_CHOICE.timeout`.
 - **`3 unloads in a row moved nothing`**: the container is full, locked down, or not a container.
 
 ### Unverified
