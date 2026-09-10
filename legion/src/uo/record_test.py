@@ -2,7 +2,7 @@ import unittest
 
 import uo.record
 from test_support.uo import FakePlayer, install
-from uo.record import AttemptLog, attempt_log, quoted, skill_json
+from uo.record import AttemptLog, attempt_log, json_object, json_value, quoted, skill_json
 
 
 class Sink(object):
@@ -39,6 +39,37 @@ class SkillJsonTest(unittest.TestCase):
 
     def test_an_unread_skill_is_null_rather_than_zero(self):
         self.assertEqual(skill_json(None), "null")
+
+
+class JsonValueTest(unittest.TestCase):
+    def test_a_bool_is_a_bool_before_it_is_an_int(self):
+        self.assertEqual(json_value(True), "true")
+        self.assertEqual(json_value(False), "false")
+        self.assertEqual(json_value(1), "1")
+
+    def test_none_is_null(self):
+        self.assertEqual(json_value(None), "null")
+
+    def test_a_float_keeps_its_point(self):
+        self.assertEqual(json_value(2.5), "2.5")
+        self.assertEqual(json_value(-10), "-10")
+
+    def test_text_is_quoted_like_a_row(self):
+        self.assertEqual(json_value('Jo\u00e3o "x"'), '"Jo\\u00e3o \\"x\\""')
+
+    def test_a_list_nests(self):
+        self.assertEqual(json_value([13, [15, None], "a"]), '[13,[15,null],"a"]')
+
+    def test_a_dict_is_written_with_its_keys_sorted(self):
+        self.assertEqual(json_value({"luck": 5, "antique": True}), '{"antique":true,"luck":5}')
+
+    def test_pairs_keep_their_order(self):
+        self.assertEqual(json_object([("v", 1), ("a", "b")]), '{"v":1,"a":"b"}')
+
+    def test_empty_containers(self):
+        self.assertEqual(json_value([]), "[]")
+        self.assertEqual(json_value({}), "{}")
+        self.assertEqual(json_object([]), "{}")
 
 
 class RecordingTest(unittest.TestCase):

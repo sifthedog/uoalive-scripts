@@ -16,12 +16,13 @@ def tile_key(tile):
 class TileMemory(object):
     """What is worked out, what could not be reached, and which art is not the resource at all."""
 
-    def __init__(self, respawn_delay, unreachable_delay, noun, verb, log):
+    def __init__(self, respawn_delay, unreachable_delay, noun, verb, log, saver=None):
         self._respawn_delay = respawn_delay
         self._unreachable_delay = unreachable_delay
         self._noun = noun
         self._verb = verb
         self._log = log
+        self._saver = saver
         self._blocked = {}
         self._banned_arts = set()
 
@@ -35,6 +36,12 @@ class TileMemory(object):
 
     def block(self, tile, until):
         self._blocked[tile_key(tile)] = until
+
+        if self._saver is not None and until != float("inf"):
+            self._saver(tile_key(tile), until)
+
+    def restore(self, key, until):
+        self._blocked[key] = until
 
     def mark_depleted(self, tile):
         self.block(tile, now() + self._respawn_delay)

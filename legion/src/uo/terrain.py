@@ -1,13 +1,16 @@
 import API
 
 
+# Plain Python types, not the client's sbyte and ushort: json cannot write those, and a .NET string
+# is only a str by courtesy
 def land_tile(x, y, land):
-    return {"x": x, "y": y, "z": land.Z, "graphic": land.Graphic, "is_land": True, "name": ""}
+    return {"x": int(x), "y": int(y), "z": int(land.Z), "graphic": int(land.Graphic),
+            "is_land": True, "name": ""}
 
 
 def static_tile(x, y, static):
-    return {"x": x, "y": y, "z": static.Z, "graphic": static.Graphic, "is_land": False,
-            "name": static.Name or ""}
+    return {"x": int(x), "y": int(y), "z": int(static.Z), "graphic": int(static.Graphic),
+            "is_land": False, "name": str(static.Name or "")}
 
 
 class Terrain(object):
@@ -17,6 +20,7 @@ class Terrain(object):
     def __init__(self):
         self._land = {}
         self._statics = {}
+        self._fresh = set()
         self.reads = 0
 
     def _land_at(self, x, y):
@@ -27,6 +31,7 @@ class Terrain(object):
             land = API.GetTile(x, y)
             cached = [land_tile(x, y, land)] if land is not None else []
             self._land[(x, y)] = cached
+            self._fresh.add((x, y))
 
         return cached
 
@@ -37,6 +42,7 @@ class Terrain(object):
             self.reads += 1
             cached = [static_tile(x, y, static) for static in API.GetStaticsAt(x, y) or []]
             self._statics[(x, y)] = cached
+            self._fresh.add((x, y))
 
         return cached
 
@@ -56,6 +62,18 @@ class Terrain(object):
         for x, y in missing:
             self._statics[(x, y)] = [static_tile(x, y, static)
                                      for static in by_coord.get((x, y), [])]
+            self._fresh.add((x, y))
+
+    def remember(self, x, y, land, statics):
+        self._land[(x, y)] = land
+        self._statics[(x, y)] = statics
+
+    # Coordinates read this session with both halves in, handed out once
+    def fresh(self):
+        done = [xy for xy in self._fresh if xy in self._land and xy in self._statics]
+        self._fresh.difference_update(done)
+
+        return [(xy, self._land[xy], self._statics[xy]) for xy in sorted(done)]
 
     def at(self, x, y):
         return self._land_at(x, y) + self._statics_at(x, y)

@@ -171,10 +171,12 @@ What the typings do not say, learned on UOAlive. Script-specific notes sit under
 - **`API.Notoriety` members are passed through, never compared.** The stub lists every one as `= 1`.
 - **`API.Player.IsCasting` goes true 0.2s into a cast and falls before the mana leaves the pool.**
 - **Moves are asynchronous**, so a restock re-counts the pack rather than trusting `API.MoveItem`.
-- **The standard library is on `sys.path`**, but the bundler's one rule stays: `re` and `json` are
-  not imported.
-- **Memory is per-run.** Nothing survives a restart, so every ban is re-learned.
-  `API.SavePersistentVar` exists and is deliberately not used.
+- **The standard library is on `sys.path`**, but the bundler admits only `API`, `time`, `clr`,
+  `System` and `json` outright; `re` stays out.
+- **Memory is per-run** unless a script says otherwise. `mining.py` keeps its map and its parked
+  tiles in JSON Lines files; bans and permanent write-offs are still re-learned on every start.
+  `API.SavePersistentVar` is a SQLite store of strings keyed by name, with no way to list the names,
+  so it is deliberately not used for anything bigger than a counter.
 
 **Every phrase in every `OUTCOME_TEXT` is a RunUO-family guess unless a script's notes say it was
 measured.** A miss reads as an unread outcome, never a silent wrong turn, but it is not free: an

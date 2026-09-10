@@ -29,7 +29,7 @@ ENTRIES = [
 
 # Legion strips these from the script it loads and injects API as a builtin, so the artifact
 # carries one of each and no module body does.
-HOISTED = ("API", "time", "clr", "System")
+HOISTED = ("API", "time", "clr", "System", "json")
 
 
 class BuildError(Exception):

@@ -73,3 +73,25 @@ class TerrainTest(unittest.TestCase):
 
         self.assertEqual(self.calls.count("GetStaticsInArea"), 1)
         self.assertEqual(self.calls.count("GetTile"), 16)
+
+    def test_remembered_ground_is_not_read_and_not_fresh(self):
+        terrain = Terrain()
+        terrain.remember(100, 100, [], [])
+
+        self.assertEqual(terrain.at(100, 100), [])
+        self.assertEqual(self.calls, [])
+        self.assertEqual(terrain.fresh(), [])
+
+    def test_fresh_is_what_was_read_with_both_halves_in_handed_out_once(self):
+        terrain = Terrain()
+        list(terrain.statics_box(1))
+
+        self.assertEqual(terrain.fresh(), [])
+
+        terrain.at(101, 100)
+        fresh = terrain.fresh()
+
+        self.assertEqual([xy for xy, _land, _statics in fresh], [(101, 100)])
+        self.assertEqual(fresh[0][1][0]["graphic"], 231)
+        self.assertEqual(fresh[0][2][0]["name"], "cave floor")
+        self.assertEqual(terrain.fresh(), [])

@@ -85,3 +85,32 @@ class TileMemoryTest(unittest.TestCase):
 
         self.assertFalse(TileMemory(1500.0, 300.0, "vein", "mined", self.said.append)
                          .is_blocked(self.tile))
+
+
+class TileMemorySaverTest(unittest.TestCase):
+    def setUp(self):
+        install()
+        self.saved = uo.clock.time
+        uo.clock.time = Frozen(1000.0)
+        self.kept = []
+        self.memory = TileMemory(1500.0, 300.0, "vein", "mined", [].append,
+                                 lambda key, until: self.kept.append((key, until)))
+
+    def tearDown(self):
+        uo.clock.time = self.saved
+
+    def test_a_timed_block_reaches_the_saver(self):
+        self.memory.mark_depleted(tile(1, 2, 3, 1339))
+
+        self.assertEqual(self.kept, [("1,2,3,land:1339", 2500.0)])
+
+    def test_a_permanent_block_does_not(self):
+        self.memory.mark_unusable(tile(1, 2, 3, 1339), "cannot be mined")
+
+        self.assertEqual(self.kept, [])
+
+    def test_a_restored_block_is_blocked_without_being_saved_again(self):
+        self.memory.restore("1,2,3,land:1339", 2500.0)
+
+        self.assertTrue(self.memory.is_blocked(tile(1, 2, 3, 1339)))
+        self.assertEqual(self.kept, [])

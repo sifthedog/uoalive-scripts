@@ -112,6 +112,7 @@ class FakeGump(object):
 class FakeAPI(object):
     def __init__(self):
         self.Player = FakePlayer()
+        self.map = 0
         self.Backpack = 0x40000000
         self.StopRequested = False
         self.Notoriety = FakeNotoriety
@@ -279,6 +280,9 @@ class FakeAPI(object):
         self.moved.append((serial, container, amount))
 
         return True
+
+    def GetMap(self):
+        return self.map
 
     def GetTile(self, x, y):
         return self.land.get((x, y))

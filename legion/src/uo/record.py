@@ -2,8 +2,7 @@ from uo.clock import now
 from uo.entity import hex_of, player
 
 
-# Written by hand rather than with json.dumps: the bundler admits API and time and nothing else, and
-# a row of numbers and two short strings is not worth relaxing that rule for.
+# Written by hand rather than with json.dumps, so the key order stays the one the README shows
 def quoted(text):
     out = ['"']
 
@@ -29,6 +28,29 @@ def quoted(text):
     out.append('"')
 
     return "".join(out)
+
+
+# Every scalar and container a row can carry. Dict keys are sorted because the property map has no
+# order of its own, and a sorted row diffs; an order that matters is a json_object of pairs.
+def json_value(value):
+    if value is None:
+        return "null"
+    elif value is True:
+        return "true"
+    elif value is False:
+        return "false"
+    elif isinstance(value, (int, float)):
+        return repr(value)
+    elif isinstance(value, (list, tuple)):
+        return "[%s]" % ",".join(json_value(entry) for entry in value)
+    elif isinstance(value, dict):
+        return json_object([(key, value[key]) for key in sorted(value)])
+
+    return quoted(str(value))
+
+
+def json_object(pairs):
+    return "{%s}" % ",".join("%s:%s" % (quoted(key), json_value(value)) for key, value in pairs)
 
 
 def skill_json(value):
