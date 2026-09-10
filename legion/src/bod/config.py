@@ -192,6 +192,10 @@ SALVAGE_ENTRIES = ["Salvage All"]
 CONTEXT_TIMEOUT = 3.0
 SALVAGE_SETTLE = 2.0
 
+# Played once on this Mac when the deed is filled, so the client's sound setting does not matter.
+# An empty list turns it off
+DONE_SOUND = ["afplay", "/System/Library/Sounds/Glass.aiff"]
+
 # Seconds throughout - API.Pause takes seconds
 PICK_TIMEOUT = 60.0
 

@@ -1537,6 +1537,7 @@ small; the small leaving the pack is the proof. The run stops when every entry r
 | `PROMPT_DELAY` | `0.8` | How long the number prompt takes to arrive |
 | `CRAFT_INTERVAL` / `BATCH_IDLE` | `3.0` / `8.0` | A batch's time budget per piece, and the silence that ends one |
 | `SALVAGE_AT_END` / `SALVAGE_ENTRIES` | `True` / `Salvage All` | The bag's context entry once the deed is full |
+| `DONE_SOUND` | `afplay` on a system sound | Played once on this Mac when the deed is filled. `[]` turns it off |
 | `RECIPES` | the reference table | `(category button, row button)` per item as the deed names it. The only way an item the page's text does not name is crafted |
 | `OPL_TIMEOUT` / `OPL_ASKS` | `2` / `3` | How long a tooltip has to arrive, and how many times one item is asked |
 | `REREAD_SETTLE` | `3.0` | How long the deed's tooltip has to show a combine the pack proved |

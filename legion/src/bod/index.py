@@ -6,22 +6,21 @@ from bod.combine import DeedCombiner
 from bod.config import (ARTICLES, BATCH_IDLE, BOD_COMBINE_BUTTON, BOD_GUMP_TEXT, BOX_NAMES,
                         BOX_POLL, BOX_TIMEOUT, BUTTON_STRIDE, CANCEL_MAKE_BUTTON,
                         CATEGORY_BUTTON_TYPE, CATEGORY_NAMES, CHECK_BEFORE_START, COMBINE_POLL,
-                        COMBINE_TEXT, COMBINE_TIMEOUT, CONTEXT_TIMEOUT, CRAFT_INTERVAL,
-                        CRAFT_POLL, CRAFT_SETTLE, CRAFT_TIMEOUT, CRAFT_TITLE,
-                        CRAFT_TITLE_FRAGMENTS, CRAFT_TITLE_TEXT, DEED_GRAPHICS, DEED_NAME_WORDS,
-                        DEED_TEXT, EXCEPTIONAL_TEXT, GUMP_POLL, GUMP_TIMEOUT, HEARTBEAT_EVERY,
-                        INGOT_COST, INGOT_GRAPHICS, INGOT_HUES, INGOT_NAME_WORDS,
-                        ITEM_BUTTON_TYPE, JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS,
-                        LARGE_COMBINE_BUTTON, LARGE_COMBINE_TEXT, LAST_TEN_LABEL,
-                        MAKE_NUMBER_BUTTON, MATERIAL_ALIASES, MATERIAL_BUTTON_TYPE,
-                        MATERIAL_ORDER, MATERIAL_ROW_TYPE, MATERIAL_ROWS_AFTER, MAX_CATEGORIES,
-                        MAX_CYCLES, MAX_ITEM_ROWS, MAX_MATERIAL_ROWS, MAX_NO_CURSOR,
-                        MAX_NO_TOOL, MAX_THROTTLED, MAX_UNKNOWN, MAX_UNREADABLE_REPORTS,
-                        MOVE_DELAY, OPEN_DELAY, OPL_ASKS, OPL_SETTLE, OPL_TIMEOUT, OUTCOME_TEXT,
-                        PICK_TIMEOUT, PLAIN_MATERIAL, PROMPT_DELAY, RECIPES, REREAD_POLL,
-                        REREAD_SETTLE, SALVAGE_AT_END, SALVAGE_ENTRIES, SALVAGE_SETTLE,
-                        SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT, SAVING_TEXT, SKILL_NAMES,
-                        STALL_STOP, STALL_WARN, STEP_DELAY, STOPPED, TARGET_TIMEOUT,
+                        COMBINE_TEXT, COMBINE_TIMEOUT, CONTEXT_TIMEOUT, CRAFT_INTERVAL, CRAFT_POLL,
+                        CRAFT_SETTLE, CRAFT_TIMEOUT, CRAFT_TITLE, CRAFT_TITLE_FRAGMENTS,
+                        CRAFT_TITLE_TEXT, DEED_GRAPHICS, DEED_NAME_WORDS, DEED_TEXT, DONE_SOUND,
+                        EXCEPTIONAL_TEXT, GUMP_POLL, GUMP_TIMEOUT, HEARTBEAT_EVERY, INGOT_COST,
+                        INGOT_GRAPHICS, INGOT_HUES, INGOT_NAME_WORDS, ITEM_BUTTON_TYPE,
+                        JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS, LARGE_COMBINE_BUTTON,
+                        LARGE_COMBINE_TEXT, LAST_TEN_LABEL, MAKE_NUMBER_BUTTON, MATERIAL_ALIASES,
+                        MATERIAL_BUTTON_TYPE, MATERIAL_ORDER, MATERIAL_ROWS_AFTER,
+                        MATERIAL_ROW_TYPE, MAX_CATEGORIES, MAX_CYCLES, MAX_ITEM_ROWS,
+                        MAX_MATERIAL_ROWS, MAX_NO_CURSOR, MAX_NO_TOOL, MAX_THROTTLED, MAX_UNKNOWN,
+                        MAX_UNREADABLE_REPORTS, MOVE_DELAY, OPEN_DELAY, OPL_ASKS, OPL_SETTLE,
+                        OPL_TIMEOUT, OUTCOME_TEXT, PICK_TIMEOUT, PLAIN_MATERIAL, PROMPT_DELAY,
+                        RECIPES, REREAD_POLL, REREAD_SETTLE, SALVAGE_AT_END, SALVAGE_ENTRIES,
+                        SALVAGE_SETTLE, SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT, SAVING_TEXT,
+                        SKILL_NAMES, STALL_STOP, STALL_WARN, STEP_DELAY, STOPPED, TARGET_TIMEOUT,
                         THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX, TOOL_BAG_NAMES, TOOL_GRAPHICS,
                         TOOL_NAME_WORDS, TOOL_PREFERENCE, UNREADABLE_TEXT_LIMIT, USES_TEXT)
 from bod.craft import DeedCrafter
@@ -30,6 +29,7 @@ from bod.fill import SmallFill
 from bod.items import ItemBook
 from bod.material import MaterialPicker
 from bod.smalls import find_small_deeds
+from uo.alert import Launcher
 from uo.craftmenu import CraftMenu
 from uo.crafttool import CraftTool
 from uo.entity import hex_of, player
@@ -44,6 +44,8 @@ from uo.text import any_in
 from uo.vitals import position_and_weight
 
 log = make_log("bod")
+DEED_FULL = "the deed is full"
+LARGE_COMPLETE = "the large deed is complete"
 heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "combined", position_and_weight)
 stall = StallWatch("cycles without progress", STALL_WARN, STALL_STOP, heartbeat, log)
 
@@ -279,6 +281,10 @@ def finish(reason):
         log(fill.summary())
 
     log("stopping - %s" % reason)
+
+    if reason in (DEED_FULL, LARGE_COMPLETE):
+        Launcher(log).run(DONE_SOUND)
+
     API.Stop()
 
 
@@ -286,7 +292,7 @@ def run_small():
     if not check([request]):
         return "not enough to start"
 
-    return fill_small(deed) or "the deed is full"
+    return fill_small(deed) or DEED_FULL
 
 
 def small_deed_for(item, smalls):
@@ -374,7 +380,7 @@ def run_large():
     final, _refused = deed.read()
 
     if final is not None and all(done >= final["total"] for _item, done in final["entries"]):
-        return "the large deed is complete"
+        return LARGE_COMPLETE
 
     return "every entry was combined, but the large deed reads %s" % (
         deed.describe() if final is not None else "(no tooltip)")

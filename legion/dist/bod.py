@@ -2,6 +2,8 @@
 
 import API
 import time
+import clr
+import System
 
 
 # src/bod/deed.py
@@ -244,6 +246,9 @@ def player():
     try:
         return API.Player
     except Exception:
+        if API.StopRequested:
+            raise
+
         return None
 
 
@@ -463,7 +468,8 @@ def open_ids():
             if serial and serial not in found:
                 found.append(serial)
     except Exception:
-        pass
+        if API.StopRequested:
+            raise
 
     return found
 
@@ -501,6 +507,9 @@ def button_ids(ident):
 
         return found
     except Exception:
+        if API.StopRequested:
+            raise
+
         return None
 
 
@@ -549,6 +558,9 @@ def journal_tail(seconds, limit):
     try:
         entries = API.GetJournalEntries(seconds)
     except Exception:
+        if API.StopRequested:
+            raise
+
         return []
 
     texts = []
@@ -934,6 +946,10 @@ SALVAGE_AT_END = True
 SALVAGE_ENTRIES = ["Salvage All"]
 CONTEXT_TIMEOUT = 3.0
 SALVAGE_SETTLE = 2.0
+
+# Played once on this Mac when the deed is filled, so the client's sound setting does not matter.
+# An empty list turns it off
+DONE_SOUND = ["afplay", "/System/Library/Sounds/Glass.aiff"]
 
 # Seconds throughout - API.Pause takes seconds
 PICK_TIMEOUT = 60.0
@@ -1376,6 +1392,9 @@ def context_menu(serial, texts, timeout):
             if API.ContextMenu(serial, text, timeout):
                 return True
         except Exception:
+            if API.StopRequested:
+                raise
+
             continue
 
     return False
@@ -1875,6 +1894,72 @@ class MaterialPicker(object):
         return opened, None
 
 
+# src/uo/alert.py
+class Launcher(object):
+    def __init__(self, log):
+        self._log = log
+        self._playing = None
+        self._referenced = False
+        self._failed = set()
+
+    def _start(self, command):
+        if not self._referenced:
+            self._referenced = True
+            # Process is in its own assembly on .NET Core, and IronPython does not load it unasked
+            clr.AddReference("System.Diagnostics.Process")
+
+        info = System.Diagnostics.ProcessStartInfo()
+        info.FileName = command[0]
+        info.UseShellExecute = False
+        info.CreateNoWindow = True
+
+        for argument in command[1:]:
+            info.ArgumentList.Add(argument)
+
+        return System.Diagnostics.Process.Start(info)
+
+    def _try(self, command):
+        try:
+            return self._start(command)
+        except Exception as error:
+            # The stop button's interrupt can land inside Process.Start, and swallowed here it would
+            # leave a detached thread restarting the alarm
+            if API.StopRequested:
+                raise
+
+            if command[0] not in self._failed:
+                self._failed.add(command[0])
+                self._log("could not run %s - %s" % (command[0], error))
+
+            return None
+
+    def run(self, command):
+        if command:
+            self._try(command)
+
+    # One at a time, so a long file is not layered over itself every cycle. True means a start
+    # was attempted, which is what the caller counts
+    def play(self, command):
+        if not command:
+            return False
+
+        if self._playing is not None and not self._playing.HasExited:
+            return False
+
+        self._playing = self._try(command)
+
+        return True
+
+    def stop(self):
+        playing, self._playing = self._playing, None
+
+        if playing is not None and not playing.HasExited:
+            try:
+                playing.Kill()
+            except Exception:
+                pass
+
+
 # src/uo/craftmenu.py
 class CraftMenu(object):
     """A craft gump: opening it, finding the category, and finding the row."""
@@ -2300,6 +2385,9 @@ def find_skill_name(names):
             if API.GetSkill(name) is not None:
                 return name
         except Exception:
+            if API.StopRequested:
+                raise
+
             continue
 
     return None
@@ -2376,6 +2464,8 @@ def position_and_weight():
 
 # src/bod/index.py
 log = make_log("bod")
+DEED_FULL = "the deed is full"
+LARGE_COMPLETE = "the large deed is complete"
 heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "combined", position_and_weight)
 stall = StallWatch("cycles without progress", STALL_WARN, STALL_STOP, heartbeat, log)
 
@@ -2611,6 +2701,10 @@ def finish(reason):
         log(fill.summary())
 
     log("stopping - %s" % reason)
+
+    if reason in (DEED_FULL, LARGE_COMPLETE):
+        Launcher(log).run(DONE_SOUND)
+
     API.Stop()
 
 
@@ -2618,7 +2712,7 @@ def run_small():
     if not check([request]):
         return "not enough to start"
 
-    return fill_small(deed) or "the deed is full"
+    return fill_small(deed) or DEED_FULL
 
 
 def small_deed_for(item, smalls):
@@ -2706,7 +2800,7 @@ def run_large():
     final, _refused = deed.read()
 
     if final is not None and all(done >= final["total"] for _item, done in final["entries"]):
-        return "the large deed is complete"
+        return LARGE_COMPLETE
 
     return "every entry was combined, but the large deed reads %s" % (
         deed.describe() if final is not None else "(no tooltip)")
