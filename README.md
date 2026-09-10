@@ -49,6 +49,7 @@ step of its own: sources in `legion/src/`, bundled by `legion/build.py` into `le
 | `legion/dist/arms-lore.py` | Target a weapon and use Arms Lore on it every half second until the skill caps — no web client twin | [legion](legion/README.md) |
 | `legion/dist/magery.py` | The magery run above, ported to TazUO: paced by the client's own `IsCasting` rather than by converging on the shard's refusals, buffs told apart by `BuffIconType`, and no undressing for the trance | [legion](legion/README.md) |
 | `legion/dist/mysticism.py` | Train Mysticism from nothing to cap on the five spells that gain without a victim: Nether Bolt, then Stone Form, Cleansing Winds, Hail Storm and Nether Cyclone, each cast at yourself — no web client twin | [legion](legion/README.md) |
+| `legion/dist/chivalry.py` | The chivalry run above, ported to TazUO: a tithing gate off `API.Player.TithingPoints`, the weapon stowed by serial around every trance, and each cast recorded to the attempt log | [legion](legion/README.md) |
 | `legion/dist/bowcraft.py` | Train Bowcraft from 40 to cap through the craft gump: the band picks the item, logs come 300 at a time out of containers you point at, and the bowyer takes the output — no web client twin | [legion](legion/README.md) |
 
 ## Why a build step

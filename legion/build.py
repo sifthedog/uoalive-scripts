@@ -17,6 +17,7 @@ ENTRIES = [
     {"in": "src/buffs/index.py", "out": "buffs"},
     {"in": "src/magery/index.py", "out": "magery"},
     {"in": "src/mysticism/index.py", "out": "mysticism"},
+    {"in": "src/chivalry/index.py", "out": "chivalry"},
     {"in": "src/taming/index.py", "out": "tame"},
     {"in": "src/mining/index.py", "out": "mining"},
     {"in": "src/mining/here.py", "out": "mine-here"},

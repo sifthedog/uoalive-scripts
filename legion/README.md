@@ -19,6 +19,7 @@ repo targets the ClassicUO web client; nothing is shared between the two.
 | `inscription.py` | Trains Inscription from 30 to cap on the spell scroll with the fewest reagents each circle gains on, meditating when the pool is short, restocking scrolls and reagents the way `carpentry.py` does, and selling or unloading the scrolls as a gump at the start decides |
 | `magery.py` | Trains Magery on the four spells that gain without a victim, meditating when the pool runs dry |
 | `mysticism.py` | Trains Mysticism on the five spells that gain without a victim, meditating when the pool runs dry |
+| `chivalry.py` | Trains Chivalry on its five spells, gating each cast on tithing points, putting the weapon away for every trance and drawing it again after, and bandaging itself under the health floor |
 | `bod.py` | Target a Blacksmithing bulk order deed, small or large: crafts what it asks for from the ingots in your pack, combines the pieces, and for a large deed gets the smalls from the Bulk Order Deed Box and fills them one by one |
 | `inventory.py` | Target a bag or chest: writes one JSON line per item in it - name, tier, durability, weight and every tooltip property, parsed and verbatim |
 
@@ -86,6 +87,8 @@ dump        the container the products are unloaded into, and moving them there
 entity      hex, the guarded player read, Chebyshev, find-a-mobile
 gathered    what a swing and a conversion put in the pack, as attempt rows, below the cap
 gear        what is in either hand
+hands       what the hands held at start-up, put in the pack for a trance and drawn again by serial
+heal        bandaging the character it runs on, proved by the hits rising
 guards      the stop conditions, composed per script
 gump        waiting for a gump, and reading what it says
 heartbeat   'still here', on the clock rather than per cycle
@@ -208,7 +211,7 @@ reports everything as unread is also crawling; fix the wording, not the timeout.
 
 ## The attempt log
 
-Twelve scripts append one JSON line per attempt to `DATA_PATH`; `skilldb.py` turns them into two CSV
+Thirteen scripts append one JSON line per attempt to `DATA_PATH`; `skilldb.py` turns them into two CSV
 tables. A bare filename lands in TazUO's working directory, so set an absolute path. `DATA_PATH = ""`
 records nothing. The file is opened and closed per row; a run that cannot write says so once and
 carries on.
@@ -220,6 +223,7 @@ unread outcomes write nothing; a missing row shows in the closing tally, a guess
 | --- | --- | --- | --- |
 | `magery.py` | `cast`, and `disabled` where `DISABLED_IS_PROGRESS` | `fizzled` | the mana wait, the buff already standing, everything unread |
 | `mysticism.py` | the same | `fizzled` | the same, plus the health floor |
+| `chivalry.py` | the same | `fizzled` | the same, plus the health floor, the tithing gate and the weapon moves |
 | `tame.py` | `tamed` | `failed` | `pending` |
 | `arms-lore.py` | `read` | `missed` | a use that raised no cursor, unread wordings |
 | `bowcraft.py` | `made` | `failed` | `noMaterial`, `wrongRow`, a worn tool, the sell trips |
@@ -1225,6 +1229,97 @@ Everything below `STAGES` is `magery.py`'s block with the same defaults. These a
 - Whether the caster takes their own area damage.
 - The `formLocked` bucket, which no live run has produced.
 - The band bounds, the mana ladder, and the `cast_timeout` figures, scaled from Magery's 3rd circle.
+
+## chivalry.py
+
+The same loop as `magery.py` on the same shared modules, so *How a cast is read* and *The mana wait*
+there describe this one. Its own are the table, a tithing gate, the weapon stowed around every trance,
+and bandaging under a health floor. No band raises a cursor.
+
+| Band | Spell | Mana | Tithing | Needs | What it is |
+| --- | --- | --- | --- | --- | --- |
+| ≤ 45.0 | Consecrate Weapon | 10 | 10 | 15.0 | Enchants **what is in hand** - the one band that wants a weapon |
+| 45.0 – 60.0 | Divine Fury | 15 | 10 | 25.0 | A self buff |
+| 60.0 – 70.0 | Enemy of One | 20 | 10 | 45.0 | A self buff, and a **toggle** - casting it again takes it off |
+| 70.0 – 90.0 | Holy Light | 10 | 10 | 55.0 | An **area attack** on everything non-blue around you |
+| 90.0 – 120.0 | Noble Sacrifice | 20 | 30 | 65.0 | Heals nearby allies **at the cost of your own hit points** |
+
+The outcomes are `magery.py`'s minus `noReagents`, plus:
+
+| Outcome | What happens |
+| --- | --- |
+| `noTithing` | **Stops.** Go and tithe. The same gate is asked of `API.Player.TithingPoints` before every cast, so the run normally stops before the shard has to say it |
+| `noWeapon` | Draws the weapon again, and stops only if that fails or nothing was ever held |
+| `disabled` | Tallied: Enemy of One coming off is a cast the shard charged for |
+| `unskilled` | Stops - including the karma refusals, which mean the same thing |
+
+**The weapon.** Meditation is refused with anything in hand, and Consecrate Weapon wants one. What
+is in either hand at start-up is remembered by serial, moved to the pack before every trance, and
+equipped again on every way out of the mana wait - a wait the guards ended included. A character who
+starts empty-handed never touches any of that, and the first band stops the run instead.
+
+**The health floor** is for Noble Sacrifice, which sets the caster's hits, mana and stamina to 1
+where it finds anything to heal - a pet or a passing blue is enough. Under `HURT_FLOOR` the run
+bandages itself at the top of the cycle, *before* the guards look, and the floor ends only a run the
+bandages could not get back above it. The hits rising are the proof; the wordings only explain a
+failure. A pack with no bandages is said at start-up and the floor goes back to being a stop.
+
+### Before you run it
+
+- **Stand somewhere empty, never in town.** Holy Light is an area attack. The script does not move
+  or fight.
+- **Tithe gold at a shrine.** Every cast spends 10 points, Noble Sacrifice 30, and nothing here
+  refills them. The start-up line says how many you have.
+- **Hold the weapon you mean to train the first band with**, or start above 45.0 empty-handed.
+- **Carry clean bandages** (`0x0E21`) for the last band, or set `BANDAGE = False` and accept the stop.
+- **Below about 40.0, buy the skill from a trainer.** Consecrate Weapon opens at 15.0 but is mostly
+  fizzles down there.
+- It aims at 120.0, which needs power scrolls; the run stops at the shard's cap.
+
+### What to set
+
+Everything below `STAGES` is `magery.py`'s block with the same defaults. These are its own:
+
+| Setting | Default | What it is for |
+| --- | --- | --- |
+| `STAGES` | five rows | One row per band. No row has a `target` |
+| `STAGES[].tithing` | `10`, `30` on the last | Gated before the cast; under it the run stops |
+| `STAGES[].needs_weapon` | Consecrate Weapon only | The band that stops an empty-handed run |
+| `STAGES[].cast_timeout` / `cast_delay` | `2.0` / `0.5` | Paladin incantations are short; raise the delay if the log fills with the recovery line |
+| `FIRST_BAND` | `40.0` | Under it the start-up line points at the trainer |
+| `HAND_LAYERS` | `onehanded`, `twohanded` | The layers a trance wants empty. A shield sits on `onehanded` |
+| `EQUIP_ATTEMPTS` / `_TIMEOUT` / `_POLL` | `3` / `2.0` / `0.2` | How long each stow or draw has to land |
+| `HURT_FLOOR` | `0.5` | Fraction of max hits the run bandages under, and stops under if that fails |
+| `BANDAGE` | `True` | Off is a run that simply stops when hurt |
+| `BANDAGE_GRAPHIC` | `0x0E21` | Clean bandages; the bloodied ones are a different item |
+| `BANDAGE_ATTEMPTS` / `_TIMEOUT` / `_CURSOR_TIMEOUT` | `4` / `8.0` / `1.0` | Applications per stretch, how long one has to finish, how long the cursor has to come |
+| `HEAL_OUTCOME_TEXT` | guesses | Only explain the failures; the hits are the proof |
+| `DATA_PATH` | `skill-attempts.jsonl` | Where each cast is appended. `""` records nothing |
+
+### When it goes wrong
+
+- **`out of tithing points (N/M)`**: tithe more gold. The run cannot.
+- **`nothing in hand for Consecrate Weapon`**: draw a weapon and restart, or start past 45.0.
+- **`could not put 0x… in the pack`** / **`could not draw 0x… again`**: the move did not land inside
+  `EQUIP_TIMEOUT`. A pack at its item cap refuses the stow; a weapon that broke refuses the draw.
+- **`the shard refuses meditation (blocked)`** with the weapon stowed: something else is in a hand
+  layer this table does not name. Add it to `HAND_LAYERS`.
+- **`hurt (N/M)`** after `bandaging`: the bandages could not keep up, or ran out. Stand further from
+  anything Noble Sacrifice can find.
+- **`no cursor for the bandage`**: the use raised nothing inside `BANDAGE_CURSOR_TIMEOUT`.
+- **`outcome unreadable - carrying on`**: the row's `cast_timeout`, as in `magery.py`, or a buff
+  already standing leaving only the mana to prove the cast.
+
+### Unverified
+
+- Every wording apart from `noTithing` and the recovery line, which `buffs.py` measured on UOAlive.
+- The `BuffIconType` names, read from the enum, and the `title` fallbacks that cover them.
+- The band bounds and the `cast_timeout` figures. Nothing here has been timed against a paladin's
+  incantations.
+- Whether `API.MoveItem` to the pack unequips on this client, and whether `API.EquipItem` draws a
+  weapon back by serial. `uo/tool.py` proves the draw for a pickaxe.
+- That Holy Light and Noble Sacrifice spend mana with nothing in range, which is the only proof
+  those two bands have.
 
 ## bowcraft.py
 
