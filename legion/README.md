@@ -16,6 +16,7 @@ repo targets the ClassicUO web client; nothing is shared between the two.
 | `bowcraft.py` | Trains Bowcraft from 30 to cap: makes whatever the band still gains on, restocks wood from the containers and pack animals you pick, and sells to the nearest bowyer |
 | `tinkering.py` | Trains Tinkering from 20 to cap on the iron ingots you carry: makes whatever the band still gains on and sells it to the vendor that buys it |
 | `carpentry.py` | Trains Carpentry from 0 to cap on the cheapest recipe each band still gains on, restocks wood the way `bowcraft.py` does, and unloads what it made into the container you pick |
+| `inscription.py` | Trains Inscription from 30 to cap on the spell scroll with the fewest reagents each circle gains on, meditating when the pool is short, restocking scrolls and reagents the way `carpentry.py` does, and selling or unloading the scrolls as a gump at the start decides |
 | `magery.py` | Trains Magery on the four spells that gain without a victim, meditating when the pool runs dry |
 | `mysticism.py` | Trains Mysticism on the five spells that gain without a victim, meditating when the pool runs dry |
 | `bod.py` | Target a Blacksmithing bulk order deed, small or large: crafts what it asks for from the ingots in your pack, combines the pieces, and for a large deed gets the smalls from the Bulk Order Deed Box and fills them one by one |
@@ -68,7 +69,9 @@ proves nothing; `build.py` walks the AST and refuses all of it.
 alert       a command run on the machine through .NET, so a warning does not depend on the game
 buffbar     the buff bar, re-read every time because ApiBuff never refreshes
 cast        a spell, and the two silent proofs a shard that says nothing still leaves
+choice      a gump the script draws with one button per option, answered by the first press
 clock       the one time.time(), so tests have one thing to fake
+components  what one craft takes of each kind, and what the pack is short of
 convert     resource -> product, judged by the pack diff, with a per-hue write-off
 cost        what one craft of a product takes, and how short the pack is of it
 craft       one craft through the menu: the row, MAKE LAST, and the outcome read three ways
@@ -198,7 +201,7 @@ reports everything as unread is also crawling; fix the wording, not the timeout.
 
 ## The attempt log
 
-Seven scripts append one JSON line per attempt to `DATA_PATH`; `skilldb.py` turns them into two CSV
+Eleven scripts append one JSON line per attempt to `DATA_PATH`; `skilldb.py` turns them into two CSV
 tables. A bare filename lands in TazUO's working directory, so set an absolute path. `DATA_PATH = ""`
 records nothing. The file is opened and closed per row; a run that cannot write says so once and
 carries on.
@@ -215,6 +218,7 @@ unread outcomes write nothing; a missing row shows in the closing tally, a guess
 | `bowcraft.py` | `made` | `failed` | `noMaterial`, `wrongRow`, a worn tool, the sell trips |
 | `tinkering.py` | `made` | `failed` | the same |
 | `carpentry.py` | `made` | `failed` | the same, and the unloading |
+| `inscription.py` | `made` | `failed` | the same, the mana waits, and the sell trips or unloading |
 | `fishing.py` | `caught` | `failed` | no cursor, not biting, out of reach, throttles, unread wordings |
 | `mining.py`, `mine-here.py` | `dug`, `smelted` | `failed`, for a swing or a smelt | everything else, and every row once Mining is at its cap |
 
@@ -231,7 +235,8 @@ values is what lets a scroll of alacrity's 0.2 to 0.5 jump be told from several 
 
 `id` is `serial/run-start-ms/sequence`. `used` is what the attempt was made with: the spell, the
 item made, the creature, the weapon read. `to` is `null` where the client was not answering.
-`consumed` appears only when something was measured, which the two crafting scripts do. `gained`
+`consumed` appears only when something was measured, which the crafting scripts do; an
+`inscription.py` row carries one entry per kind spent, the blank scroll and each reagent. `gained`
 has the same shape and is what `fishing.py` writes: the catch as the pack received it, named off the
 journal line. A mining swing's `gained` is the ore per metal, measured after the consolidation so
 the arrival's own pile is not counted twice; a smelt row carries the ore spent in `consumed` and the
@@ -1557,6 +1562,107 @@ destroys it; a chest keeps it.
 - Whether the wooden container engraving tool's ceiling is 100 on this shard. If it is, it covers
   75 to 100 for 4 wood and 2 ingots, cheaper than the staves.
 - Whether a deed moved into a trash barrel is destroyed silently or asks first.
+
+## inscription.py
+
+Trains Inscription from 30 to cap on the spell scroll with the fewest reagents in each circle the
+guides train through. Every scroll spends a blank scroll, one of each reagent and mana, so the run
+meditates when the pool is short, pulls scrolls and reagents from what you point at the way
+`carpentry.py` does, and asks at the start what to do with the scrolls it makes. Everything under the
+loop is shared with `bowcraft.py`, which is where the craft menu, the row walk and the outcomes are
+described; the meditation is `magery.py`'s.
+
+| Inscription | Circle | Makes | Reagents | Mana |
+| --- | --- | --- | --- | --- |
+| 30 – 55 | 4th | lightning | mandrake root, sulfurous ash | 11 |
+| 55 – 65 | 5th | magic reflection | garlic, mandrake root, spider's silk | 14 |
+| 65 – 85 | 6th | reveal | bloodmoss, sulfurous ash | 20 |
+| 85 – 94 | 7th | flamestrike | spider's silk, sulfurous ash | 40 |
+| 94 – cap | 8th | resurrection | bloodmoss, garlic, ginseng | 50 |
+
+Ceilings are exclusive; the first row the value is under wins. `SPELLS` carries every spell of the
+fourth to eighth circles with its art and reagents, so swapping a band is one edit of `BANDS`. Before
+the loop: the pen, the cursor for every container or pack animal holding scrolls and reagents, then a
+gump with **Sell**, **Unload** and **Keep**. Unload asks for the container; a closed gump, no press in
+`OUTPUT_CHOICE.timeout`, or ESC at that cursor all mean keep. Each cycle:
+
+1. Read the skill. An uncovered band ends the run; a band change re-selects the row and says what it
+   takes.
+2. Sell once the pack holds `SELL_AT` of the band's scroll, or unload once it holds `DUMP_AT` scrolls
+   the run made. Keeping them, the run ends at `MAX_HELD`.
+3. Restock when the pack pays for fewer than `RESTOCK_AT` crafts: only the kinds the band spends,
+   each filled to `BATCH_SIZE`. A move the shard refuses as too heavy unloads first. Short of a kind
+   with none of it left in what you picked ends the run, naming the kind.
+4. Meditate when the pool is under the band's mana, as `magery.py` does. `MAX_DRY` waits in a row
+   that brought nothing end the run.
+5. Open the menu with the pen, press the row or `MAKE LAST`, and read the outcome.
+
+**The consumed rows** measure the pack either side of the craft, so a row lists the blank scroll and
+each reagent by kind, and a failure lists what the shard kept. `noMana` is the one outcome the other
+crafting scripts do not have: the pool is gated before the craft, so seeing it means the circle's
+figure in `MANA_BY_CIRCLE` is under what this shard charges.
+
+**What is sold or unloaded** is only what the run made: `keep_existing` remembers the scrolls in the
+pack at the start, so a recall scroll you carried in is neither moved nor counted. The sell trip
+counts the band's scroll by art, so it does count one you carried in.
+
+### Before you run it
+
+- **Inscription at 30 or above**, bought from an NPC mage or scribe, and below the cap.
+- **A scribe's pen in your pack**, and spares.
+- **Empty hands**, or meditation is refused and the run falls back on natural regeneration.
+- **Blank scrolls and the band's reagents in your pack or in what you pick.** Blank scrolls weigh a
+  stone each, which is why `BATCH_SIZE` is a hundred.
+- **Selling:** stand within `VENDOR_SCAN_RADIUS` of a mage or scribe, with the auto-sell agent set
+  for each scroll. **Unloading:** something to unload into, in reach; a trash barrel destroys them.
+
+### What to set
+
+| Setting | Default | What it is for |
+| --- | --- | --- |
+| `BANDS` | see above | Ceiling and spell. Any `SPELLS` row |
+| `SPELLS` | forty rows | Row name as the gump spells it: circle, scroll art, reagents |
+| `MANA_BY_CIRCLE` | stock RunUO | Mana a scroll of each circle costs; `noMana` says it is understated |
+| `STOCK_KINDS` | nine rows | Blank scrolls and the eight reagents, by art and name words |
+| `BATCH_SIZE` / `RESTOCK_AT` | `100` / `20` | What each kind is filled to, and the crafts left that trigger it |
+| `OUTPUT_CHOICE` / `OUTPUT_OPTIONS` | a sentence, three buttons | The gump at the start |
+| `SELL_AT` / `DUMP_AT` / `MAX_HELD` | `20` / `20` / `60` | Scrolls before a sell trip, an unload, or the end of a keeping run |
+| `VENDOR_TITLES` | `mage`, `scribe` | Matched on the name and the tooltip |
+| `MEDITATE` / `MEDITATE_TO_FULL` | `True` / `True` | As `magery.py` |
+| `MAX_DRY` | `5` | Mana waits in a row that brought nothing before the run ends |
+| `TOOL_GRAPHICS` / `TOOL_NAME_WORDS` | stock / `pen` | An art learned by name joins the set |
+| `CATEGORY_NAMES` | the circles, spelled two ways | Where the group rows end and the item rows begin |
+| `RECIPES` | empty | `(category button, row button)`. Copy the `is the row on button` lines in |
+| `MAX_CATEGORIES` / `MAX_ITEM_ROWS` | `14` / `8` | How far the walk goes; eight spells a circle |
+| `DATA_PATH` | `skill-attempts.jsonl` | Where each craft is appended, with what it spent. `""` records nothing |
+
+### When it goes wrong
+
+- **`nothing picked, and the pack is short of 1 mandrake root for one lightning`**: carry the band's
+  reagents, or pick a container holding them.
+- **`out of 1 sulfurous ash - ...`**: the pack and everything you picked are out of that kind.
+- **`refused for mana at N - raise MANA_BY_CIRCLE`**: this shard charges more than stock for the circle.
+- **`mana is not coming back`**: meditation is refused or broken every time, and natural
+  regeneration did not reach the figure inside `REGEN_TIMEOUT`. Empty your hands.
+- **`the shard refused ... in the pack 3 times`**: everything the recipe takes is there and the shard
+  still refuses, so the row pressed is another spell. Read `rows seen` and correct `BANDS`.
+- **`the gump text does not name 'magic reflection' on a row of its own`**: the row is spelled
+  differently on this shard. `rows seen` lists what it read; fix `BANDS` and `SPELLS` to match.
+- **`no mage or scribe within 18`**: walk to one; the trips retry on their own.
+- **`nothing was pressed in 60s`**: the gump timed out, so the scrolls are kept. Press faster, or
+  raise `OUTPUT_CHOICE.timeout`.
+
+### Unverified
+
+- Every wording in `OUTCOME_TEXT` and `MEDITATE_OUTCOME_TEXT` but the trance line, and every art:
+  the pen, the blank scroll, the reagents and the scrolls are stock RunUO, none read off UOAlive.
+- The scroll art is `0x1F2E` plus the spell id, which holds for recall and energy bolt in stock;
+  a shard that renumbers costs one `wrongRow` per band before the pack diff sorts it out.
+- The circle category names and whether the row says `magic reflection` or `magic reflect`.
+- The mana figures, and whether the shard checks mana before or after spending the reagents.
+- `MAKE_LAST_BUTTON` and the button stride are assumed to be `bowcraft.py`'s, as the same gump.
+- Whether a mage buys scrolls on this shard, and which. Unload is the safe answer.
+- Whether the craft menu survives the meditation trance being used behind it.
 
 ## bod.py
 

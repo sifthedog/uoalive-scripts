@@ -26,6 +26,7 @@ ENTRIES = [
     {"in": "src/bowcraft/index.py", "out": "bowcraft"},
     {"in": "src/tinkering/index.py", "out": "tinkering"},
     {"in": "src/carpentry/index.py", "out": "carpentry"},
+    {"in": "src/inscription/index.py", "out": "inscription"},
     {"in": "src/bod/index.py", "out": "bod"},
 ]
 

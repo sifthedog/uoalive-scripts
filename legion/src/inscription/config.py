@@ -1,0 +1,349 @@
+from uo.phrases import SAVE_DONE_TEXT, SAVING_TEXT, STOPPED, THROTTLED_TEXT, UNSKILLED_TEXT
+from uo.timings import (HEARTBEAT_EVERY, LOG_EVERY, SAVE_POLL, SAVE_WAIT, STALL_STOP, STALL_WARN,
+                        STEP_DELAY, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX)
+
+# One JSON object per attempt, for legion/skilldb.py. "" turns recording off. A bare name lands in
+# TazUO's working directory, not beside the script.
+DATA_PATH = "skill-attempts.jsonl"
+
+SKILL_NAMES = ["Inscription", "Inscribe"]
+
+# Below this the sensible thing is to buy the skill from an NPC mage or scribe
+MIN_SKILL = 30.0
+
+# Ceilings are exclusive, in the client's float percentage: the AFK guides' circle per band, and
+# the spell with the fewest reagents in each. Any SPELLS row goes here.
+BANDS = [
+    (55.0, "lightning"),
+    (65.0, "magic reflection"),
+    (85.0, "reveal"),
+    (94.0, "flamestrike"),
+    (None, "resurrection"),
+]
+
+BLACK_PEARL = "black pearl"
+BLOODMOSS = "bloodmoss"
+GARLIC = "garlic"
+GINSENG = "ginseng"
+MANDRAKE = "mandrake root"
+NIGHTSHADE = "nightshade"
+SILK = "spider's silk"
+ASH = "sulfurous ash"
+BLANK = "blank scrolls"
+
+# Stock art, unverified on UOAlive; an art learned by name joins its set. Whole words, so 'ash' is
+# not a name word: ash boards carry it too.
+STOCK_KINDS = [
+    (BLANK, set([0x0EF3]), ["blank scroll", "blank scrolls"]),
+    (BLACK_PEARL, set([0x0F7A]), ["black pearl", "pearl"]),
+    (BLOODMOSS, set([0x0F7B]), ["bloodmoss", "blood moss"]),
+    (GARLIC, set([0x0F84]), ["garlic"]),
+    (GINSENG, set([0x0F85]), ["ginseng"]),
+    (MANDRAKE, set([0x0F86]), ["mandrake"]),
+    (NIGHTSHADE, set([0x0F88]), ["nightshade"]),
+    (ASH, set([0x0F8C]), ["sulfurous"]),
+    (SILK, set([0x0F8D]), ["silk"]),
+]
+
+KIND_ORDER = [kind for kind, _graphics, _words in STOCK_KINDS]
+
+# Stock RunUO: what inscribing a scroll of each circle costs in mana
+MANA_BY_CIRCLE = {4: 11, 5: 14, 6: 20, 7: 40, 8: 50}
+
+# Row name as the SELECTIONS row spells it: circle, the scroll's art, and its reagents. The art is
+# 0x1F2E plus the spell's id in stock RunUO (recall 0x1F4D, energy bolt 0x1F57 confirm it).
+SPELLS = {
+    "arch cure": (4, 0x1F46, [GARLIC, GINSENG, MANDRAKE]),
+    "arch protection": (4, 0x1F47, [GARLIC, GINSENG, MANDRAKE, ASH]),
+    "curse": (4, 0x1F48, [GARLIC, NIGHTSHADE, ASH]),
+    "fire field": (4, 0x1F49, [BLACK_PEARL, SILK, ASH]),
+    "greater heal": (4, 0x1F4A, [GARLIC, GINSENG, MANDRAKE, SILK]),
+    "lightning": (4, 0x1F4B, [MANDRAKE, ASH]),
+    "mana drain": (4, 0x1F4C, [BLACK_PEARL, MANDRAKE, SILK]),
+    "recall": (4, 0x1F4D, [BLACK_PEARL, BLOODMOSS, MANDRAKE]),
+    "blade spirits": (5, 0x1F4E, [BLACK_PEARL, MANDRAKE, NIGHTSHADE]),
+    "dispel field": (5, 0x1F4F, [BLACK_PEARL, GARLIC, SILK, ASH]),
+    "incognito": (5, 0x1F50, [BLOODMOSS, GARLIC, NIGHTSHADE]),
+    "magic reflection": (5, 0x1F51, [GARLIC, MANDRAKE, SILK]),
+    "mind blast": (5, 0x1F52, [BLACK_PEARL, MANDRAKE, NIGHTSHADE, ASH]),
+    "paralyze": (5, 0x1F53, [GARLIC, MANDRAKE, SILK]),
+    "poison field": (5, 0x1F54, [BLACK_PEARL, NIGHTSHADE, SILK]),
+    "summon creature": (5, 0x1F55, [BLOODMOSS, MANDRAKE, SILK]),
+    "dispel": (6, 0x1F56, [GARLIC, MANDRAKE, ASH]),
+    "energy bolt": (6, 0x1F57, [BLACK_PEARL, NIGHTSHADE]),
+    "explosion": (6, 0x1F58, [BLOODMOSS, MANDRAKE, NIGHTSHADE]),
+    "invisibility": (6, 0x1F59, [BLOODMOSS, NIGHTSHADE]),
+    "mark": (6, 0x1F5A, [BLACK_PEARL, BLOODMOSS, MANDRAKE]),
+    "mass curse": (6, 0x1F5B, [GARLIC, MANDRAKE, NIGHTSHADE, ASH]),
+    "paralyze field": (6, 0x1F5C, [BLACK_PEARL, GINSENG, SILK]),
+    "reveal": (6, 0x1F5D, [BLOODMOSS, ASH]),
+    "chain lightning": (7, 0x1F5E, [BLACK_PEARL, BLOODMOSS, MANDRAKE, ASH]),
+    "energy field": (7, 0x1F5F, [BLACK_PEARL, MANDRAKE, SILK, ASH]),
+    "flamestrike": (7, 0x1F60, [SILK, ASH]),
+    "gate travel": (7, 0x1F61, [BLACK_PEARL, MANDRAKE, ASH]),
+    "mana vampire": (7, 0x1F62, [BLACK_PEARL, BLOODMOSS, MANDRAKE, SILK]),
+    "mass dispel": (7, 0x1F63, [BLACK_PEARL, GARLIC, MANDRAKE, ASH]),
+    "meteor swarm": (7, 0x1F64, [BLOODMOSS, MANDRAKE, SILK, ASH]),
+    "polymorph": (7, 0x1F65, [BLOODMOSS, MANDRAKE, SILK]),
+    "earthquake": (8, 0x1F66, [BLOODMOSS, GINSENG, MANDRAKE, ASH]),
+    "energy vortex": (8, 0x1F67, [BLACK_PEARL, BLOODMOSS, MANDRAKE, NIGHTSHADE]),
+    "resurrection": (8, 0x1F68, [BLOODMOSS, GARLIC, GINSENG]),
+    "air elemental": (8, 0x1F69, [BLOODMOSS, MANDRAKE, SILK]),
+    "summon daemon": (8, 0x1F6A, [BLOODMOSS, MANDRAKE, SILK, ASH]),
+    "earth elemental": (8, 0x1F6B, [BLOODMOSS, MANDRAKE, SILK]),
+    "fire elemental": (8, 0x1F6C, [BLOODMOSS, MANDRAKE, SILK, ASH]),
+    "water elemental": (8, 0x1F6D, [BLOODMOSS, MANDRAKE, SILK]),
+}
+
+
+def needs_of(reagents):
+    needs = {BLANK: 1}
+
+    for kind in reagents:
+        needs[kind] = 1
+
+    return needs
+
+
+PRODUCTS = dict((name, set([SPELLS[name][1]])) for name in SPELLS)
+PRODUCT_GRAPHICS = set().union(*PRODUCTS.values())
+NEEDS = dict((name, needs_of(SPELLS[name][2])) for name in SPELLS)
+MANA = dict((name, MANA_BY_CIRCLE[SPELLS[name][0]]) for name in SPELLS)
+
+# The CATEGORIES rows, lowercased: where the group block ends and the item rows begin
+CATEGORY_NAMES = ["first circle", "second circle", "third circle", "fourth circle",
+                  "fifth circle", "sixth circle", "seventh circle", "eighth circle",
+                  "necromancy", "mysticism", "spellweaving", "other", "runebooks", "spellbooks",
+                  "1st circle", "2nd circle", "3rd circle", "4th circle", "5th circle",
+                  "6th circle", "7th circle", "8th circle"]
+
+TOOL_GRAPHICS = set([0x0FBF, 0x0FC0])
+TOOL_NAME_WORDS = ["pen"]
+
+# Every restock fills each kind the band spends to this. Blank scrolls weigh a stone each.
+BATCH_SIZE = 100
+
+# Crafts the pack can still pay for before a restock
+RESTOCK_AT = 20
+
+# The shard refusing a move for weight. With scrolls in the pack the run unloads before it loads.
+TOO_HEAVY_TEXT = ["That container cannot hold more weight"]
+
+# Answered by the gump at the start; ESC on the unload cursor and a closed gump both mean keep
+OUTPUT_CHOICE = {
+    "text": "Sell the scrolls to a mage, unload them into a container, or keep them?",
+    "hue": 996,
+    "poll": 0.5,
+    "timeout": 60.0,
+}
+OUTPUT_OPTIONS = [("sell", "Sell"), ("unload", "Unload"), ("keep", "Keep")]
+
+# Counted as amounts, the run's own scrolls only
+SELL_AT = 20
+DUMP_AT = 20
+
+# Keeping them, the run ends once the pack holds this many
+MAX_HELD = 60
+
+# Unloads in a row that moved nothing before the run ends
+MAX_DUMP_MISSES = 3
+
+# Matched against the name and the tooltip
+VENDOR_TITLES = ["mage", "scribe"]
+VENDOR_NOUN = "mage or scribe"
+
+# The context entry first, matched by its text; the phrase for a menu with no such entry
+SELL_ENTRY = "sell"
+SELL_PHRASE = "vendor sell"
+
+VENDOR_SCAN_RADIUS = 18
+
+# Adjacent: two tiles away is heard on some shards and not others, and the context menu is refused
+VENDOR_RANGE = 1
+
+# A pathfind that ends early, a doorway and a vendor that stepped aside all look the same from here
+VENDOR_STEPS = 3
+
+CONTEXT_TIMEOUT = 3.0
+
+# Set to a vendor's serial to skip the search
+VENDOR_SERIAL = None
+
+OPL_WAIT = 1.0
+
+SELL_TIMEOUT = 15.0
+SELL_POLL = 0.5
+
+# Sell trips in a row that bought nothing before the trips pause. Never ends the run.
+MAX_SELL_MISSES = 3
+SELL_RETRY_AFTER = 25
+
+# A backstop only - the selection ends when you press ESC
+MAX_PICKS = 8
+
+PICK_TIMEOUT = 60.0
+OPEN_DELAY = 0.6
+CONTAINER_RANGE = 2
+
+MEDITATION = "Meditation"
+
+# The BuffIconType the client publishes while a trance is running
+MEDITATION_BUFF = "ActiveMeditation"
+
+# Off waits for natural regeneration instead: slower, always available
+MEDITATE = True
+
+# The last band charges 50 a scroll, so a pool topped right up pays for several
+MEDITATE_TO_FULL = True
+
+MEDITATE_TIMEOUT = 20.0
+MEDITATE_ATTEMPTS = 4
+MEDITATE_START_TIMEOUT = 2.0
+MANA_WAIT_SLICE = 0.2
+
+MANA_POLL = 0.5
+MANA_LOG_EVERY = 10.0
+
+REGEN_TIMEOUT = 120.0
+
+# Waits in a row that brought the pool no higher than the band needs before the run ends
+MAX_DRY = 5
+
+CRAFT_TITLE = "INSCRIPTION"
+
+# Only ever to *recognise* a gump, never to refuse one: the header is a cliloc, and a build whose
+# GetGumpContents answers nothing for it made every craft read as 'no craft menu'
+CRAFT_TITLE_TEXT = [CRAFT_TITLE, "INSCRIBE"]
+CRAFT_TITLE_FRAGMENTS = [phrase.lower() for phrase in CRAFT_TITLE_TEXT]
+
+# Its own button rather than a group, so it does not count toward the category index
+LAST_TEN_LABEL = "LAST TEN"
+
+# Buttons are 1 + type + index * 20, as bowcraft found on this shard's menu; MAKE LAST is assumed to
+# sit where it does there
+BUTTON_STRIDE = 20
+CATEGORY_BUTTON_TYPE = 0
+ITEM_BUTTON_TYPE = 1
+MAKE_LAST_BUTTON = 47
+
+# (category button, row button). Empty on purpose: the walk finds each row and logs its button, and
+# a guessed table mis-presses on a shard whose rows are in another order. Copy the log lines in here.
+RECIPES = {}
+
+MAX_CATEGORIES = 14
+
+# Eight spells a circle
+MAX_ITEM_ROWS = 8
+
+# Each miss costs one scroll's worth of materials, which is why the gump text is read first
+MAX_ITEM_PROBES = 8
+
+# Whole seconds: the API takes an int here
+PATHFIND_TIMEOUT = 10
+
+GUMP_TIMEOUT = 5.0
+GUMP_POLL = 0.15
+
+# Has to outlast the craft animation, which plays before the shard answers
+CRAFT_TIMEOUT = 10.0
+CRAFT_POLL = 0.2
+
+# How long the pack has to show the new scroll once the shard has answered
+CRAFT_SETTLE = 1.5
+
+# A failed craft's refund arrives after the journal line; the consumed row waits this long for it
+REFUND_SETTLE = 1.5
+REFUND_POLL = 0.25
+
+MOVE_DELAY = 0.7
+
+SKILL_TIMEOUT = 5.0
+SKILL_POLL = 0.25
+
+MAX_CYCLES = 20000
+MAX_UNKNOWN = 5
+MAX_THROTTLED = 20
+MAX_NO_TOOL = 10
+MAX_EMPTY_MOVES = 3
+
+# Refusals for material while the pack holds what the recipe takes: the row is not the spell
+MAX_NO_MATERIAL = 3
+
+# What an unreadable outcome reports before it goes quiet, and how much of it
+MAX_UNREADABLE_REPORTS = 2
+UNREADABLE_TEXT_LIMIT = 160
+JOURNAL_TAIL_SECONDS = 20.0
+JOURNAL_TAIL_LINES = 4
+
+# Ordered: 'failed' before 'made' because "You failed to create the item" contains "create the item"
+OUTCOME_TEXT = [
+    (
+        "failed",
+        [
+            "You failed to create the item",
+            "You fail to create",
+            "You have failed to create",
+            "lost some of the raw material",
+        ],
+    ),
+    (
+        "made",
+        [
+            "You create the item",
+            "You put the",
+        ],
+    ),
+    # Said in the gump's NOTICES panel, which the journal may never carry
+    (
+        "noMana",
+        [
+            "You don't have enough mana to inscribe",
+            "You do not have enough mana",
+            "Insufficient mana",
+        ],
+    ),
+    (
+        "noMaterial",
+        [
+            "You don't have enough blank scrolls",
+            "You do not have enough blank scrolls",
+            "You don't have the components needed",
+            "You do not have the components needed",
+            "You don't have the resources",
+            "You do not have the resources",
+            "You do not have enough reagents",
+        ],
+    ),
+    (
+        "skillTooLow",
+        [
+            "You have no idea how to make that",
+            "You do not have enough skill",
+            "You are not skilled enough",
+            "lack the skill",
+        ],
+    ),
+    ("toolWorn", ["You have worn out your tool", "worn out your tool"]),
+    ("saving", SAVING_TEXT),
+    ("throttled", THROTTLED_TEXT),
+]
+
+# trance is the only wording here that is not a guess: it is the client's own documented example
+MEDITATE_OUTCOME_TEXT = [
+    ("trance", ["You enter a meditative trance."]),
+    ("full", ["You are at peace"]),
+    # Before unfocused, whose trailing full stop is deliberate: without it 'You cannot focus your
+    # concentration' would also match the equipped-weapon sentence.
+    (
+        "blocked",
+        [
+            "You cannot focus your concentration with an equipped weapon",
+            "You cannot focus your concentration with an equipped shield",
+            "You are preoccupied with thoughts of battle",
+        ],
+    ),
+    ("unfocused", ["You cannot focus your concentration.", "You lose your concentration"]),
+    ("unskilled", UNSKILLED_TEXT),
+    ("saving", SAVING_TEXT),
+    ("throttled", ["You must wait a few moments to use another skill"] + THROTTLED_TEXT),
+]
