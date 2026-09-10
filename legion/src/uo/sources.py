@@ -43,7 +43,7 @@ class Sources(object):
 
         return entry["serial"]
 
-    def _entry_for(self, serial):
+    def entry_for(self, serial):
         item = API.FindItem(serial)
 
         if item is not None:
@@ -70,7 +70,8 @@ class Sources(object):
         return container
 
     def pick(self):
-        self._log("target every container or pack animal holding logs or boards, ESC when done")
+        self._log("target every container or pack animal holding %s, ESC when done"
+                  % self._wood.noun())
 
         me = player()
         mine = me.Serial if me is not None else None
@@ -92,7 +93,7 @@ class Sources(object):
             if serial in [entry["serial"] for entry in self._picked]:
                 continue
 
-            entry = self._entry_for(serial)
+            entry = self.entry_for(serial)
 
             if entry is None:
                 self._log("%s is neither a container nor a creature" % hex_of(serial))
@@ -117,10 +118,12 @@ class Sources(object):
 
         return self._picked
 
-    # Only the type the menu is set to
-    def container_wood(self, serial):
+    # Only the type the menu is set to, and only one kind of it when a kind is named
+    def container_wood(self, serial, kind=None):
         items = API.ItemsInContainer(serial, True)
-        piles = [item for item in (items or []) if self._wood.usable(item)]
+        piles = [item for item in (items or [])
+                 if (self._wood.usable(item) if kind is None
+                     else self._wood.usable_kind(item, kind))]
         piles.sort(key=amount_of, reverse=True)
 
         return piles

@@ -20,8 +20,8 @@ from bowcraft.config import (BANDS, BATCH_SIZE, BOWYER_TITLES, BUTTON_STRIDE, CA
                              UNREADABLE_TEXT_LIMIT, VENDOR_RANGE, VENDOR_SCAN_RADIUS,
                              VENDOR_SERIAL, VENDOR_STEPS, WOOD_HUES, WOOD_KINDS, WOOD_TYPE,
                              WOOD_TYPES)
-from bowcraft.restock import Restock
-from bowcraft.sources import Sources
+from uo.restock import Restock
+from uo.sources import Sources
 from uo.craft import Crafter
 from uo.craftmenu import CraftMenu
 from uo.crafttool import CraftTool

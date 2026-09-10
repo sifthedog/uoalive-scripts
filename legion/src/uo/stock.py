@@ -18,6 +18,9 @@ class StockBook(object):
         self._move_delay = config["move_delay"]
         self._log = log
 
+    def noun(self):
+        return self._noun
+
     # For a snapshot key, which has no item left to read a name off
     def is_stock_graphic(self, graphic):
         for _kind, graphics, _words in self._kinds:
@@ -66,6 +69,9 @@ class StockBook(object):
 
     def wrong(self, item):
         return self.is_stock(item) and self.type_of(item) != self._wanted
+
+    def usable_kind(self, item, kind):
+        return self.usable(item) and self.kind_of(item) == kind
 
     # Only what the menu will spend: counting oak let a run sit on a full pack and craft none
     def counts(self, items):

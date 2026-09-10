@@ -1,6 +1,6 @@
 import unittest
 
-from tinkering.ingots import cost_of, short_by
+from uo.cost import cost_of, short_by
 
 COSTS = {"iron key": 3, "fancy wind chimes": 15}
 

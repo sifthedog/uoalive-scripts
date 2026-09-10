@@ -56,6 +56,23 @@ class StockBookTest(unittest.TestCase):
         self.assertFalse(book.usable(item(graphic=0x1BD7, hue=2010)))
         self.assertTrue(book.wrong(item(graphic=0x1BD7, hue=2010)))
 
+    def test_a_book_with_no_wanted_type_spends_every_stack_of_a_kind(self):
+        self.api.hold(item(serial=1, graphic=0x1BD7, hue=0, amount=100),
+                      item(serial=2, graphic=0x1BD7, hue=2010, amount=300))
+        book = StockBook({
+            "noun": "wood",
+            "kinds": self.kinds,
+            "types": [],
+            "hues": {},
+            "wanted": None,
+            "move_delay": 0.7,
+        }, self.said.append)
+
+        self.assertTrue(book.usable_kind(item(graphic=0x1BD7, hue=2010), "boards"))
+        self.assertFalse(book.usable_kind(item(graphic=0x1BD7, hue=2010), "logs"))
+        self.assertEqual(book.pack_report(), "400 boards")
+        self.assertEqual(book.noun(), "wood")
+
     def test_counts_only_what_the_menu_will_spend(self):
         self.api.hold(item(serial=1, graphic=0x1BD7, hue=0, amount=100),
                       item(serial=2, graphic=0x1BD7, hue=2010, amount=300))

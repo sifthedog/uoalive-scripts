@@ -18,7 +18,7 @@ from tinkering.config import (BANDS, BUTTON_STRIDE, CATEGORY_BUTTON_TYPE, CATEGO
                               THROTTLE_BACKOFF_MAX, TOOL_GRAPHICS, TOOL_NAME_WORDS,
                               UNREADABLE_TEXT_LIMIT, VENDOR_RANGE, VENDOR_SCAN_RADIUS,
                               VENDOR_SERIAL, VENDOR_STEPS, VENDORS)
-from tinkering.ingots import cost_of, short_by
+from uo.cost import cost_of, short_by
 from uo.craft import Crafter
 from uo.craftmenu import CraftMenu
 from uo.crafttool import CraftTool

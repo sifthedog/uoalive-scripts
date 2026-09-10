@@ -68,6 +68,7 @@ buffbar     the buff bar, re-read every time because ApiBuff never refreshes
 cast        a spell, and the two silent proofs a shard that says nothing still leaves
 clock       the one time.time(), so tests have one thing to fake
 convert     resource -> product, judged by the pack diff, with a per-hue write-off
+cost        what one craft of a product takes, and how short the pack is of it
 craft       one craft through the menu: the row, MAKE LAST, and the outcome read three ways
 craftmenu   a craft gump: opening it, walking the categories, reading and pressing the rows
 crafttool   the tool a craft menu is opened with, found in the pack by art or by name
@@ -89,11 +90,13 @@ pace        the shard's skill timer, learned from its refusals rather than confi
 pack        counting and diffing what the backpack holds
 phrases     the shard's own wordings, as far as they do not depend on the script
 record      one line per attempt, buffered a cycle so the gain it earned is in it
+restock     filling the pack from the picked containers, and putting the wrong wood back
 retry       act, poll for the proof
 roam        walking to the next spot, and waiting where there is nothing but a clock
 save        sitting out a world save
 scan        the crow-flight sort, the route probe, and the shortest way in
 skill       every read of GetSkill, and what a client that has not answered means
+sources     the containers and pack animals picked at the cursor, and reaching them again
 stages      the band tables: which row trains now, and what one of its cycles costs
 stock       the craft's material in the pack: which kind, which type, and what the menu will spend
 survey      the dead-end report: what the run actually saw

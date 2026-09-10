@@ -1,12 +1,16 @@
 import unittest
 
-from bowcraft.restock import Restock
+from uo.restock import Restock
 from uo.stock import StockBook
 from test_support.uo import install, item
 
 BOARDS = 0x1BD7
+SCROLLS = 0x0EF3
+ASH = 0x0F8C
 CHEST = 0x40001000
 PILE = 0x40001001
+SCROLL_PILE = 0x40001002
+ASH_PILE = 0x40001003
 
 
 class LiftingBook(StockBook):
@@ -33,8 +37,9 @@ class ChestSources(object):
     def open(self, entry):
         return CHEST
 
-    def container_wood(self, serial):
-        return [held for held in self._api.containers.get(serial, []) if held.Amount > 0]
+    def container_wood(self, serial, kind=None):
+        return [held for held in self._api.containers.get(serial, [])
+                if held.Amount > 0 and (kind is None or held.kind == kind)]
 
     def stock_left(self):
         return sum(held.Amount for held in self._api.containers.get(CHEST, []))
@@ -111,3 +116,69 @@ class RunTest(unittest.TestCase):
         self.setUp()
 
         self.assertFalse(self.restock.refused_for_weight())
+
+
+class KindsTest(unittest.TestCase):
+    """A table of kind -> fill-to pulls each kind to its own figure and leaves the rest alone."""
+
+    def setUp(self):
+        self.api = install()
+        self.scrolls = item(serial=1, graphic=SCROLLS, amount=5, name="blank scrolls")
+        self.ash = item(serial=2, graphic=ASH, amount=100, name="sulfurous ash")
+        self.api.hold(self.scrolls, self.ash)
+        self.scroll_pile = item(serial=SCROLL_PILE, graphic=SCROLLS, amount=500,
+                                name="blank scrolls")
+        self.ash_pile = item(serial=ASH_PILE, graphic=ASH, amount=500, name="sulfurous ash")
+        self.pearl_pile = item(serial=PILE, graphic=0x0F7A, amount=500, name="black pearl")
+        self.scroll_pile.kind = "blank scrolls"
+        self.ash_pile.kind = "sulfurous ash"
+        self.pearl_pile.kind = "black pearl"
+        self.api.containers[CHEST] = [self.pearl_pile, self.scroll_pile, self.ash_pile]
+
+        def move(serial, container, amount=-1):
+            for pile, held in ((self.scroll_pile, self.scrolls), (self.ash_pile, self.ash)):
+                if serial == pile.Serial:
+                    pile.Amount -= amount
+                    held.Amount += amount
+
+            if serial == PILE:
+                self.pearl_pile.Amount -= amount
+                self.api.hold(self.scrolls, self.ash,
+                              item(serial=3, graphic=0x0F7A, amount=amount, name="black pearl"))
+
+            return True
+
+        self.api.MoveItem = move
+
+        stock = StockBook({
+            "noun": "scrolls and reagents",
+            "kinds": [("blank scrolls", set([SCROLLS]), ["blank scroll", "blank scrolls"]),
+                      ("black pearl", set([0x0F7A]), ["black pearl"]),
+                      ("sulfurous ash", set([ASH]), ["sulfurous"])],
+            "types": [],
+            "hues": {},
+            "wanted": None,
+            "move_delay": 0.0,
+        }, lambda text: None)
+        self.restock = Restock(stock, ChestSources(self.api), {
+            "batch": 300,
+            "move_delay": 0.0,
+            "max_empty_moves": 3,
+            "return_wrong_wood": False,
+            "heavy_text": ["That container cannot hold more weight"],
+        }, lambda text: None)
+
+    def test_each_kind_is_filled_to_its_own_figure(self):
+        self.assertEqual(self.restock.run({"blank scrolls": 100, "sulfurous ash": 100}), 95)
+        self.assertEqual(self.scrolls.Amount, 100)
+        self.assertEqual(self.ash.Amount, 100)
+
+    def test_a_kind_not_asked_for_stays_in_the_chest(self):
+        self.restock.run({"blank scrolls": 100})
+
+        self.assertEqual(self.pearl_pile.Amount, 500)
+        self.assertEqual(self.ash_pile.Amount, 500)
+
+    def test_a_kind_the_pack_lacks_is_pulled_too(self):
+        self.assertEqual(self.restock.run({"black pearl": 40}), 40)
+        self.assertEqual(self.pearl_pile.Amount, 460)
