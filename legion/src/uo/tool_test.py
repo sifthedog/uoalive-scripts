@@ -66,6 +66,24 @@ class ToolTest(unittest.TestCase):
         self.assertEqual(self.api.used, [5])
         self.assertEqual(self.said[0], "opening 1 bag(s) to look inside for a pickaxe")
 
+    def test_leaves_books_shut(self):
+        self.api.hold(item(serial=4, graphic=0x0EFA, name="", is_container=True),
+                      item(serial=5, name="a runebook", is_container=True),
+                      item(serial=6, graphic=0x0E76, name="a bag", is_container=True))
+
+        self.tool.find()
+
+        self.assertEqual(self.api.used, [6])
+        self.assertEqual(self.said[0], "opening 1 bag(s) to look inside for a pickaxe")
+
+    def test_a_pack_of_only_books_opens_nothing(self):
+        self.api.hold(item(serial=4, graphic=0x0EFA, name="", is_container=True),
+                      item(serial=5, name="a runebook", is_container=True))
+
+        self.assertIsNone(self.tool.find())
+        self.assertEqual(self.api.used, [])
+        self.assertFalse([line for line in self.said if line.startswith("opening")])
+
     def test_opens_a_bag_once_and_leaves_an_opened_one_alone(self):
         self.api.hold(item(serial=5, name="a bag", is_container=True),
                       item(serial=6, name="a pouch", is_container=True, opened=True))

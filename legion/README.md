@@ -157,7 +157,8 @@ What the typings do not say, learned on UOAlive. Script-specific notes sit under
   so an entry that is not there *yet* looks like one that never will be.
 - **`API.ItemsInContainer(container, True)` reads the pack recursively.** Item-cap guards and the
   combine count the top level only, because the cap is per container. A bag the client has not
-  opened this session reads as empty.
+  opened this session reads as empty. Books read as containers too: a shard's own book art goes
+  in `NOT_BAG_GRAPHICS` / `NOT_BAG_NAMES` in `uo/tool.py` so the tool search leaves it shut.
 - **`API.ItemNameAndProps` returns a flat string**: line 0 is the name, properties are the lines
   under it. A tooltip not yet arrived is empty, not missing.
 - **Every call that reads game state is one client frame**, drained once per `Update`, so sweeps

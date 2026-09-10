@@ -5,6 +5,31 @@ from uo.pack import pack_contents
 from uo.retry import settled
 from uo.text import word_in
 
+# Books carry the client's container flag, so the flag alone opens every spellbook in the pack
+NOT_BAG_GRAPHICS = set([
+    0x0EFA,  # spellbook
+    0x2253,  # necromancer spellbook
+    0x2252,  # book of chivalry
+    0x238C,  # book of bushido
+    0x23A0,  # book of ninjitsu
+    0x2D50,  # spellweaving spellbook
+    0x2D9D,  # mysticism spellbook
+    0x22C5,  # runebook
+    0x9C16,  # runic atlas
+    0x2259,  # bulk order book
+])
+NOT_BAG_NAMES = ["spellbook", "runebook", "book", "atlas"]
+
+
+def is_bag(item):
+    if not getattr(item, "IsContainer", False) or getattr(item, "Opened", False):
+        return False
+
+    if item.Graphic in NOT_BAG_GRAPHICS:
+        return False
+
+    return not word_in(item.Name, NOT_BAG_NAMES)
+
 
 class Tool(object):
     """Find it, learn its graphic, get it onto the hand, and notice when it breaks."""
@@ -85,8 +110,7 @@ class Tool(object):
 
     # A bag the client has not opened this session reads as empty, whatever is in it
     def _open_bags(self):
-        bags = [item for item in pack_contents()
-                if getattr(item, "IsContainer", False) and not getattr(item, "Opened", False)]
+        bags = [item for item in pack_contents() if is_bag(item)]
 
         if self._spare_bag is not None:
             spare = API.FindItem(self._spare_bag)
