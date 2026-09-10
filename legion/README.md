@@ -15,6 +15,7 @@ repo targets the ClassicUO web client; nothing is shared between the two.
 | `arms-lore.py` | Target a weapon, then read it every half second until Arms Lore caps |
 | `bowcraft.py` | Trains Bowcraft from 30 to cap: makes whatever the band still gains on, restocks wood from the containers and pack animals you pick, and sells to the nearest bowyer |
 | `tinkering.py` | Trains Tinkering from 20 to cap on the iron ingots you carry: makes whatever the band still gains on and sells it to the vendor that buys it |
+| `carpentry.py` | Trains Carpentry from 0 to cap on the cheapest recipe each band still gains on, restocks wood the way `bowcraft.py` does, and unloads what it made into the container you pick |
 | `magery.py` | Trains Magery on the four spells that gain without a victim, meditating when the pool runs dry |
 | `mysticism.py` | Trains Mysticism on the five spells that gain without a victim, meditating when the pool runs dry |
 | `bod.py` | Target a Blacksmithing bulk order deed, small or large: crafts what it asks for from the ingots in your pack, combines the pieces, and for a large deed gets the smalls from the Bulk Order Deed Box and fills them one by one |
@@ -213,6 +214,7 @@ unread outcomes write nothing; a missing row shows in the closing tally, a guess
 | `arms-lore.py` | `read` | `missed` | a use that raised no cursor, unread wordings |
 | `bowcraft.py` | `made` | `failed` | `noMaterial`, `wrongRow`, a worn tool, the sell trips |
 | `tinkering.py` | `made` | `failed` | the same |
+| `carpentry.py` | `made` | `failed` | the same, and the unloading |
 | `fishing.py` | `caught` | `failed` | no cursor, not biting, out of reach, throttles, unread wordings |
 | `mining.py`, `mine-here.py` | `dug`, `smelted` | `failed`, for a swing or a smelt | everything else, and every row once Mining is at its cap |
 
@@ -1466,6 +1468,95 @@ then counts toward `MAX_NO_MATERIAL`, since a menu set to another metal is the o
 - Whether the SELECTIONS row says `iron key` or `key`.
 - On a page whose rows cannot be split from the text, `ring` is also inside `earrings`, `springs`
   and `key ring`, and the fallback substring match could settle on the wrong category.
+
+## carpentry.py
+
+Trains Carpentry from 0 to cap on the cheapest recipe each band still gains on. Wood is pulled from
+what you point at the way `bowcraft.py` does it, and everything made goes into one more container
+you point at, since no vendor buys a deed. Everything under the loop is shared with `bowcraft.py`,
+which is where the craft menu, the row walk and the outcomes are described.
+
+| Carpentry | Makes | Wood |
+| --- | --- | --- |
+| 0 – 11 | barrel staves | 5 |
+| 11 – 36 | barrel lid | 4 |
+| 36 – 40.7 | dartboard (south) | 5 |
+| 40.7 – 42.1 | wooden box | 10 |
+| 42.1 – 67.1 | dark wooden sign hanger | 5 |
+| 67.1 – 70 | ballot box | 5 |
+| 70 – 73.6 | bokuto | 6 |
+| 73.6 – 98.6 | quarter staff | 6 |
+| 98.6 – 103.9 | gnarled staff | 7 |
+| 103.9 – 105 | tetsubo | 10 |
+| 105 – 106.5 | black staff | 9 |
+| 106.5 – 111.8 | easel (south) | 20 |
+| 111.8 – 115 | plain wooden chest | 30 |
+| 115 – 119.7 | rustic bench (south) | 35 |
+| 119.7 – cap | display case (south) | 40, and 10 ingots |
+
+Each ceiling is the row's minimum skill plus 25, where the stock recipe reaches 100% and stops
+gaining. Ceilings are exclusive; the first row the value is under wins. Each cycle:
+
+1. Read the skill. An uncovered band ends the run; a band change re-selects the row.
+2. Unload once the pack holds `DUMP_AT` products. With nothing picked to unload into, the run ends
+   at `MAX_HELD` instead.
+3. Restock if under `RESTOCK_AT` wood, as `bowcraft.py` does. When the shard refuses a move as too
+   heavy, the run unloads first. Out of wood with the pack short of the band's recipe ends the run.
+4. Open the menu with a carpentry tool, press the row or `MAKE LAST`, and read the outcome.
+
+**What is unloaded** is only what the run made: every addon is a deed, and the deed art is also a
+house deed's, so nothing that was in the pack when the run started is ever moved. A trash barrel
+destroys it; a chest keeps it.
+
+### Before you run it
+
+- **Carpentry below the cap**, with the power scrolls read for the bands past 100.
+- **A carpentry tool in your pack**, and spares. Saw, planes, nails, froe, inshave and scorp are
+  known by art and by name; a hammer only by art, since a smith's hammer carries the word too.
+- **Wood in your pack or in what you pick.** Logs and boards both count; only `WOOD_TYPE` is spent.
+- **Something to unload into**, in reach: a trash barrel in the house is the usual answer.
+- **The display case needs 75 Tinkering** and ingots in the pack. It is the only row that gains
+  past 119.7; without it the run stops there, refused for materials.
+
+### What to set
+
+| Setting | Default | What it is for |
+| --- | --- | --- |
+| `BANDS` | see above | Ceiling and product |
+| `PRODUCTS` | table | Row name as the gump spells it, and the graphics it arrives as |
+| `WOOD_COST` / `MIN_CRAFT_WOOD` | table / `5` | When the pack is too short to try |
+| `DEED_GRAPHICS` | `0x14F0` | What every addon lands as |
+| `TOOL_GRAPHICS` / `TOOL_NAME_WORDS` | stock / `saw`, … | An art learned by name joins the set |
+| `CATEGORY_NAMES` | the wiki's groups | Where the group rows end and the item rows begin |
+| `RECIPES` | wind chimes | `(category button, row button)`. Copy the `is the row on button` lines in |
+| `MAX_CATEGORIES` / `MAX_ITEM_ROWS` | `12` / `48` | How far the walk goes; Furniture and the add-ons run to forty rows |
+| `DUMP_AT` / `MAX_HELD` | `10` / `60` | Products before an unload, and the most kept with nowhere to put them |
+| `MAX_DUMP_MISSES` | `3` | Unloads in a row that moved nothing before the run ends |
+| `BATCH_SIZE` / `RESTOCK_AT` | `300` / `40` | What a restock fills to, and what triggers one |
+| `MATERIAL_GRAPHICS` | ingots | Non-wood a craft can spend, for the consumed rows |
+| `DATA_PATH` | `skill-attempts.jsonl` | Where each craft is appended, with what it spent. `""` records nothing |
+
+### When it goes wrong
+
+- **`the gump text does not name 'dartboard (south)' on a row of its own`**: the row is spelled
+  differently on this shard. `rows seen` lists what it read; fix `BANDS`, `PRODUCTS` and
+  `WOOD_COST` to match. The addon rows are the likeliest: the wiki names them without the facing.
+- **`no category lists 'dark wooden sign hanger'`**: the shard may not have the item. Put a
+  Trinsic-style chair (15 wood, 42.1) in its place, and the ballot box from 47.3.
+- **`the shard refused 300 boards in the pack 3 times`**: the menu's material is not `WOOD_TYPE`.
+- **`the pack holds 60 products and nothing was picked to unload into`**: pick a container next time,
+  or raise `MAX_HELD`.
+- **`3 unloads in a row moved nothing`**: the container is full, locked down, or not a container.
+
+### Unverified
+
+- Every row name and product graphic is stock ServUO, none read off UOAlive. The walk finds a row
+  by its text, so a wrong name costs categories walked, not wood.
+- The ceilings assume the stock minimum-plus-25 gain window. A row that hits 100% success early has
+  stopped gaining; move its ceiling down.
+- Whether the wooden container engraving tool's ceiling is 100 on this shard. If it is, it covers
+  75 to 100 for 4 wood and 2 ingots, cheaper than the staves.
+- Whether a deed moved into a trash barrel is destroyed silently or asks first.
 
 ## bod.py
 
