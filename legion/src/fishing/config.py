@@ -47,13 +47,34 @@ TILES_AHEAD_DEFAULT = 4
 TILES_AHEAD_HUE = 996
 TILES_AHEAD_POLL = 0.5
 
+# How long a turn (API.Turn) needs before the client's own Direction reflects it
+TURN_DELAY = 0.5
+
+# Matched against the caught item's own name text (the part after the colon in "You pull out an
+# item: ..."), not its graphic - there is no confirmed graphic ID for any of these on this shard
+JUNK_TEXT = ["fish", "boots", "sandals", "shoes", "thigh boots"]
+
+# Asked on the same start-up gump as the tiles-ahead question. Discard preserves the run's old
+# always-drop behavior as the default
+CATCH_MODE_TEXT = "What should happen to junk catches (fish, boots, sandals, shoes, thigh boots)?"
+CATCH_MODE_OPTIONS = [("container", "Container"), ("keep", "Keep"), ("discard", "Discard")]
+CATCH_MODE_DEFAULT = "discard"
+CATCH_MODE_HUE = 996
+
+PICK_TIMEOUT = 60.0
+MOVE_DELAY = 0.7
+
+# x/y are an offset from your own position (confirmed off TazUO's own LegionAPI.cs) - one of the
+# eight adjacent tiles is picked instead of always your own, so catches do not all stack underfoot
+DROP_OFFSETS = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
+
 # Seconds throughout - API.Pause takes seconds
 CURSOR_TIMEOUT = 2.0
 CURSOR_POLL = 0.1
 NO_CURSOR_READ = 1.0
 
 # Has to outlast the cast animation, which plays before the shard answers
-CAST_TIMEOUT = 12.0
+CAST_TIMEOUT = 2.0
 CAST_POLL = 0.2
 
 # The fish lands in the pack after the line that announced it
@@ -73,6 +94,11 @@ DISMOUNT_POLL = 0.2
 
 JOURNAL_TAIL_SECONDS = 20.0
 JOURNAL_TAIL_LINES = 10
+
+# What an unreadable outcome reports before it goes quiet - a short CAST_TIMEOUT means this shard
+# hits it often as a matter of course, not just on a genuinely unrecognized wording. Reset once a
+# catch lands clean, so a run that goes quiet still gets a fresh look if the wording changes later
+MAX_UNREADABLE_REPORTS = 2
 
 MAX_CYCLES = 5000
 MAX_UNKNOWN = 5
@@ -121,6 +147,8 @@ OUTCOME_TEXT = [
     ("tooFar", ["You need to be closer to the water", "too far away"]),
     ("notWater", ["You can't fish there", "You cannot fish there", "Try fishing elsewhere"]),
     ("mounted", ["You can't fish while riding", "can't fish while riding"]),
+    # A short CAST_TIMEOUT recasts before the shard is done resolving the last one - harmless
+    ("busy", ["You are already fishing"]),
     ("saving", SAVING_TEXT),
     ("throttled", THROTTLED_TEXT),
 ]

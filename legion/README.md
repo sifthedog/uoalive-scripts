@@ -919,49 +919,63 @@ Trouble and stopping, the hold included, carry the same names and defaults as `m
 
 ## fishing.py
 
-A loop, meant for standing on a boat: ask once how many tiles ahead to aim, say `GUARD_PHRASE`, then
-each cycle get off the mount, double-click the fishing pole, and answer the cursor with the tile
-straight ahead of whichever way you are facing - no water search, since a boat sits in open water
-on every side. Runs until told to stop, `Fishing` caps, you die, `MAX_CYCLES` is hit, or the shard
-keeps refusing. Every catch is dropped on the ground at your feet as soon as it lands, so the pack
-is never something this run has to manage.
+A loop, meant for standing on a boat: ask once how many tiles ahead to aim and what to do with a
+junk catch, say `GUARD_PHRASE`, then each cycle get off the mount, turn toward water if the current
+facing is not recognized as any, double-click the fishing pole, and answer the cursor with the tile
+straight ahead of whichever way you end up facing. Runs until told to stop, `Fishing` caps, you die,
+`MAX_CYCLES` is hit, or the shard keeps refusing. A junk catch - fish, boots, sandals, shoes or thigh
+boots, matched by the caught item's own name text (`JUNK_TEXT`) - is put in a container, left in the
+pack, or dropped on the ground, whichever the start-up gump chose. Anything else caught is always
+left in the pack.
 
-1. Ask once, via a gump, how many tiles ahead to cast at (`TILES_AHEAD_DEFAULT` prefilled;
-   Cancel, a closed gump, or a blank/zero/non-numeric answer all keep the default), then say
-   `GUARD_PHRASE` once.
+1. Ask once, via a gump, how many tiles ahead to cast at (`TILES_AHEAD_DEFAULT` prefilled) and what
+   to do with a junk catch (`CATCH_MODE_DEFAULT` prefilled). Cancel, a closed gump, or a
+   blank/zero/non-numeric tiles-ahead answer all keep both defaults. Choosing Container then asks
+   for a target - ESC or a refused target falls back to Keep for the run. Then say `GUARD_PHRASE`
+   once.
 2. Each cycle: stop if you are dead, Fishing is capped, or told to stop. Wait out a save. Look for
    an ambush and for the boat having stopped (see below).
 3. Dismount, up to `DISMOUNT_ATTEMPTS` times.
 4. Find the pole in either hand, then in the pack. Nothing is equipped.
-5. Read `API.Player.Direction`, the tiles-ahead answer out from where you stand. A water static
+5. Check the tile at the tiles-ahead distance in all eight directions, current facing checked first.
+   If the current facing is not recognized water but another direction is, `API.Turn` toward it -
+   this only turns in place, the way a single directional key press does when not already facing
+   that way, and never steps forward. If none of the eight match, the run casts at whatever is
+   ahead anyway, same as before this existed.
+6. Read `API.Player.Direction`, the tiles-ahead answer out from where you stand. A water static
    there (common at a shoreline) wins over the land tile it sits on; otherwise the land tile is
    used as given, whatever its art - `LAND_TILE_GRAPHIC` is only a fallback for a spot the client
    has no land data for at all.
-6. Use the pole, wait for the cursor, answer it with `Target(x, y, z, graphic)`.
-7. Read the outcome. A catch is named off the text past the colon of `You pull out an item: …`,
-   recorded, and dropped at your feet through `API.MoveItemOffset`.
+7. Use the pole, wait for the cursor, answer it with `Target(x, y, z, graphic)`.
+8. Read the outcome. A catch is named off the text past the colon of `You pull out an item: …` and
+   recorded. If the name matches `JUNK_TEXT`, it is then moved into the picked container, left in
+   the pack, or dropped on the ground one tile over through `API.MoveItemOffset` (its `x`/`y` are an
+   offset from your own position, confirmed off TazUO's own `LegionAPI.cs` - `(0, 0)` already drops
+   at your feet; one of the eight adjacent tiles is used instead so catches do not all stack there).
 
 | Outcome | What it means |
 | --- | --- |
-| `caught` | `You pull out an item: …`. Recorded with what the pack gained, then dropped on the ground |
+| `caught` | `You pull out an item: …`. Recorded with what the pack gained, then a junk catch is moved per the start-up choice |
 | `failed` | `You fish a while, but fail to catch anything`. Recorded |
 | `empty` | The fish are not biting off this tile |
 | `tooFar` | The shard wants you closer to the water - answer a smaller number next run, or move |
 | `notWater` | The tile aimed at was not water. Face open water, or answer a different tiles-ahead number |
 | `mounted` | The shard still sees you mounted |
-| `noCursor` / `unknown` | Share `MAX_UNKNOWN`'s backstop. An unreadable outcome prints the journal's last lines |
+| `busy` | `You are already fishing` - a short `CAST_TIMEOUT` recast before the last one resolved |
+| `noCursor` | Counts toward `MAX_UNKNOWN`'s backstop |
+| `unknown` | Ignored, does not count toward anything - prints the journal's last lines, but only the first `MAX_UNREADABLE_REPORTS` times since the last clean catch |
 | `throttled` / `saving` | Waited out; `throttled` counts toward `MAX_THROTTLED` |
 
 Only `caught` and `failed` are recorded. The row is written after `GAIN_SETTLE`, or as soon as the
 skill value moves, because the client applies the gain after the outcome line. A `caught` row waits
-`CATCH_SETTLE` for the pack to show the fish first - the same wait that decides when it is safe to
-drop the catch on the ground.
+`CATCH_SETTLE` for the pack to show the fish first, before it is recorded - and, if it is junk,
+before it is moved out of the pack.
 
 ### Before you run it
 
 - **A fishing pole in hand or in the pack.** A held one is preferred.
-- **Face open water** - the tile aimed at is always straight ahead, the tiles-ahead answer out,
-  with no scan of what is actually there.
+- **Stand somewhere at least one of the eight surrounding directions is open water** - the run turns
+  toward the nearest one it recognizes before each cast, but does not walk or pathfind to reach one.
 - **`GUARD_PHRASE` is said once**, before the loop starts.
 - **`DATA_PATH` lands beside the script** when it is a bare name, in `LegionScripts`; a path with a
   folder in it is used as written.
@@ -976,13 +990,19 @@ drop the catch on the ground.
 | `WATER_LAND_GRAPHICS` / `WATER_STATIC_GRAPHICS` | stock RunUO bands | What counts as a water static at the aimed-at tile, overriding the land tile it sits on. Statics are numbered apart from land |
 | `LAND_TILE_GRAPHIC` | `1337` | Fallback art for the aimed-at tile, used only when the client has no land data there at all - normally the real tile there is read and used, static or land |
 | `TILES_AHEAD_DEFAULT` | `4` | Prefilled in the start-up gump. Not a cap - whatever is typed there is used as given |
+| `TURN_DELAY` | `0.5` | How long a turn needs before `API.Player.Direction` reflects it |
+| `JUNK_TEXT` | `fish`, `boots`, `sandals`, `shoes`, `thigh boots` | Matched against the caught item's own name text, not its graphic |
+| `CATCH_MODE_OPTIONS` / `CATCH_MODE_DEFAULT` | Container, Keep, Discard / `discard` | The start-up gump's radio choice for a junk catch. Discard matches the run's old always-drop behavior |
+| `PICK_TIMEOUT` | `60.0` | How long the Container target cursor waits before it counts as ESC |
+| `MOVE_DELAY` | `0.7` | Paced between moves into the picked container |
 | `PROMPT_TEXT` | *What water do you want to fish in* | The cursor prompt. `HasTarget` is what the wait actually leans on |
 | `CURSOR_TIMEOUT` / `NO_CURSOR_READ` | `2.0` / `1.0` | How long the pole has to raise a cursor, and how long a refusal is listened for when it does not |
-| `CAST_TIMEOUT` | `12.0` | How long the shard has to answer after the cast animation |
+| `CAST_TIMEOUT` | `2.0` | How long the shard has to answer after the cast animation |
 | `CATCH_SETTLE` / `GAIN_SETTLE` | `1.5` / `2.0` | How long the pack has to show the fish, and the client the gain |
 | `DISMOUNT_ATTEMPTS` | `3` | Before *could not get off the mount* |
 | `DATA_PATH` | `skill-attempts.jsonl` | Where each cast is appended. `""` records nothing |
 | `MAX_CYCLES` / `MAX_UNKNOWN` / `MAX_THROTTLED` | `5000` / `5` / `20` | Backstops - a working-cycle cap, unreadable outcomes in a row, throttles in a row |
+| `MAX_UNREADABLE_REPORTS` | `2` | How many `unknown` journal dumps a run prints before it goes quiet on them - reset the moment a catch lands clean |
 | `WATCH_FOR_TROUBLE` / `THREAT_RANGE` | `True` / `12` | Turns the ambush and boat-stopped watches on, and how far the (unused here) hostile scan looks |
 | `AMBUSH_ALARM` / `AMBUSH_NOTICES` / `AMBUSH_REPEATS` | as `mining.py` | Shared by both watches below - the sound, the OS notices, and how many times the alarm restarts |
 | `AMBUSH_HOLD` / `BOAT_STOPPED_HOLD` | `True` / `True` | Whether each watch freezes the run behind a gump until its button is pressed |
@@ -998,10 +1018,13 @@ drop the catch on the ground.
 - **`no fishing pole in hand or in the pack`**: stops the run immediately - equip or carry one and
   start it again.
 - **`the shard kept refusing the cast`**: `MAX_THROTTLED` casts in a row came back `throttled`.
-- **`unreadable outcome, check OUTCOME_TEXT`**: the last journal lines are printed under it; copy
-  the shard's wording into the matching bucket.
+- **`unreadable outcome, check OUTCOME_TEXT`**: the last journal lines are printed under it, for the
+  first `MAX_UNREADABLE_REPORTS` times since the last clean catch - copy the shard's wording into
+  the matching bucket. A short `CAST_TIMEOUT` on a shard that answers slowly hits this often as a
+  matter of course, not just on wording this run has never seen.
 - **`caught something the journal did not name`**: the catch line had no colon. The row is still
-  written, with an empty name, and the item is still dropped.
+  written, with an empty name - an empty name never matches `JUNK_TEXT`, so the item stays in the
+  pack.
 
 ### Notes
 
@@ -1037,6 +1060,18 @@ drop the catch on the ground.
 - Every wording in `OUTCOME_TEXT` past `caught`/`failed` - none has been seen on this shard yet.
 - That a pole in the pack is accepted without being equipped.
 - The catch line's shape on this shard. Anything past the first colon is the name.
+- **`JUNK_TEXT`'s wording.** `fish`, `boots`, `sandals`, `shoes`, and `thigh boots` are a guess at
+  how this shard names its junk catches - unconfirmed. A catch that never matches is simply left in
+  the pack, same as before this was added.
+- `DROP_OFFSETS` assumes the eight adjacent tiles are all valid drop spots from wherever the run
+  happens to be standing - confirmed the offset is relative to the player (TazUO's `LegionAPI.cs`),
+  not confirmed that every one of the eight tiles is always a legal drop target (a wall, a rail, or
+  open water one tile over could refuse it).
+- **That `water_direction`'s eight-way check actually finds an open-water direction to turn toward
+  when the current facing does not.** It reads the same `WATER_LAND_GRAPHICS`/`WATER_STATIC_GRAPHICS`
+  hypothesis `tile_ahead` already leaned on unconfirmed - if none of the eight match this shard's
+  real water art, the run turns nowhere and casts at whatever was already ahead, same as before this
+  existed.
 
 ## attack.py
 

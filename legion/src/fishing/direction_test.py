@@ -1,6 +1,6 @@
 import unittest
 
-from fishing.direction import facing, tile_ahead
+from fishing.direction import facing, tile_ahead, turn_toward_water, water_direction
 from test_support.uo import FakeLand, install, static
 
 FALLBACK_GRAPHIC = 1337
@@ -96,3 +96,60 @@ class TileAheadTest(unittest.TestCase):
         tile = tile_ahead(3, LAND_WATER, STATIC_WATER, FALLBACK_GRAPHIC)
 
         self.assertEqual((tile["x"], tile["y"]), (100, 103))
+
+
+class WaterDirectionTest(unittest.TestCase):
+    def setUp(self):
+        self.api = install()
+        self.api.Player.X = 100
+        self.api.Player.Y = 100
+        self.api.Player.Direction = "East"  # (104, 100) - land, not water
+
+    def test_the_current_facing_wins_when_it_is_already_water(self):
+        self.api.land[(104, 100)] = FakeLand(0, 0x00A8)
+        self.api.land[(100, 96)] = FakeLand(0, 0x00A8)  # north would also match
+
+        self.assertEqual(water_direction(4, LAND_WATER, STATIC_WATER), 2)
+
+    def test_another_direction_is_used_when_the_current_facing_is_not_water(self):
+        self.api.land[(100, 104)] = FakeLand(0, 0x00A8)  # south, DELTAS index 4
+
+        self.assertEqual(water_direction(4, LAND_WATER, STATIC_WATER), 4)
+
+    def test_a_water_static_counts_the_same_as_a_water_land_tile(self):
+        self.api.land[(104, 96)] = FakeLand(0, 3)  # plain grass under it
+        self.api.statics[(104, 96)] = [static(104, 96, -3, 0x1797, "water")]  # northeast
+
+        self.assertEqual(water_direction(4, LAND_WATER, STATIC_WATER), 1)
+
+    def test_none_when_nothing_in_any_direction_matches(self):
+        self.assertIsNone(water_direction(4, LAND_WATER, STATIC_WATER))
+
+
+class TurnTowardWaterTest(unittest.TestCase):
+    def setUp(self):
+        self.api = install()
+        self.api.Player.X = 100
+        self.api.Player.Y = 100
+        self.api.Player.Direction = "East"  # (104, 100) - land, not water
+
+    def test_turns_toward_the_nearest_water_direction(self):
+        self.api.land[(100, 104)] = FakeLand(0, 0x00A8)  # south
+
+        self.assertEqual(turn_toward_water(4, LAND_WATER, STATIC_WATER, 0.5), 4)
+        self.assertEqual(self.api.Player.Direction, "South")
+        self.assertEqual(self.api.turned, ["south"])
+        self.assertEqual(self.api.pauses, [0.5])
+
+    def test_does_nothing_when_already_facing_water(self):
+        self.api.land[(104, 100)] = FakeLand(0, 0x00A8)
+
+        self.assertEqual(turn_toward_water(4, LAND_WATER, STATIC_WATER, 0.5), 2)
+        self.assertEqual(self.api.Player.Direction, "East")
+        self.assertEqual(self.api.turned, [])
+        self.assertEqual(self.api.pauses, [])
+
+    def test_does_nothing_when_no_direction_matches(self):
+        self.assertIsNone(turn_toward_water(4, LAND_WATER, STATIC_WATER, 0.5))
+        self.assertEqual(self.api.Player.Direction, "East")
+        self.assertEqual(self.api.turned, [])
