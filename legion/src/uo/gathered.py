@@ -17,11 +17,11 @@ class Gathered(object):
     def recording(self):
         return self._recorder.recording() and self._capped() is None
 
-    def settle(self):
-        value = self._skill.read()
-        self._recorder.settle(value)
+    def read(self):
+        return self._skill.read()
 
-        return value
+    def close(self):
+        self._recorder.close(self._skill.read())
 
     def _resource_name(self, item):
         name = self._config["name_of"](item)

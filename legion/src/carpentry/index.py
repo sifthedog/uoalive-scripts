@@ -258,9 +258,6 @@ try:
 
         value = skill.read()
 
-        # The client applies a gain some time after the outcome, so the row waits a cycle for it
-        recorder.settle(value)
-
         if value is not None and value != last_skill:
             last_skill = value
             stall.progressed()
@@ -417,13 +414,14 @@ except Exception as error:
     # Nothing else catches: a throw out of a client call used to end the run with no line at all
     if stop is None:
         stop = "threw - %s" % error
+finally:
+    recorder.close(skill.read())
 
 if API.Pathfinding():
     API.CancelPathfinding()
 
 reason = stop or "hit the %d cycle backstop" % MAX_CYCLES
 ended = skill.read()
-recorder.settle(ended)
 
 log(
     "%d made, %d failed, %d throttled, %s %.1f -> %s"

@@ -106,7 +106,7 @@ notoriety   the values the threat scans are handed
 pace        the shard's skill timer, learned from its refusals rather than configured
 pack        counting and diffing what the backpack holds
 phrases     the shard's own wordings, as far as they do not depend on the script
-record      one line per attempt, buffered a cycle so the gain it earned is in it
+record      one line per attempt, written at the next attempt or at the close so the gain it earned is in it
 restock     filling the pack from the picked containers, and putting the wrong wood back
 retry       act, poll for the proof
 roam        walking to the next spot, and waiting where there is nothing but a clock
@@ -238,9 +238,14 @@ paladin who never once failed.
 | `mining.py`, `mine-here.py` | `dug`, `smelted` | `failed`, for a swing or a smelt | everything else, and every row once Mining is at its cap |
 | `lumberjack.py` | `chopped`, `converted` | `failed`, for a chop or a conversion | everything else, and every row once Lumberjacking is at its cap |
 
-The row is buffered and written at the **next** skill read: the client applies a gain some time after
-the shard grants it, so a value read at the outcome is usually still the old one. Carrying both
-values is what lets a scroll of alacrity's 0.2 to 0.5 jump be told from several ordinary gains.
+The row is buffered and written when the **next** attempt is recorded, carrying that attempt's
+starting value as its `to`, or at the end of the run: the client applies a gain some time after the
+shard grants it, so a value read at the outcome is usually still the old one, and one read a cycle
+later still misses a gain that lands during a pause. The close runs in a `finally`, so the stop
+button, ESC and a throw all write the last row; its `to` is `null` when the client had stopped
+answering by then. A row's `from` and `to` are therefore consecutive readings, and a gain that landed
+during a pause shows as a row moving more than 0.1. Carrying both values is what lets a scroll of
+alacrity's 0.2 to 0.5 jump be told from several ordinary gains.
 
 ```json
 {"v":1,"id":"0x40012345/1757030000123/17","t":1757030042.500,"char":"Kaldor",
@@ -991,7 +996,7 @@ one. There is no loop, no chase and no heartbeat: the client's own follow does t
 | --- | --- | --- |
 | `RANGE` | `10` | How far out it looks. The API's own `NearestMobile` default |
 | `OWNED_PROP_WORDS` | `(tame)`, `(summoned)`, `(bonded)` | Tooltip words that mark someone's creature. ServUO's `AddNameProperties` wording, case-insensitive |
-| `OPL_TIMEOUT` | `1.0` | How long a tooltip the client has not fetched yet is waited for |
+| `OPL_TIMEOUT` | `1` | Whole seconds a tooltip the client has not fetched yet is waited for. The API takes an int |
 
 ### When it goes wrong
 

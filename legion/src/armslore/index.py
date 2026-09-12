@@ -41,51 +41,50 @@ reads = 0
 missed = 0
 unread = 0
 
-while not API.StopRequested:
-    value = skill.read()
+try:
+    while not API.StopRequested:
+        value = skill.read()
 
-    # The gain a reading earned lands here rather than at the reading: the client applies it some
-    # time after the outcome, so the row waits a cycle for a value worth writing
-    recorder.settle(value)
+        cap = skill.cap()
 
-    cap = skill.cap()
+        if value is not None and cap is not None and cap > 0 and value >= cap:
+            log("%s is capped at %s" % (skill.name(), reading(value)))
+            break
 
-    if value is not None and cap is not None and cap > 0 and value >= cap:
-        log("%s is capped at %s" % (skill.name(), reading(value)))
-        break
+        if API.FindItem(weapon) is None:
+            log("'%s' is gone - stopping" % name)
+            break
 
-    if API.FindItem(weapon) is None:
-        log("'%s' is gone - stopping" % name)
-        break
+        API.ClearJournal()
+        API.UseSkill(SKILL)
 
-    API.ClearJournal()
-    API.UseSkill(SKILL)
+        # A refused use puts no cursor up, so this times out and the next pass simply asks again
+        if API.WaitForTarget("any", TARGET_TIMEOUT):
+            API.Target(weapon)
 
-    # A refused use puts no cursor up, so this times out and the next pass simply asks again
-    if API.WaitForTarget("any", TARGET_TIMEOUT):
-        API.Target(weapon)
+            outcome = read_outcome(OUTCOME_TEXT, READ_TIMEOUT, READ_POLL)
 
-        outcome = read_outcome(OUTCOME_TEXT, READ_TIMEOUT, READ_POLL)
+            if outcome == "read":
+                reads += 1
+                recorder.record(value, outcome, name)
 
-        if outcome == "read":
-            reads += 1
-            recorder.record(value, outcome, name)
+            # The roll happened and the shard said it did not go: that is the half of the data a
+            # tally of reads alone cannot show
+            elif outcome == "missed":
+                missed += 1
+                recorder.record(value, outcome, name)
 
-        # The roll happened and the shard said it did not go: that is the half of the data a tally
-        # of reads alone cannot show
-        elif outcome == "missed":
-            missed += 1
-            recorder.record(value, outcome, name)
+            # Everything else - a refusal, a save, a wording OUTCOME_TEXT has not got - is left out
+            # of the record rather than guessed at, and reported at the end so a wrong table is
+            # obvious
+            else:
+                unread += 1
 
-        # Everything else - a refusal, a save, a wording OUTCOME_TEXT has not got - is left out of
-        # the record rather than guessed at, and reported at the end so a wrong table is obvious
-        else:
-            unread += 1
-
-    API.Pause(DELAY)
+        API.Pause(DELAY)
+finally:
+    recorder.close(skill.read())
 
 ended = skill.read()
-recorder.settle(ended)
 
 log("%d read, %d missed, %s %s -> %s"
     % (reads, missed, skill.name(), reading(start), reading(ended)))

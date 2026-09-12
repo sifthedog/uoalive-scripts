@@ -199,10 +199,12 @@ def append_line(path, line):
 class AttemptLog(object):
     """One JSON object per attempt, appended as it happens.
 
-    A row is buffered when the attempt resolves and written on the *next* skill read, because the
-    client applies a gain some time after the outcome and a value read straight away is usually
-    still the old one. The cost of that is one row in the air at any moment, which a killed script
-    loses; the alternative is a file that under-reports every gain it exists to measure.
+    A row is buffered when the attempt resolves and written when the *next* attempt is recorded,
+    carrying that attempt's starting value as its own end: the client applies a gain some time after
+    the outcome, and a value read on the next cycle still misses one that lands during a pause,
+    where the next attempt's read cannot. close() writes the last row at the end of the run. The
+    cost is one row in the air at any moment, which a killed script loses; the alternative is a
+    file that under-reports every gain it exists to measure.
     """
 
     def __init__(self, path, character, serial, skill, log, append=None):
@@ -231,9 +233,8 @@ class AttemptLog(object):
         if self._off or skill_from is None:
             return
 
-        # A caller that records twice without settling in between would otherwise drop the first
-        # row. This later read is exactly what the missed settle would have passed.
-        self.settle(skill_from)
+        # The previous row ends where this attempt starts: the latest read there is
+        self._flush(skill_from)
 
         self._seq += 1
         self._pending = {
@@ -246,7 +247,12 @@ class AttemptLog(object):
             "gained": list(gained) if gained else [],
         }
 
-    def settle(self, skill_to):
+    # The end of the run. skill_to is None where the client had stopped answering, and the row is
+    # written all the same with its end unknown rather than lost with the run
+    def close(self, skill_to):
+        self._flush(skill_to)
+
+    def _flush(self, skill_to):
         pending = self._pending
         self._pending = None
 
@@ -391,51 +397,50 @@ reads = 0
 missed = 0
 unread = 0
 
-while not API.StopRequested:
-    value = skill.read()
+try:
+    while not API.StopRequested:
+        value = skill.read()
 
-    # The gain a reading earned lands here rather than at the reading: the client applies it some
-    # time after the outcome, so the row waits a cycle for a value worth writing
-    recorder.settle(value)
+        cap = skill.cap()
 
-    cap = skill.cap()
+        if value is not None and cap is not None and cap > 0 and value >= cap:
+            log("%s is capped at %s" % (skill.name(), reading(value)))
+            break
 
-    if value is not None and cap is not None and cap > 0 and value >= cap:
-        log("%s is capped at %s" % (skill.name(), reading(value)))
-        break
+        if API.FindItem(weapon) is None:
+            log("'%s' is gone - stopping" % name)
+            break
 
-    if API.FindItem(weapon) is None:
-        log("'%s' is gone - stopping" % name)
-        break
+        API.ClearJournal()
+        API.UseSkill(SKILL)
 
-    API.ClearJournal()
-    API.UseSkill(SKILL)
+        # A refused use puts no cursor up, so this times out and the next pass simply asks again
+        if API.WaitForTarget("any", TARGET_TIMEOUT):
+            API.Target(weapon)
 
-    # A refused use puts no cursor up, so this times out and the next pass simply asks again
-    if API.WaitForTarget("any", TARGET_TIMEOUT):
-        API.Target(weapon)
+            outcome = read_outcome(OUTCOME_TEXT, READ_TIMEOUT, READ_POLL)
 
-        outcome = read_outcome(OUTCOME_TEXT, READ_TIMEOUT, READ_POLL)
+            if outcome == "read":
+                reads += 1
+                recorder.record(value, outcome, name)
 
-        if outcome == "read":
-            reads += 1
-            recorder.record(value, outcome, name)
+            # The roll happened and the shard said it did not go: that is the half of the data a
+            # tally of reads alone cannot show
+            elif outcome == "missed":
+                missed += 1
+                recorder.record(value, outcome, name)
 
-        # The roll happened and the shard said it did not go: that is the half of the data a tally
-        # of reads alone cannot show
-        elif outcome == "missed":
-            missed += 1
-            recorder.record(value, outcome, name)
+            # Everything else - a refusal, a save, a wording OUTCOME_TEXT has not got - is left out
+            # of the record rather than guessed at, and reported at the end so a wrong table is
+            # obvious
+            else:
+                unread += 1
 
-        # Everything else - a refusal, a save, a wording OUTCOME_TEXT has not got - is left out of
-        # the record rather than guessed at, and reported at the end so a wrong table is obvious
-        else:
-            unread += 1
-
-    API.Pause(DELAY)
+        API.Pause(DELAY)
+finally:
+    recorder.close(skill.read())
 
 ended = skill.read()
-recorder.settle(ended)
 
 log("%d read, %d missed, %s %s -> %s"
     % (reads, missed, skill.name(), reading(start), reading(ended)))

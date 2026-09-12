@@ -69,10 +69,12 @@ def append_line(path, line):
 class AttemptLog(object):
     """One JSON object per attempt, appended as it happens.
 
-    A row is buffered when the attempt resolves and written on the *next* skill read, because the
-    client applies a gain some time after the outcome and a value read straight away is usually
-    still the old one. The cost of that is one row in the air at any moment, which a killed script
-    loses; the alternative is a file that under-reports every gain it exists to measure.
+    A row is buffered when the attempt resolves and written when the *next* attempt is recorded,
+    carrying that attempt's starting value as its own end: the client applies a gain some time after
+    the outcome, and a value read on the next cycle still misses one that lands during a pause,
+    where the next attempt's read cannot. close() writes the last row at the end of the run. The
+    cost is one row in the air at any moment, which a killed script loses; the alternative is a
+    file that under-reports every gain it exists to measure.
     """
 
     def __init__(self, path, character, serial, skill, log, append=None):
@@ -101,9 +103,8 @@ class AttemptLog(object):
         if self._off or skill_from is None:
             return
 
-        # A caller that records twice without settling in between would otherwise drop the first
-        # row. This later read is exactly what the missed settle would have passed.
-        self.settle(skill_from)
+        # The previous row ends where this attempt starts: the latest read there is
+        self._flush(skill_from)
 
         self._seq += 1
         self._pending = {
@@ -116,7 +117,12 @@ class AttemptLog(object):
             "gained": list(gained) if gained else [],
         }
 
-    def settle(self, skill_to):
+    # The end of the run. skill_to is None where the client had stopped answering, and the row is
+    # written all the same with its end unknown rather than lost with the run
+    def close(self, skill_to):
+        self._flush(skill_to)
+
+    def _flush(self, skill_to):
         pending = self._pending
         self._pending = None
 

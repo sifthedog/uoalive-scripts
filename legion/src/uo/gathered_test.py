@@ -71,7 +71,7 @@ class SwingTest(GatheredTest):
         self.api.hold(item(serial=1, graphic=ORE, hue=2406, amount=12),
                       item(serial=2, graphic=ORE_SMALL, hue=0, amount=1))
         gathered.after_swing(61.3, "dug", before)
-        gathered.settle()
+        gathered.close()
 
         self.assertIn('"used":"pickaxe"', self.sink.lines[0])
         self.assertIn('"outcome":"dug"', self.sink.lines[0])
@@ -93,7 +93,7 @@ class SwingTest(GatheredTest):
 
         self.api.hold(item(serial=1, graphic=LOGS, hue=0x0483, amount=10, name="Oak Logs"))
         gathered.after_swing(40.0, "chopped", before)
-        gathered.settle()
+        gathered.close()
 
         self.assertIn('"used":"axe"', self.sink.lines[0])
         self.assertIn('"gained":[{"name":"Oak Logs","graphic":"0x1bdd","hue":1155,"qty":10}]',
@@ -107,7 +107,7 @@ class SwingTest(GatheredTest):
 
         self.api.hold(item(serial=1, graphic=ORE, hue=0, amount=2))
         gathered.after_swing(61.3, "dug", before)
-        gathered.settle()
+        gathered.close()
 
         self.assertNotIn('"gained"', self.sink.lines[0])
 
@@ -116,18 +116,31 @@ class SwingTest(GatheredTest):
         before = gathered.before_swing()
 
         gathered.after_swing(61.3, "failed", before)
-        gathered.settle()
+        gathered.close()
 
         self.assertIn('"outcome":"failed"', self.sink.lines[0])
         self.assertNotIn('"gained"', self.sink.lines[0])
 
-    def test_the_gain_lands_in_the_row_at_the_next_settle(self):
+    def test_the_row_ends_where_the_next_swing_starts(self):
         gathered = self.build()
         before = gathered.before_swing()
 
         gathered.after_swing(61.3, "failed", before)
         self.api.skills["Mining"] = skill(61.4, 100.0)
-        self.assertEqual(gathered.settle(), 61.4)
+        self.assertEqual(gathered.read(), 61.4)
+        self.assertEqual(self.sink.lines, [])
+
+        gathered.after_swing(61.4, "dug", gathered.before_swing())
+
+        self.assertIn('"from":61.3,"to":61.4', self.sink.lines[0])
+
+    def test_close_writes_the_row_still_in_the_air(self):
+        gathered = self.build()
+        before = gathered.before_swing()
+
+        gathered.after_swing(61.3, "failed", before)
+        self.api.skills["Mining"] = skill(61.4, 100.0)
+        gathered.close()
 
         self.assertIn('"from":61.3,"to":61.4', self.sink.lines[0])
 
@@ -141,7 +154,7 @@ class ConvertTest(GatheredTest):
         gathered.before_convert()
         self.api.hold(item(serial=3, graphic=INGOT, hue=2406, amount=5, name="ingots"))
         gathered.after_convert({(INGOT, 2406): 5}, {(ORE, 2406): 10})
-        gathered.settle()
+        gathered.close()
 
         self.assertIn('"used":"fire beetle"', self.sink.lines[0])
         self.assertIn('"outcome":"smelted"', self.sink.lines[0])
@@ -165,7 +178,7 @@ class ConvertTest(GatheredTest):
 
         self.api.hold(item(serial=3, graphic=BOARDS, hue=0, amount=10, name="boards"))
         gathered.after_convert({(BOARDS, 0): 10}, {(LOGS, 0): 10})
-        gathered.settle()
+        gathered.close()
 
         self.assertIn('"used":"axe"', self.sink.lines[0])
         self.assertIn('"outcome":"converted"', self.sink.lines[0])
@@ -179,7 +192,7 @@ class ConvertTest(GatheredTest):
         gathered.before_convert()
 
         gathered.after_convert({(ORE_SMALL, 0): 5}, {(ORE, 0): 10})
-        gathered.settle()
+        gathered.close()
 
         self.assertIn('"outcome":"failed"', self.sink.lines[0])
         self.assertIn('"consumed":[{"name":"ore","graphic":"0x19b9","hue":0,"qty":5}]',
@@ -191,7 +204,7 @@ class ConvertTest(GatheredTest):
         gathered.before_convert()
 
         gathered.after_convert({(INGOT, 0): 5}, {(ORE, 0): 10})
-        gathered.settle()
+        gathered.close()
 
         self.assertIn('"gained":[{"name":"0x1bf2","graphic":"0x1bf2","hue":0,"qty":5}]',
                       self.sink.lines[0])
@@ -200,7 +213,7 @@ class ConvertTest(GatheredTest):
         gathered = self.build()
 
         gathered.after_convert({(INGOT, 0): 5}, {(ORE, 0): 10})
-        gathered.settle()
+        gathered.close()
 
         self.assertEqual(self.sink.lines, [])
 
@@ -210,6 +223,6 @@ class ConvertTest(GatheredTest):
         gathered.before_convert()
 
         gathered.after_convert({(INGOT, 0): 5}, {(ORE, 0): 10})
-        gathered.settle()
+        gathered.close()
 
         self.assertEqual(self.sink.lines, [])

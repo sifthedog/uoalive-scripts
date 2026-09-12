@@ -120,7 +120,7 @@ try:
             API.Pause(STEP_DELAY)
             continue
 
-        value = gathered.settle()
+        value = gathered.read()
         before = gathered.before_swing()
         ore_before = ore.total()
         outcome = digger.dig_once(pickaxe.serial())
@@ -234,6 +234,8 @@ except Exception as error:
     # Nothing else catches: a throw out of a client call used to end the run with no line at all
     if stop is None:
         stop = "threw - %s" % error
+finally:
+    gathered.close()
 
 reason = stop or "hit the %d working cycle backstop" % MAX_CYCLES
 
@@ -243,7 +245,8 @@ combiner.group()
 if too_heavy():
     relief.smelt()
 
-gathered.settle()
+# Closed again: a conversion after the loop records a row the close above did not see
+gathered.close()
 
 # Swings rather than an ore delta: smelted ore has left the pack, so the pack cannot total the run
 log("%d swings, %d failed, %d ore still in the pack" % (tally, fails, ore.total()))

@@ -199,10 +199,6 @@ try:
 
         blind = 0
 
-        # The gain an attempt earned lands here rather than at the attempt: the client applies
-        # it some time after the outcome, so the row waits a cycle for a value worth writing
-        recorder.settle(value)
-
         # Either direction counts - a skill falling because another is gaining is still the shard
         # saying it is processing these casts
         if value != last_value:
@@ -376,12 +372,13 @@ except Exception as error:
 
     if stop is None:
         stop = "threw - %s" % error
+finally:
+    recorder.close(skill.read())
 
 if API.HasTarget():
     API.CancelTarget()
 
 ended = skill.read()
-recorder.settle(ended)
 
 log(
     "%d casts, %d fizzles, %s %.1f -> %s"

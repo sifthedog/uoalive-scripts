@@ -277,7 +277,7 @@ try:
 
         tree = found[1]
 
-        value = gathered.settle()
+        value = gathered.read()
         before = gathered.before_swing()
         logs_before = wood.log_total()
         outcome = chopper.chop_once(axe.serial(), tree)
@@ -410,6 +410,8 @@ except Exception as error:
     # Nothing else catches: a throw out of a client call used to end the run with no line at all
     if stop is None:
         stop = "threw - %s" % error
+finally:
+    gathered.close()
 
 if API.Pathfinding():
     API.CancelPathfinding()
@@ -422,7 +424,8 @@ boards.make_boards()
 if haul.hauling():
     haul.unload()
 
-gathered.settle()
+# Closed again: a conversion after the loop records a row the close above did not see
+gathered.close()
 
 # Chops rather than a log delta: hauled wood has left the pack, so the pack cannot total the run
 log("%d chops, %d failed, %d logs still in the pack" % (tally, fails, wood.log_total()))

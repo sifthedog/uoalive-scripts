@@ -771,10 +771,12 @@ def append_line(path, line):
 class AttemptLog(object):
     """One JSON object per attempt, appended as it happens.
 
-    A row is buffered when the attempt resolves and written on the *next* skill read, because the
-    client applies a gain some time after the outcome and a value read straight away is usually
-    still the old one. The cost of that is one row in the air at any moment, which a killed script
-    loses; the alternative is a file that under-reports every gain it exists to measure.
+    A row is buffered when the attempt resolves and written when the *next* attempt is recorded,
+    carrying that attempt's starting value as its own end: the client applies a gain some time after
+    the outcome, and a value read on the next cycle still misses one that lands during a pause,
+    where the next attempt's read cannot. close() writes the last row at the end of the run. The
+    cost is one row in the air at any moment, which a killed script loses; the alternative is a
+    file that under-reports every gain it exists to measure.
     """
 
     def __init__(self, path, character, serial, skill, log, append=None):
@@ -803,9 +805,8 @@ class AttemptLog(object):
         if self._off or skill_from is None:
             return
 
-        # A caller that records twice without settling in between would otherwise drop the first
-        # row. This later read is exactly what the missed settle would have passed.
-        self.settle(skill_from)
+        # The previous row ends where this attempt starts: the latest read there is
+        self._flush(skill_from)
 
         self._seq += 1
         self._pending = {
@@ -818,7 +819,12 @@ class AttemptLog(object):
             "gained": list(gained) if gained else [],
         }
 
-    def settle(self, skill_to):
+    # The end of the run. skill_to is None where the client had stopped answering, and the row is
+    # written all the same with its end unknown rather than lost with the run
+    def close(self, skill_to):
+        self._flush(skill_to)
+
+    def _flush(self, skill_to):
         pending = self._pending
         self._pending = None
 
@@ -1111,236 +1117,235 @@ def after_tame(serial, name):
 # The graphic the last hand-picked animal set, and so what the hunt looks for
 hunting = None
 
-while stop is None:
-    stop = stop_reason()
-
-    if stop is not None:
-        break
-
-    sighted = None if hunting is None else hunt.next_quarry(hunting)
-    quarry = sighted[0] if sighted is not None else None
-    in_sight = sighted[1] if sighted is not None else 1
-
-    # Asked for only when there is nothing of that type left in sight
-    if quarry is None:
-        log("target the creature to tame")
-        picked = API.RequestTarget(TARGET_TIMEOUT)
-
-        # The only sign the client gives that ESC was pressed. On the first pick there is nothing
-        # to show for the run, so it reads as a mistake rather than as closing the session.
-        if not picked:
-            stop = "%d tamed" % tamed if tamed > 0 else "nothing picked"
-            break
-
-        animal = find_mobile(picked)
-
-        # A bad pick puts the cursor back up rather than ending the session
-        if animal is None:
-            log("%s is not a creature" % hex(picked))
-            continue
-
-        hunting = animal.Graphic or None
-        quarry = {"serial": picked, "name": hunt.named(animal), "graphic": animal.Graphic}
-
-    name = quarry["name"]
-    others = in_sight - 1
-
-    log("taming '%s'%s" % (name, " (%d more in sight)" % others if others > 0 else ""))
-
-    done = None
-    accepted = False
-    throttled = 0
-    away = 0
-    contested = 0
-    angry = 0
-    pending = 0
-
-    for cycle in range(MAX_CYCLES):
-        if stop is not None or done is not None:
-            break
-
+try:
+    while stop is None:
         stop = stop_reason()
 
         if stop is not None:
             break
 
-        # Before anything else: during a save every attempt is refused, and each refusal would be
-        # charged to a counter that ends the run
-        if saves.is_saving():
-            saves.wait_out()
-            throttled = 0
-            stall.progressed()
-            stall.end_cycle("saving", cycle, attempts)
-            continue
+        sighted = None if hunting is None else hunt.next_quarry(hunting)
+        quarry = sighted[0] if sighted is not None else None
+        in_sight = sighted[1] if sighted is not None else 1
 
-        found = find_mobile(quarry["serial"])
+        # Asked for only when there is nothing of that type left in sight
+        if quarry is None:
+            log("target the creature to tame")
+            picked = API.RequestTarget(TARGET_TIMEOUT)
 
-        if found is None:
-            done = "'%s' is gone" % name
-            break
+            # The only sign the client gives that ESC was pressed. On the first pick there is
+            # nothing to show for the run, so it reads as a mistake rather than as closing the
+            # session.
+            if not picked:
+                stop = "%d tamed" % tamed if tamed > 0 else "nothing picked"
+                break
 
-        if found.Distance > TAME_RANGE:
-            # Ground made up is reason enough for another cycle: an animal that keeps walking off
-            # is chased for as long as the gap is closing
-            if chase(quarry["serial"], TAME_RANGE, CHASE_TIMEOUT) != "stuck":
+            animal = find_mobile(picked)
+
+            # A bad pick puts the cursor back up rather than ending the session
+            if animal is None:
+                log("%s is not a creature" % hex(picked))
+                continue
+
+            hunting = animal.Graphic or None
+            quarry = {"serial": picked, "name": hunt.named(animal), "graphic": animal.Graphic}
+
+        name = quarry["name"]
+        others = in_sight - 1
+
+        log("taming '%s'%s" % (name, " (%d more in sight)" % others if others > 0 else ""))
+
+        done = None
+        accepted = False
+        throttled = 0
+        away = 0
+        contested = 0
+        angry = 0
+        pending = 0
+
+        for cycle in range(MAX_CYCLES):
+            if stop is not None or done is not None:
+                break
+
+            stop = stop_reason()
+
+            if stop is not None:
+                break
+
+            # Before anything else: during a save every attempt is refused, and each refusal would
+            # be charged to a counter that ends the run
+            if saves.is_saving():
+                saves.wait_out()
+                throttled = 0
+                stall.progressed()
+                stall.end_cycle("saving", cycle, attempts)
+                continue
+
+            found = find_mobile(quarry["serial"])
+
+            if found is None:
+                done = "'%s' is gone" % name
+                break
+
+            if found.Distance > TAME_RANGE:
+                # Ground made up is reason enough for another cycle: an animal that keeps walking
+                # off is chased for as long as the gap is closing
+                if chase(quarry["serial"], TAME_RANGE, CHASE_TIMEOUT) != "stuck":
+                    away = 0
+                else:
+                    away += 1
+
+                    if away >= MAX_AWAY:
+                        done = "could not get near '%s'" % name
+                        break
+
+                heartbeat.beat("walking", cycle, attempts)
+                stall.end_cycle("walking", cycle, attempts)
+
+                # Read here as well as after the switch, or a chase that never lands an attempt is
+                # bounded by nothing but MAX_CYCLES
+                stop = stop or stall.reason()
+                continue
+
+            value = skill.read()
+
+            # The one signal no wording can argue with: if the number moved, the taming is working,
+            # whatever the journal looked like from in here
+            if value is not None and value != last_value:
+                last_value = value
+                unread_said = False
+                stall.progressed()
+
+            # The attempt blocks for as long as the shard takes to answer, and the animal walks the
+            # whole time, so the chase carries on between the slices of that wait
+            outcome = tamer.tame_once(
+                quarry["serial"], lambda: keep_up(quarry["serial"], TAME_RANGE, CHASE_TIMEOUT))
+
+            if outcome != "throttled":
+                throttled = 0
+
+            if outcome != "tooFar":
                 away = 0
+
+            if outcome != "contested":
+                contested = 0
+
+            if outcome != "angry":
+                angry = 0
+
+            if outcome != "pending":
+                pending = 0
+
+            if outcome == "tamed":
+                attempts += 1
+                tamed += 1
+                recorder.record(value, outcome, name)
+                stall.progressed()
+                accepted = True
+                done = "'%s' accepted you as master" % name
+
+            # A failed tame still rolled the skill: the ordinary cycle rather than a refusal
+            elif outcome == "failed":
+                attempts += 1
+                failures += 1
+                recorder.record(value, outcome, name)
+                unread_said = False
+                pace.landed()
+                stall.progressed()
+
+            # The shard took the attempt and never answered. Raise TAME_RESOLVE_TIMEOUT if this run
+            # ends here.
+            elif outcome == "pending":
+                attempts += 1
+                pending += 1
+
+                if pending >= MAX_PENDING:
+                    stop = "attempts kept starting and never resolving"
+
+            elif outcome == "angry":
+                angry += 1
+                log("'%s' is too angry (%d/%d), letting it settle" % (name, angry, MAX_ANGRY))
+                API.Pause(ANGRY_DELAY)
+
+                if angry >= MAX_ANGRY:
+                    done = "'%s' stayed too angry to tame" % name
+
+            elif outcome == "contested":
+                contested += 1
+                log("someone else has '%s' (%d/%d)" % (name, contested, MAX_CONTESTED))
+
+                if contested >= MAX_CONTESTED:
+                    done = "another tamer has '%s'" % name
+
+            # Walked at rather than waited out, so a creature that bolted mid-attempt is chased
+            elif outcome == "tooFar":
+                if chase(quarry["serial"], TAME_RANGE, CHASE_TIMEOUT) != "stuck":
+                    away = 0
+                else:
+                    away += 1
+
+                    if away >= MAX_AWAY:
+                        done = "could not get near '%s'" % name
+
+            elif outcome == "saving":
+                saves.wait_out()
+                throttled = 0
+                stall.progressed()
+
+            # The shard's own skill timer, which nothing in the API reports. The pace is raised as
+            # well as backed off from, or the next cycle walks straight back into it.
+            elif outcome == "throttled":
+                throttled += 1
+                log(
+                    "shard says wait (%d/%d), now pacing at %.1fs"
+                    % (throttled, MAX_THROTTLED, pace.refused())
+                )
+                API.Pause(backoff_for(throttled, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX))
+
+                if throttled >= MAX_THROTTLED:
+                    stop = "the shard kept refusing the attempt"
+
+            elif outcome in STOP_REASON:
+                done = STOP_REASON[outcome]
+
             else:
-                away += 1
+                unread += 1
 
-                if away >= MAX_AWAY:
-                    done = "could not get near '%s'" % name
-                    break
+                if not unread_said:
+                    unread_said = True
+                    log("outcome unreadable - carrying on; check OUTCOME_TEXT if this run stalls")
 
-            heartbeat.beat("walking", cycle, attempts)
-            stall.end_cycle("walking", cycle, attempts)
+            if attempts >= reported + LOG_EVERY:
+                reported = attempts
+                log(
+                    "%d attempts, %d failed, %s at %s"
+                    % (attempts, failures, SKILL_NAME, reading(value))
+                )
 
-            # Read here as well as after the switch, or a chase that never lands an attempt is
-            # bounded by nothing but MAX_CYCLES
+            stall.end_cycle(outcome, cycle, attempts)
             stop = stop or stall.reason()
-            continue
+            API.Pause(pace.delay())
 
-        value = skill.read()
+        # Only about this animal: a session-ending fault is reported by the closing lines instead
+        if done is not None:
+            log(done)
+        elif stop is None:
+            log("hit the %d cycle backstop on '%s'" % (MAX_CYCLES, name))
 
-        # The gain an attempt earned lands here rather than at the attempt: the client applies
-        # it some time after the outcome, so the row waits a cycle for a value worth writing
-        recorder.settle(value)
+        # After the line that says it was tamed, and even when the session is stopping: whatever is
+        # done with the animal is not worth skipping because the run happens to be ending
+        if accepted:
+            after_tame(quarry["serial"], name)
 
-        # The one signal no wording can argue with: if the number moved, the taming is working,
-        # whatever the journal looked like from in here
-        if value is not None and value != last_value:
-            last_value = value
-            unread_said = False
-            stall.progressed()
-
-        # The attempt blocks for as long as the shard takes to answer, and the animal walks the
-        # whole time, so the chase carries on between the slices of that wait
-        outcome = tamer.tame_once(
-            quarry["serial"], lambda: keep_up(quarry["serial"], TAME_RANGE, CHASE_TIMEOUT))
-
-        if outcome != "throttled":
-            throttled = 0
-
-        if outcome != "tooFar":
-            away = 0
-
-        if outcome != "contested":
-            contested = 0
-
-        if outcome != "angry":
-            angry = 0
-
-        if outcome != "pending":
-            pending = 0
-
-        if outcome == "tamed":
-            attempts += 1
-            tamed += 1
-            recorder.record(value, outcome, name)
-            stall.progressed()
-            accepted = True
-            done = "'%s' accepted you as master" % name
-
-        # A failed tame still rolled the skill, which is the ordinary cycle rather than a refusal
-        elif outcome == "failed":
-            attempts += 1
-            failures += 1
-            recorder.record(value, outcome, name)
-            unread_said = False
-            pace.landed()
-            stall.progressed()
-
-        # The shard took the attempt and never answered. Raise TAME_RESOLVE_TIMEOUT if this run
-        # ends here.
-        elif outcome == "pending":
-            attempts += 1
-            pending += 1
-
-            if pending >= MAX_PENDING:
-                stop = "attempts kept starting and never resolving"
-
-        elif outcome == "angry":
-            angry += 1
-            log("'%s' is too angry (%d/%d), letting it settle" % (name, angry, MAX_ANGRY))
-            API.Pause(ANGRY_DELAY)
-
-            if angry >= MAX_ANGRY:
-                done = "'%s' stayed too angry to tame" % name
-
-        elif outcome == "contested":
-            contested += 1
-            log("someone else has '%s' (%d/%d)" % (name, contested, MAX_CONTESTED))
-
-            if contested >= MAX_CONTESTED:
-                done = "another tamer has '%s'" % name
-
-        # Walked at rather than waited out, so a creature that bolted mid-attempt is chased
-        elif outcome == "tooFar":
-            if chase(quarry["serial"], TAME_RANGE, CHASE_TIMEOUT) != "stuck":
-                away = 0
-            else:
-                away += 1
-
-                if away >= MAX_AWAY:
-                    done = "could not get near '%s'" % name
-
-        elif outcome == "saving":
-            saves.wait_out()
-            throttled = 0
-            stall.progressed()
-
-        # The shard's own skill timer, which nothing in the API reports. The pace is raised as well
-        # as backed off from, or the next cycle walks straight back into it.
-        elif outcome == "throttled":
-            throttled += 1
-            log(
-                "shard says wait (%d/%d), now pacing at %.1fs"
-                % (throttled, MAX_THROTTLED, pace.refused())
-            )
-            API.Pause(backoff_for(throttled, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX))
-
-            if throttled >= MAX_THROTTLED:
-                stop = "the shard kept refusing the attempt"
-
-        elif outcome in STOP_REASON:
-            done = STOP_REASON[outcome]
-
-        else:
-            unread += 1
-
-            if not unread_said:
-                unread_said = True
-                log("outcome unreadable - carrying on; check OUTCOME_TEXT if this run stalls")
-
-        if attempts >= reported + LOG_EVERY:
-            reported = attempts
-            log(
-                "%d attempts, %d failed, %s at %s"
-                % (attempts, failures, SKILL_NAME, reading(value))
-            )
-
-        stall.end_cycle(outcome, cycle, attempts)
-        stop = stop or stall.reason()
-        API.Pause(pace.delay())
-
-    # Only about this animal: a session-ending fault is reported by the closing lines instead
-    if done is not None:
-        log(done)
-    elif stop is None:
-        log("hit the %d cycle backstop on '%s'" % (MAX_CYCLES, name))
-
-    # After the line that says it was tamed, and even when the session is stopping: whatever is done
-    # with the animal is not worth skipping because the run happens to be ending
-    if accepted:
-        after_tame(quarry["serial"], name)
-
-    # Every ending, not just the ones that gave up: an animal this run is finished with must not be
-    # the one the next scan picks straight back up
-    hunt.leave_out(quarry["serial"])
+        # Every ending, not just the ones that gave up: an animal this run is finished with must not
+        # be the one the next scan picks straight back up
+        hunt.leave_out(quarry["serial"])
+finally:
+    recorder.close(skill.read())
 
 reason = stop or "the session ended"
 
 ended = skill.read()
-recorder.settle(ended)
 
 log(
     "%d tamed over %d attempts, %d failed, %s %s -> %s"

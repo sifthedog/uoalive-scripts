@@ -149,10 +149,6 @@ try:
 
         blind = 0
 
-        # The gain an attempt earned lands here rather than at the attempt: the client applies
-        # it some time after the outcome, so the row waits a cycle for a value worth writing
-        recorder.settle(value)
-
         # The proof that cannot be argued with: every other signal is circumstantial. Either
         # direction counts - a skill falling because another is gaining is still the shard saying it
         # is processing these casts.
@@ -298,12 +294,13 @@ except Exception as error:
     # Nothing else catches: a throw out of a client call used to end the run with no line at all
     if stop is None:
         stop = "threw - %s" % error
+finally:
+    recorder.close(skill.read())
 
 if API.HasTarget():
     API.CancelTarget()
 
 ended = skill.read()
-recorder.settle(ended)
 
 # A delta rather than a figure: a trainer that cast four hundred times and moved nothing has failed
 log(

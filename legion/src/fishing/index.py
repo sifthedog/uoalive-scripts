@@ -68,7 +68,7 @@ def record_cast(recorder, skill, start, outcome, caught, before):
 
     recorder.record(start, outcome, "fishing pole", gained=rows)
     settled(GAIN_SETTLE, GAIN_POLL, lambda: skill.read() != start)
-    recorder.settle(skill.read())
+    recorder.close(skill.read())
 
 
 def fish():
