@@ -1,8 +1,7 @@
 from uo.phrases import SAVING_TEXT, THROTTLED_TEXT, UNSKILLED_TEXT
 
 # Every success and failure is appended here, one JSON object per line, for legion/skilldb.py to
-# turn into a table later. "" turns recording off. A bare name lands in TazUO's working directory
-# rather than beside the script - set an absolute path to put it somewhere you will find it.
+# turn into a table later. "" turns recording off. A bare name lands beside the script.
 DATA_PATH = "skill-attempts.jsonl"
 
 # API.Pause takes seconds where the ClassicUO port took ms

@@ -118,6 +118,7 @@ class FakeControl(object):
         self.rect = None
         self.centered = 0
         self.IsDisposed = False
+        self.IsVisible = True
 
     def SetRect(self, x, y, width, height):
         self.rect = (x, y, width, height)
@@ -126,6 +127,15 @@ class FakeControl(object):
     def SetPos(self, x, y):
         self.rect = (x, y) + ((self.rect or (0, 0, 0, 0))[2:])
         return self
+
+    def SetWidth(self, width):
+        return self
+
+    def SetHeight(self, height):
+        return self
+
+    def SetText(self, text):
+        self.text = text
 
     def CenterXInViewPort(self):
         self.centered += 1
@@ -149,6 +159,34 @@ class FakeDrawnButton(FakeControl):
         self.on_click = []
 
 
+class FakeToggle(FakeControl):
+    def __init__(self, kind, text, group, checked):
+        FakeControl.__init__(self, kind, text)
+        self.group = group
+        self.IsChecked = checked
+
+    def GetIsChecked(self):
+        return self.IsChecked
+
+    def SetIsChecked(self, checked):
+        self.IsChecked = checked
+
+
+class FakeDropDown(FakeControl):
+    def __init__(self, items, index):
+        FakeControl.__init__(self, "dropdown", items[index] if items else "")
+        self.items = list(items)
+        self.index = index
+        self.on_select = []
+
+    def GetSelectedIndex(self):
+        return self.index
+
+    def OnDropDownOptionSelected(self, callback):
+        self.on_select.append(callback)
+        return self
+
+
 class FakeGumps(object):
     def __init__(self, api):
         self._api = api
@@ -168,6 +206,22 @@ class FakeGumps(object):
     def CreateSimpleButton(self, text, width, height):
         return FakeDrawnButton(text)
 
+    def CreateGumpTTFLabel(self, text, size, color="#FFFFFF", font=None, aligned="left",
+                           maxWidth=0, applyStroke=False):
+        label = FakeControl("ttf", text)
+        label.color = color
+        return label
+
+    def CreateGumpRadioButton(self, text="", group=0, inactive=0, active=0, hue=0,
+                              isChecked=False):
+        return FakeToggle("radio", text, group, isChecked)
+
+    def CreateGumpCheckbox(self, text="", hue=0, isChecked=False):
+        return FakeToggle("checkbox", text, None, isChecked)
+
+    def CreateDropDown(self, width, items, selectedIndex=0):
+        return FakeDropDown(items, selectedIndex)
+
     def AddControlOnClick(self, control, onClick, leftOnly=True):
         control.on_click.append(onClick)
         return control
@@ -182,6 +236,7 @@ class FakeAPI(object):
         self.map = 0
         self.Backpack = 0x40000000
         self.StopRequested = False
+        self.ScriptPath = ""
         self.Notoriety = FakeNotoriety
         self.Gumps = FakeGumps(self)
 
@@ -463,14 +518,52 @@ class FakeAPI(object):
                 for callback in button.on_click:
                     callback()
 
+    def drawn_controls(self, roots=None):
+        found = []
+
+        for control in (self.drawn if roots is None else roots):
+            found.append(control)
+            found.extend(self.drawn_controls(control.children))
+
+        return found
+
     def drawn_buttons(self):
-        return [child for gump in self.drawn for child in gump.children
-                if isinstance(child, FakeDrawnButton)]
+        return [control for control in self.drawn_controls()
+                if isinstance(control, FakeDrawnButton)]
 
     def press(self, text):
         for button in self.drawn_buttons():
             if button.text == text:
                 button.clicked = True
+
+    def check(self, text):
+        toggles = [control for control in self.drawn_controls()
+                   if isinstance(control, FakeToggle)]
+
+        for toggle in toggles:
+            if toggle.text == text:
+                for other in toggles:
+                    if other.group is not None and other.group == toggle.group:
+                        other.IsChecked = False
+
+                toggle.IsChecked = True
+
+    def select(self, index):
+        dropdown = [control for control in self.drawn_controls()
+                    if isinstance(control, FakeDropDown)][-1]
+        dropdown.index = index
+        dropdown.text = dropdown.items[index]
+
+        for callback in dropdown.on_select:
+            callback(index)
+
+    def texts(self):
+        return [control.text for control in self.drawn_controls()
+                if control.kind in ("label", "ttf")]
+
+    def visible(self, text):
+        return any(control.IsVisible for control in self.drawn_controls()
+                   if control.text == text)
 
     def close_drawn(self):
         self.drawn[-1].Dispose()

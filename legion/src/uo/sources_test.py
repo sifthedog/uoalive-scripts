@@ -115,6 +115,36 @@ class SourcesTest(unittest.TestCase):
         self.assertIn("is a storage box - the gump chose the container or pack animal",
                       messages(self.api))
 
+    def test_pick_one_answers_the_line_and_keeps_the_entry(self):
+        self.api.requested_target = CHEST
+
+        self.assertEqual(self.sources.pick_one(), ("'a chest' 0x40001000, 500 boards in it", None))
+        self.assertEqual(len(self.sources.picked()), 1)
+        self.assertEqual(self.sources.pick_one(), (None, "0x40001000 is already picked"))
+
+    def test_pick_one_refuses_a_second_storage_box(self):
+        self.api.items[BOX + 1] = item(serial=BOX + 1, name="Logs & Boards Storage Box")
+        self.api.opens[BOX + 1] = GUMP
+        self.pick(BOX)
+        self.api.RequestTarget = lambda timeout=None: BOX + 1
+
+        line, refusal = self.sources.pick_one()
+
+        self.assertIsNone(line)
+        self.assertIn("is a second storage box - one holds everything", refusal)
+
+    def test_esc_answers_nothing_at_all(self):
+        self.api.requested_target = 0
+
+        self.assertEqual(self.sources.pick_one(), (None, None))
+
+    def test_clear_forgets_the_picks(self):
+        picked = self.pick(CHEST, BOX)
+        self.sources.clear()
+
+        self.assertEqual(picked, [])
+        self.assertEqual(self.sources.stock_left(), 0)
+
     def test_stock_left_adds_the_box_rows_to_the_chest_piles(self):
         self.pick(CHEST, BOX)
 

@@ -251,8 +251,7 @@ STALL_STOP = 300
 
 # src/taming/config.py
 # Every success and failure is appended here, one JSON object per line, for legion/skilldb.py to
-# turn into a table later. "" turns recording off. A bare name lands in TazUO's working directory
-# rather than beside the script - set an absolute path to put it somewhere you will find it.
+# turn into a table later. "" turns recording off. A bare name lands beside the script.
 DATA_PATH = "skill-attempts.jsonl"
 
 PET_NAME = "sifinha"
@@ -726,6 +725,22 @@ class Pace(object):
         return self._delay
 
 
+# src/uo/paths.py
+# A bare name lands in TazUO's working directory; beside the script is where anyone looks for it.
+# A name with a folder in it, relative or absolute, is left as written.
+def beside_script(name):
+    if not name or "/" in name or "\\" in name:
+        return name
+
+    script = getattr(API, "ScriptPath", None) or ""
+    cut = max(script.rfind("/"), script.rfind("\\"))
+
+    if cut < 0:
+        return name
+
+    return script[:cut + 1] + name
+
+
 # src/uo/record.py
 # Written by hand rather than with json.dumps, so the key order stays the one the README shows
 def quoted(text):
@@ -819,7 +834,7 @@ class AttemptLog(object):
             "gained": list(gained) if gained else [],
         }
 
-    # The end of the run. skill_to is None where the client had stopped answering, and the row is
+    # The end of the run. skill_to is None only where no reading ever arrived, and the row is
     # written all the same with its end unknown rather than lost with the run
     def close(self, skill_to):
         self._flush(skill_to)
@@ -879,7 +894,8 @@ def attempt_log(path, skill, log):
     if me is None and path:
         log("the client is not reporting the character - rows will not name it")
 
-    return AttemptLog(path, getattr(me, "Name", ""), getattr(me, "Serial", 0), skill, log)
+    return AttemptLog(beside_script(path), getattr(me, "Name", ""), getattr(me, "Serial", 0),
+                      skill, log)
 
 
 # src/uo/save.py
@@ -931,6 +947,7 @@ class SkillReader(object):
     def __init__(self, name):
         self._name = name
         self._seen = False
+        self._last = None
 
     def read(self):
         skill = API.GetSkill(self._name)
@@ -944,8 +961,16 @@ class SkillReader(object):
             return None
 
         self._seen = True
+        self._last = value
 
         return value
+
+    # Once the stop button is pressed the client answers nothing, so the last row of a run would
+    # end unknown; the latest reading that did arrive is never further off than that
+    def last(self):
+        value = self.read()
+
+        return value if value is not None else self._last
 
     def name(self):
         skill = API.GetSkill(self._name)
@@ -1341,7 +1366,7 @@ try:
         # be the one the next scan picks straight back up
         hunt.leave_out(quarry["serial"])
 finally:
-    recorder.close(skill.read())
+    recorder.close(skill.last())
 
 reason = stop or "the session ended"
 

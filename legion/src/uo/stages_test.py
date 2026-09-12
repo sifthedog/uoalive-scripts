@@ -1,6 +1,7 @@
 import unittest
 
-from uo.stages import band_for, cycle_cost, describe_plan, goal_of, make_plan, stage_now
+from uo.stages import (band_for, band_rows, cycle_cost, describe_plan, goal_of, make_plan,
+                       stage_now)
 
 STAGES = [
     {"up_to": 80.0, "spell": "Invisibility"},
@@ -69,3 +70,17 @@ class CycleCostTest(unittest.TestCase):
 
     def test_never_reads_as_free(self):
         self.assertAlmostEqual(cycle_cost({"cast_timeout": 0.0, "cast_delay": 0.0}, 0.0, 0.0), 0.1)
+
+
+class BandRowsTest(unittest.TestCase):
+    def test_each_band_is_a_row_from_the_floor_up_with_the_current_one_marked(self):
+        rows = band_rows(BANDS, 65.0, lambda product: "bowyer", 30.0)
+
+        self.assertEqual(rows, [("30 - 60  bow  bowyer", False),
+                                ("60 - 70  crossbow  bowyer", True),
+                                ("70 - cap  repeating crossbow  bowyer", False)])
+
+    def test_a_fractional_edge_keeps_its_decimal(self):
+        rows = band_rows([(40.7, "dartboard"), (None, "box")], 0.0, lambda product: "", 0.0)
+
+        self.assertEqual(rows[0][0], "0 - 40.7  dartboard  ")

@@ -3,6 +3,7 @@ import API
 from uo.clock import now
 from uo.entity import hex_of, player
 from uo.pack import amount_of, hue_of
+from uo.paths import beside_script
 from uo.record import append_line, json_object
 from uo.tooltip import parse_tooltip
 
@@ -26,7 +27,7 @@ class Sweep(object):
     """
 
     def __init__(self, path, character, config, log, append=None):
-        self._path = path or ""
+        self._path = beside_script(path or "")
         self._character = character or ""
         self._config = config
         self._log = log

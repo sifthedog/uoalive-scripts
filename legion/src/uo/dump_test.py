@@ -109,6 +109,26 @@ class DumpTest(unittest.TestCase):
         self.assertEqual([held.Serial for held in self.api.containers[self.api.Backpack]], [1])
         self.assertIn("unloaded 1 into 'trash barrel'", messages(self.api))
 
+    def test_pick_line_answers_the_container_or_the_refusal(self):
+        self.api.requested_target = BARREL
+
+        self.assertEqual(self.dump.pick_line(), ("'trash barrel' 0x40002000", None))
+
+        self.api.requested_target = self.api.Backpack
+
+        self.assertEqual(self.dump.pick_line(), (None, "that is your own pack"))
+        self.assertEqual(self.dump.name(), "trash barrel")
+
+    def test_limit_to_narrows_what_counts_as_a_product(self):
+        self.api.hold(self.house, item(serial=2, graphic=STAFF, name="a quarter staff"),
+                      item(serial=3, graphic=DEED, name="a dartboard deed"))
+
+        self.assertEqual(self.dump.held(), 2)
+
+        self.dump.limit_to(set([STAFF]))
+
+        self.assertEqual([held.Serial for held in self.dump.items()], [2])
+
     def test_run_with_nothing_picked_moves_nothing(self):
         self.api.hold(self.house, item(serial=2, graphic=STAFF, name="a quarter staff"))
 

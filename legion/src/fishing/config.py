@@ -1,7 +1,7 @@
 from uo.phrases import SAVING_TEXT, THROTTLED_TEXT
 
-# One JSON object per cast, for legion/skilldb.py. "" turns recording off. A bare name lands in
-# TazUO's working directory, not beside the script.
+# One JSON object per cast, for legion/skilldb.py. "" turns recording off. A bare name lands
+# beside the script, in LegionScripts.
 DATA_PATH = "skill-attempts.jsonl"
 
 SKILL_NAMES = ["Fishing"]

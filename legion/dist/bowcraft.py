@@ -5,8 +5,9 @@ import time
 
 
 # src/uo/boxes.py
-# Read off the gump as one token per row and the number after it: 'OakBoard 850'. The buttons are
-# read off the gump's layout; the table is the fallback, as box-probe.py read them on UOAlive.
+# Read off the gump as one token per row and the number after it: 'OakBoard 850', boards then logs,
+# a row only while the box holds any. The buttons are read off the gump's layout; the table is the
+# fallback, right only while every board row is up, since a missing row shifts the ids after it.
 WOOD_BOX = {
     "names": ["storage box"],
     "graphics": set(),
@@ -19,6 +20,13 @@ WOOD_BOX = {
         "HeartwoodBoard": ("boards", "heartwood"),
         "BloodwoodBoard": ("boards", "bloodwood"),
         "FrostwoodBoard": ("boards", "frostwood"),
+        "Log": ("logs", None),
+        "OakLog": ("logs", "oak"),
+        "AshLog": ("logs", "ash"),
+        "YewLog": ("logs", "yew"),
+        "HeartwoodLog": ("logs", "heartwood"),
+        "BloodwoodLog": ("logs", "bloodwood"),
+        "FrostwoodLog": ("logs", "frostwood"),
     },
     "buttons": {
         "Board": 107,
@@ -68,8 +76,8 @@ STEP_DELAY = 0.3
 
 
 # src/bowcraft/config.py
-# One JSON object per attempt, for legion/skilldb.py. "" turns recording off. A bare name lands in
-# TazUO's working directory, not beside the script.
+# One JSON object per attempt, for legion/skilldb.py. "" turns recording off. A bare name lands
+# beside the script, in LegionScripts.
 DATA_PATH = "skill-attempts.jsonl"
 
 # GetSkill answers None for a name it does not know: the gump says "Bowcraft/Fletching", the skill
@@ -162,14 +170,9 @@ BOX_TAKE = 200
 BOX_PRESS_TIMEOUT = 3.0
 BOX_PRESS_POLL = 0.25
 
-# Answered by the gump at the start; a closed gump means chests and pack animals, as before the box
-SOURCE_CHOICE = {
-    "text": "Draw wood from the storage box, or from the chests and pack animals you point at?",
-    "hue": 996,
-    "poll": 0.5,
-    "timeout": 60.0,
-}
-SOURCE_OPTIONS = [("box", "Storage box"), ("containers", "Chests and animals")]
+# One tool is fetched at a time from the container the form picked; how long the pack has to show it
+FETCH_TIMEOUT = 3.0
+FETCH_POLL = 0.25
 
 # Every restock fills the pack to this
 BATCH_SIZE = 300
@@ -193,15 +196,9 @@ VENDORS = {
     "yumi": None,
 }
 
-# Answered by the gump at the start; ESC on the unload cursor and a closed gump both mean keep. Sell
-# still asks for the container once a band nobody buys from is ahead.
-OUTPUT_CHOICE = {
-    "text": "Sell what is made to the bowyer, unload it into a container, or keep it?",
-    "hue": 996,
-    "poll": 0.5,
-    "timeout": 60.0,
-}
-OUTPUT_OPTIONS = [("sell", "Sell"), ("unload", "Unload"), ("keep", "Keep")]
+TOOL_MODES = [("stop", "Stop the run"), ("fetch", "Fetch from a container")]
+OUTPUT_OPTIONS = [("sell", "Sell to the bowyer"), ("unload", "Unload into a container"),
+                  ("keep", "Keep")]
 
 # Products the run made before they are unloaded: every band under Unload, the unsold under Sell
 DUMP_AT = 10
@@ -211,6 +208,18 @@ MAX_HELD = 60
 
 # Unloads in a row that moved nothing before the run ends
 MAX_DUMP_MISSES = 3
+
+# The form the run is set up on. Closing it, Cancel, or no OK in the timeout ends the run.
+SETUP = {
+    "title": "Bowcraft",
+    "tool_noun": "fletcher's tools",
+    "tool_modes": TOOL_MODES,
+    "outputs": OUTPUT_OPTIONS,
+    "unsold_hint": "for what nobody buys - without one the run ends at %d unsold" % MAX_HELD,
+    "hue": 996,
+    "poll": 0.25,
+    "timeout": 600.0,
+}
 
 # The context entry first, matched by its text; the phrase for a menu with no such entry
 SELL_ENTRY = "sell"
@@ -1016,11 +1025,13 @@ def layout_buttons(packet, labels):
 
     found = {}
 
+    lowered = [string.lower() for string in strings]
+
     for label in labels:
-        if label not in strings:
+        if label.lower() not in lowered:
             continue
 
-        spot = texts.get(strings.index(label))
+        spot = texts.get(lowered.index(label.lower()))
 
         if spot is None:
             continue
@@ -1038,6 +1049,7 @@ class StorageBox(object):
 
     def __init__(self, table, config, log):
         self._table = table
+        self._rows = dict((label.lower(), label) for label in table["rows"])
         self._config = config
         self._log = log
         self._id = 0
@@ -1099,18 +1111,20 @@ class StorageBox(object):
 
         return found
 
+    # Keyed by the table's spelling of a label, whatever case the gump shows it in
     def _parse(self, gump):
         rows = {}
         tokens = untagged(API.GetGumpContents(gump) or "").split()
 
         for index in range(1, len(tokens)):
             if tokens[index].isdigit():
-                rows[tokens[index - 1]] = int(tokens[index])
+                label = tokens[index - 1]
 
-        for label in sorted(rows):
-            if label not in self._table["rows"]:
-                self._say_once(("row", label),
-                               "the box lists '%s', which the BOX rows do not name" % label)
+                if label.lower() in self._rows:
+                    rows[self._rows[label.lower()]] = int(tokens[index])
+                else:
+                    self._say_once(("row", label.lower()),
+                                   "the box lists '%s', which the BOX rows do not name" % label)
 
         return rows
 
@@ -1152,7 +1166,7 @@ class StorageBox(object):
         counts = {}
 
         for label in rows:
-            if label in self._table["rows"] and self._type_of(label) != wanted and rows[label] > 0:
+            if self._type_of(label) != wanted and rows[label] > 0:
                 name = self._type_of(label)
                 counts[name] = counts.get(name, 0) + rows[label]
 
@@ -1336,8 +1350,77 @@ class Sources(object):
 
         return " or ".join(KIND_NOUNS[kind] for kind in allowed if kind in KIND_NOUNS)
 
-    # Every kind by default; a list of kinds, as the gump at the start chose, refuses the others.
-    # One storage box is the whole selection: its gump is one at a time, and one holds everything.
+    def clear(self):
+        del self._picked[:]
+
+    def line_for(self, entry):
+        other = self._wood.other_report(self.other_counts(entry))
+
+        return "'%s' %s, %s in it%s" % (self.name_of(entry), hex_of(entry["serial"]),
+                                        self._wood.report(self.counts(entry)),
+                                        "" if not other else " (%s it will not use)" % other)
+
+    def _refusal(self, serial, allowed):
+        me = player()
+
+        if serial == API.Backpack or (me is not None and serial == me.Serial):
+            return "your own pack is always counted, no need to pick it"
+
+        if serial in [entry["serial"] for entry in self._picked]:
+            return "%s is already picked" % hex_of(serial)
+
+        entry = self.entry_for(serial)
+
+        if entry is None:
+            return "%s is neither a container nor a creature" % hex_of(serial)
+
+        if allowed is not None and entry["kind"] not in allowed:
+            return ("'%s' is a %s - the gump chose the %s"
+                    % (self.name_of(entry), KIND_NOUNS[entry["kind"]], self._noun_of(allowed)))
+
+        # One storage box holds everything, and its gump is read one box at a time
+        if entry["kind"] == "box" and any(held["kind"] == "box" for held in self._picked):
+            return "'%s' is a second storage box - one holds everything" % self.name_of(entry)
+
+        return None
+
+    # One cursor, one answer: (the picked entry's line, None), (None, why it was refused), or
+    # (None, None) for ESC
+    def pick_one(self, allowed=None):
+        if API.HasTarget():
+            API.CancelTarget()
+
+        serial = API.RequestTarget(self._config["pick_timeout"])
+
+        if API.HasTarget():
+            API.CancelTarget()
+
+        if not serial:
+            return None, None
+
+        refusal = self._refusal(serial, allowed)
+
+        if refusal is not None:
+            self._log(refusal)
+
+            return None, refusal
+
+        entry = self.entry_for(serial)
+
+        # Opened now, while it is in reach
+        if self.open(entry) is None:
+            refusal = "'%s' did not open" % self.name_of(entry)
+            self._log(refusal)
+
+            return None, refusal
+
+        self._picked.append(entry)
+        line = self.line_for(entry)
+        self._log("picked %s" % line)
+
+        return line, None
+
+    # Every kind by default; a list of kinds, as the gump at the start chose, refuses the others
     def pick(self, allowed=None):
         single = allowed == ["box"]
 
@@ -1347,53 +1430,14 @@ class Sources(object):
             self._log("target every %s holding %s, ESC when done"
                       % (self._noun_of(allowed), self._wood.noun()))
 
-        me = player()
-        mine = me.Serial if me is not None else None
-
         for _pick in range(self._config["max_picks"]):
-            if API.HasTarget():
-                API.CancelTarget()
-
-            serial = API.RequestTarget(self._config["pick_timeout"])
+            line, refusal = self.pick_one(allowed)
 
             # ESC or a timed-out cursor, either ends the selection
-            if not serial:
+            if line is None and refusal is None:
                 break
 
-            if serial == API.Backpack or (mine is not None and serial == mine):
-                self._log("your own pack is always counted, no need to pick it")
-                continue
-
-            if serial in [entry["serial"] for entry in self._picked]:
-                continue
-
-            entry = self.entry_for(serial)
-
-            if entry is None:
-                self._log("%s is neither a container nor a creature" % hex_of(serial))
-                continue
-
-            if allowed is not None and entry["kind"] not in allowed:
-                self._log("'%s' is a %s - the gump chose the %s"
-                          % (self.name_of(entry), KIND_NOUNS[entry["kind"]],
-                             self._noun_of(allowed)))
-                continue
-
-            # Opened now, while it is in reach
-            if self.open(entry) is None:
-                self._log("'%s' did not open" % self.name_of(entry))
-                continue
-
-            self._picked.append(entry)
-
-            other = self._wood.other_report(self.other_counts(entry))
-
-            self._log("picked '%s' %s, %s in it%s"
-                      % (self.name_of(entry), hex_of(serial),
-                         self._wood.report(self.counts(entry)),
-                         "" if not other else " (%s it will not use)" % other))
-
-            if single:
+            if line is not None and single:
                 break
 
         if API.HasTarget():
@@ -1542,112 +1586,6 @@ class Sources(object):
         API.Pathfind(spot[0], spot[1], spot[2], within, True, self._config["pathfind_timeout"])
 
         return chebyshev(spot[0], spot[1], within + 1) <= within
-
-
-# src/uo/choice.py
-CHOICE_WIDTH = 340
-CHOICE_BUTTON_WIDTH = 96
-CHOICE_BUTTON_HEIGHT = 26
-CHOICE_GAP = 8
-
-
-class Choice(object):
-    """A gump the script draws with one button per option, answered by the first press."""
-
-    def __init__(self, config, log, stop_reason):
-        self._config = config
-        self._log = log
-        self._stop_reason = stop_reason
-
-    def _show(self, options, on_press):
-        height = 16 + 20 + 16 + CHOICE_BUTTON_HEIGHT + 16
-        width = max(CHOICE_WIDTH, 16 + len(options) * (CHOICE_BUTTON_WIDTH + CHOICE_GAP) + 8)
-
-        gump = API.Gumps.CreateGump(True, True)
-
-        if gump is None:
-            return None
-
-        gump.SetRect(0, 0, width, height)
-        gump.CenterXInViewPort()
-        gump.CenterYInViewPort()
-
-        background = API.Gumps.CreateGumpColorBox(0.85, "#1E1E1E")
-        background.SetRect(0, 0, width, height)
-        gump.Add(background)
-
-        label = API.Gumps.CreateGumpLabel(self._config["text"], self._config["hue"])
-        label.SetPos(16, 16)
-        gump.Add(label)
-
-        for index in range(len(options)):
-            key, caption = options[index]
-            button = API.Gumps.CreateSimpleButton(caption, CHOICE_BUTTON_WIDTH,
-                                                  CHOICE_BUTTON_HEIGHT)
-            button.SetPos(16 + index * (CHOICE_BUTTON_WIDTH + CHOICE_GAP),
-                          height - CHOICE_BUTTON_HEIGHT - 16)
-            API.Gumps.AddControlOnClick(button, self._presser(key, on_press))
-            gump.Add(button)
-
-        API.Gumps.AddGump(gump)
-
-        return gump
-
-    # A closure per button rather than one in the loop: the loop variable would be the last key
-    def _presser(self, key, on_press):
-        def press():
-            on_press(key)
-
-        return press
-
-    # The pressed key, or None when the gump was closed, timed out, or the run has a reason to stop
-    def ask(self, options):
-        if API.HasTarget():
-            API.CancelTarget()
-
-        chosen = [None]
-
-        def on_press(key):
-            chosen[0] = key
-
-        gump = self._show(options, on_press)
-
-        # API.Stop() only lands at the next Pause, and every client call before it answers nothing
-        if gump is None:
-            self._log("not asking - the run is being stopped")
-            return None
-
-        self._log("asking - %s" % self._config["text"])
-        waited = 0.0
-        why = None
-
-        # The click only arrives through ProcessCallbacks, and a stopped script's client calls all
-        # answer with nothing, so the stop flag is the one read that still means something then
-        while why is None:
-            if API.StopRequested:
-                why = "the run is being stopped"
-                break
-
-            API.ProcessCallbacks()
-
-            if chosen[0] is not None:
-                why = "'%s' was pressed" % dict(options)[chosen[0]]
-            elif gump.IsDisposed:
-                why = "the gump was closed"
-            elif self._stop_reason() is not None:
-                why = "the run has a reason to stop"
-            elif waited >= self._config["timeout"]:
-                why = "nothing was pressed in %.0fs" % self._config["timeout"]
-            else:
-                API.Pause(self._config["poll"])
-                waited += self._config["poll"]
-
-        if not gump.IsDisposed:
-            gump.Dispose()
-
-        self._log(why)
-
-        return chosen[0]
 
 
 # src/uo/craft.py
@@ -2270,6 +2208,33 @@ class CraftMenu(object):
         return order if known is None else [button for button in order if button in known]
 
 
+# src/uo/tool.py
+# Books carry the client's container flag, so the flag alone opens every spellbook in the pack
+NOT_BAG_GRAPHICS = set([
+    0x0EFA,  # spellbook
+    0x2253,  # necromancer spellbook
+    0x2252,  # book of chivalry
+    0x238C,  # book of bushido
+    0x23A0,  # book of ninjitsu
+    0x2D50,  # spellweaving spellbook
+    0x2D9D,  # mysticism spellbook
+    0x22C5,  # runebook
+    0x9C16,  # runic atlas
+    0x2259,  # bulk order book
+])
+NOT_BAG_NAMES = ["spellbook", "runebook", "book", "atlas"]
+
+
+def is_bag(item):
+    if not getattr(item, "IsContainer", False) or getattr(item, "Opened", False):
+        return False
+
+    if item.Graphic in NOT_BAG_GRAPHICS:
+        return False
+
+    return not word_in(item.Name, NOT_BAG_NAMES)
+
+
 # src/uo/crafttool.py
 class CraftTool(object):
     """A crafting tool, used out of the pack rather than equipped."""
@@ -2280,6 +2245,7 @@ class CraftTool(object):
         self._name_words = name_words
         self._log = log
         self._prefer = prefer or set()
+        self._opened = set()
 
     def is_tool(self, item):
         if item is None:
@@ -2315,6 +2281,35 @@ class CraftTool(object):
 
         return found
 
+    # A bag the client has not opened this session reads as empty, whatever is in it
+    def open_bags(self):
+        bags = [item for item in pack_contents()
+                if is_bag(item) and item.Serial not in self._opened]
+
+        if not bags:
+            return False
+
+        # A cursor left up would take the double-click as its answer
+        if API.HasTarget():
+            API.CancelTarget()
+
+        self._log("opening %d bag(s) to look inside for a %s" % (len(bags), self._noun))
+
+        for bag in bags:
+            self._opened.add(bag.Serial)
+            API.UseObject(bag.Serial)
+
+        return True
+
+    def find(self, timeout, poll):
+        found = self.serial()
+
+        if found is None and self.open_bags():
+            settled(timeout, poll, lambda: self.serial() is not None)
+            found = self.serial()
+
+        return found
+
 
 # src/uo/dump.py
 class Dump(object):
@@ -2345,10 +2340,33 @@ class Dump(object):
     def name(self):
         return self._sources.name_of(self._entry) if self._entry is not None else "nothing"
 
-    def pick(self):
-        self._log("target the container to unload into, a trash barrel or a chest - ESC to keep "
-                  "everything in the pack")
+    # Sell watches only what nobody buys; the kept set was read against every product, a superset
+    def limit_to(self, graphics):
+        self._graphics = graphics
 
+    def line(self):
+        return "'%s' %s" % (self.name(), hex_of(self._entry["serial"]))
+
+    def _refusal(self, serial):
+        if serial == API.Backpack:
+            return "that is your own pack"
+
+        entry = self._sources.entry_for(serial)
+
+        if entry is None:
+            return "%s is neither a container nor a creature" % hex_of(serial)
+
+        if entry["kind"] == "box":
+            return ("'%s' is a storage box, which takes nothing you made - pick a barrel or a "
+                    "chest" % self._sources.name_of(entry))
+
+        if self._sources.open(entry) is None:
+            return "'%s' has no backpack to unload into" % self._sources.name_of(entry)
+
+        return None
+
+    # (the picked container's line, None), (None, why it was refused), or (None, None) for ESC
+    def pick_line(self):
         if API.HasTarget():
             API.CancelTarget()
 
@@ -2358,35 +2376,27 @@ class Dump(object):
             API.CancelTarget()
 
         if not serial:
-            return None
+            return None, None
 
-        if serial == API.Backpack:
-            self._log("that is your own pack")
+        refusal = self._refusal(serial)
 
-            return None
+        if refusal is not None:
+            self._log(refusal)
 
-        entry = self._sources.entry_for(serial)
+            return None, refusal
 
-        if entry is None:
-            self._log("%s is neither a container nor a creature" % hex_of(serial))
+        self._entry = self._sources.entry_for(serial)
+        self._log("unloading into %s" % self.line())
 
-            return None
+        return self.line(), None
 
-        if entry["kind"] == "box":
-            self._log("'%s' is a storage box, which takes nothing you made - pick a barrel or a "
-                      "chest" % self._sources.name_of(entry))
+    def pick(self):
+        self._log("target the container to unload into, a trash barrel or a chest - ESC to keep "
+                  "everything in the pack")
 
-            return None
+        line, _refusal = self.pick_line()
 
-        if self._sources.open(entry) is None:
-            self._log("'%s' has no backpack to unload into" % self._sources.name_of(entry))
-
-            return None
-
-        self._entry = entry
-        self._log("unloading into '%s' %s" % (self.name(), hex_of(serial)))
-
-        return entry
+        return self._entry if line is not None else None
 
     def run(self):
         items = self.items()
@@ -2602,6 +2612,22 @@ class Materials(object):
         return rows
 
 
+# src/uo/paths.py
+# A bare name lands in TazUO's working directory; beside the script is where anyone looks for it.
+# A name with a folder in it, relative or absolute, is left as written.
+def beside_script(name):
+    if not name or "/" in name or "\\" in name:
+        return name
+
+    script = getattr(API, "ScriptPath", None) or ""
+    cut = max(script.rfind("/"), script.rfind("\\"))
+
+    if cut < 0:
+        return name
+
+    return script[:cut + 1] + name
+
+
 # src/uo/record.py
 # Written by hand rather than with json.dumps, so the key order stays the one the README shows
 def quoted(text):
@@ -2695,7 +2721,7 @@ class AttemptLog(object):
             "gained": list(gained) if gained else [],
         }
 
-    # The end of the run. skill_to is None where the client had stopped answering, and the row is
+    # The end of the run. skill_to is None only where no reading ever arrived, and the row is
     # written all the same with its end unknown rather than lost with the run
     def close(self, skill_to):
         self._flush(skill_to)
@@ -2755,7 +2781,8 @@ def attempt_log(path, skill, log):
     if me is None and path:
         log("the client is not reporting the character - rows will not name it")
 
-    return AttemptLog(path, getattr(me, "Name", ""), getattr(me, "Serial", 0), skill, log)
+    return AttemptLog(beside_script(path), getattr(me, "Name", ""), getattr(me, "Serial", 0),
+                      skill, log)
 
 
 # src/uo/save.py
@@ -2796,6 +2823,307 @@ class SaveWatch(object):
         self._heartbeat.reset()
 
 
+# src/uo/setup.py
+WIDTH = 720
+MARGIN = 16
+LABEL_X = 16
+FIELD_X = 160
+VALUE_X = 316
+ROW = 28
+LINE = 22
+TITLE_HEIGHT = 40
+BUTTON_HEIGHT = 24
+FONT = 15
+MAX_SOURCE_LINES = 4
+LINE_CHARS = 92
+RADIO_CHAR = 8
+RADIO_GAP = 40
+
+TEXT = "#E6E6E6"
+MUTED = "#8C8C8C"
+CURRENT = "#F2C14E"
+WARN = "#FF7B6B"
+
+
+class Setup(object):
+    """The form the run is set up on: tools, wood sources, what is made, and the band table."""
+
+    def __init__(self, config, log, stop_reason):
+        self._config = config
+        self._log = log
+        self._stop_reason = stop_reason
+        self._pending = None
+        self._sources = []
+        self._tools_line = None
+        self._unload_line = None
+        self._message = None
+        self._controls = {}
+
+    def _presser(self, key):
+        def press():
+            self._pending = key
+
+        return press
+
+    def _label(self, gump, text, x, y, color=TEXT, width=None):
+        label = API.Gumps.CreateGumpTTFLabel(text, FONT, color)
+        label.SetRect(x, y, width if width is not None else WIDTH - x - MARGIN, LINE)
+        gump.Add(label)
+
+        return label
+
+    def _button(self, gump, key, caption, x, y, width):
+        button = API.Gumps.CreateSimpleButton(caption, width, BUTTON_HEIGHT)
+        button.SetPos(x, y)
+        API.Gumps.AddControlOnClick(button, self._presser(key))
+        gump.Add(button)
+
+        return button
+
+    def _show(self, heading, rows):
+        outputs = self._config["outputs"]
+        height = (TITLE_HEIGHT + ROW * 2 + ROW + LINE * MAX_SOURCE_LINES + ROW * 2
+                  + LINE * (len(rows) + 1) + ROW + BUTTON_HEIGHT + MARGIN * 4)
+
+        gump = API.Gumps.CreateGump(True, True)
+
+        if gump is None:
+            return None
+
+        gump.SetRect(0, 0, WIDTH, height)
+        gump.CenterXInViewPort()
+        gump.CenterYInViewPort()
+
+        background = API.Gumps.CreateGumpColorBox(0.9, "#1E1E1E")
+        background.SetRect(0, 0, WIDTH, height)
+        gump.Add(background)
+
+        title = API.Gumps.CreateGumpLabel(self._config["title"], self._config["hue"])
+        title.SetPos(MARGIN, 12)
+        gump.Add(title)
+
+        y = TITLE_HEIGHT
+        c = self._controls
+
+        self._label(gump, self._config["tool_noun"].capitalize(), LABEL_X, y)
+        self._label(gump, "When they run out:", FIELD_X, y, MUTED, 150)
+        c["modes"] = API.Gumps.CreateDropDown(200, [caption for _key, caption in
+                                                    self._config["tool_modes"]], 0)
+        c["modes"].SetPos(VALUE_X, y - 2)
+        gump.Add(c["modes"])
+        y += ROW
+
+        c["tools_button"] = self._button(gump, "tools", "Pick tool container", FIELD_X, y, 148)
+        c["tools_value"] = self._label(gump, "", VALUE_X, y + 3, MUTED)
+        y += ROW + MARGIN // 2
+
+        self._label(gump, "Wood", LABEL_X, y)
+        self._button(gump, "source", "Add a source", FIELD_X, y, 140)
+        self._button(gump, "clear", "Clear", FIELD_X + 148, y, 70)
+        y += ROW
+
+        c["sources"] = []
+
+        for index in range(MAX_SOURCE_LINES):
+            c["sources"].append(self._label(gump, "", FIELD_X, y + index * LINE, MUTED))
+
+        y += LINE * MAX_SOURCE_LINES + MARGIN // 2
+
+        self._label(gump, "What is made", LABEL_X, y)
+        c["outputs"] = []
+
+        x = FIELD_X
+
+        # Spaced by caption: the classic font runs about RADIO_CHAR pixels a letter
+        for index in range(len(outputs)):
+            radio = API.Gumps.CreateGumpRadioButton(outputs[index][1], 1, 0x00D0, 0x00D1,
+                                                    self._config["hue"], index == 0)
+            radio.SetPos(x, y)
+            gump.Add(radio)
+            c["outputs"].append(radio)
+            x += RADIO_GAP + RADIO_CHAR * len(outputs[index][1])
+
+        y += ROW
+
+        c["unload_button"] = self._button(gump, "unload", "Pick container", FIELD_X, y, 148)
+        c["unload_value"] = self._label(gump, "", VALUE_X, y + 3, MUTED)
+        y += ROW + MARGIN // 2
+
+        self._label(gump, "Training", LABEL_X, y)
+        self._label(gump, heading, FIELD_X, y)
+        y += LINE
+
+        for text, current in rows:
+            self._label(gump, ("> " if current else "   ") + text, FIELD_X, y,
+                        CURRENT if current else MUTED)
+            y += LINE
+
+        y += MARGIN // 2
+        c["message"] = self._label(gump, "", LABEL_X, y, WARN)
+        y += ROW
+
+        self._button(gump, "cancel", "Cancel", WIDTH - MARGIN - 96 - 8 - 96, y, 96)
+        self._button(gump, "ok", "OK", WIDTH - MARGIN - 96, y, 96)
+
+        API.Gumps.AddGump(gump)
+
+        return gump
+
+    def _mode(self):
+        return self._config["tool_modes"][self._controls["modes"].GetSelectedIndex()][0]
+
+    def _output(self):
+        for index in range(len(self._controls["outputs"])):
+            if self._controls["outputs"][index].GetIsChecked():
+                return self._config["outputs"][index][0]
+
+        return self._config["outputs"][0][0]
+
+    def _say(self, message):
+        self._message = message
+        self._controls["message"].SetText(message or "")
+
+    def _refresh(self, actions):
+        c = self._controls
+        fetching = self._mode() == "fetch"
+        c["tools_button"].IsVisible = fetching
+        c["tools_value"].IsVisible = fetching
+        c["tools_value"].SetText(clipped(self._tools_line or "required", LINE_CHARS))
+
+        for index in range(MAX_SOURCE_LINES):
+            if index < len(self._sources):
+                c["sources"][index].SetText(clipped(self._sources[index], LINE_CHARS))
+            elif index == 0:
+                c["sources"][0].SetText("nothing picked - the run works through the wood you carry")
+            else:
+                c["sources"][index].SetText("")
+
+        output = self._output()
+        unsold = output == "sell" and actions["unsold_ahead"] is not None \
+            and actions["unsold_ahead"]()
+        showing = output == "unload" or unsold
+        c["unload_button"].IsVisible = showing
+        c["unload_value"].IsVisible = showing
+
+        if self._unload_line is not None:
+            c["unload_value"].SetText(clipped(self._unload_line, LINE_CHARS))
+        else:
+            c["unload_value"].SetText(self._config["unsold_hint"] if unsold else "required")
+
+    def _validate(self, actions):
+        if self._mode() == "fetch" and not actions["tools_ready"]():
+            return ("pick a container holding %s, or choose to stop when they run out"
+                    % self._config["tool_noun"])
+
+        if self._output() == "unload" and not actions["unload_ready"]():
+            return "pick the container to unload into"
+
+        if len(self._sources) == 0 and not actions["has_wood"]():
+            return "add a source of wood, or carry some"
+
+        return None
+
+    def _run(self, pending, actions):
+        if pending == "source":
+            if len(self._sources) >= MAX_SOURCE_LINES:
+                self._say("that is as many sources as the form lists - clear them to start over")
+
+                return None
+
+            self._log("target a chest, a storage box or a pack animal holding wood")
+            line, refusal = actions["source"]()
+
+            if line is not None:
+                self._sources.append(line)
+
+            self._say(refusal)
+        elif pending == "clear":
+            actions["clear"]()
+            del self._sources[:]
+            self._say(None)
+        elif pending == "tools":
+            self._log("target the container holding %s" % self._config["tool_noun"])
+            line, refusal = actions["tools"]()
+
+            if line is not None:
+                self._tools_line = line
+
+            self._say(refusal)
+        elif pending == "unload":
+            self._log("target the container to unload into, a trash barrel or a chest")
+            line, refusal = actions["unload"]()
+
+            if line is not None:
+                self._unload_line = line
+
+            self._say(refusal)
+        elif pending == "ok":
+            failure = self._validate(actions)
+            self._say(failure)
+
+            return "ok" if failure is None else None
+        elif pending == "cancel":
+            return "cancel"
+
+        return None
+
+    def ask(self, actions):
+        if API.HasTarget():
+            API.CancelTarget()
+
+        heading, rows = actions["table"]()
+        gump = self._show(heading, rows)
+
+        # API.Stop() only lands at the next Pause, and every client call before it answers nothing
+        if gump is None:
+            self._log("not asking - the run is being stopped")
+
+            return None
+
+        self._log("asking - the start-up form")
+        self._refresh(actions)
+        waited = 0.0
+        why = None
+        answers = None
+
+        # The click only arrives through ProcessCallbacks, and a stopped script's client calls all
+        # answer with nothing, so the stop flag is the one read that still means something then
+        while why is None:
+            if API.StopRequested:
+                why = "the run is being stopped"
+                break
+
+            API.ProcessCallbacks()
+
+            pending, self._pending = self._pending, None
+            done = self._run(pending, actions) if pending is not None else None
+
+            self._refresh(actions)
+
+            if done == "ok":
+                answers = {"tools": self._mode(), "output": self._output(),
+                           "sources": len(self._sources)}
+                why = "OK was pressed"
+            elif done == "cancel":
+                why = "Cancel was pressed"
+            elif gump.IsDisposed:
+                why = "the form was closed"
+            elif self._stop_reason() is not None:
+                why = "the run has a reason to stop"
+            elif waited >= self._config["timeout"]:
+                why = "nothing was pressed in %.0fs" % self._config["timeout"]
+            else:
+                API.Pause(self._config["poll"])
+                waited += self._config["poll"]
+
+        if not gump.IsDisposed:
+            gump.Dispose()
+
+        self._log(why)
+
+        return answers
+
+
 # src/uo/skill.py
 # A name the client does not carry throws on some builds rather than answering None
 def find_skill_name(names):
@@ -2822,6 +3150,7 @@ class SkillReader(object):
     def __init__(self, name):
         self._name = name
         self._seen = False
+        self._last = None
 
     def read(self):
         skill = API.GetSkill(self._name)
@@ -2835,8 +3164,16 @@ class SkillReader(object):
             return None
 
         self._seen = True
+        self._last = value
 
         return value
+
+    # Once the stop button is pressed the client answers nothing, so the last row of a run would
+    # end unknown; the latest reading that did arrive is never further off than that
+    def last(self):
+        value = self.read()
+
+        return value if value is not None else self._last
 
     def name(self):
         skill = API.GetSkill(self._name)
@@ -2875,6 +3212,138 @@ def band_for(bands, value):
             return product
 
     return None
+
+
+def _edge(value):
+    return ("%.1f" % value).replace(".0", "") if value is not None else "cap"
+
+
+# One row per band for the form: the range, the product, a third column, and which is current.
+# The first row starts where the script starts, which the table itself does not say.
+def band_rows(bands, value, describe, floor):
+    rows = []
+    current = band_for(bands, value)
+
+    for ceiling, product in bands:
+        span = "%s - %s" % (_edge(floor), _edge(ceiling))
+        rows.append(("%s  %s  %s" % (span, product, describe(product)), product == current))
+        floor = ceiling
+
+    return rows
+
+
+# src/uo/toolstore.py
+class ToolStore(object):
+    """The container the craft tools are fetched from, one at a time, once the pack runs out."""
+
+    def __init__(self, tools, sources, config, log):
+        self._tools = tools
+        self._sources = sources
+        self._config = config
+        self._log = log
+        self._entry = None
+
+    def picked(self):
+        return self._entry is not None
+
+    def name(self):
+        return self._sources.name_of(self._entry) if self._entry is not None else "nothing"
+
+    def _inside(self):
+        container = self._sources.container_of(self._entry) if self._entry is not None else None
+        items = API.ItemsInContainer(container, True) if container else None
+
+        return [item for item in (items or []) if self._tools.is_tool(item)]
+
+    def count(self):
+        return len(self._inside())
+
+    def line(self):
+        return "'%s' %s - %d %s" % (self.name(), hex_of(self._entry["serial"]), self.count(),
+                                    self._config["noun"])
+
+    def _refusal(self, serial):
+        if serial == API.Backpack:
+            return "that is your own pack"
+
+        entry = self._sources.entry_for(serial)
+
+        if entry is None:
+            return "%s is neither a container nor a creature" % hex_of(serial)
+
+        if entry["kind"] == "box":
+            return ("'%s' is a storage box, which holds no %s - pick a chest or a pack animal"
+                    % (self._sources.name_of(entry), self._config["noun"]))
+
+        if self._sources.open(entry) is None:
+            return "'%s' did not open" % self._sources.name_of(entry)
+
+        return None
+
+    # (the container's line, None) or (line, why OK will refuse it), (None, why it was refused),
+    # or (None, None) for ESC
+    def pick(self):
+        if API.HasTarget():
+            API.CancelTarget()
+
+        serial = API.RequestTarget(self._config["pick_timeout"])
+
+        if API.HasTarget():
+            API.CancelTarget()
+
+        if not serial:
+            return None, None
+
+        refusal = self._refusal(serial)
+
+        if refusal is not None:
+            self._log(refusal)
+
+            return None, refusal
+
+        self._entry = self._sources.entry_for(serial)
+        line = self.line()
+        self._log("fetching %s from %s" % (self._config["noun"], line))
+
+        if self.count() == 0:
+            return line, "'%s' holds no %s" % (self.name(), self._config["noun"])
+
+        return line, None
+
+    # True once the pack holds a tool again; the move is asynchronous, so the pack is watched
+    def fetch(self):
+        if self._entry is None:
+            return False
+
+        if not self._sources.reach(self._entry):
+            self._log("cannot reach '%s' for a tool" % self.name())
+
+            return False
+
+        if self._sources.open(self._entry) is None:
+            self._log("'%s' did not open for a tool" % self.name())
+
+            return False
+
+        inside = self._inside()
+
+        if len(inside) == 0:
+            self._log("'%s' has no %s left" % (self.name(), self._config["noun"]))
+
+            return False
+
+        API.MoveItem(inside[0].Serial, API.Backpack)
+        API.Pause(self._config["move_delay"])
+
+        landed = settled(self._config["fetch_timeout"], self._config["fetch_poll"],
+                         lambda: self._tools.serial() is not None)
+
+        if landed:
+            self._log("fetched a tool from '%s', %d left" % (self.name(), self.count()))
+        else:
+            self._log("'%s' gave up no tool" % self.name())
+
+        return landed
 
 
 # src/uo/menu.py
@@ -3155,8 +3624,20 @@ vendor = Vendor(menu, {
     "opl_wait": OPL_WAIT,
     "text_limit": UNREADABLE_TEXT_LIMIT,
 }, log, heartbeat, products_in_pack)
-choice = Choice(OUTPUT_CHOICE, log, stop_reason)
-source_choice = Choice(SOURCE_CHOICE, log, stop_reason)
+tool_store = ToolStore(tools, sources, {
+    "noun": "fletcher's tools",
+    "pick_timeout": PICK_TIMEOUT,
+    "move_delay": MOVE_DELAY,
+    "fetch_timeout": FETCH_TIMEOUT,
+    "fetch_poll": FETCH_POLL,
+}, log)
+# Kept: a bow carried in is the character's own, and it is never unloaded into a barrel
+dump = Dump(sources, PRODUCT_GRAPHICS, {
+    "pick_timeout": PICK_TIMEOUT,
+    "move_delay": MOVE_DELAY,
+    "keep_existing": True,
+}, log)
+setup = Setup(SETUP, log, stop_reason)
 
 start = skill.wait(SKILL_TIMEOUT, SKILL_POLL)
 
@@ -3174,47 +3655,50 @@ elif capped is not None:
     log(capped)
     API.Stop()
 
-if tools.serial() is None:
-    log("no fletcher's tools in the pack")
+cap = skill.cap()
+
+
+def training_rows():
+    heading = "%s %.1f%s" % (skill_name, start,
+                             " / %.1f" % cap if cap is not None and cap > 0 else "")
+
+    return heading, band_rows(BANDS, start, lambda name: VENDORS[name][0] if VENDORS[name]
+                              else "nobody buys it: unloaded", MIN_SKILL)
+
+
+answers = setup.ask({
+    "table": training_rows,
+    "tools": tool_store.pick,
+    "tools_ready": lambda: tool_store.count() > 0,
+    "source": sources.pick_one,
+    "clear": sources.clear,
+    "unload": dump.pick_line,
+    "unload_ready": dump.picked,
+    "has_wood": lambda: wood.in_pack() > 0,
+    "unsold_ahead": lambda: unsold_ahead(start),
+})
+
+# The stop lands at the next Pause, so the lines until then read a form that was never answered
+output = answers["output"] if answers is not None else "keep"
+
+if answers is None:
     API.Stop()
-
-source = source_choice.ask(SOURCE_OPTIONS)
-sources.pick(["box"] if source == "box" else ["item", "mobile"])
-
-# A run that starts on the wood it is already carrying needed no cursor at all
-if len(sources.picked()) == 0 and wood.in_pack() == 0:
-    log("nothing picked and no wood in the pack")
-    API.Stop()
-
-output = choice.ask(OUTPUT_OPTIONS)
-
-# Kept: a bow carried in is the character's own, and it is never unloaded into a barrel
-dump = Dump(sources, UNSOLD_GRAPHICS if output == "sell" else PRODUCT_GRAPHICS, {
-    "pick_timeout": PICK_TIMEOUT,
-    "move_delay": MOVE_DELAY,
-    "keep_existing": True,
-}, log)
-
-if output == "unload":
-    dump.pick()
-
-    if not dump.picked():
-        output = "keep"
 
 if output == "sell":
+    dump.limit_to(UNSOLD_GRAPHICS)
     log("selling every %d to the bowyer" % SELL_AT)
 
-    if unsold_ahead(start):
-        dump.pick()
-
-        if not dump.picked():
-            log("nothing picked to unload into - the run ends once the pack holds %d unsold products"
-                % MAX_HELD)
-elif output != "unload":
-    output = "keep"
+    if unsold_ahead(start) and not dump.picked():
+        log("nothing picked to unload into - the run ends once the pack holds %d unsold products"
+            % MAX_HELD)
+elif output == "keep":
     log("keeping what is made - the run ends once the pack holds %d" % MAX_HELD)
 
-cap = skill.cap()
+# A picked tool container fills an empty pack before the first craft
+if (tools.find(FETCH_TIMEOUT, FETCH_POLL) is None
+        and not (tool_store.picked() and tool_store.fetch())):
+    log("no fletcher's tools in the pack")
+    API.Stop()
 
 log("%s at %.1f%s, %s in the pack, %s"
     % (skill_name, start, "/%.1f" % cap if cap is not None and cap > 0 else "",
@@ -3477,6 +3961,10 @@ try:
         elif outcome == "noRow":
             stop = "could not find the SELECTIONS row for '%s'" % product
             break
+        elif outcome == "noTool" and tool_store.picked() and tool_store.fetch():
+            crafter.forget_last()
+            stall.progressed()
+            log("the tools ran out - fetched another")
         elif outcome in ("noTool", "noGump"):
             no_tool += 1
 
@@ -3536,7 +4024,7 @@ except Exception as error:
     if stop is None:
         stop = "threw - %s" % error
 finally:
-    recorder.close(skill.read())
+    recorder.close(skill.last())
 
 if API.Pathfinding():
     API.CancelPathfinding()

@@ -38,8 +38,14 @@ class StorageBoxTest(unittest.TestCase):
     def test_open_uses_the_box_and_reads_the_rows_off_the_gump(self):
         self.assertEqual(self.box.open(BOX), GUMP)
         self.assertEqual(self.api.used, [BOX])
-        self.assertEqual(self.box.rows(BOX), {"OakBoard": 850, "AshBoard": 451, "Board": 18467})
+        self.assertEqual(self.box.rows(BOX), {"OakBoard": 850, "Board": 18467})
         self.assertIn("lists 'AshBoard'", messages(self.api))
+
+    def test_labels_are_matched_whatever_their_case(self):
+        self.api.gump_contents[GUMP] = "Storage Box oakboard 850 BOARD 18467 log 40"
+        self.box.open(BOX)
+
+        self.assertEqual(self.box.rows(BOX), {"OakBoard": 850, "Board": 18467, "Log": 40})
 
     def test_rows_split_across_lines_and_wrapped_in_tags_read_the_same(self):
         self.api.gump_contents[GUMP] = "<CENTER>Storage Box</CENTER>\nOakBoard 850\nBoard 18467\n"

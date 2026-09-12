@@ -3,8 +3,7 @@ from uo.timings import HEARTBEAT_EVERY, LOG_EVERY, SAVE_POLL, SAVE_WAIT, STALL_S
 from uo.timings import THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX
 
 # Every success and failure is appended here, one JSON object per line, for legion/skilldb.py to
-# turn into a table later. "" turns recording off. A bare name lands in TazUO's working directory
-# rather than beside the script - set an absolute path to put it somewhere you will find it.
+# turn into a table later. "" turns recording off. A bare name lands beside the script.
 DATA_PATH = "skill-attempts.jsonl"
 
 PET_NAME = "sifinha"

@@ -76,7 +76,7 @@ LOG_SETTLE_TIMEOUT = 1.5
 LOG_SETTLE_POLL = 0.15
 
 # Where each chop and each conversion is appended, while Lumberjacking is below its cap. A bare
-# filename lands in TazUO's working directory; "" records nothing
+# filename lands beside the script; "" records nothing
 DATA_PATH = "skill-attempts.jsonl"
 
 SKILL_NAMES = ["Lumberjacking"]

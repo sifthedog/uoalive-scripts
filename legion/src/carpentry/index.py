@@ -4,22 +4,21 @@ from carpentry.config import (BANDS, BATCH_SIZE, BOX, BOX_PRESS_POLL, BOX_PRESS_
                               BUTTON_STRIDE, CATEGORY_BUTTON_TYPE, CATEGORY_NAMES, CONTAINER_RANGE,
                               CRAFT_POLL, CRAFT_SETTLE, CRAFT_TIMEOUT, CRAFT_TITLE,
                               CRAFT_TITLE_FRAGMENTS, CRAFT_TITLE_TEXT, DATA_PATH, DUMP_AT,
-                              GUMP_POLL, GUMP_TIMEOUT, HEARTBEAT_EVERY, ITEM_BUTTON_TYPE,
-                              JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS, LAST_TEN_LABEL, LOG_EVERY,
-                              MAKE_LAST_BUTTON, MATERIAL_GRAPHICS, MAX_CATEGORIES, MAX_CYCLES,
-                              MAX_DUMP_MISSES, MAX_EMPTY_MOVES, MAX_HELD, MAX_ITEM_PROBES,
-                              MAX_ITEM_ROWS, MAX_NO_MATERIAL, MAX_NO_TOOL, MAX_PICKS,
-                              MAX_THROTTLED, MAX_UNKNOWN, MAX_UNREADABLE_REPORTS, MIN_CRAFT_WOOD,
-                              MIN_SKILL, MOVE_DELAY, OPEN_DELAY, OUTCOME_TEXT, PATHFIND_TIMEOUT,
-                              PICK_TIMEOUT, PRODUCTS, PRODUCT_GRAPHICS, RECIPES, REFUND_POLL,
-                              REFUND_SETTLE, REGULAR_WOOD, RESTOCK_AT, RETURN_WRONG_WOOD,
-                              SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT, SAVING_TEXT, SKILL_NAMES,
-                              SKILL_POLL, SKILL_TIMEOUT, SOURCE_CHOICE, SOURCE_OPTIONS, STALL_STOP,
-                              STALL_WARN, STEP_DELAY, STOPPED, THROTTLE_BACKOFF,
+                              FETCH_POLL, FETCH_TIMEOUT, GUMP_POLL, GUMP_TIMEOUT, HEARTBEAT_EVERY,
+                              ITEM_BUTTON_TYPE, JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS,
+                              LAST_TEN_LABEL, LOG_EVERY, MAKE_LAST_BUTTON, MATERIAL_GRAPHICS,
+                              MAX_CATEGORIES, MAX_CYCLES, MAX_DUMP_MISSES, MAX_EMPTY_MOVES,
+                              MAX_HELD, MAX_ITEM_PROBES, MAX_ITEM_ROWS, MAX_NO_MATERIAL,
+                              MAX_NO_TOOL, MAX_PICKS, MAX_THROTTLED, MAX_UNKNOWN,
+                              MAX_UNREADABLE_REPORTS, MIN_CRAFT_WOOD, MIN_SKILL, MOVE_DELAY,
+                              OPEN_DELAY, OUTCOME_TEXT, PATHFIND_TIMEOUT, PICK_TIMEOUT, PRODUCTS,
+                              PRODUCT_GRAPHICS, RECIPES, REFUND_POLL, REFUND_SETTLE, REGULAR_WOOD,
+                              RESTOCK_AT, RETURN_WRONG_WOOD, SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT,
+                              SAVING_TEXT, SETUP, SKILL_NAMES, SKILL_POLL, SKILL_TIMEOUT,
+                              STALL_STOP, STALL_WARN, STEP_DELAY, STOPPED, THROTTLE_BACKOFF,
                               THROTTLE_BACKOFF_MAX, TOOL_GRAPHICS, TOOL_NAME_WORDS, TOO_HEAVY_TEXT,
                               UNREADABLE_TEXT_LIMIT, WOOD_COST, WOOD_HUES, WOOD_KINDS, WOOD_TYPE,
                               WOOD_TYPES)
-from uo.choice import Choice
 from uo.dump import Dump
 from uo.cost import cost_of, short_by
 from uo.craft import Crafter
@@ -33,10 +32,12 @@ from uo.materials import Materials
 from uo.record import attempt_log
 from uo.restock import Restock
 from uo.save import SaveWatch
+from uo.setup import Setup
 from uo.skill import SkillReader, find_skill_name, reading
 from uo.sources import Sources
-from uo.stages import band_for
+from uo.stages import band_for, band_rows
 from uo.stock import StockBook
+from uo.toolstore import ToolStore
 from uo.vitals import position_and_weight
 
 log = make_log("carpentry")
@@ -105,7 +106,14 @@ dump = Dump(sources, PRODUCT_GRAPHICS, {
     "move_delay": MOVE_DELAY,
     "keep_existing": True,
 }, log)
-source_choice = Choice(SOURCE_CHOICE, log, stop_reason)
+tool_store = ToolStore(tools, sources, {
+    "noun": "carpentry tools",
+    "pick_timeout": PICK_TIMEOUT,
+    "move_delay": MOVE_DELAY,
+    "fetch_timeout": FETCH_TIMEOUT,
+    "fetch_poll": FETCH_POLL,
+}, log)
+setup = Setup(SETUP, log, stop_reason)
 menu = CraftMenu(tools, {
     "stride": BUTTON_STRIDE,
     "category_type": CATEGORY_BUTTON_TYPE,
@@ -154,24 +162,39 @@ elif capped is not None:
     log(capped)
     API.Stop()
 
-if tools.serial() is None:
-    log("no carpentry tools in the pack")
+cap = skill.cap()
+
+
+def training_rows():
+    heading = "%s %.1f%s" % (skill_name, start,
+                             " / %.1f" % cap if cap is not None and cap > 0 else "")
+
+    return heading, band_rows(BANDS, start, lambda name: "%d wood" % WOOD_COST[name], MIN_SKILL)
+
+
+answers = setup.ask({
+    "table": training_rows,
+    "tools": tool_store.pick,
+    "tools_ready": lambda: tool_store.count() > 0,
+    "source": sources.pick_one,
+    "clear": sources.clear,
+    "unload": dump.pick_line,
+    "unload_ready": dump.picked,
+    "has_wood": lambda: wood.in_pack() > 0,
+    "unsold_ahead": None,
+})
+
+if answers is None:
     API.Stop()
-
-source = source_choice.ask(SOURCE_OPTIONS)
-sources.pick(["box"] if source == "box" else ["item", "mobile"])
-
-# A run that starts on the wood it is already carrying needed no cursor at all
-if len(sources.picked()) == 0 and wood.in_pack() == 0:
-    log("nothing picked and no wood in the pack")
-    API.Stop()
-
-dump.pick()
 
 if not dump.picked():
     log("nothing picked to unload into - the run ends once the pack holds %d products" % MAX_HELD)
 
-cap = skill.cap()
+# A picked tool container fills an empty pack before the first craft
+if (tools.find(FETCH_TIMEOUT, FETCH_POLL) is None
+        and not (tool_store.picked() and tool_store.fetch())):
+    log("no carpentry tools in the pack")
+    API.Stop()
 
 log("%s at %.1f%s, %s in the pack, %s"
     % (skill_name, start, "/%.1f" % cap if cap is not None and cap > 0 else "",
@@ -368,6 +391,10 @@ try:
         elif outcome == "noRow":
             stop = "could not find the SELECTIONS row for '%s'" % product
             break
+        elif outcome == "noTool" and tool_store.picked() and tool_store.fetch():
+            crafter.forget_last()
+            stall.progressed()
+            log("the tools ran out - fetched another")
         elif outcome in ("noTool", "noGump"):
             no_tool += 1
 
@@ -427,7 +454,7 @@ except Exception as error:
     if stop is None:
         stop = "threw - %s" % error
 finally:
-    recorder.close(skill.read())
+    recorder.close(skill.last())
 
 if API.Pathfinding():
     API.CancelPathfinding()

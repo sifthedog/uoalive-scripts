@@ -3,8 +3,8 @@ from uo.phrases import SAVE_DONE_TEXT, SAVING_TEXT, STOPPED, THROTTLED_TEXT
 from uo.timings import (HEARTBEAT_EVERY, LOG_EVERY, SAVE_POLL, SAVE_WAIT, STALL_STOP, STALL_WARN,
                         STEP_DELAY, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX)
 
-# One JSON object per attempt, for legion/skilldb.py. "" turns recording off. A bare name lands in
-# TazUO's working directory, not beside the script.
+# One JSON object per attempt, for legion/skilldb.py. "" turns recording off. A bare name lands
+# beside the script, in LegionScripts.
 DATA_PATH = "skill-attempts.jsonl"
 
 # GetSkill answers None for a name it does not know: the gump says "Bowcraft/Fletching", the skill
@@ -97,14 +97,9 @@ BOX_TAKE = 200
 BOX_PRESS_TIMEOUT = 3.0
 BOX_PRESS_POLL = 0.25
 
-# Answered by the gump at the start; a closed gump means chests and pack animals, as before the box
-SOURCE_CHOICE = {
-    "text": "Draw wood from the storage box, or from the chests and pack animals you point at?",
-    "hue": 996,
-    "poll": 0.5,
-    "timeout": 60.0,
-}
-SOURCE_OPTIONS = [("box", "Storage box"), ("containers", "Chests and animals")]
+# One tool is fetched at a time from the container the form picked; how long the pack has to show it
+FETCH_TIMEOUT = 3.0
+FETCH_POLL = 0.25
 
 # Every restock fills the pack to this
 BATCH_SIZE = 300
@@ -128,15 +123,9 @@ VENDORS = {
     "yumi": None,
 }
 
-# Answered by the gump at the start; ESC on the unload cursor and a closed gump both mean keep. Sell
-# still asks for the container once a band nobody buys from is ahead.
-OUTPUT_CHOICE = {
-    "text": "Sell what is made to the bowyer, unload it into a container, or keep it?",
-    "hue": 996,
-    "poll": 0.5,
-    "timeout": 60.0,
-}
-OUTPUT_OPTIONS = [("sell", "Sell"), ("unload", "Unload"), ("keep", "Keep")]
+TOOL_MODES = [("stop", "Stop the run"), ("fetch", "Fetch from a container")]
+OUTPUT_OPTIONS = [("sell", "Sell to the bowyer"), ("unload", "Unload into a container"),
+                  ("keep", "Keep")]
 
 # Products the run made before they are unloaded: every band under Unload, the unsold under Sell
 DUMP_AT = 10
@@ -146,6 +135,18 @@ MAX_HELD = 60
 
 # Unloads in a row that moved nothing before the run ends
 MAX_DUMP_MISSES = 3
+
+# The form the run is set up on. Closing it, Cancel, or no OK in the timeout ends the run.
+SETUP = {
+    "title": "Bowcraft",
+    "tool_noun": "fletcher's tools",
+    "tool_modes": TOOL_MODES,
+    "outputs": OUTPUT_OPTIONS,
+    "unsold_hint": "for what nobody buys - without one the run ends at %d unsold" % MAX_HELD,
+    "hue": 996,
+    "poll": 0.25,
+    "timeout": 600.0,
+}
 
 # The context entry first, matched by its text; the phrase for a menu with no such entry
 SELL_ENTRY = "sell"

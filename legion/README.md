@@ -29,12 +29,11 @@ repo targets the ClassicUO web client; nothing is shared between the two.
 2. Open **Legion Script** from the top menu and run it from the Script Manager.
 3. Answer the cursor. `tame.py` wants an animal, and another after each tame; `mining.py` and
    `mine-here.py` want your fire beetle; `lumberjack.py` wants your pack animals, one after another;
-   `arms-lore.py` wants the weapon; `bowcraft.py` draws a gump asking whether wood comes from the
-   storage box or from chests and pack animals, wants every one of those holding wood, or none if
-   you carry it, then draws a gump asking whether what it makes is sold, unloaded or
-   kept, wants the unload container if you press Unload, and under Sell wants it once a band nobody
-   buys from is ahead; `carpentry.py` wants the wood the same way, then the container to unload
-   into; `tinkering.py` draws the same gump and wants the container the same way;
+   `arms-lore.py` wants the weapon; `bowcraft.py` and `carpentry.py` draw a form: what happens when
+   the tools run out, the chests, storage box and pack animals holding wood, added one cursor at a
+   time, and whether what is made is sold, unloaded or kept, with a cursor for each container the
+   choices need, then OK; `tinkering.py` draws a gump asking whether what it makes is sold,
+   unloaded or kept, and wants the unload container if you press Unload;
    `inscription.py` wants the containers holding scrolls and reagents, then draws the same
    gump and wants the unload container if you press Unload; `bod.py`
    wants the deed; `inventory.py` wants the bag. `magery.py`, `mysticism.py`, `buffs.py`, `fishing.py` and `attack.py` raise none. ESC
@@ -176,6 +175,13 @@ What the typings do not say, learned on UOAlive. Script-specific notes sit under
   press reaches the script through `Gumps.AddControlOnClick(control, fn)` and only when it calls
   `API.ProcessCallbacks()`, which drains and returns. `gump.IsDisposed` goes true once it is
   closed, and `keepOpen=False` takes it down when the script stops.
+- **A form is more of the same.** `CreateGumpLabel` text cannot be changed once drawn;
+  `CreateGumpTTFLabel` answers a control with `SetText`, so every value that changes on screen is
+  one of those. `CreateGumpRadioButton`s sharing a group are exclusive and have no change
+  callback, so they are read with `GetIsChecked()` each slice; `CreateDropDown` answers
+  `GetSelectedIndex()`. `IsVisible` hides a control. Callbacks run on the script thread inside
+  `ProcessCallbacks`, so a button that needs the cursor only records the request and the loop
+  puts the cursor up on its next slice.
 - **Once the stop button is pressed every client call answers with nothing** rather than
   throwing: a wait polling a gump or the journal spins until its next `API.Pause`, and a thread
   the interrupt cannot reach is detached after two seconds and left running. A slice loop that
@@ -215,8 +221,8 @@ reports everything as unread is also crawling; fix the wording, not the timeout.
 ## The attempt log
 
 Thirteen scripts append one JSON line per attempt to `DATA_PATH`; `skilldb.py` turns them into two CSV
-tables. A bare filename lands in TazUO's working directory, so set an absolute path. `DATA_PATH = ""`
-records nothing. The file is opened and closed per row; a run that cannot write says so once and
+tables. A bare filename lands beside the running script, in the `LegionScripts` folder; a path with
+a folder in it is used as written. `DATA_PATH = ""` records nothing. The file is opened and closed per row; a run that cannot write says so once and
 carries on.
 
 Only what the shard clearly called a success or a failure is written. Throttles, dry mana, saves and
@@ -244,8 +250,9 @@ The row is buffered and written when the **next** attempt is recorded, carrying 
 starting value as its `to`, or at the end of the run: the client applies a gain some time after the
 shard grants it, so a value read at the outcome is usually still the old one, and one read a cycle
 later still misses a gain that lands during a pause. The close runs in a `finally`, so the stop
-button, ESC and a throw all write the last row; its `to` is `null` when the client had stopped
-answering by then. A row's `from` and `to` are therefore consecutive readings, and a gain that landed
+button, ESC and a throw all write the last row. The stop button leaves the client answering
+nothing, so that row ends on the latest reading that did arrive, one cycle old at most; its `to` is
+`null` only where no reading ever arrived. A row's `from` and `to` are therefore consecutive readings, and a gain that landed
 during a pause shows as a row moving more than 0.1. Carrying both values is what lets a scroll of
 alacrity's 0.2 to 0.5 jump be told from several ordinary gains.
 
@@ -257,7 +264,7 @@ alacrity's 0.2 to 0.5 jump be told from several ordinary gains.
 ```
 
 `id` is `serial/run-start-ms/sequence`. `used` is what the attempt was made with: the spell, the
-item made, the creature, the weapon read. `to` is `null` where the client was not answering.
+item made, the creature, the weapon read. `to` is `null` where no reading ever arrived.
 `consumed` appears only when something was measured, which the crafting scripts do; an
 `inscription.py` row carries one entry per kind spent, the blank scroll and each reagent. `gained`
 has the same shape and is what `fishing.py` writes: the catch as the pack received it, named off the
@@ -604,7 +611,7 @@ Every timing is in seconds except `PATHFIND_TIMEOUT`.
 | `STAND_RANGE` | `0` | How close the walk has to get to the planned tile. `0` stands on it |
 | `MIN_SPOT_ORE` | `1` | Ore tiles a footprint has to hold before its spot is worth walking to |
 | `PLAN_MAP` | `True` | Print the map to the journal once per plan |
-| `MAP_PATH` | `mining-map.jsonl` | Where read ground is kept between runs. A bare filename lands in TazUO's working directory; `""` keeps nothing |
+| `MAP_PATH` | `mining-map.jsonl` | Where read ground is kept between runs. A bare filename lands beside the script; `""` keeps nothing |
 | `PARKED_PATH` | `mining-parked.jsonl` | Where worked-out tiles and their return times are kept between runs. `""` keeps nothing |
 | `MINE_Z_RANGE` | `20` | How far above or below you a tile may sit. A face 40 z up passes the 2D test and the walk never closes |
 | `SCAN_RADIUS` / `SURVEY_ARTS` | `12` / `15` | How far a plan looks, and how many arts a dead end lists. The first plan reads every land tile in the box, one client frame each: 625 at `12` |
@@ -929,7 +936,8 @@ skill value moves, because the client applies the gain after the outcome line. A
 - **Stand within `FISH_RANGE` tiles of water**, on foot or mounted; it dismounts you.
 - **`GUARD_PHRASE` is said every run.** Set it to `""` if the guards are already set or you have
   none.
-- **`DATA_PATH` is relative to TazUO's working directory.** Set an absolute path.
+- **`DATA_PATH` lands beside the script** when it is a bare name, in `LegionScripts`; a path with a
+  folder in it is used as written.
 
 ### What to set
 
@@ -1363,35 +1371,45 @@ Everything below `STAGES` is `magery.py`'s block with the same defaults. These a
 
 Trains Bowcraft/Fletching from 30 to cap by making whatever the current band gains on. It pulls wood
 `BATCH_SIZE` at a time out of what you point at, logs and boards both, and sells what it made to the
-nearest bowyer, unloads it into the container you pick, or keeps it, as a gump at the start decides.
+nearest bowyer, unloads it into the container you pick, or keeps it, as the form at the start
+decides.
 
-**A gump asks first** whether the wood comes from the storage box or from chests and pack animals
-(`SOURCE_CHOICE`); a closed gump or no press in its timeout means chests and animals. The cursor
-then refuses the other kind, saying which the gump chose, and for the box it ends at the first one
-picked: one box holds everything, and its gump is read one box at a time.
+**The start-up form** (`SETUP`) has three rows and the band table, and an OK that checks them:
+
+- **Fletcher's tools**: when they run out, *Stop the run* (the default: `MAX_NO_TOOL` retries,
+  then the run ends, as before) or *Fetch from a container*, which shows a button for the cursor.
+  The picked container is named with how many tools it holds; one is fetched each time the pack
+  runs out, walking to it if need be. OK refuses a container holding none.
+- **Wood**: *Add a source* puts the cursor up for one chest, storage box or pack animal, and the
+  line under it lists each one picked with what it holds. Your own pack, a second storage box, a
+  thing that is neither, or one that does not open is refused with the reason on the message line.
+  *Clear* starts over. With nothing picked, the run works through the wood you carry, and OK
+  refuses an empty pack.
+- **What is made**: *Sell to the bowyer*, *Unload into a container* or *Keep*. Unload shows the
+  container button and OK refuses until one is picked; Sell shows it while a band nobody buys from
+  is ahead, and allows OK without one, in which case the run ends at `MAX_HELD` unsold.
+- **Training**: the band table below, the band the run starts in marked. Informational.
+
+Cancel, closing the form, or no OK in `SETUP.timeout` ends the run.
 
 **What you point at is a chest, a storage box or a pack animal.** An item is a container,
 remembered by where it stood; a creature is a pack animal, whose backpack is re-resolved every time
-because a pet walks. ESC with nothing picked works through the wood you carry.
+because a pet walks. One storage box holds everything, and its gump is read one box at a time.
 
 **The storage box** is the shard's resource box, known by `storage box` in its name (or an art in
 `BOX["graphics"]` when the name has not arrived). It has no inside: double-clicking it opens a gump
 listing one row per wood, `OakBoard 850`, `Board 18467`, with a button beside each that drops 100
-in the pack. Its stock is read off that text, live while the gump is up and as last seen once it
-closes, and a restock presses the row of the wood the menu is set to (`Board` is the plain wood)
+in the pack, boards first then logs, and a row only while the box holds any. Its stock is read off
+that text, live while the gump is up and as last seen once it closes, and a restock presses the row of the wood the menu is set to (`Board` is the plain wood)
 `BOX_TAKE` worth at a time, two presses by default, waiting up to `BOX_PRESS_TIMEOUT` for the pack
 to show each press before the next so none is counted late and pressed twice. `BOX["rows"]` names
 each label's kind and type. The button a row presses is read off the gump's own layout (`PacketGumpText`: the
 nearest button left of the label on its line), falling back to `BOX["buttons"]`, which is what
-`box-probe.py` read on UOAlive; a reply naming a button the gump lacks disconnects the client, so
+`box-probe.py` read on UOAlive with every board row up, since a missing row shifts the ids after
+it; a reply naming a button the gump lacks disconnects the client, so
 a row with no button either way is never pressed, and the run says so. A press that lands the
 wrong wood marks its row out of date and never presses it again. Wrong wood is not put back into
 a box, and a box cannot be unloaded into.
-
-**Then the gump**, with **Sell**, **Unload** and **Keep**. Unload asks for the container to unload
-into, a trash barrel or a chest; Sell asks for it too whenever a band nobody buys from is still
-ahead, which on the default table is every run that starts under cap, because the bowyer refuses a
-yumi. A closed gump, no press in `OUTPUT_CHOICE.timeout`, or ESC at the Unload cursor all mean keep.
 
 | Bowcraft | Makes | Sold to |
 | --- | --- | --- |
@@ -1480,7 +1498,9 @@ when `DATA_PATH` is set.
 ### Before you run it
 
 - **Bowcraft at `MIN_SKILL` or above**, and below the cap. The start-up line shows the cap.
-- **Fletcher's tools in your pack**, and spares.
+- **Fletcher's tools in your pack**, and spares - or a container of them picked on the form, from
+  which one is fetched each time the pack runs out. A bag inside the pack is opened first: the
+  client reads nothing out of one it has not seen inside this session.
 - **What you pick has to be reachable.** A container is pathfound to by its recorded spot, an animal
   by serial. Either one out of reach is skipped for that restock.
 - **The bowyer is found by tooltip as well as by name**: *Alger* is titled *the bowyer* only in the
@@ -1518,8 +1538,9 @@ when `DATA_PATH` is set.
 | `BATCH_SIZE` / `RESTOCK_AT` | `300` / `25` | What a restock fills to, and what triggers one |
 | `SELL_AT` | `10` | The band's products in the pack before a sell trip |
 | `VENDORS` | table | Per product: the noun for the log, and the titles matched on name and tooltip. `None` when nobody buys it |
-| `OUTPUT_CHOICE` / `OUTPUT_OPTIONS` | a sentence, three buttons | The gump at the start |
-| `SOURCE_CHOICE` / `SOURCE_OPTIONS` | a sentence, two buttons | The gump before the cursor: the storage box, or chests and animals |
+| `SETUP` | title, texts, `600.0` | The start-up form, and how long it waits for OK |
+| `TOOL_MODES` / `OUTPUT_OPTIONS` | stop, fetch / sell, unload, keep | The form's dropdown and radio buttons |
+| `FETCH_TIMEOUT` / `FETCH_POLL` | `3.0` / `0.25` | How long the pack has to show a fetched tool |
 | `DUMP_AT` / `MAX_HELD` | `10` / `60` | Products before an unload, and where a keeping run, or a Sell run with nowhere to put the unsold, ends |
 | `MAX_DUMP_MISSES` | `3` | Unloads in a row that moved nothing before the run ends |
 | `TOO_HEAVY_TEXT` | *That container cannot hold more weight* | The shard refusing a move for weight |
@@ -1580,8 +1601,11 @@ when `DATA_PATH` is set.
 - **`the pack holds 60 unsold and nothing was picked to unload into`**, or **`the pack holds 60 and
   nothing was picked to unload into`** on a keeping run: pick a container next time, or raise
   `MAX_HELD`.
-- **`keeping what is made`** when you meant to sell: the gump closed or timed out before a press;
-  raise `OUTPUT_CHOICE.timeout`.
+- **`the form was closed`** or **`nothing was pressed in 600s`**: the run ends without OK. Start it
+  again; raise `SETUP.timeout` if the picks take longer than that.
+- **`no fletcher's tools in the pack`** at the start with a tool container picked: the fetch moved
+  nothing in `FETCH_TIMEOUT`. Mid-run, **`fetched a tool from 'a wooden box', 3 left`** is the
+  refill; **`'a wooden box' has no fletcher's tools left`** hands over to `MAX_NO_TOOL`.
 - **`3 unloads in a row moved nothing`**: the container is full, locked down, or not a container.
 
 ### Notes
@@ -1691,9 +1715,10 @@ then counts toward `MAX_NO_MATERIAL`, since a menu set to another metal is the o
 
 ## carpentry.py
 
-Trains Carpentry from 0 to cap on the cheapest recipe each band still gains on. Wood is pulled from
-what you point at the way `bowcraft.py` does it, a chest, a storage box or a pack animal, and
-everything made goes into one more container you point at, since no vendor buys a deed. Everything under the loop is shared with `bowcraft.py`,
+Trains Carpentry from 0 to cap on the cheapest recipe each band still gains on. The same start-up
+form as `bowcraft.py`, without Sell: wood is pulled from the chests, storage box and pack animals
+you add, everything made goes into the container you pick under Unload, since no vendor buys a
+deed, or is kept, and the tools are fetched from a container or the run stops when they run out. Everything under the loop is shared with `bowcraft.py`,
 which is where the craft menu, the row walk and the outcomes are described.
 
 | Carpentry | Makes | Wood |
@@ -1734,8 +1759,7 @@ destroys it; a chest keeps it.
 - **A carpentry tool in your pack**, and spares. Saw, planes, nails, froe, inshave and scorp are
   known by art and by name; a hammer only by art, since a smith's hammer carries the word too.
 - **Wood in your pack or in what you pick.** Logs and boards both count; only `WOOD_TYPE` is spent.
-  A gump asks first whether the cursor takes the storage box or chests and pack animals; see
-  `bowcraft.py` for the box.
+  The form is `bowcraft.py`'s, and the storage box is described there.
 - **Something to unload into**, in reach: a trash barrel in the house is the usual answer.
 - **The display case needs 75 Tinkering** and ingots in the pack. It is the only row that gains
   past 119.7; without it the run stops there, refused for materials.
@@ -1757,7 +1781,8 @@ destroys it; a chest keeps it.
 | `BATCH_SIZE` / `RESTOCK_AT` | `300` / `40` | What a restock fills to, and what triggers one |
 | `BOX` / `BOX_TAKE` | `WOOD_BOX` / `200` | The storage box table shared with `bowcraft.py`, and what one restock draws from it |
 | `BOX_PRESS_TIMEOUT` / `BOX_PRESS_POLL` | `3.0` / `0.25` | How long the pack has to show a press, and how often it is read |
-| `SOURCE_CHOICE` / `SOURCE_OPTIONS` | a sentence, two buttons | The gump at the start: the storage box, or chests and animals |
+| `SETUP` / `TOOL_MODES` / `OUTPUT_OPTIONS` | as `bowcraft.py`, unload and keep | The start-up form |
+| `FETCH_TIMEOUT` / `FETCH_POLL` | `3.0` / `0.25` | How long the pack has to show a fetched tool |
 | `MATERIAL_GRAPHICS` | ingots | Non-wood a craft can spend, for the consumed rows |
 | `DATA_PATH` | `skill-attempts.jsonl` | Where each craft is appended, with what it spent. `""` records nothing |
 
@@ -2128,7 +2153,7 @@ sorted, and a repeated key keeps the last value.
 
 | Setting | Default | What it is for |
 | --- | --- | --- |
-| `DATA_PATH` | `bag-items.jsonl` | Where each row is appended. `""` records nothing. A bare name lands in TazUO's working directory |
+| `DATA_PATH` | `bag-items.jsonl` | Where each row is appended. `""` records nothing. A bare name lands beside the script |
 | `RECURSIVE` | `True` | Open and read the bags inside the bag |
 | `MAX_CONTAINERS` | `50` | How many containers one run opens, the target included |
 | `OPEN_DELAY` | `0.6` | Seconds after opening a container before it is listed |

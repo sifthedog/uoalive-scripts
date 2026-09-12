@@ -2321,6 +2321,33 @@ class CraftMenu(object):
         return order if known is None else [button for button in order if button in known]
 
 
+# src/uo/tool.py
+# Books carry the client's container flag, so the flag alone opens every spellbook in the pack
+NOT_BAG_GRAPHICS = set([
+    0x0EFA,  # spellbook
+    0x2253,  # necromancer spellbook
+    0x2252,  # book of chivalry
+    0x238C,  # book of bushido
+    0x23A0,  # book of ninjitsu
+    0x2D50,  # spellweaving spellbook
+    0x2D9D,  # mysticism spellbook
+    0x22C5,  # runebook
+    0x9C16,  # runic atlas
+    0x2259,  # bulk order book
+])
+NOT_BAG_NAMES = ["spellbook", "runebook", "book", "atlas"]
+
+
+def is_bag(item):
+    if not getattr(item, "IsContainer", False) or getattr(item, "Opened", False):
+        return False
+
+    if item.Graphic in NOT_BAG_GRAPHICS:
+        return False
+
+    return not word_in(item.Name, NOT_BAG_NAMES)
+
+
 # src/uo/crafttool.py
 class CraftTool(object):
     """A crafting tool, used out of the pack rather than equipped."""
@@ -2331,6 +2358,7 @@ class CraftTool(object):
         self._name_words = name_words
         self._log = log
         self._prefer = prefer or set()
+        self._opened = set()
 
     def is_tool(self, item):
         if item is None:
@@ -2363,6 +2391,35 @@ class CraftTool(object):
 
             if found is None:
                 found = item.Serial
+
+        return found
+
+    # A bag the client has not opened this session reads as empty, whatever is in it
+    def open_bags(self):
+        bags = [item for item in pack_contents()
+                if is_bag(item) and item.Serial not in self._opened]
+
+        if not bags:
+            return False
+
+        # A cursor left up would take the double-click as its answer
+        if API.HasTarget():
+            API.CancelTarget()
+
+        self._log("opening %d bag(s) to look inside for a %s" % (len(bags), self._noun))
+
+        for bag in bags:
+            self._opened.add(bag.Serial)
+            API.UseObject(bag.Serial)
+
+        return True
+
+    def find(self, timeout, poll):
+        found = self.serial()
+
+        if found is None and self.open_bags():
+            settled(timeout, poll, lambda: self.serial() is not None)
+            found = self.serial()
 
         return found
 
@@ -2494,6 +2551,7 @@ class SkillReader(object):
     def __init__(self, name):
         self._name = name
         self._seen = False
+        self._last = None
 
     def read(self):
         skill = API.GetSkill(self._name)
@@ -2507,8 +2565,16 @@ class SkillReader(object):
             return None
 
         self._seen = True
+        self._last = value
 
         return value
+
+    # Once the stop button is pressed the client answers nothing, so the last row of a run would
+    # end unknown; the latest reading that did arrive is never further off than that
+    def last(self):
+        value = self.read()
+
+        return value if value is not None else self._last
 
     def name(self):
         skill = API.GetSkill(self._name)

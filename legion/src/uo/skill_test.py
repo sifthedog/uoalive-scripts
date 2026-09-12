@@ -113,3 +113,27 @@ class FindSkillNameTest(unittest.TestCase):
 
     def test_none_when_nothing_answers(self):
         self.assertIsNone(find_skill_name(["Blacksmithy"]))
+
+
+class LastReadingTest(unittest.TestCase):
+    def setUp(self):
+        self.api = install()
+        self.reader = SkillReader("Magery")
+
+    def test_last_is_the_live_reading_while_the_client_answers(self):
+        self.api.skills["Magery"] = skill(41.2)
+
+        self.assertEqual(self.reader.last(), 41.2)
+
+    def test_last_falls_back_to_the_latest_reading_once_the_client_goes_quiet(self):
+        self.api.skills["Magery"] = skill(41.2)
+        self.reader.read()
+        self.api.skills["Magery"] = skill(41.3)
+        self.reader.read()
+        del self.api.skills["Magery"]
+
+        self.assertIsNone(self.reader.read())
+        self.assertEqual(self.reader.last(), 41.3)
+
+    def test_last_is_none_when_nothing_was_ever_read(self):
+        self.assertIsNone(self.reader.last())

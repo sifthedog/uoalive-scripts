@@ -44,3 +44,25 @@ class CraftToolTest(unittest.TestCase):
         self.api.hold(item(serial=8, graphic=0x1439, name="war hammer"))
 
         self.assertIsNone(self.tool.serial())
+
+    def test_find_opens_the_bags_in_the_pack_before_giving_up(self):
+        bag = item(serial=9, graphic=0x0E76, name="a bag", is_container=True)
+        self.api.hold(bag)
+
+        def use(serial):
+            self.api.used.append(serial)
+            self.api.hold(bag, item(serial=5, graphic=HAMMER))
+
+        self.api.UseObject = use
+
+        self.assertEqual(self.tool.find(0.5, 0.1), 5)
+        self.assertEqual(self.api.used, [9])
+        self.assertIn("opening 1 bag(s)", self.said[-1])
+
+    def test_find_opens_each_bag_once_and_skips_books(self):
+        self.api.hold(item(serial=9, graphic=0x0E76, name="a bag", is_container=True),
+                      item(serial=10, graphic=0x0EFA, name="spellbook", is_container=True))
+
+        self.assertIsNone(self.tool.find(0.2, 0.1))
+        self.assertIsNone(self.tool.find(0.2, 0.1))
+        self.assertEqual(self.api.used, [9])

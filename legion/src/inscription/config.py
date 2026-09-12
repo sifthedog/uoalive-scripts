@@ -2,8 +2,8 @@ from uo.phrases import SAVE_DONE_TEXT, SAVING_TEXT, STOPPED, THROTTLED_TEXT, UNS
 from uo.timings import (HEARTBEAT_EVERY, LOG_EVERY, SAVE_POLL, SAVE_WAIT, STALL_STOP, STALL_WARN,
                         STEP_DELAY, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX)
 
-# One JSON object per attempt, for legion/skilldb.py. "" turns recording off. A bare name lands in
-# TazUO's working directory, not beside the script.
+# One JSON object per attempt, for legion/skilldb.py. "" turns recording off. A bare name lands
+# beside the script, in LegionScripts.
 DATA_PATH = "skill-attempts.jsonl"
 
 SKILL_NAMES = ["Inscription", "Inscribe"]

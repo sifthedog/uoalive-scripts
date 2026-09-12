@@ -10,7 +10,7 @@ PICKAXE_NAMES = ["pickaxe", "pickaxes"]
 SPARE_BAG_SERIAL = None
 
 # Where each swing and each smelt is appended, while Mining is below its cap. A bare filename lands
-# in TazUO's working directory; "" records nothing
+# beside the script; "" records nothing
 DATA_PATH = "skill-attempts.jsonl"
 
 SKILL_NAMES = ["Mining"]
@@ -18,7 +18,7 @@ SKILL_TIMEOUT = 5.0
 SKILL_POLL = 0.25
 
 # JSON Lines, one coordinate per line, read whole at the start and appended as ground is read. A
-# bare filename lands in TazUO's working directory; "" keeps nothing between runs
+# bare filename lands beside the script; "" keeps nothing between runs
 MAP_PATH = "mining-map.jsonl"
 
 # The worked-out tiles and when they come back, so a restart does not walk them again

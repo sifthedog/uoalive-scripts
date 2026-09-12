@@ -218,8 +218,8 @@ THROTTLED_TEXT = [
 
 
 # src/fishing/config.py
-# One JSON object per cast, for legion/skilldb.py. "" turns recording off. A bare name lands in
-# TazUO's working directory, not beside the script.
+# One JSON object per cast, for legion/skilldb.py. "" turns recording off. A bare name lands
+# beside the script, in LegionScripts.
 DATA_PATH = "skill-attempts.jsonl"
 
 SKILL_NAMES = ["Fishing"]
@@ -355,6 +355,47 @@ def diff_counts(before, after):
     return gained, lost
 
 
+# src/uo/retry.py
+def settled(timeout, poll, landed):
+    waited = 0.0
+
+    while waited < timeout:
+        API.Pause(poll)
+        waited += poll
+
+        if landed():
+            return True
+
+    return False
+
+
+# src/uo/tool.py
+# Books carry the client's container flag, so the flag alone opens every spellbook in the pack
+NOT_BAG_GRAPHICS = set([
+    0x0EFA,  # spellbook
+    0x2253,  # necromancer spellbook
+    0x2252,  # book of chivalry
+    0x238C,  # book of bushido
+    0x23A0,  # book of ninjitsu
+    0x2D50,  # spellweaving spellbook
+    0x2D9D,  # mysticism spellbook
+    0x22C5,  # runebook
+    0x9C16,  # runic atlas
+    0x2259,  # bulk order book
+])
+NOT_BAG_NAMES = ["spellbook", "runebook", "book", "atlas"]
+
+
+def is_bag(item):
+    if not getattr(item, "IsContainer", False) or getattr(item, "Opened", False):
+        return False
+
+    if item.Graphic in NOT_BAG_GRAPHICS:
+        return False
+
+    return not word_in(item.Name, NOT_BAG_NAMES)
+
+
 # src/uo/crafttool.py
 class CraftTool(object):
     """A crafting tool, used out of the pack rather than equipped."""
@@ -365,6 +406,7 @@ class CraftTool(object):
         self._name_words = name_words
         self._log = log
         self._prefer = prefer or set()
+        self._opened = set()
 
     def is_tool(self, item):
         if item is None:
@@ -397,6 +439,35 @@ class CraftTool(object):
 
             if found is None:
                 found = item.Serial
+
+        return found
+
+    # A bag the client has not opened this session reads as empty, whatever is in it
+    def open_bags(self):
+        bags = [item for item in pack_contents()
+                if is_bag(item) and item.Serial not in self._opened]
+
+        if not bags:
+            return False
+
+        # A cursor left up would take the double-click as its answer
+        if API.HasTarget():
+            API.CancelTarget()
+
+        self._log("opening %d bag(s) to look inside for a %s" % (len(bags), self._noun))
+
+        for bag in bags:
+            self._opened.add(bag.Serial)
+            API.UseObject(bag.Serial)
+
+        return True
+
+    def find(self, timeout, poll):
+        found = self.serial()
+
+        if found is None and self.open_bags():
+            settled(timeout, poll, lambda: self.serial() is not None)
+            found = self.serial()
 
         return found
 
@@ -495,20 +566,6 @@ def skill_capped(name):
     return clause
 
 
-# src/uo/retry.py
-def settled(timeout, poll, landed):
-    waited = 0.0
-
-    while waited < timeout:
-        API.Pause(poll)
-        waited += poll
-
-        if landed():
-            return True
-
-    return False
-
-
 # src/uo/mount.py
 def dismount(attempts, timeout, poll):
     if not API.Player.IsMounted:
@@ -521,6 +578,22 @@ def dismount(attempts, timeout, poll):
             return True
 
     return False
+
+
+# src/uo/paths.py
+# A bare name lands in TazUO's working directory; beside the script is where anyone looks for it.
+# A name with a folder in it, relative or absolute, is left as written.
+def beside_script(name):
+    if not name or "/" in name or "\\" in name:
+        return name
+
+    script = getattr(API, "ScriptPath", None) or ""
+    cut = max(script.rfind("/"), script.rfind("\\"))
+
+    if cut < 0:
+        return name
+
+    return script[:cut + 1] + name
 
 
 # src/uo/record.py
@@ -616,7 +689,7 @@ class AttemptLog(object):
             "gained": list(gained) if gained else [],
         }
 
-    # The end of the run. skill_to is None where the client had stopped answering, and the row is
+    # The end of the run. skill_to is None only where no reading ever arrived, and the row is
     # written all the same with its end unknown rather than lost with the run
     def close(self, skill_to):
         self._flush(skill_to)
@@ -676,7 +749,8 @@ def attempt_log(path, skill, log):
     if me is None and path:
         log("the client is not reporting the character - rows will not name it")
 
-    return AttemptLog(path, getattr(me, "Name", ""), getattr(me, "Serial", 0), skill, log)
+    return AttemptLog(beside_script(path), getattr(me, "Name", ""), getattr(me, "Serial", 0),
+                      skill, log)
 
 
 # src/uo/skill.py
@@ -705,6 +779,7 @@ class SkillReader(object):
     def __init__(self, name):
         self._name = name
         self._seen = False
+        self._last = None
 
     def read(self):
         skill = API.GetSkill(self._name)
@@ -718,8 +793,16 @@ class SkillReader(object):
             return None
 
         self._seen = True
+        self._last = value
 
         return value
+
+    # Once the stop button is pressed the client answers nothing, so the last row of a run would
+    # end unknown; the latest reading that did arrive is never further off than that
+    def last(self):
+        value = self.read()
+
+        return value if value is not None else self._last
 
     def name(self):
         skill = API.GetSkill(self._name)
@@ -900,7 +983,7 @@ def record_cast(recorder, skill, start, outcome, caught, before):
 
     recorder.record(start, outcome, "fishing pole", gained=rows)
     settled(GAIN_SETTLE, GAIN_POLL, lambda: skill.read() != start)
-    recorder.close(skill.read())
+    recorder.close(skill.last())
 
 
 def fish():

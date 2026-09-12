@@ -356,7 +356,7 @@ try:
         # be the one the next scan picks straight back up
         hunt.leave_out(quarry["serial"])
 finally:
-    recorder.close(skill.read())
+    recorder.close(skill.last())
 
 reason = stop or "the session ended"
 

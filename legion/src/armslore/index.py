@@ -82,7 +82,7 @@ try:
 
         API.Pause(DELAY)
 finally:
-    recorder.close(skill.read())
+    recorder.close(skill.last())
 
 ended = skill.read()
 

@@ -1,3 +1,4 @@
+from uo.paths import beside_script
 from uo.clock import now
 from uo.entity import hex_of, player
 
@@ -117,7 +118,7 @@ class AttemptLog(object):
             "gained": list(gained) if gained else [],
         }
 
-    # The end of the run. skill_to is None where the client had stopped answering, and the row is
+    # The end of the run. skill_to is None only where no reading ever arrived, and the row is
     # written all the same with its end unknown rather than lost with the run
     def close(self, skill_to):
         self._flush(skill_to)
@@ -177,4 +178,5 @@ def attempt_log(path, skill, log):
     if me is None and path:
         log("the client is not reporting the character - rows will not name it")
 
-    return AttemptLog(path, getattr(me, "Name", ""), getattr(me, "Serial", 0), skill, log)
+    return AttemptLog(beside_script(path), getattr(me, "Name", ""), getattr(me, "Serial", 0),
+                      skill, log)

@@ -3,8 +3,8 @@ from uo.phrases import SAVE_DONE_TEXT, SAVING_TEXT, STOPPED, THROTTLED_TEXT
 from uo.timings import (HEARTBEAT_EVERY, LOG_EVERY, SAVE_POLL, SAVE_WAIT, STALL_STOP, STALL_WARN,
                         STEP_DELAY, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX)
 
-# One JSON object per attempt, for legion/skilldb.py. "" turns recording off. A bare name lands in
-# TazUO's working directory, not beside the script.
+# One JSON object per attempt, for legion/skilldb.py. "" turns recording off. A bare name lands
+# beside the script, in LegionScripts.
 DATA_PATH = "skill-attempts.jsonl"
 
 SKILL_NAMES = ["Carpentry"]
@@ -147,14 +147,12 @@ BOX_TAKE = 200
 BOX_PRESS_TIMEOUT = 3.0
 BOX_PRESS_POLL = 0.25
 
-# Answered by the gump at the start; a closed gump means chests and pack animals, as before the box
-SOURCE_CHOICE = {
-    "text": "Draw wood from the storage box, or from the chests and pack animals you point at?",
-    "hue": 996,
-    "poll": 0.5,
-    "timeout": 60.0,
-}
-SOURCE_OPTIONS = [("box", "Storage box"), ("containers", "Chests and animals")]
+# One tool is fetched at a time from the container the form picked; how long the pack has to show it
+FETCH_TIMEOUT = 3.0
+FETCH_POLL = 0.25
+
+TOOL_MODES = [("stop", "Stop the run"), ("fetch", "Fetch from a container")]
+OUTPUT_OPTIONS = [("unload", "Unload into a container"), ("keep", "Keep")]
 
 # Every restock fills the pack to this
 BATCH_SIZE = 300
@@ -168,6 +166,18 @@ MAX_HELD = 60
 
 # Unloads in a row that moved nothing before the run ends
 MAX_DUMP_MISSES = 3
+
+# The form the run is set up on. Closing it, Cancel, or no OK in the timeout ends the run.
+SETUP = {
+    "title": "Carpentry",
+    "tool_noun": "carpentry tools",
+    "tool_modes": TOOL_MODES,
+    "outputs": OUTPUT_OPTIONS,
+    "unsold_hint": None,
+    "hue": 996,
+    "poll": 0.25,
+    "timeout": 600.0,
+}
 
 # A backstop only - the selection ends when you press ESC
 MAX_PICKS = 8

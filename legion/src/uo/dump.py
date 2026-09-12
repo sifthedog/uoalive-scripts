@@ -32,10 +32,33 @@ class Dump(object):
     def name(self):
         return self._sources.name_of(self._entry) if self._entry is not None else "nothing"
 
-    def pick(self):
-        self._log("target the container to unload into, a trash barrel or a chest - ESC to keep "
-                  "everything in the pack")
+    # Sell watches only what nobody buys; the kept set was read against every product, a superset
+    def limit_to(self, graphics):
+        self._graphics = graphics
 
+    def line(self):
+        return "'%s' %s" % (self.name(), hex_of(self._entry["serial"]))
+
+    def _refusal(self, serial):
+        if serial == API.Backpack:
+            return "that is your own pack"
+
+        entry = self._sources.entry_for(serial)
+
+        if entry is None:
+            return "%s is neither a container nor a creature" % hex_of(serial)
+
+        if entry["kind"] == "box":
+            return ("'%s' is a storage box, which takes nothing you made - pick a barrel or a "
+                    "chest" % self._sources.name_of(entry))
+
+        if self._sources.open(entry) is None:
+            return "'%s' has no backpack to unload into" % self._sources.name_of(entry)
+
+        return None
+
+    # (the picked container's line, None), (None, why it was refused), or (None, None) for ESC
+    def pick_line(self):
         if API.HasTarget():
             API.CancelTarget()
 
@@ -45,35 +68,27 @@ class Dump(object):
             API.CancelTarget()
 
         if not serial:
-            return None
+            return None, None
 
-        if serial == API.Backpack:
-            self._log("that is your own pack")
+        refusal = self._refusal(serial)
 
-            return None
+        if refusal is not None:
+            self._log(refusal)
 
-        entry = self._sources.entry_for(serial)
+            return None, refusal
 
-        if entry is None:
-            self._log("%s is neither a container nor a creature" % hex_of(serial))
+        self._entry = self._sources.entry_for(serial)
+        self._log("unloading into %s" % self.line())
 
-            return None
+        return self.line(), None
 
-        if entry["kind"] == "box":
-            self._log("'%s' is a storage box, which takes nothing you made - pick a barrel or a "
-                      "chest" % self._sources.name_of(entry))
+    def pick(self):
+        self._log("target the container to unload into, a trash barrel or a chest - ESC to keep "
+                  "everything in the pack")
 
-            return None
+        line, _refusal = self.pick_line()
 
-        if self._sources.open(entry) is None:
-            self._log("'%s' has no backpack to unload into" % self._sources.name_of(entry))
-
-            return None
-
-        self._entry = entry
-        self._log("unloading into '%s' %s" % (self.name(), hex_of(serial)))
-
-        return entry
+        return self._entry if line is not None else None
 
     def run(self):
         items = self.items()

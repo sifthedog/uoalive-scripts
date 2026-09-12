@@ -1,11 +1,13 @@
 import json
 
+from uo.paths import beside_script
+
 
 class Store(object):
     """A JSON Lines file, read whole and appended a row at a time."""
 
     def __init__(self, path, log):
-        self._path = path or ""
+        self._path = beside_script(path or "")
         self._log = log
         self._complained = False
 

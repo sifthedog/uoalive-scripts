@@ -97,8 +97,77 @@ class Sources(object):
 
         return " or ".join(KIND_NOUNS[kind] for kind in allowed if kind in KIND_NOUNS)
 
-    # Every kind by default; a list of kinds, as the gump at the start chose, refuses the others.
-    # One storage box is the whole selection: its gump is one at a time, and one holds everything.
+    def clear(self):
+        del self._picked[:]
+
+    def line_for(self, entry):
+        other = self._wood.other_report(self.other_counts(entry))
+
+        return "'%s' %s, %s in it%s" % (self.name_of(entry), hex_of(entry["serial"]),
+                                        self._wood.report(self.counts(entry)),
+                                        "" if not other else " (%s it will not use)" % other)
+
+    def _refusal(self, serial, allowed):
+        me = player()
+
+        if serial == API.Backpack or (me is not None and serial == me.Serial):
+            return "your own pack is always counted, no need to pick it"
+
+        if serial in [entry["serial"] for entry in self._picked]:
+            return "%s is already picked" % hex_of(serial)
+
+        entry = self.entry_for(serial)
+
+        if entry is None:
+            return "%s is neither a container nor a creature" % hex_of(serial)
+
+        if allowed is not None and entry["kind"] not in allowed:
+            return ("'%s' is a %s - the gump chose the %s"
+                    % (self.name_of(entry), KIND_NOUNS[entry["kind"]], self._noun_of(allowed)))
+
+        # One storage box holds everything, and its gump is read one box at a time
+        if entry["kind"] == "box" and any(held["kind"] == "box" for held in self._picked):
+            return "'%s' is a second storage box - one holds everything" % self.name_of(entry)
+
+        return None
+
+    # One cursor, one answer: (the picked entry's line, None), (None, why it was refused), or
+    # (None, None) for ESC
+    def pick_one(self, allowed=None):
+        if API.HasTarget():
+            API.CancelTarget()
+
+        serial = API.RequestTarget(self._config["pick_timeout"])
+
+        if API.HasTarget():
+            API.CancelTarget()
+
+        if not serial:
+            return None, None
+
+        refusal = self._refusal(serial, allowed)
+
+        if refusal is not None:
+            self._log(refusal)
+
+            return None, refusal
+
+        entry = self.entry_for(serial)
+
+        # Opened now, while it is in reach
+        if self.open(entry) is None:
+            refusal = "'%s' did not open" % self.name_of(entry)
+            self._log(refusal)
+
+            return None, refusal
+
+        self._picked.append(entry)
+        line = self.line_for(entry)
+        self._log("picked %s" % line)
+
+        return line, None
+
+    # Every kind by default; a list of kinds, as the gump at the start chose, refuses the others
     def pick(self, allowed=None):
         single = allowed == ["box"]
 
@@ -108,53 +177,14 @@ class Sources(object):
             self._log("target every %s holding %s, ESC when done"
                       % (self._noun_of(allowed), self._wood.noun()))
 
-        me = player()
-        mine = me.Serial if me is not None else None
-
         for _pick in range(self._config["max_picks"]):
-            if API.HasTarget():
-                API.CancelTarget()
-
-            serial = API.RequestTarget(self._config["pick_timeout"])
+            line, refusal = self.pick_one(allowed)
 
             # ESC or a timed-out cursor, either ends the selection
-            if not serial:
+            if line is None and refusal is None:
                 break
 
-            if serial == API.Backpack or (mine is not None and serial == mine):
-                self._log("your own pack is always counted, no need to pick it")
-                continue
-
-            if serial in [entry["serial"] for entry in self._picked]:
-                continue
-
-            entry = self.entry_for(serial)
-
-            if entry is None:
-                self._log("%s is neither a container nor a creature" % hex_of(serial))
-                continue
-
-            if allowed is not None and entry["kind"] not in allowed:
-                self._log("'%s' is a %s - the gump chose the %s"
-                          % (self.name_of(entry), KIND_NOUNS[entry["kind"]],
-                             self._noun_of(allowed)))
-                continue
-
-            # Opened now, while it is in reach
-            if self.open(entry) is None:
-                self._log("'%s' did not open" % self.name_of(entry))
-                continue
-
-            self._picked.append(entry)
-
-            other = self._wood.other_report(self.other_counts(entry))
-
-            self._log("picked '%s' %s, %s in it%s"
-                      % (self.name_of(entry), hex_of(serial),
-                         self._wood.report(self.counts(entry)),
-                         "" if not other else " (%s it will not use)" % other))
-
-            if single:
+            if line is not None and single:
                 break
 
         if API.HasTarget():

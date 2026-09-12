@@ -373,7 +373,7 @@ except Exception as error:
     if stop is None:
         stop = "threw - %s" % error
 finally:
-    recorder.close(skill.read())
+    recorder.close(skill.last())
 
 if API.HasTarget():
     API.CancelTarget()

@@ -37,11 +37,13 @@ def layout_buttons(packet, labels):
 
     found = {}
 
+    lowered = [string.lower() for string in strings]
+
     for label in labels:
-        if label not in strings:
+        if label.lower() not in lowered:
             continue
 
-        spot = texts.get(strings.index(label))
+        spot = texts.get(lowered.index(label.lower()))
 
         if spot is None:
             continue
@@ -59,6 +61,7 @@ class StorageBox(object):
 
     def __init__(self, table, config, log):
         self._table = table
+        self._rows = dict((label.lower(), label) for label in table["rows"])
         self._config = config
         self._log = log
         self._id = 0
@@ -120,18 +123,20 @@ class StorageBox(object):
 
         return found
 
+    # Keyed by the table's spelling of a label, whatever case the gump shows it in
     def _parse(self, gump):
         rows = {}
         tokens = untagged(API.GetGumpContents(gump) or "").split()
 
         for index in range(1, len(tokens)):
             if tokens[index].isdigit():
-                rows[tokens[index - 1]] = int(tokens[index])
+                label = tokens[index - 1]
 
-        for label in sorted(rows):
-            if label not in self._table["rows"]:
-                self._say_once(("row", label),
-                               "the box lists '%s', which the BOX rows do not name" % label)
+                if label.lower() in self._rows:
+                    rows[self._rows[label.lower()]] = int(tokens[index])
+                else:
+                    self._say_once(("row", label.lower()),
+                                   "the box lists '%s', which the BOX rows do not name" % label)
 
         return rows
 
@@ -173,7 +178,7 @@ class StorageBox(object):
         counts = {}
 
         for label in rows:
-            if label in self._table["rows"] and self._type_of(label) != wanted and rows[label] > 0:
+            if self._type_of(label) != wanted and rows[label] > 0:
                 name = self._type_of(label)
                 counts[name] = counts.get(name, 0) + rows[label]
 

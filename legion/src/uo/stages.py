@@ -36,3 +36,21 @@ def band_for(bands, value):
             return product
 
     return None
+
+
+def _edge(value):
+    return ("%.1f" % value).replace(".0", "") if value is not None else "cap"
+
+
+# One row per band for the form: the range, the product, a third column, and which is current.
+# The first row starts where the script starts, which the table itself does not say.
+def band_rows(bands, value, describe, floor):
+    rows = []
+    current = band_for(bands, value)
+
+    for ceiling, product in bands:
+        span = "%s - %s" % (_edge(floor), _edge(ceiling))
+        rows.append(("%s  %s  %s" % (span, product, describe(product)), product == current))
+        floor = ceiling
+
+    return rows

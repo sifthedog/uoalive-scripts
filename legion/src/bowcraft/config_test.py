@@ -1,7 +1,7 @@
 import unittest
 
-from bowcraft.config import (BANDS, OUTCOME_TEXT, OUTPUT_CHOICE, OUTPUT_OPTIONS, PRODUCTS, RECIPES,
-                             VENDORS)
+from bowcraft.config import (BANDS, OUTCOME_TEXT, OUTPUT_OPTIONS, PRODUCTS, RECIPES, SETUP,
+                             TOOL_MODES, VENDORS)
 from uo.stages import band_for
 
 
@@ -36,7 +36,9 @@ class OutcomeOrderTest(unittest.TestCase):
         self.assertEqual(names[-1], "throttled")
 
 
-class OutputChoiceTest(unittest.TestCase):
-    def test_every_button_answers_with_a_key_the_loop_branches_on(self):
+class SetupTest(unittest.TestCase):
+    def test_every_choice_answers_with_a_key_the_loop_branches_on(self):
         self.assertEqual([key for key, _caption in OUTPUT_OPTIONS], ["sell", "unload", "keep"])
-        self.assertEqual(sorted(OUTPUT_CHOICE), ["hue", "poll", "text", "timeout"])
+        self.assertEqual([key for key, _caption in TOOL_MODES], ["stop", "fetch"])
+        self.assertEqual(sorted(SETUP), ["hue", "outputs", "poll", "timeout", "title",
+                                         "tool_modes", "tool_noun", "unsold_hint"])

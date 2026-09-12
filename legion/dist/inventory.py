@@ -87,6 +87,22 @@ def hue_of(item):
     return getattr(item, "Hue", 0) or 0
 
 
+# src/uo/paths.py
+# A bare name lands in TazUO's working directory; beside the script is where anyone looks for it.
+# A name with a folder in it, relative or absolute, is left as written.
+def beside_script(name):
+    if not name or "/" in name or "\\" in name:
+        return name
+
+    script = getattr(API, "ScriptPath", None) or ""
+    cut = max(script.rfind("/"), script.rfind("\\"))
+
+    if cut < 0:
+        return name
+
+    return script[:cut + 1] + name
+
+
 # src/uo/record.py
 # Written by hand rather than with json.dumps, so the key order stays the one the README shows
 def quoted(text):
@@ -303,7 +319,7 @@ class Sweep(object):
     """
 
     def __init__(self, path, character, config, log, append=None):
-        self._path = path or ""
+        self._path = beside_script(path or "")
         self._character = character or ""
         self._config = config
         self._log = log

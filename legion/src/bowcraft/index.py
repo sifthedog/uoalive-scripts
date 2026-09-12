@@ -4,27 +4,25 @@ from bowcraft.config import (BANDS, BATCH_SIZE, BOX, BOX_PRESS_POLL, BOX_PRESS_T
                              BUTTON_STRIDE, CATEGORY_BUTTON_TYPE, CATEGORY_NAMES, CONTAINER_RANGE,
                              CONTEXT_TIMEOUT, CRAFT_POLL, CRAFT_SETTLE, CRAFT_TIMEOUT, CRAFT_TITLE,
                              CRAFT_TITLE_FRAGMENTS, CRAFT_TITLE_TEXT, DATA_PATH, DUMP_AT,
-                             GUMP_POLL, GUMP_TIMEOUT, HEARTBEAT_EVERY, ITEM_BUTTON_TYPE,
-                             JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS, LAST_TEN_LABEL, LOG_EVERY,
-                             MAKE_LAST_BUTTON, MATERIAL_GRAPHICS, MAX_CATEGORIES, MAX_CYCLES,
-                             MAX_DUMP_MISSES, MAX_EMPTY_MOVES, MAX_HELD, MAX_ITEM_PROBES,
-                             MAX_ITEM_ROWS, MAX_NO_MATERIAL, MAX_NO_TOOL, MAX_PICKS,
-                             MAX_SELL_MISSES, MAX_THROTTLED, MAX_UNKNOWN, MAX_UNREADABLE_REPORTS,
-                             MIN_CRAFT_WOOD, MIN_SKILL, MOVE_DELAY, OPEN_DELAY, OPL_WAIT,
-                             OUTCOME_TEXT, OUTPUT_CHOICE, OUTPUT_OPTIONS, PATHFIND_TIMEOUT,
-                             PICK_TIMEOUT, PRODUCTS, PRODUCT_GRAPHICS, RECIPES, REFUND_POLL,
-                             REFUND_SETTLE, REGULAR_WOOD, RESTOCK_AT, RETURN_WRONG_WOOD,
-                             SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT, SAVING_TEXT, SELL_AT,
-                             SELL_ENTRY, SELL_PHRASE, SELL_POLL, SELL_RETRY_AFTER, SELL_TIMEOUT,
-                             SKILL_NAMES, SKILL_POLL, SKILL_TIMEOUT, SOURCE_CHOICE, SOURCE_OPTIONS,
-                             STALL_STOP, STALL_WARN, STEP_DELAY, STOPPED, THROTTLE_BACKOFF,
-                             THROTTLE_BACKOFF_MAX, TOOL_GRAPHICS, TOOL_NAME_WORDS, TOO_HEAVY_TEXT,
-                             UNREADABLE_TEXT_LIMIT, VENDORS, VENDOR_RANGE, VENDOR_SCAN_RADIUS,
-                             VENDOR_SERIAL, VENDOR_STEPS, WOOD_HUES, WOOD_KINDS, WOOD_TYPE,
-                             WOOD_TYPES)
+                             FETCH_POLL, FETCH_TIMEOUT, GUMP_POLL, GUMP_TIMEOUT, HEARTBEAT_EVERY,
+                             ITEM_BUTTON_TYPE, JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS,
+                             LAST_TEN_LABEL, LOG_EVERY, MAKE_LAST_BUTTON, MATERIAL_GRAPHICS,
+                             MAX_CATEGORIES, MAX_CYCLES, MAX_DUMP_MISSES, MAX_EMPTY_MOVES,
+                             MAX_HELD, MAX_ITEM_PROBES, MAX_ITEM_ROWS, MAX_NO_MATERIAL,
+                             MAX_NO_TOOL, MAX_PICKS, MAX_SELL_MISSES, MAX_THROTTLED, MAX_UNKNOWN,
+                             MAX_UNREADABLE_REPORTS, MIN_CRAFT_WOOD, MIN_SKILL, MOVE_DELAY,
+                             OPEN_DELAY, OPL_WAIT, OUTCOME_TEXT, PATHFIND_TIMEOUT, PICK_TIMEOUT,
+                             PRODUCTS, PRODUCT_GRAPHICS, RECIPES, REFUND_POLL, REFUND_SETTLE,
+                             REGULAR_WOOD, RESTOCK_AT, RETURN_WRONG_WOOD, SAVE_DONE_TEXT,
+                             SAVE_POLL, SAVE_WAIT, SAVING_TEXT, SELL_AT, SELL_ENTRY, SELL_PHRASE,
+                             SELL_POLL, SELL_RETRY_AFTER, SELL_TIMEOUT, SETUP, SKILL_NAMES,
+                             SKILL_POLL, SKILL_TIMEOUT, STALL_STOP, STALL_WARN, STEP_DELAY,
+                             STOPPED, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX, TOOL_GRAPHICS,
+                             TOOL_NAME_WORDS, TOO_HEAVY_TEXT, UNREADABLE_TEXT_LIMIT, VENDORS,
+                             VENDOR_RANGE, VENDOR_SCAN_RADIUS, VENDOR_SERIAL, VENDOR_STEPS,
+                             WOOD_HUES, WOOD_KINDS, WOOD_TYPE, WOOD_TYPES)
 from uo.restock import Restock
 from uo.sources import Sources
-from uo.choice import Choice
 from uo.craft import Crafter
 from uo.craftmenu import CraftMenu
 from uo.crafttool import CraftTool
@@ -37,9 +35,11 @@ from uo.materials import Materials
 from uo.pack import count_of
 from uo.record import attempt_log
 from uo.save import SaveWatch
+from uo.setup import Setup
 from uo.skill import SkillReader, find_skill_name, reading
-from uo.stages import band_for
+from uo.stages import band_for, band_rows
 from uo.stock import StockBook
+from uo.toolstore import ToolStore
 from uo.vendor import Vendor
 from uo.vitals import position_and_weight
 
@@ -159,8 +159,20 @@ vendor = Vendor(menu, {
     "opl_wait": OPL_WAIT,
     "text_limit": UNREADABLE_TEXT_LIMIT,
 }, log, heartbeat, products_in_pack)
-choice = Choice(OUTPUT_CHOICE, log, stop_reason)
-source_choice = Choice(SOURCE_CHOICE, log, stop_reason)
+tool_store = ToolStore(tools, sources, {
+    "noun": "fletcher's tools",
+    "pick_timeout": PICK_TIMEOUT,
+    "move_delay": MOVE_DELAY,
+    "fetch_timeout": FETCH_TIMEOUT,
+    "fetch_poll": FETCH_POLL,
+}, log)
+# Kept: a bow carried in is the character's own, and it is never unloaded into a barrel
+dump = Dump(sources, PRODUCT_GRAPHICS, {
+    "pick_timeout": PICK_TIMEOUT,
+    "move_delay": MOVE_DELAY,
+    "keep_existing": True,
+}, log)
+setup = Setup(SETUP, log, stop_reason)
 
 start = skill.wait(SKILL_TIMEOUT, SKILL_POLL)
 
@@ -178,47 +190,50 @@ elif capped is not None:
     log(capped)
     API.Stop()
 
-if tools.serial() is None:
-    log("no fletcher's tools in the pack")
+cap = skill.cap()
+
+
+def training_rows():
+    heading = "%s %.1f%s" % (skill_name, start,
+                             " / %.1f" % cap if cap is not None and cap > 0 else "")
+
+    return heading, band_rows(BANDS, start, lambda name: VENDORS[name][0] if VENDORS[name]
+                              else "nobody buys it: unloaded", MIN_SKILL)
+
+
+answers = setup.ask({
+    "table": training_rows,
+    "tools": tool_store.pick,
+    "tools_ready": lambda: tool_store.count() > 0,
+    "source": sources.pick_one,
+    "clear": sources.clear,
+    "unload": dump.pick_line,
+    "unload_ready": dump.picked,
+    "has_wood": lambda: wood.in_pack() > 0,
+    "unsold_ahead": lambda: unsold_ahead(start),
+})
+
+# The stop lands at the next Pause, so the lines until then read a form that was never answered
+output = answers["output"] if answers is not None else "keep"
+
+if answers is None:
     API.Stop()
-
-source = source_choice.ask(SOURCE_OPTIONS)
-sources.pick(["box"] if source == "box" else ["item", "mobile"])
-
-# A run that starts on the wood it is already carrying needed no cursor at all
-if len(sources.picked()) == 0 and wood.in_pack() == 0:
-    log("nothing picked and no wood in the pack")
-    API.Stop()
-
-output = choice.ask(OUTPUT_OPTIONS)
-
-# Kept: a bow carried in is the character's own, and it is never unloaded into a barrel
-dump = Dump(sources, UNSOLD_GRAPHICS if output == "sell" else PRODUCT_GRAPHICS, {
-    "pick_timeout": PICK_TIMEOUT,
-    "move_delay": MOVE_DELAY,
-    "keep_existing": True,
-}, log)
-
-if output == "unload":
-    dump.pick()
-
-    if not dump.picked():
-        output = "keep"
 
 if output == "sell":
+    dump.limit_to(UNSOLD_GRAPHICS)
     log("selling every %d to the bowyer" % SELL_AT)
 
-    if unsold_ahead(start):
-        dump.pick()
-
-        if not dump.picked():
-            log("nothing picked to unload into - the run ends once the pack holds %d unsold products"
-                % MAX_HELD)
-elif output != "unload":
-    output = "keep"
+    if unsold_ahead(start) and not dump.picked():
+        log("nothing picked to unload into - the run ends once the pack holds %d unsold products"
+            % MAX_HELD)
+elif output == "keep":
     log("keeping what is made - the run ends once the pack holds %d" % MAX_HELD)
 
-cap = skill.cap()
+# A picked tool container fills an empty pack before the first craft
+if (tools.find(FETCH_TIMEOUT, FETCH_POLL) is None
+        and not (tool_store.picked() and tool_store.fetch())):
+    log("no fletcher's tools in the pack")
+    API.Stop()
 
 log("%s at %.1f%s, %s in the pack, %s"
     % (skill_name, start, "/%.1f" % cap if cap is not None and cap > 0 else "",
@@ -481,6 +496,10 @@ try:
         elif outcome == "noRow":
             stop = "could not find the SELECTIONS row for '%s'" % product
             break
+        elif outcome == "noTool" and tool_store.picked() and tool_store.fetch():
+            crafter.forget_last()
+            stall.progressed()
+            log("the tools ran out - fetched another")
         elif outcome in ("noTool", "noGump"):
             no_tool += 1
 
@@ -540,7 +559,7 @@ except Exception as error:
     if stop is None:
         stop = "threw - %s" % error
 finally:
-    recorder.close(skill.read())
+    recorder.close(skill.last())
 
 if API.Pathfinding():
     API.CancelPathfinding()

@@ -21,7 +21,7 @@ class Gathered(object):
         return self._skill.read()
 
     def close(self):
-        self._recorder.close(self._skill.read())
+        self._recorder.close(self._skill.last())
 
     def _resource_name(self, item):
         name = self._config["name_of"](item)
