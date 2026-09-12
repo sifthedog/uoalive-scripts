@@ -1,3 +1,4 @@
+from uo.boxes import WOOD_BOX
 from uo.phrases import SAVE_DONE_TEXT, SAVING_TEXT, STOPPED, THROTTLED_TEXT
 from uo.timings import (HEARTBEAT_EVERY, LOG_EVERY, SAVE_POLL, SAVE_WAIT, STALL_STOP, STALL_WARN,
                         STEP_DELAY, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX)
@@ -135,6 +136,25 @@ WOOD_HUES = {
 
 # Wood of the wrong type is weight and nothing else. Off leaves it in the pack.
 RETURN_WRONG_WOOD = True
+
+# The shard's storage box, picked at the cursor beside chests and pack animals
+BOX = WOOD_BOX
+
+# What one restock draws from the box, in presses of 100
+BOX_TAKE = 200
+
+# How long the pack has to show a row's boards after the press, and how often it is read
+BOX_PRESS_TIMEOUT = 3.0
+BOX_PRESS_POLL = 0.25
+
+# Answered by the gump at the start; a closed gump means chests and pack animals, as before the box
+SOURCE_CHOICE = {
+    "text": "Draw wood from the storage box, or from the chests and pack animals you point at?",
+    "hue": 996,
+    "poll": 0.5,
+    "timeout": 60.0,
+}
+SOURCE_OPTIONS = [("box", "Storage box"), ("containers", "Chests and animals")]
 
 # Every restock fills the pack to this
 BATCH_SIZE = 300

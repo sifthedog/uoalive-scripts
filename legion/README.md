@@ -13,7 +13,7 @@ repo targets the ClassicUO web client; nothing is shared between the two.
 | `fishing.py` | Gets off the mount, says `all guard`, casts the fishing pole once at the nearest water and records what came out. Run it again for the next cast |
 | `attack.py` | Turns war mode on and attacks the nearest gray or red mobile within 10 tiles that is not your pet or, by its tooltip, anyone else's. Run it again for the next one |
 | `arms-lore.py` | Target a weapon, then read it every half second until Arms Lore caps |
-| `bowcraft.py` | Trains Bowcraft from 30 to cap: makes whatever the band still gains on, restocks wood from the containers and pack animals you pick, and sells to the nearest bowyer |
+| `bowcraft.py` | Trains Bowcraft from 30 to cap: makes whatever the band still gains on, restocks wood from the containers and pack animals you pick, and sells it to the bowyer, unloads it or keeps it as a gump at the start decides |
 | `tinkering.py` | Trains Tinkering from 20 to cap on the iron ingots you carry: makes whatever the band still gains on, and sells it to the vendor that buys it, unloads it or keeps it as a gump at the start decides |
 | `carpentry.py` | Trains Carpentry from 0 to cap on the cheapest recipe each band still gains on, restocks wood the way `bowcraft.py` does, and unloads what it made into the container you pick |
 | `inscription.py` | Trains Inscription from 30 to cap on the spell scroll with the fewest reagents each circle gains on, meditating when the pool is short, restocking scrolls and reagents the way `carpentry.py` does, and selling or unloading the scrolls as a gump at the start decides |
@@ -29,11 +29,13 @@ repo targets the ClassicUO web client; nothing is shared between the two.
 2. Open **Legion Script** from the top menu and run it from the Script Manager.
 3. Answer the cursor. `tame.py` wants an animal, and another after each tame; `mining.py` and
    `mine-here.py` want your fire beetle; `lumberjack.py` wants your pack animals, one after another;
-   `arms-lore.py` wants the weapon; `bowcraft.py` wants every container or pack animal holding wood,
-   or none if you carry it; `carpentry.py` wants the same, then the container to unload into;
-   `tinkering.py` draws a gump asking whether what it makes is sold, unloaded or kept, wants the
-   unload container if you press Unload, and under Sell wants it once a band nobody buys from is
-   ahead; `inscription.py` wants the containers holding scrolls and reagents, then draws the same
+   `arms-lore.py` wants the weapon; `bowcraft.py` draws a gump asking whether wood comes from the
+   storage box or from chests and pack animals, wants every one of those holding wood, or none if
+   you carry it, then draws a gump asking whether what it makes is sold, unloaded or
+   kept, wants the unload container if you press Unload, and under Sell wants it once a band nobody
+   buys from is ahead; `carpentry.py` wants the wood the same way, then the container to unload
+   into; `tinkering.py` draws the same gump and wants the container the same way;
+   `inscription.py` wants the containers holding scrolls and reagents, then draws the same
    gump and wants the unload container if you press Unload; `bod.py`
    wants the deed; `inventory.py` wants the bag. `magery.py`, `mysticism.py`, `buffs.py`, `fishing.py` and `attack.py` raise none. ESC
    declines, and each script says what it does instead.
@@ -1360,29 +1362,58 @@ Everything below `STAGES` is `magery.py`'s block with the same defaults. These a
 ## bowcraft.py
 
 Trains Bowcraft/Fletching from 30 to cap by making whatever the current band gains on. It pulls wood
-`BATCH_SIZE` at a time out of what you point at, logs and boards both, and sells to the nearest
-bowyer every `SELL_AT` items.
+`BATCH_SIZE` at a time out of what you point at, logs and boards both, and sells what it made to the
+nearest bowyer, unloads it into the container you pick, or keeps it, as a gump at the start decides.
 
-**What you point at is a chest or a pack animal.** An item is a container, remembered by where it
-stood; a creature is a pack animal, whose backpack is re-resolved every time because a pet walks.
-ESC with nothing picked works through the wood you carry.
+**A gump asks first** whether the wood comes from the storage box or from chests and pack animals
+(`SOURCE_CHOICE`); a closed gump or no press in its timeout means chests and animals. The cursor
+then refuses the other kind, saying which the gump chose, and for the box it ends at the first one
+picked: one box holds everything, and its gump is read one box at a time.
 
-| Bowcraft | Makes |
-| --- | --- |
-| 30 – 60 | `LOW_BAND_ITEM`: a bow by default, fukiya darts the other way |
-| 60 – 70 | crossbow |
-| 70 – 80 | composite bow |
-| 80 – 90 | heavy crossbow |
-| 90 – cap | `HIGH_BAND_ITEM`: a repeating crossbow by default, a yumi the other way |
+**What you point at is a chest, a storage box or a pack animal.** An item is a container,
+remembered by where it stood; a creature is a pack animal, whose backpack is re-resolved every time
+because a pet walks. ESC with nothing picked works through the wood you carry.
+
+**The storage box** is the shard's resource box, known by `storage box` in its name (or an art in
+`BOX["graphics"]` when the name has not arrived). It has no inside: double-clicking it opens a gump
+listing one row per wood, `OakBoard 850`, `Board 18467`, with a button beside each that drops 100
+in the pack. Its stock is read off that text, live while the gump is up and as last seen once it
+closes, and a restock presses the row of the wood the menu is set to (`Board` is the plain wood)
+`BOX_TAKE` worth at a time, two presses by default, waiting up to `BOX_PRESS_TIMEOUT` for the pack
+to show each press before the next so none is counted late and pressed twice. `BOX["rows"]` names
+each label's kind and type. The button a row presses is read off the gump's own layout (`PacketGumpText`: the
+nearest button left of the label on its line), falling back to `BOX["buttons"]`, which is what
+`box-probe.py` read on UOAlive; a reply naming a button the gump lacks disconnects the client, so
+a row with no button either way is never pressed, and the run says so. A press that lands the
+wrong wood marks its row out of date and never presses it again. Wrong wood is not put back into
+a box, and a box cannot be unloaded into.
+
+**Then the gump**, with **Sell**, **Unload** and **Keep**. Unload asks for the container to unload
+into, a trash barrel or a chest; Sell asks for it too whenever a band nobody buys from is still
+ahead, which on the default table is every run that starts under cap, because the bowyer refuses a
+yumi. A closed gump, no press in `OUTPUT_CHOICE.timeout`, or ESC at the Unload cursor all mean keep.
+
+| Bowcraft | Makes | Sold to |
+| --- | --- | --- |
+| 30 – 60 | `LOW_BAND_ITEM`: a bow by default, fukiya darts the other way | bowyer |
+| 60 – 70 | crossbow | bowyer |
+| 70 – 80 | composite bow | bowyer |
+| 80 – 90 | heavy crossbow | bowyer |
+| 90 – 100 | repeating crossbow | bowyer |
+| 100 – cap | `HIGH_BAND_ITEM`: a yumi by default, a repeating crossbow the other way | nobody: unloaded |
 
 Ceilings are exclusive; the first row the value is under wins. Each cycle:
 
 1. Read the skill. An uncovered band ends the run; a band change re-selects the row.
-2. Sell once the pack holds `SELL_AT` products. A trip that buys nothing does not own the cycle.
+2. Selling, sell once the pack holds `SELL_AT` of the band's product. A trip that buys nothing does
+   not own the cycle. A band whose `VENDORS` entry is `None` unloads every `DUMP_AT` instead, as
+   `carpentry.py` does; with nothing picked, the run ends at `MAX_HELD`. Unloading, every band
+   unloads at `DUMP_AT`. Keeping, the run ends at `MAX_HELD`. What is unloaded or counted toward
+   `MAX_HELD` is only what the run made: a bow carried in stays in the pack.
 3. Restock if under `RESTOCK_AT` wood, walking to an out-of-reach container. The pack is read first,
    so wood in a bag inside it is brought up before anything is fetched, then filled to `BATCH_SIZE`.
-   When the shard refuses a move as too heavy and there is anything to sell, the run sells first;
-   otherwise it crafts down what it has.
+   When the shard refuses a move as too heavy and there is anything to sell or unload, the run does
+   that first; otherwise it crafts down what it has.
 4. Open the craft menu with the fletcher's tools if one is not up.
 5. Press the row, or `MAKE LAST` once the row is known.
 6. Read the outcome from the journal, the gump's `NOTICES` panel and the pack, all three on every
@@ -1459,7 +1490,12 @@ when `DATA_PATH` is set.
   each walk because a pathfind that ends early leaves you short. It sends the **Sell** entry matched
   by text, falling back to saying `vendor sell`, and waits for the pack to drop. It does not drive
   the sell gump, so **the auto-sell agent still has to be configured** for the bowyer.
-- **`SELL_AT` counts amounts, not stacks.** Fukiya darts stack ten to a craft.
+- **`SELL_AT` and `DUMP_AT` count amounts, not stacks.** Fukiya darts stack ten to a craft.
+- **A storage box on another shard** may lay its rows out differently. The layout is read live,
+  so that usually just works; if the run says a row has no button, open the box by hand, run
+  `box-probe.py`, and copy the ids from its `PacketGumpText` lines into `BOX["buttons"]`.
+- **Something to unload into**, in reach: the cursor asks for it on Unload, and on Sell whenever a
+  band nobody buys from is ahead. A trash barrel destroys what goes in.
 
 ### What to set
 
@@ -1467,7 +1503,7 @@ when `DATA_PATH` is set.
 | --- | --- | --- |
 | `SKILL_NAMES` | `Bowcraft`, … | Tried in order |
 | `MIN_SKILL` | `30.0` | Below this the run refuses to start |
-| `LOW_BAND_ITEM` / `HIGH_BAND_ITEM` | `bow` / `repeating crossbow` | The two bands with a choice |
+| `LOW_BAND_ITEM` / `HIGH_BAND_ITEM` | `bow` / `yumi` | The two bands with a choice |
 | `BANDS` | see above | Ceiling and product |
 | `PRODUCTS` | table | Row name as the gump spells it, and the graphics it arrives as |
 | `CATEGORY_NAMES` | `materials`, … | Where the group rows end and the item rows begin |
@@ -1480,7 +1516,12 @@ when `DATA_PATH` is set.
 | `MATERIAL_GRAPHICS` | feathers, shafts | Non-wood a craft can spend, for the consumed rows |
 | `DATA_PATH` | `skill-attempts.jsonl` | Where each craft is appended, with what it spent. `""` records nothing |
 | `BATCH_SIZE` / `RESTOCK_AT` | `300` / `25` | What a restock fills to, and what triggers one |
-| `SELL_AT` | `20` | Products in the pack before a sell trip |
+| `SELL_AT` | `10` | The band's products in the pack before a sell trip |
+| `VENDORS` | table | Per product: the noun for the log, and the titles matched on name and tooltip. `None` when nobody buys it |
+| `OUTPUT_CHOICE` / `OUTPUT_OPTIONS` | a sentence, three buttons | The gump at the start |
+| `SOURCE_CHOICE` / `SOURCE_OPTIONS` | a sentence, two buttons | The gump before the cursor: the storage box, or chests and animals |
+| `DUMP_AT` / `MAX_HELD` | `10` / `60` | Products before an unload, and where a keeping run, or a Sell run with nowhere to put the unsold, ends |
+| `MAX_DUMP_MISSES` | `3` | Unloads in a row that moved nothing before the run ends |
 | `TOO_HEAVY_TEXT` | *That container cannot hold more weight* | The shard refusing a move for weight |
 | `BOWYER_TITLES` / `SELL_PHRASE` | `bowyer`, … / `vendor sell` | Matched against name and tooltip, and what is said |
 | `VENDOR_SERIAL` | `None` | Skip the search |
@@ -1488,6 +1529,9 @@ when `DATA_PATH` is set.
 | `SELL_ENTRY` / `VENDOR_STEPS` | `sell` / `3` | The context menu entry, and walks spent getting there |
 | `MAX_PICKS` | `8` | A backstop; ESC ends the selection |
 | `CONTAINER_RANGE` | `2` | How close it stands before it pulls |
+| `BOX` | `WOOD_BOX` in `uo/boxes.py` | The storage box: its names and arts, the gump title, each row's kind and type, and each row's button |
+| `BOX_TAKE` | `200` | What one restock draws from the box, in presses of 100 |
+| `BOX_PRESS_TIMEOUT` / `BOX_PRESS_POLL` | `3.0` / `0.25` | How long the pack has to show a press, and how often it is read |
 | `CRAFT_TITLE` | `BOWCRAFT AND FLETCHING` | Recognises a gump already open. Never refuses one |
 | `BUTTON_STRIDE` | `20` | Every derived button moves with it |
 | `MAKE_LAST_BUTTON` | `47` | The one button not derived |
@@ -1524,6 +1568,21 @@ when `DATA_PATH` is set.
   the trips.
 - **`out of wood`**: what you picked is empty and the pack is under `MIN_CRAFT_WOOD`. A container
   it cannot reach shows as `restocking` cycles and the stall watch ends them.
+- **`no button known for the 'Board' row - run box-probe.py`**: neither the gump's layout nor
+  `BOX["buttons"]` names a button for the row the restock wants. **`gump 0x… has no button 107 for
+  'Board'`**: the table names one the gump does not list. Neither presses anything.
+- **`the button table is out of date for 'Board' - it gave oak`**: the press landed another wood.
+  The row is left alone from then on; fix the button.
+- **`the box lists 'YewLog', which the BOX rows do not name`**: a row the table does not know. Add
+  it to `BOX["rows"]` if the run should draw from it; otherwise it is ignored.
+- **`'Logs & Boards Storage Box' did not open`**: no gump naming the box appeared in `GUMP_TIMEOUT`.
+  Stand within `CONTAINER_RANGE` and check `BOX["title"]`.
+- **`the pack holds 60 unsold and nothing was picked to unload into`**, or **`the pack holds 60 and
+  nothing was picked to unload into`** on a keeping run: pick a container next time, or raise
+  `MAX_HELD`.
+- **`keeping what is made`** when you meant to sell: the gump closed or timed out before a press;
+  raise `OUTPUT_CHOICE.timeout`.
+- **`3 unloads in a row moved nothing`**: the container is full, locked down, or not a container.
 
 ### Notes
 
@@ -1633,8 +1692,8 @@ then counts toward `MAX_NO_MATERIAL`, since a menu set to another metal is the o
 ## carpentry.py
 
 Trains Carpentry from 0 to cap on the cheapest recipe each band still gains on. Wood is pulled from
-what you point at the way `bowcraft.py` does it, and everything made goes into one more container
-you point at, since no vendor buys a deed. Everything under the loop is shared with `bowcraft.py`,
+what you point at the way `bowcraft.py` does it, a chest, a storage box or a pack animal, and
+everything made goes into one more container you point at, since no vendor buys a deed. Everything under the loop is shared with `bowcraft.py`,
 which is where the craft menu, the row walk and the outcomes are described.
 
 | Carpentry | Makes | Wood |
@@ -1675,6 +1734,8 @@ destroys it; a chest keeps it.
 - **A carpentry tool in your pack**, and spares. Saw, planes, nails, froe, inshave and scorp are
   known by art and by name; a hammer only by art, since a smith's hammer carries the word too.
 - **Wood in your pack or in what you pick.** Logs and boards both count; only `WOOD_TYPE` is spent.
+  A gump asks first whether the cursor takes the storage box or chests and pack animals; see
+  `bowcraft.py` for the box.
 - **Something to unload into**, in reach: a trash barrel in the house is the usual answer.
 - **The display case needs 75 Tinkering** and ingots in the pack. It is the only row that gains
   past 119.7; without it the run stops there, refused for materials.
@@ -1694,6 +1755,9 @@ destroys it; a chest keeps it.
 | `DUMP_AT` / `MAX_HELD` | `10` / `60` | Products before an unload, and the most kept with nowhere to put them |
 | `MAX_DUMP_MISSES` | `3` | Unloads in a row that moved nothing before the run ends |
 | `BATCH_SIZE` / `RESTOCK_AT` | `300` / `40` | What a restock fills to, and what triggers one |
+| `BOX` / `BOX_TAKE` | `WOOD_BOX` / `200` | The storage box table shared with `bowcraft.py`, and what one restock draws from it |
+| `BOX_PRESS_TIMEOUT` / `BOX_PRESS_POLL` | `3.0` / `0.25` | How long the pack has to show a press, and how often it is read |
+| `SOURCE_CHOICE` / `SOURCE_OPTIONS` | a sentence, two buttons | The gump at the start: the storage box, or chests and animals |
 | `MATERIAL_GRAPHICS` | ingots | Non-wood a craft can spend, for the consumed rows |
 | `DATA_PATH` | `skill-attempts.jsonl` | Where each craft is appended, with what it spent. `""` records nothing |
 

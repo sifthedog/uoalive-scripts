@@ -21,6 +21,9 @@ class StockBook(object):
     def noun(self):
         return self._noun
 
+    def wanted(self):
+        return self._wanted
+
     # For a snapshot key, which has no item left to read a name off
     def is_stock_graphic(self, graphic):
         for _kind, graphics, _words in self._kinds:

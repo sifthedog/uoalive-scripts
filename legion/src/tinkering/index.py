@@ -118,8 +118,10 @@ sources = Sources(stock, {
     "max_picks": 1,
     "pick_timeout": PICK_TIMEOUT,
     "open_delay": OPEN_DELAY,
+    "move_delay": MOVE_DELAY,
     "container_range": CONTAINER_RANGE,
     "pathfind_timeout": PATHFIND_TIMEOUT,
+    "box": None,
 }, log)
 crafter = Crafter(tools, menu, stock, OUTCOME_TEXT, {
     "recipes": RECIPES,

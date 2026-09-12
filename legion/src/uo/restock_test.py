@@ -8,6 +8,7 @@ BOARDS = 0x1BD7
 SCROLLS = 0x0EF3
 ASH = 0x0F8C
 CHEST = 0x40001000
+BOX = 0x40003000
 PILE = 0x40001001
 SCROLL_PILE = 0x40001002
 ASH_PILE = 0x40001003
@@ -37,12 +38,81 @@ class ChestSources(object):
     def open(self, entry):
         return CHEST
 
-    def container_wood(self, serial, kind=None):
-        return [held for held in self._api.containers.get(serial, [])
+    def _piles(self, kind):
+        return [held for held in self._api.containers.get(CHEST, [])
                 if held.Amount > 0 and (kind is None or held.kind == kind)]
+
+    def has_stock(self, entry, kind):
+        return len(self._piles(kind)) > 0
+
+    def take(self, entry, kind, amount):
+        pile = self._piles(kind)[0]
+        self._api.MoveItem(pile.Serial, self._api.Backpack, min(amount, pile.Amount))
+
+        return None
+
+    def put_back(self, entry):
+        return 0
+
+    def took_wrong(self, entry, token, gave):
+        pass
+
+    def cap(self, entry):
+        return None
 
     def stock_left(self):
         return sum(held.Amount for held in self._api.containers.get(CHEST, []))
+
+
+class BoxSources(object):
+    """A storage box: every take is one press that lands 100, whatever was asked for."""
+
+    def __init__(self, api, pack, gives=None):
+        self._api = api
+        self._pack = pack
+        self._gives = gives
+        self.left = 1000
+        self.presses = 0
+        self.wrong = None
+        self.entry = {"kind": "box", "serial": BOX, "name": "storage box", "spot": (0, 0, 0)}
+
+    def picked(self):
+        return [self.entry]
+
+    def name_of(self, entry):
+        return entry["name"]
+
+    def reach(self, entry):
+        return True
+
+    def open(self, entry):
+        return 0x5A
+
+    def has_stock(self, entry, kind):
+        return self.left > 0 and self.wrong is None
+
+    def take(self, entry, kind, amount):
+        self.presses += 1
+        self.left -= 100
+
+        if self._gives is None:
+            self._pack.Amount += 100
+        else:
+            self._api.hold(self._pack, self._gives)
+
+        return "Board"
+
+    def put_back(self, entry):
+        return 0
+
+    def took_wrong(self, entry, token, gave):
+        self.wrong = (token, gave)
+
+    def cap(self, entry):
+        return 200
+
+    def stock_left(self):
+        return self.left
 
 
 class RunTest(unittest.TestCase):
@@ -116,6 +186,45 @@ class RunTest(unittest.TestCase):
         self.setUp()
 
         self.assertFalse(self.restock.refused_for_weight())
+
+
+class BoxTest(unittest.TestCase):
+    def setUp(self):
+        self.api = install()
+        self.pack = item(serial=1, graphic=BOARDS, amount=20, name="boards")
+        self.api.hold(self.pack)
+        self.wood = LiftingBook({
+            "noun": "wood",
+            "kinds": [("boards", set([BOARDS]), ["board", "boards"])],
+            "types": ["oak"],
+            "hues": {0: "regular"},
+            "wanted": "regular",
+            "move_delay": 0.0,
+        }, lambda text: None)
+
+    def restock(self, sources):
+        return Restock(self.wood, sources, {
+            "batch": 300,
+            "move_delay": 0.0,
+            "max_empty_moves": 3,
+            "return_wrong_wood": True,
+            "heavy_text": ["That container cannot hold more weight"],
+        }, lambda text: None)
+
+    def test_draws_the_cap_and_no_more_though_the_batch_wants_it(self):
+        sources = BoxSources(self.api, self.pack)
+
+        self.assertEqual(self.restock(sources).run(), 220)
+        self.assertEqual(sources.presses, 2)
+        self.assertEqual(self.pack.Amount, 220)
+
+    def test_a_press_that_gave_other_wood_names_the_row_and_stops(self):
+        oak = item(serial=2, graphic=BOARDS, amount=100, name="oak boards")
+        sources = BoxSources(self.api, self.pack, gives=oak)
+
+        self.assertEqual(self.restock(sources).run(), 20)
+        self.assertEqual(sources.wrong, ("Board", "oak"))
+        self.assertEqual(sources.presses, 1)
 
 
 class KindsTest(unittest.TestCase):

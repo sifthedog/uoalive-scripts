@@ -4,6 +4,34 @@ import API
 import time
 
 
+# src/uo/boxes.py
+# Read off the gump as one token per row and the number after it: 'OakBoard 850'. The buttons are
+# read off the gump's layout; the table is the fallback, as box-probe.py read them on UOAlive.
+WOOD_BOX = {
+    "names": ["storage box"],
+    "graphics": set(),
+    "title": ["storage box"],
+    "rows": {
+        "Board": ("boards", None),
+        "OakBoard": ("boards", "oak"),
+        "AshBoard": ("boards", "ash"),
+        "YewBoard": ("boards", "yew"),
+        "HeartwoodBoard": ("boards", "heartwood"),
+        "BloodwoodBoard": ("boards", "bloodwood"),
+        "FrostwoodBoard": ("boards", "frostwood"),
+    },
+    "buttons": {
+        "Board": 107,
+        "OakBoard": 108,
+        "AshBoard": 109,
+        "YewBoard": 110,
+        "HeartwoodBoard": 111,
+        "BloodwoodBoard": 112,
+        "FrostwoodBoard": 113,
+    },
+}
+
+
 # src/uo/phrases.py
 """The shard's own wordings, as far as they are the same whatever the script is doing."""
 
@@ -174,6 +202,25 @@ WOOD_HUES = {
 # Wood of the wrong type is weight and nothing else. Off leaves it in the pack.
 RETURN_WRONG_WOOD = True
 
+# The shard's storage box, picked at the cursor beside chests and pack animals
+BOX = WOOD_BOX
+
+# What one restock draws from the box, in presses of 100
+BOX_TAKE = 200
+
+# How long the pack has to show a row's boards after the press, and how often it is read
+BOX_PRESS_TIMEOUT = 3.0
+BOX_PRESS_POLL = 0.25
+
+# Answered by the gump at the start; a closed gump means chests and pack animals, as before the box
+SOURCE_CHOICE = {
+    "text": "Draw wood from the storage box, or from the chests and pack animals you point at?",
+    "hue": 996,
+    "poll": 0.5,
+    "timeout": 60.0,
+}
+SOURCE_OPTIONS = [("box", "Storage box"), ("containers", "Chests and animals")]
+
 # Every restock fills the pack to this
 BATCH_SIZE = 300
 RESTOCK_AT = 40
@@ -307,6 +354,112 @@ OUTCOME_TEXT = [
     ("saving", SAVING_TEXT),
     ("throttled", THROTTLED_TEXT),
 ]
+
+
+# src/uo/choice.py
+CHOICE_WIDTH = 340
+CHOICE_BUTTON_WIDTH = 96
+CHOICE_BUTTON_HEIGHT = 26
+CHOICE_GAP = 8
+
+
+class Choice(object):
+    """A gump the script draws with one button per option, answered by the first press."""
+
+    def __init__(self, config, log, stop_reason):
+        self._config = config
+        self._log = log
+        self._stop_reason = stop_reason
+
+    def _show(self, options, on_press):
+        height = 16 + 20 + 16 + CHOICE_BUTTON_HEIGHT + 16
+        width = max(CHOICE_WIDTH, 16 + len(options) * (CHOICE_BUTTON_WIDTH + CHOICE_GAP) + 8)
+
+        gump = API.Gumps.CreateGump(True, True)
+
+        if gump is None:
+            return None
+
+        gump.SetRect(0, 0, width, height)
+        gump.CenterXInViewPort()
+        gump.CenterYInViewPort()
+
+        background = API.Gumps.CreateGumpColorBox(0.85, "#1E1E1E")
+        background.SetRect(0, 0, width, height)
+        gump.Add(background)
+
+        label = API.Gumps.CreateGumpLabel(self._config["text"], self._config["hue"])
+        label.SetPos(16, 16)
+        gump.Add(label)
+
+        for index in range(len(options)):
+            key, caption = options[index]
+            button = API.Gumps.CreateSimpleButton(caption, CHOICE_BUTTON_WIDTH,
+                                                  CHOICE_BUTTON_HEIGHT)
+            button.SetPos(16 + index * (CHOICE_BUTTON_WIDTH + CHOICE_GAP),
+                          height - CHOICE_BUTTON_HEIGHT - 16)
+            API.Gumps.AddControlOnClick(button, self._presser(key, on_press))
+            gump.Add(button)
+
+        API.Gumps.AddGump(gump)
+
+        return gump
+
+    # A closure per button rather than one in the loop: the loop variable would be the last key
+    def _presser(self, key, on_press):
+        def press():
+            on_press(key)
+
+        return press
+
+    # The pressed key, or None when the gump was closed, timed out, or the run has a reason to stop
+    def ask(self, options):
+        if API.HasTarget():
+            API.CancelTarget()
+
+        chosen = [None]
+
+        def on_press(key):
+            chosen[0] = key
+
+        gump = self._show(options, on_press)
+
+        # API.Stop() only lands at the next Pause, and every client call before it answers nothing
+        if gump is None:
+            self._log("not asking - the run is being stopped")
+            return None
+
+        self._log("asking - %s" % self._config["text"])
+        waited = 0.0
+        why = None
+
+        # The click only arrives through ProcessCallbacks, and a stopped script's client calls all
+        # answer with nothing, so the stop flag is the one read that still means something then
+        while why is None:
+            if API.StopRequested:
+                why = "the run is being stopped"
+                break
+
+            API.ProcessCallbacks()
+
+            if chosen[0] is not None:
+                why = "'%s' was pressed" % dict(options)[chosen[0]]
+            elif gump.IsDisposed:
+                why = "the gump was closed"
+            elif self._stop_reason() is not None:
+                why = "the run has a reason to stop"
+            elif waited >= self._config["timeout"]:
+                why = "nothing was pressed in %.0fs" % self._config["timeout"]
+            else:
+                API.Pause(self._config["poll"])
+                waited += self._config["poll"]
+
+        if not gump.IsDisposed:
+            gump.Dispose()
+
+        self._log(why)
+
+        return chosen[0]
 
 
 # src/uo/entity.py
@@ -445,6 +598,12 @@ class Dump(object):
 
         if entry is None:
             self._log("%s is neither a container nor a creature" % hex_of(serial))
+
+            return None
+
+        if entry["kind"] == "box":
+            self._log("'%s' is a storage box, which takes nothing you made - pick a barrel or a "
+                      "chest" % self._sources.name_of(entry))
 
             return None
 
@@ -1026,6 +1185,14 @@ def await_recognised(known, before, timeout, poll):
         waited += poll
 
     return 0, False
+
+
+def gump_says(gump, texts):
+    for text in texts:
+        if API.GumpContains(text, gump):
+            return True
+
+    return False
 
 
 # src/uo/craftmenu.py
@@ -1752,6 +1919,9 @@ class StockBook(object):
     def noun(self):
         return self._noun
 
+    def wanted(self):
+        return self._wanted
+
     # For a snapshot key, which has no item left to read a name off
     def is_stock_graphic(self, graphic):
         for _kind, graphics, _words in self._kinds:
@@ -1944,24 +2114,6 @@ class Restock(object):
     def refused_for_weight(self):
         return self._heavy
 
-    # Wrong wood goes back while its container is open and in reach, the one moment it costs nothing
-    def _put_back(self, container):
-        before = total_of(self._wood.pack_other())
-
-        if before == 0:
-            return 0
-
-        for pile in self._wood.wrong_piles():
-            API.MoveItem(pile.Serial, container, amount_of(pile))
-            API.Pause(self._config["move_delay"])
-
-        moved = before - total_of(self._wood.pack_other())
-
-        if moved > 0:
-            self._log("put %d wood the menu will not spend back" % moved)
-
-        return moved
-
     # One pool by default; a table of kind -> fill-to pulls each kind on its own, so a craft that
     # spends several things does not fill the pack with whichever pile the container lists first
     def _targets(self, targets):
@@ -1972,22 +2124,24 @@ class Restock(object):
 
         return [(kind, targets[kind] - held.get(kind, 0)) for kind in sorted(targets)]
 
-    def _pull(self, container, kind, wanted):
+    def _grew(self, before, after):
+        return ", ".join(sorted(name for name in after if after[name] > before.get(name, 0)))
+
+    def _pull(self, entry, kind, wanted):
         moved = 0
         stalled = 0
+        cap = self._sources.cap(entry)
+
+        if cap is not None:
+            wanted = min(wanted, cap)
 
         while moved < wanted and stalled < self._config["max_empty_moves"]:
-            piles = self._sources.container_wood(container, kind)
-
-            if len(piles) == 0:
+            if not self._sources.has_stock(entry, kind):
                 break
 
             before = self._wood.in_pack()
-
-            API.MoveItem(piles[0].Serial, API.Backpack,
-                         min(wanted - moved, amount_of(piles[0])))
-            API.Pause(self._config["move_delay"])
-
+            others = self._wood.pack_other()
+            token = self._sources.take(entry, kind, wanted - moved)
             gained = self._wood.in_pack() - before
 
             # Every container answers the same, so the first refusal ends the whole pull
@@ -1998,6 +2152,11 @@ class Restock(object):
                 break
 
             if gained <= 0:
+                gave = self._grew(others, self._wood.pack_other())
+
+                if gave:
+                    self._sources.took_wrong(entry, token, gave)
+
                 stalled += 1
             else:
                 stalled = 0
@@ -2005,7 +2164,7 @@ class Restock(object):
 
         return moved
 
-    # Moves are asynchronous: the pack is re-counted after each rather than MoveItem's return read
+    # Moves are asynchronous: the pack is re-counted after each rather than a return value read
     def run(self, targets=None):
         self._heavy = False
         lifted = self._wood.lift_from_bags()
@@ -2022,20 +2181,18 @@ class Restock(object):
                 self._log("cannot reach '%s', trying the next" % self._sources.name_of(entry))
                 continue
 
-            container = self._sources.open(entry)
-
-            if container is None:
-                self._log("'%s' has no backpack to draw from" % self._sources.name_of(entry))
+            if self._sources.open(entry) is None:
+                self._log("'%s' did not open" % self._sources.name_of(entry))
                 continue
 
             if self._config["return_wrong_wood"]:
-                self._put_back(container)
+                self._sources.put_back(entry)
 
             for kind in sorted(wanted, key=lambda name: name or ""):
                 if wanted[kind] <= 0 or self._heavy:
                     continue
 
-                pulled = self._pull(container, kind, wanted[kind])
+                pulled = self._pull(entry, kind, wanted[kind])
                 wanted[kind] -= pulled
                 moved += pulled
 
@@ -2153,15 +2310,268 @@ class SkillReader(object):
             waited += poll
 
 
+# src/uo/box.py
+def _is_int(token):
+    return token.lstrip("-").isdigit()
+
+
+# The packet is the strings, one a line, then the layout: 'text x y hue index', 'button x y ... id'
+def _split_layout(packet):
+    lines = (packet or "").replace("\x00", "").split("\n")
+
+    for start in range(len(lines)):
+        tokens = lines[start].split()
+
+        if len(tokens) > 1 and tokens[0].isalpha() and tokens[0].islower() \
+                and all(_is_int(token) for token in tokens[1:]):
+            return lines[:start], [line.split() for line in lines[start:] if line.split()]
+
+    return lines, []
+
+
+# A row's button is the nearest one to the left of its label on the same line of the layout
+def layout_buttons(packet, labels):
+    strings, layout = _split_layout(packet)
+    texts = {}
+    buttons = []
+
+    for tokens in layout:
+        if tokens[0] in ("text", "croppedtext") and len(tokens) >= 5:
+            texts[int(tokens[-1])] = (int(tokens[1]), int(tokens[2]))
+        elif tokens[0] == "button" and len(tokens) >= 8:
+            buttons.append((int(tokens[1]), int(tokens[2]), int(tokens[-1])))
+
+    found = {}
+
+    for label in labels:
+        if label not in strings:
+            continue
+
+        spot = texts.get(strings.index(label))
+
+        if spot is None:
+            continue
+
+        beside = [(x, ident) for x, y, ident in buttons if y == spot[1] and x < spot[0]]
+
+        if beside:
+            found[label] = max(beside)[1]
+
+    return found
+
+
+class StorageBox(object):
+    """The shard's resource box: stock read off its gump, drawn a button press at a time."""
+
+    def __init__(self, table, config, log):
+        self._table = table
+        self._config = config
+        self._log = log
+        self._id = 0
+        self._serial = None
+        self._seen = {}
+        self._skipped = set()
+        self._said = set()
+
+    def _say_once(self, key, text):
+        if key in self._said:
+            return
+
+        self._said.add(key)
+        self._log(text)
+
+    def is_box_gump(self, ident):
+        if not ident:
+            return False
+
+        if any_in(API.GetGumpContents(ident) or "", self._table["title"]):
+            return True
+
+        return gump_says(ident, self._table["title"])
+
+    def _showing(self):
+        if self._id and is_open(self._id):
+            return self._id
+
+        for ident in open_ids():
+            if self.is_box_gump(ident):
+                self._id = ident
+
+                return ident
+
+        return 0
+
+    def open(self, serial):
+        showing = self._showing()
+
+        if showing and self._serial in (None, serial):
+            self._serial = serial
+            self._seen[serial] = self._parse(showing)
+
+            return showing
+
+        before = open_ids()
+        API.UseObject(serial)
+
+        found, recognised = await_recognised(self.is_box_gump, before,
+                                             self._config["gump_timeout"],
+                                             self._config["gump_poll"])
+
+        if not found or not recognised:
+            return 0
+
+        self._id = found
+        self._serial = serial
+        self._seen[serial] = self._parse(found)
+
+        return found
+
+    def _parse(self, gump):
+        rows = {}
+        tokens = untagged(API.GetGumpContents(gump) or "").split()
+
+        for index in range(1, len(tokens)):
+            if tokens[index].isdigit():
+                rows[tokens[index - 1]] = int(tokens[index])
+
+        for label in sorted(rows):
+            if label not in self._table["rows"]:
+                self._say_once(("row", label),
+                               "the box lists '%s', which the BOX rows do not name" % label)
+
+        return rows
+
+    # Live while the gump is up, else as last seen: UseObject from across the house opens nothing
+    def rows(self, serial):
+        showing = self._showing()
+
+        if showing and self._serial == serial:
+            self._seen[serial] = self._parse(showing)
+
+        return self._seen.get(serial, {})
+
+    def _kind_of(self, label):
+        return self._table["rows"][label][0]
+
+    def _type_of(self, label):
+        wood_type = self._table["rows"][label][1]
+
+        return wood_type if wood_type is not None else self._config["plain"]
+
+    def _labels(self, kind, wanted):
+        return [label for label in self._table["rows"]
+                if (kind is None or self._kind_of(label) == kind)
+                and self._type_of(label) == wanted]
+
+    def counts(self, serial, wanted):
+        rows = self.rows(serial)
+        counts = {}
+
+        for label in self._labels(None, wanted):
+            if rows.get(label, 0) > 0:
+                kind = self._kind_of(label)
+                counts[kind] = counts.get(kind, 0) + rows[label]
+
+        return counts
+
+    def other_counts(self, serial, wanted):
+        rows = self.rows(serial)
+        counts = {}
+
+        for label in rows:
+            if label in self._table["rows"] and self._type_of(label) != wanted and rows[label] > 0:
+                name = self._type_of(label)
+                counts[name] = counts.get(name, 0) + rows[label]
+
+        return counts
+
+    def _pressable(self, serial, kind, wanted):
+        rows = self.rows(serial)
+        labels = [label for label in self._labels(kind, wanted)
+                  if label not in self._skipped and rows.get(label, 0) > 0]
+        labels.sort(key=lambda label: -rows[label])
+
+        return labels
+
+    def has_stock(self, serial, kind, wanted):
+        return len(self._pressable(serial, kind, wanted)) > 0
+
+    # One press lands per_press; the caller re-counts the pack rather than trusting the reply
+    def take(self, serial, kind, wanted):
+        labels = self._pressable(serial, kind, wanted)
+
+        if len(labels) == 0:
+            return None
+
+        label = labels[0]
+        gump = self.open(serial)
+
+        if not gump:
+            return None
+
+        button = self._button_for(label, gump)
+
+        if button is None:
+            self._skipped.add(label)
+            self._say_once(("button", label),
+                           "no button known for the '%s' row - run box-probe.py and fill the BOX "
+                           "buttons" % label)
+
+            return None
+
+        known = button_ids(gump)
+
+        if known is not None and button not in known:
+            self._skipped.add(label)
+            self._say_once(("missing", label), "gump %s has no button %d for '%s' - not pressing it"
+                           % (hex_of(gump), button, label))
+
+            return None
+
+        if not API.ReplyGump(button, gump):
+            return None
+
+        # The reply disposes the gump, so the next read opens it again
+        self._id = 0
+
+        return label
+
+    # Read off the gump's own layout; the table is for a client that hands back no packet text
+    def _button_for(self, label, gump):
+        try:
+            found = API.GetGump(gump)
+            packet = getattr(found, "PacketGumpText", None) if found is not None else None
+        except Exception:
+            if API.StopRequested:
+                raise
+
+            packet = None
+
+        derived = layout_buttons(packet, [label]) if packet else {}
+
+        if label in derived:
+            return derived[label]
+
+        return self._table["buttons"].get(label)
+
+    def wrong_row(self, label, gave):
+        self._skipped.add(label)
+        self._log("the button table is out of date for '%s' - it gave %s" % (label, gave))
+
+
 # src/uo/sources.py
+KIND_NOUNS = {"item": "container", "mobile": "pack animal", "box": "storage box"}
+
+
 class Sources(object):
-    """The containers and pack animals the wood is drawn from."""
+    """The containers, storage boxes and pack animals the wood is drawn from."""
 
     def __init__(self, wood, config, log):
         self._wood = wood
         self._config = config
         self._log = log
         self._picked = []
+        self._box = StorageBox(config["box"], config, log) if config["box"] else None
 
     def picked(self):
         return self._picked
@@ -2187,17 +2597,28 @@ class Sources(object):
         return getattr(pack, "Serial", pack)
 
     def container_of(self, entry):
+        if entry["kind"] == "box":
+            return None
+
         if entry["kind"] == "mobile":
             return self._animal_pack(entry["serial"])
 
         return entry["serial"]
 
+    def _is_box(self, item):
+        if self._box is None:
+            return False
+
+        table = self._config["box"]
+
+        return item.Graphic in table["graphics"] or any_in(item.Name, table["names"])
+
     def entry_for(self, serial):
         item = API.FindItem(serial)
 
         if item is not None:
-            return {"kind": "item", "serial": serial, "name": item.Name or "?",
-                    "spot": (item.X, item.Y, item.Z)}
+            return {"kind": "box" if self._is_box(item) else "item", "serial": serial,
+                    "name": item.Name or "?", "spot": (item.X, item.Y, item.Z)}
 
         animal = API.FindMobile(serial)
 
@@ -2208,6 +2629,9 @@ class Sources(object):
 
     # ItemsInContainer reads nothing out of a container the client has never seen inside
     def open(self, entry):
+        if entry["kind"] == "box":
+            return self._box.open(entry["serial"]) or None
+
         container = self.container_of(entry)
 
         if container is None:
@@ -2218,9 +2642,23 @@ class Sources(object):
 
         return container
 
-    def pick(self):
-        self._log("target every container or pack animal holding %s, ESC when done"
-                  % self._wood.noun())
+    def _noun_of(self, allowed):
+        if allowed is None:
+            return ("container, storage box or pack animal" if self._box is not None
+                    else "container or pack animal")
+
+        return " or ".join(KIND_NOUNS[kind] for kind in allowed if kind in KIND_NOUNS)
+
+    # Every kind by default; a list of kinds, as the gump at the start chose, refuses the others.
+    # One storage box is the whole selection: its gump is one at a time, and one holds everything.
+    def pick(self, allowed=None):
+        single = allowed == ["box"]
+
+        if single:
+            self._log("target the storage box holding %s" % self._wood.noun())
+        else:
+            self._log("target every %s holding %s, ESC when done"
+                      % (self._noun_of(allowed), self._wood.noun()))
 
         me = player()
         mine = me.Serial if me is not None else None
@@ -2248,19 +2686,28 @@ class Sources(object):
                 self._log("%s is neither a container nor a creature" % hex_of(serial))
                 continue
 
+            if allowed is not None and entry["kind"] not in allowed:
+                self._log("'%s' is a %s - the gump chose the %s"
+                          % (self.name_of(entry), KIND_NOUNS[entry["kind"]],
+                             self._noun_of(allowed)))
+                continue
+
             # Opened now, while it is in reach
             if self.open(entry) is None:
-                self._log("'%s' has no backpack to draw from" % self.name_of(entry))
+                self._log("'%s' did not open" % self.name_of(entry))
                 continue
 
             self._picked.append(entry)
 
-            other = self._wood.other_report(self._wood.other_counts(self.all_wood(entry)))
+            other = self._wood.other_report(self.other_counts(entry))
 
             self._log("picked '%s' %s, %s in it%s"
                       % (self.name_of(entry), hex_of(serial),
                          self._wood.report(self.counts(entry)),
                          "" if not other else " (%s it will not use)" % other))
+
+            if single:
+                break
 
         if API.HasTarget():
             API.CancelTarget()
@@ -2290,7 +2737,16 @@ class Sources(object):
         return [item for item in items if self._wood.is_stock(item)] if items else []
 
     def counts(self, entry):
+        if entry["kind"] == "box":
+            return self._box.counts(entry["serial"], self._wood.wanted())
+
         return self._wood.counts(self.wood(entry))
+
+    def other_counts(self, entry):
+        if entry["kind"] == "box":
+            return self._box.other_counts(entry["serial"], self._wood.wanted())
+
+        return self._wood.other_counts(self.all_wood(entry))
 
     def total(self, entry):
         return total_of(self.counts(entry))
@@ -2303,6 +2759,69 @@ class Sources(object):
             return "nothing picked to restock from"
 
         return "%d in the %d you picked" % (self.stock_left(), len(self._picked))
+
+    def has_stock(self, entry, kind):
+        if entry["kind"] == "box":
+            return self._box.has_stock(entry["serial"], kind, self._wood.wanted())
+
+        container = self.container_of(entry)
+
+        return container is not None and len(self.container_wood(container, kind)) > 0
+
+    # The most one restock draws from a source; None is as much as it asks for
+    def cap(self, entry):
+        return self._config["box_take"] if entry["kind"] == "box" else None
+
+    # Moves are asynchronous: the caller re-counts the pack rather than reading a return value
+    def take(self, entry, kind, amount):
+        if entry["kind"] == "box":
+            before = self._wood.in_pack()
+            label = self._box.take(entry["serial"], kind, self._wood.wanted())
+
+            # A press counted before its boards land is pressed again, and lands twice
+            if label is not None:
+                settled(self._config["press_timeout"], self._config["press_poll"],
+                        lambda: self._wood.in_pack() != before)
+
+            return label
+
+        container = self.container_of(entry)
+        piles = self.container_wood(container, kind) if container is not None else []
+
+        if len(piles) == 0:
+            return None
+
+        API.MoveItem(piles[0].Serial, API.Backpack, min(amount, amount_of(piles[0])))
+        API.Pause(self._config["move_delay"])
+
+        return None
+
+    def took_wrong(self, entry, token, gave):
+        if entry["kind"] == "box" and token is not None:
+            self._box.wrong_row(token, gave)
+
+    # Wrong wood goes back while its container is open and in reach, the one moment it costs nothing
+    def put_back(self, entry):
+        container = self.container_of(entry)
+
+        if container is None:
+            return 0
+
+        before = total_of(self._wood.pack_other())
+
+        if before == 0:
+            return 0
+
+        for pile in self._wood.wrong_piles():
+            API.MoveItem(pile.Serial, container, amount_of(pile))
+            API.Pause(self._config["move_delay"])
+
+        moved = before - total_of(self._wood.pack_other())
+
+        if moved > 0:
+            self._log("put %d wood the menu will not spend back" % moved)
+
+        return moved
 
     # Re-resolved after the walk: a pathfind that ends early leaves you short
     def reach(self, entry):
@@ -2395,8 +2914,16 @@ sources = Sources(wood, {
     "max_picks": MAX_PICKS,
     "pick_timeout": PICK_TIMEOUT,
     "open_delay": OPEN_DELAY,
+    "move_delay": MOVE_DELAY,
     "container_range": CONTAINER_RANGE,
     "pathfind_timeout": PATHFIND_TIMEOUT,
+    "box": BOX,
+    "plain": REGULAR_WOOD,
+    "gump_timeout": GUMP_TIMEOUT,
+    "gump_poll": GUMP_POLL,
+    "box_take": BOX_TAKE,
+    "press_timeout": BOX_PRESS_TIMEOUT,
+    "press_poll": BOX_PRESS_POLL,
 }, log)
 restock = Restock(wood, sources, {
     "batch": BATCH_SIZE,
@@ -2410,6 +2937,7 @@ dump = Dump(sources, PRODUCT_GRAPHICS, {
     "move_delay": MOVE_DELAY,
     "keep_existing": True,
 }, log)
+source_choice = Choice(SOURCE_CHOICE, log, stop_reason)
 menu = CraftMenu(tools, {
     "stride": BUTTON_STRIDE,
     "category_type": CATEGORY_BUTTON_TYPE,
@@ -2462,7 +2990,8 @@ if tools.serial() is None:
     log("no carpentry tools in the pack")
     API.Stop()
 
-sources.pick()
+source = source_choice.ask(SOURCE_OPTIONS)
+sources.pick(["box"] if source == "box" else ["item", "mobile"])
 
 # A run that starts on the wood it is already carrying needed no cursor at all
 if len(sources.picked()) == 0 and wood.in_pack() == 0:

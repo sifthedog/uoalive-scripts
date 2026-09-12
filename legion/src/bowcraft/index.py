@@ -1,30 +1,34 @@
 import API
 
-from bowcraft.config import (BANDS, BATCH_SIZE, BOWYER_TITLES, BUTTON_STRIDE, CATEGORY_BUTTON_TYPE,
-                             CATEGORY_NAMES, CONTAINER_RANGE, CONTEXT_TIMEOUT, CRAFT_POLL,
-                             CRAFT_SETTLE, CRAFT_TIMEOUT, CRAFT_TITLE, CRAFT_TITLE_FRAGMENTS,
-                             CRAFT_TITLE_TEXT, DATA_PATH, GUMP_POLL, GUMP_TIMEOUT, HEARTBEAT_EVERY,
-                             ITEM_BUTTON_TYPE, JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS,
-                             LAST_TEN_LABEL, LOG_EVERY, MAKE_LAST_BUTTON, MATERIAL_GRAPHICS,
-                             MAX_CATEGORIES, MAX_CYCLES, MAX_EMPTY_MOVES, MAX_ITEM_PROBES,
+from bowcraft.config import (BANDS, BATCH_SIZE, BOX, BOX_PRESS_POLL, BOX_PRESS_TIMEOUT, BOX_TAKE,
+                             BUTTON_STRIDE, CATEGORY_BUTTON_TYPE, CATEGORY_NAMES, CONTAINER_RANGE,
+                             CONTEXT_TIMEOUT, CRAFT_POLL, CRAFT_SETTLE, CRAFT_TIMEOUT, CRAFT_TITLE,
+                             CRAFT_TITLE_FRAGMENTS, CRAFT_TITLE_TEXT, DATA_PATH, DUMP_AT,
+                             GUMP_POLL, GUMP_TIMEOUT, HEARTBEAT_EVERY, ITEM_BUTTON_TYPE,
+                             JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS, LAST_TEN_LABEL, LOG_EVERY,
+                             MAKE_LAST_BUTTON, MATERIAL_GRAPHICS, MAX_CATEGORIES, MAX_CYCLES,
+                             MAX_DUMP_MISSES, MAX_EMPTY_MOVES, MAX_HELD, MAX_ITEM_PROBES,
                              MAX_ITEM_ROWS, MAX_NO_MATERIAL, MAX_NO_TOOL, MAX_PICKS,
                              MAX_SELL_MISSES, MAX_THROTTLED, MAX_UNKNOWN, MAX_UNREADABLE_REPORTS,
                              MIN_CRAFT_WOOD, MIN_SKILL, MOVE_DELAY, OPEN_DELAY, OPL_WAIT,
-                             OUTCOME_TEXT, PATHFIND_TIMEOUT, PICK_TIMEOUT, PRODUCT_GRAPHICS,
-                             PRODUCTS, RECIPES, REFUND_POLL, REFUND_SETTLE, RESTOCK_AT,
-                             RETURN_WRONG_WOOD, SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT, SAVING_TEXT,
-                             SELL_AT, SELL_ENTRY, SELL_PHRASE, SELL_POLL, SELL_RETRY_AFTER,
-                             SELL_TIMEOUT, SKILL_NAMES, SKILL_POLL, SKILL_TIMEOUT, STALL_STOP,
-                             STALL_WARN, STEP_DELAY, STOPPED, THROTTLE_BACKOFF,
-                             THROTTLE_BACKOFF_MAX, TOO_HEAVY_TEXT, TOOL_GRAPHICS, TOOL_NAME_WORDS,
-                             UNREADABLE_TEXT_LIMIT, VENDOR_RANGE, VENDOR_SCAN_RADIUS,
+                             OUTCOME_TEXT, OUTPUT_CHOICE, OUTPUT_OPTIONS, PATHFIND_TIMEOUT,
+                             PICK_TIMEOUT, PRODUCTS, PRODUCT_GRAPHICS, RECIPES, REFUND_POLL,
+                             REFUND_SETTLE, REGULAR_WOOD, RESTOCK_AT, RETURN_WRONG_WOOD,
+                             SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT, SAVING_TEXT, SELL_AT,
+                             SELL_ENTRY, SELL_PHRASE, SELL_POLL, SELL_RETRY_AFTER, SELL_TIMEOUT,
+                             SKILL_NAMES, SKILL_POLL, SKILL_TIMEOUT, SOURCE_CHOICE, SOURCE_OPTIONS,
+                             STALL_STOP, STALL_WARN, STEP_DELAY, STOPPED, THROTTLE_BACKOFF,
+                             THROTTLE_BACKOFF_MAX, TOOL_GRAPHICS, TOOL_NAME_WORDS, TOO_HEAVY_TEXT,
+                             UNREADABLE_TEXT_LIMIT, VENDORS, VENDOR_RANGE, VENDOR_SCAN_RADIUS,
                              VENDOR_SERIAL, VENDOR_STEPS, WOOD_HUES, WOOD_KINDS, WOOD_TYPE,
                              WOOD_TYPES)
 from uo.restock import Restock
 from uo.sources import Sources
+from uo.choice import Choice
 from uo.craft import Crafter
 from uo.craftmenu import CraftMenu
 from uo.crafttool import CraftTool
+from uo.dump import Dump
 from uo.guards import dead, first_reason, skill_capped, stopped
 from uo.heartbeat import Heartbeat
 from uo.log import make_log
@@ -53,14 +57,27 @@ if skill_name is None:
     API.Stop()
 
 skill = SkillReader(skill_name)
+product = None
 
 
 def stop_reason():
     return first_reason([stopped(STOPPED), dead(), skill_capped(skill_name)])
 
 
+# The band's product only: a yumi left from the band before would send a bowyer trip every cycle
 def products_in_pack():
-    return count_of(PRODUCT_GRAPHICS)
+    return count_of(PRODUCTS[product] if product is not None else PRODUCT_GRAPHICS)
+
+
+def unsold_ahead(value):
+    for ceiling, name in BANDS:
+        if VENDORS[name] is None and (ceiling is None or ceiling > value):
+            return True
+
+    return False
+
+
+UNSOLD_GRAPHICS = set().union(*[PRODUCTS[name] for name in VENDORS if VENDORS[name] is None])
 
 
 saves = SaveWatch(SAVING_TEXT, SAVE_DONE_TEXT, SAVE_WAIT, SAVE_POLL, log, heartbeat, stop_reason)
@@ -78,8 +95,16 @@ sources = Sources(wood, {
     "max_picks": MAX_PICKS,
     "pick_timeout": PICK_TIMEOUT,
     "open_delay": OPEN_DELAY,
+    "move_delay": MOVE_DELAY,
     "container_range": CONTAINER_RANGE,
     "pathfind_timeout": PATHFIND_TIMEOUT,
+    "box": BOX,
+    "plain": REGULAR_WOOD,
+    "gump_timeout": GUMP_TIMEOUT,
+    "gump_poll": GUMP_POLL,
+    "box_take": BOX_TAKE,
+    "press_timeout": BOX_PRESS_TIMEOUT,
+    "press_poll": BOX_PRESS_POLL,
 }, log)
 restock = Restock(wood, sources, {
     "batch": BATCH_SIZE,
@@ -134,6 +159,8 @@ vendor = Vendor(menu, {
     "opl_wait": OPL_WAIT,
     "text_limit": UNREADABLE_TEXT_LIMIT,
 }, log, heartbeat, products_in_pack)
+choice = Choice(OUTPUT_CHOICE, log, stop_reason)
+source_choice = Choice(SOURCE_CHOICE, log, stop_reason)
 
 start = skill.wait(SKILL_TIMEOUT, SKILL_POLL)
 
@@ -155,12 +182,41 @@ if tools.serial() is None:
     log("no fletcher's tools in the pack")
     API.Stop()
 
-sources.pick()
+source = source_choice.ask(SOURCE_OPTIONS)
+sources.pick(["box"] if source == "box" else ["item", "mobile"])
 
 # A run that starts on the wood it is already carrying needed no cursor at all
 if len(sources.picked()) == 0 and wood.in_pack() == 0:
     log("nothing picked and no wood in the pack")
     API.Stop()
+
+output = choice.ask(OUTPUT_OPTIONS)
+
+# Kept: a bow carried in is the character's own, and it is never unloaded into a barrel
+dump = Dump(sources, UNSOLD_GRAPHICS if output == "sell" else PRODUCT_GRAPHICS, {
+    "pick_timeout": PICK_TIMEOUT,
+    "move_delay": MOVE_DELAY,
+    "keep_existing": True,
+}, log)
+
+if output == "unload":
+    dump.pick()
+
+    if not dump.picked():
+        output = "keep"
+
+if output == "sell":
+    log("selling every %d to the bowyer" % SELL_AT)
+
+    if unsold_ahead(start):
+        dump.pick()
+
+        if not dump.picked():
+            log("nothing picked to unload into - the run ends once the pack holds %d unsold products"
+                % MAX_HELD)
+elif output != "unload":
+    output = "keep"
+    log("keeping what is made - the run ends once the pack holds %d" % MAX_HELD)
 
 cap = skill.cap()
 
@@ -185,9 +241,9 @@ throttle_tally = 0
 said_throttle = False
 sell_misses = 0
 sell_paused_until = 0
+dump_misses = 0
 reported = 0
 cycle = 0
-product = None
 last_skill = start
 
 
@@ -203,7 +259,9 @@ def end_cycle(phase):
 def sell_now():
     global sell_misses, sell_paused_until
 
-    if vendor.sell_trip(BOWYER_TITLES, "bowyer"):
+    noun, titles = VENDORS[product]
+
+    if vendor.sell_trip(titles, noun):
         sell_misses = 0
 
         return True
@@ -220,19 +278,53 @@ def sell_now():
     return False
 
 
-# A pack the shard will not load for weight is unloaded first, when there is anything in it to sell
-def sell_for_room():
-    if not restock.refused_for_weight() or cycle < sell_paused_until:
-        return False
+def unload_now():
+    global dump_misses
 
-    held = products_in_pack()
+    if dump.run() > 0:
+        dump_misses = 0
 
-    if held == 0:
-        return False
+        return True
 
-    log("selling %d before loading more wood" % held)
+    dump_misses += 1
 
-    return sell_now()
+    return False
+
+
+def sells_this_band():
+    return output == "sell" and VENDORS[product] is not None
+
+
+def unloads_this_band():
+    return output == "unload" or (output == "sell" and VENDORS[product] is None and dump.picked())
+
+
+# A pack the shard will not load for weight is emptied first, the way the band's products leave
+def make_room():
+    if not restock.refused_for_weight():
+        return None
+
+    if sells_this_band():
+        held = products_in_pack()
+
+        if held == 0 or cycle < sell_paused_until:
+            return None
+
+        log("selling %d before loading more wood" % held)
+
+        return "selling" if sell_now() else None
+
+    if unloads_this_band():
+        held = dump.held()
+
+        if held == 0:
+            return None
+
+        log("unloading %d before loading more wood" % held)
+
+        return "unloading" if unload_now() else None
+
+    return None
 
 
 # Measured either side of the craft rather than read off the recipe: a failure refunds part of it
@@ -274,21 +366,55 @@ try:
             stop = "%s reads %s and no band covers it" % (skill_name, reading(value))
             break
 
+        # Whether anyone buys changes with the band, so the paused trips get a fresh start too
         if wanted != product:
             log("%s at %s, making %s" % (skill_name, reading(value), wanted))
             product = wanted
             crafter.forget_last()
+            sell_misses = 0
+            sell_paused_until = 0
 
-        if products_in_pack() >= SELL_AT and cycle >= sell_paused_until and sell_now():
-            end_cycle("selling")
-            continue
+        held = dump.held()
+
+        if output == "unload":
+            if held >= DUMP_AT:
+                if unload_now():
+                    end_cycle("unloading")
+                    continue
+
+                if dump_misses >= MAX_DUMP_MISSES:
+                    stop = ("%d unloads in a row moved nothing into '%s'"
+                            % (dump_misses, dump.name()))
+                    break
+        elif output == "sell":
+            if VENDORS[product] is None:
+                if held >= DUMP_AT and dump.picked():
+                    if unload_now():
+                        end_cycle("unloading")
+                        continue
+
+                    if dump_misses >= MAX_DUMP_MISSES:
+                        stop = ("%d unloads in a row moved nothing into '%s'"
+                                % (dump_misses, dump.name()))
+                        break
+                elif held >= MAX_HELD and not dump.picked():
+                    stop = "the pack holds %d unsold and nothing was picked to unload into" % held
+                    break
+            elif products_in_pack() >= SELL_AT and cycle >= sell_paused_until and sell_now():
+                end_cycle("selling")
+                continue
+        elif held >= MAX_HELD:
+            stop = "the pack holds %d and nothing was picked to unload into" % held
+            break
 
         if wood.in_pack() < RESTOCK_AT:
             # An unreachable container also pulls nothing, which the stall watch ends
             pulled = restock.run()
 
-            if sell_for_room():
-                end_cycle("selling")
+            phase = make_room()
+
+            if phase is not None:
+                end_cycle(phase)
                 continue
 
             if pulled == 0 and sources.stock_left() == 0 and wood.in_pack() < MIN_CRAFT_WOOD:
@@ -322,8 +448,10 @@ try:
         elif outcome == "noMaterial":
             pulled = restock.run()
 
-            if sell_for_room():
-                end_cycle("selling")
+            phase = make_room()
+
+            if phase is not None:
+                end_cycle(phase)
                 continue
 
             if pulled > 0:

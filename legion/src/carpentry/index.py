@@ -1,23 +1,25 @@
 import API
 
-from carpentry.config import (BANDS, BATCH_SIZE, BUTTON_STRIDE, CATEGORY_BUTTON_TYPE,
-                              CATEGORY_NAMES, CONTAINER_RANGE, CRAFT_POLL, CRAFT_SETTLE,
-                              CRAFT_TIMEOUT, CRAFT_TITLE, CRAFT_TITLE_FRAGMENTS, CRAFT_TITLE_TEXT,
-                              DATA_PATH, DUMP_AT, GUMP_POLL, GUMP_TIMEOUT, HEARTBEAT_EVERY,
-                              ITEM_BUTTON_TYPE, JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS,
-                              LAST_TEN_LABEL, LOG_EVERY, MAKE_LAST_BUTTON, MATERIAL_GRAPHICS,
-                              MAX_CATEGORIES, MAX_CYCLES, MAX_DUMP_MISSES, MAX_EMPTY_MOVES,
-                              MAX_HELD, MAX_ITEM_PROBES, MAX_ITEM_ROWS, MAX_NO_MATERIAL,
-                              MAX_NO_TOOL, MAX_PICKS, MAX_THROTTLED, MAX_UNKNOWN,
-                              MAX_UNREADABLE_REPORTS, MIN_CRAFT_WOOD, MIN_SKILL, MOVE_DELAY,
-                              OPEN_DELAY, OUTCOME_TEXT, PATHFIND_TIMEOUT, PICK_TIMEOUT,
-                              PRODUCT_GRAPHICS, PRODUCTS, RECIPES, REFUND_POLL, REFUND_SETTLE,
-                              RESTOCK_AT, RETURN_WRONG_WOOD, SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT,
-                              SAVING_TEXT, SKILL_NAMES, SKILL_POLL, SKILL_TIMEOUT, STALL_STOP,
+from carpentry.config import (BANDS, BATCH_SIZE, BOX, BOX_PRESS_POLL, BOX_PRESS_TIMEOUT, BOX_TAKE,
+                              BUTTON_STRIDE, CATEGORY_BUTTON_TYPE, CATEGORY_NAMES, CONTAINER_RANGE,
+                              CRAFT_POLL, CRAFT_SETTLE, CRAFT_TIMEOUT, CRAFT_TITLE,
+                              CRAFT_TITLE_FRAGMENTS, CRAFT_TITLE_TEXT, DATA_PATH, DUMP_AT,
+                              GUMP_POLL, GUMP_TIMEOUT, HEARTBEAT_EVERY, ITEM_BUTTON_TYPE,
+                              JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS, LAST_TEN_LABEL, LOG_EVERY,
+                              MAKE_LAST_BUTTON, MATERIAL_GRAPHICS, MAX_CATEGORIES, MAX_CYCLES,
+                              MAX_DUMP_MISSES, MAX_EMPTY_MOVES, MAX_HELD, MAX_ITEM_PROBES,
+                              MAX_ITEM_ROWS, MAX_NO_MATERIAL, MAX_NO_TOOL, MAX_PICKS,
+                              MAX_THROTTLED, MAX_UNKNOWN, MAX_UNREADABLE_REPORTS, MIN_CRAFT_WOOD,
+                              MIN_SKILL, MOVE_DELAY, OPEN_DELAY, OUTCOME_TEXT, PATHFIND_TIMEOUT,
+                              PICK_TIMEOUT, PRODUCTS, PRODUCT_GRAPHICS, RECIPES, REFUND_POLL,
+                              REFUND_SETTLE, REGULAR_WOOD, RESTOCK_AT, RETURN_WRONG_WOOD,
+                              SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT, SAVING_TEXT, SKILL_NAMES,
+                              SKILL_POLL, SKILL_TIMEOUT, SOURCE_CHOICE, SOURCE_OPTIONS, STALL_STOP,
                               STALL_WARN, STEP_DELAY, STOPPED, THROTTLE_BACKOFF,
-                              THROTTLE_BACKOFF_MAX, TOO_HEAVY_TEXT, TOOL_GRAPHICS,
-                              TOOL_NAME_WORDS, UNREADABLE_TEXT_LIMIT, WOOD_COST, WOOD_HUES,
-                              WOOD_KINDS, WOOD_TYPE, WOOD_TYPES)
+                              THROTTLE_BACKOFF_MAX, TOOL_GRAPHICS, TOOL_NAME_WORDS, TOO_HEAVY_TEXT,
+                              UNREADABLE_TEXT_LIMIT, WOOD_COST, WOOD_HUES, WOOD_KINDS, WOOD_TYPE,
+                              WOOD_TYPES)
+from uo.choice import Choice
 from uo.dump import Dump
 from uo.cost import cost_of, short_by
 from uo.craft import Crafter
@@ -80,8 +82,16 @@ sources = Sources(wood, {
     "max_picks": MAX_PICKS,
     "pick_timeout": PICK_TIMEOUT,
     "open_delay": OPEN_DELAY,
+    "move_delay": MOVE_DELAY,
     "container_range": CONTAINER_RANGE,
     "pathfind_timeout": PATHFIND_TIMEOUT,
+    "box": BOX,
+    "plain": REGULAR_WOOD,
+    "gump_timeout": GUMP_TIMEOUT,
+    "gump_poll": GUMP_POLL,
+    "box_take": BOX_TAKE,
+    "press_timeout": BOX_PRESS_TIMEOUT,
+    "press_poll": BOX_PRESS_POLL,
 }, log)
 restock = Restock(wood, sources, {
     "batch": BATCH_SIZE,
@@ -95,6 +105,7 @@ dump = Dump(sources, PRODUCT_GRAPHICS, {
     "move_delay": MOVE_DELAY,
     "keep_existing": True,
 }, log)
+source_choice = Choice(SOURCE_CHOICE, log, stop_reason)
 menu = CraftMenu(tools, {
     "stride": BUTTON_STRIDE,
     "category_type": CATEGORY_BUTTON_TYPE,
@@ -147,7 +158,8 @@ if tools.serial() is None:
     log("no carpentry tools in the pack")
     API.Stop()
 
-sources.pick()
+source = source_choice.ask(SOURCE_OPTIONS)
+sources.pick(["box"] if source == "box" else ["item", "mobile"])
 
 # A run that starts on the wood it is already carrying needed no cursor at all
 if len(sources.picked()) == 0 and wood.in_pack() == 0:

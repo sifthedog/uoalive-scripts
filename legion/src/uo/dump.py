@@ -59,6 +59,12 @@ class Dump(object):
 
             return None
 
+        if entry["kind"] == "box":
+            self._log("'%s' is a storage box, which takes nothing you made - pick a barrel or a "
+                      "chest" % self._sources.name_of(entry))
+
+            return None
+
         if self._sources.open(entry) is None:
             self._log("'%s' has no backpack to unload into" % self._sources.name_of(entry))
 

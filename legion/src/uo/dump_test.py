@@ -6,6 +6,7 @@ from test_support.uo import install, item
 DEED = 0x14F0
 STAFF = 0x0E89
 BARREL = 0x40002000
+BOX = 0x40003000
 
 CONFIG = {"pick_timeout": 1.0, "move_delay": 0.0, "keep_existing": True}
 
@@ -16,6 +17,9 @@ class BarrelSources(object):
         self.opened = 0
 
     def entry_for(self, serial):
+        if serial == BOX:
+            return {"kind": "box", "serial": serial, "name": "storage box", "spot": (0, 0, 0)}
+
         if serial != BARREL:
             return None
 
@@ -73,6 +77,14 @@ class DumpTest(unittest.TestCase):
 
         self.assertIsNone(self.dump.pick())
         self.assertFalse(self.dump.picked())
+
+    def test_a_storage_box_is_refused(self):
+        self.api.requested_target = BOX
+
+        self.assertIsNone(self.dump.pick())
+        self.assertFalse(self.dump.picked())
+        self.assertEqual(self.sources.opened, 0)
+        self.assertIn("is a storage box", messages(self.api))
 
     def test_your_own_pack_is_refused(self):
         self.api.requested_target = self.api.Backpack

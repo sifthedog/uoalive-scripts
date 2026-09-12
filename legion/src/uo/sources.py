@@ -1,18 +1,25 @@
 import API
 
+from uo.box import StorageBox
 from uo.stock import total_of
 from uo.entity import chebyshev, hex_of, player
 from uo.pack import amount_of
+from uo.retry import settled
+from uo.text import any_in
+
+
+KIND_NOUNS = {"item": "container", "mobile": "pack animal", "box": "storage box"}
 
 
 class Sources(object):
-    """The containers and pack animals the wood is drawn from."""
+    """The containers, storage boxes and pack animals the wood is drawn from."""
 
     def __init__(self, wood, config, log):
         self._wood = wood
         self._config = config
         self._log = log
         self._picked = []
+        self._box = StorageBox(config["box"], config, log) if config["box"] else None
 
     def picked(self):
         return self._picked
@@ -38,17 +45,28 @@ class Sources(object):
         return getattr(pack, "Serial", pack)
 
     def container_of(self, entry):
+        if entry["kind"] == "box":
+            return None
+
         if entry["kind"] == "mobile":
             return self._animal_pack(entry["serial"])
 
         return entry["serial"]
 
+    def _is_box(self, item):
+        if self._box is None:
+            return False
+
+        table = self._config["box"]
+
+        return item.Graphic in table["graphics"] or any_in(item.Name, table["names"])
+
     def entry_for(self, serial):
         item = API.FindItem(serial)
 
         if item is not None:
-            return {"kind": "item", "serial": serial, "name": item.Name or "?",
-                    "spot": (item.X, item.Y, item.Z)}
+            return {"kind": "box" if self._is_box(item) else "item", "serial": serial,
+                    "name": item.Name or "?", "spot": (item.X, item.Y, item.Z)}
 
         animal = API.FindMobile(serial)
 
@@ -59,6 +77,9 @@ class Sources(object):
 
     # ItemsInContainer reads nothing out of a container the client has never seen inside
     def open(self, entry):
+        if entry["kind"] == "box":
+            return self._box.open(entry["serial"]) or None
+
         container = self.container_of(entry)
 
         if container is None:
@@ -69,9 +90,23 @@ class Sources(object):
 
         return container
 
-    def pick(self):
-        self._log("target every container or pack animal holding %s, ESC when done"
-                  % self._wood.noun())
+    def _noun_of(self, allowed):
+        if allowed is None:
+            return ("container, storage box or pack animal" if self._box is not None
+                    else "container or pack animal")
+
+        return " or ".join(KIND_NOUNS[kind] for kind in allowed if kind in KIND_NOUNS)
+
+    # Every kind by default; a list of kinds, as the gump at the start chose, refuses the others.
+    # One storage box is the whole selection: its gump is one at a time, and one holds everything.
+    def pick(self, allowed=None):
+        single = allowed == ["box"]
+
+        if single:
+            self._log("target the storage box holding %s" % self._wood.noun())
+        else:
+            self._log("target every %s holding %s, ESC when done"
+                      % (self._noun_of(allowed), self._wood.noun()))
 
         me = player()
         mine = me.Serial if me is not None else None
@@ -99,19 +134,28 @@ class Sources(object):
                 self._log("%s is neither a container nor a creature" % hex_of(serial))
                 continue
 
+            if allowed is not None and entry["kind"] not in allowed:
+                self._log("'%s' is a %s - the gump chose the %s"
+                          % (self.name_of(entry), KIND_NOUNS[entry["kind"]],
+                             self._noun_of(allowed)))
+                continue
+
             # Opened now, while it is in reach
             if self.open(entry) is None:
-                self._log("'%s' has no backpack to draw from" % self.name_of(entry))
+                self._log("'%s' did not open" % self.name_of(entry))
                 continue
 
             self._picked.append(entry)
 
-            other = self._wood.other_report(self._wood.other_counts(self.all_wood(entry)))
+            other = self._wood.other_report(self.other_counts(entry))
 
             self._log("picked '%s' %s, %s in it%s"
                       % (self.name_of(entry), hex_of(serial),
                          self._wood.report(self.counts(entry)),
                          "" if not other else " (%s it will not use)" % other))
+
+            if single:
+                break
 
         if API.HasTarget():
             API.CancelTarget()
@@ -141,7 +185,16 @@ class Sources(object):
         return [item for item in items if self._wood.is_stock(item)] if items else []
 
     def counts(self, entry):
+        if entry["kind"] == "box":
+            return self._box.counts(entry["serial"], self._wood.wanted())
+
         return self._wood.counts(self.wood(entry))
+
+    def other_counts(self, entry):
+        if entry["kind"] == "box":
+            return self._box.other_counts(entry["serial"], self._wood.wanted())
+
+        return self._wood.other_counts(self.all_wood(entry))
 
     def total(self, entry):
         return total_of(self.counts(entry))
@@ -154,6 +207,69 @@ class Sources(object):
             return "nothing picked to restock from"
 
         return "%d in the %d you picked" % (self.stock_left(), len(self._picked))
+
+    def has_stock(self, entry, kind):
+        if entry["kind"] == "box":
+            return self._box.has_stock(entry["serial"], kind, self._wood.wanted())
+
+        container = self.container_of(entry)
+
+        return container is not None and len(self.container_wood(container, kind)) > 0
+
+    # The most one restock draws from a source; None is as much as it asks for
+    def cap(self, entry):
+        return self._config["box_take"] if entry["kind"] == "box" else None
+
+    # Moves are asynchronous: the caller re-counts the pack rather than reading a return value
+    def take(self, entry, kind, amount):
+        if entry["kind"] == "box":
+            before = self._wood.in_pack()
+            label = self._box.take(entry["serial"], kind, self._wood.wanted())
+
+            # A press counted before its boards land is pressed again, and lands twice
+            if label is not None:
+                settled(self._config["press_timeout"], self._config["press_poll"],
+                        lambda: self._wood.in_pack() != before)
+
+            return label
+
+        container = self.container_of(entry)
+        piles = self.container_wood(container, kind) if container is not None else []
+
+        if len(piles) == 0:
+            return None
+
+        API.MoveItem(piles[0].Serial, API.Backpack, min(amount, amount_of(piles[0])))
+        API.Pause(self._config["move_delay"])
+
+        return None
+
+    def took_wrong(self, entry, token, gave):
+        if entry["kind"] == "box" and token is not None:
+            self._box.wrong_row(token, gave)
+
+    # Wrong wood goes back while its container is open and in reach, the one moment it costs nothing
+    def put_back(self, entry):
+        container = self.container_of(entry)
+
+        if container is None:
+            return 0
+
+        before = total_of(self._wood.pack_other())
+
+        if before == 0:
+            return 0
+
+        for pile in self._wood.wrong_piles():
+            API.MoveItem(pile.Serial, container, amount_of(pile))
+            API.Pause(self._config["move_delay"])
+
+        moved = before - total_of(self._wood.pack_other())
+
+        if moved > 0:
+            self._log("put %d wood the menu will not spend back" % moved)
+
+        return moved
 
     # Re-resolved after the walk: a pathfind that ends early leaves you short
     def reach(self, entry):

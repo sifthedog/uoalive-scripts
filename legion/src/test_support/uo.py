@@ -105,8 +105,9 @@ class FakeButton(object):
 
 
 class FakeGump(object):
-    def __init__(self, children):
+    def __init__(self, children, layout=None):
         self.Children = children
+        self.PacketGumpText = layout
 
 
 class FakeControl(object):
@@ -217,6 +218,7 @@ class FakeAPI(object):
         self.gump = 0
         self.open_gumps = set()
         self.gump_buttons = {}
+        self.gump_layouts = {}
         self.gump_text = []
         self.gump_contents = {}
         self.opens = {}
@@ -432,10 +434,11 @@ class FakeAPI(object):
         return [FakeGui(serial) for serial in sorted(self._open_gumps())]
 
     def GetGump(self, ID=None):
-        if ID not in self.gump_buttons:
+        if ID not in self.gump_buttons and ID not in self.gump_layouts:
             return None
 
-        return FakeGump([FakeButton(button) for button in self.gump_buttons[ID]])
+        return FakeGump([FakeButton(button) for button in self.gump_buttons.get(ID, [])],
+                        self.gump_layouts.get(ID))
 
     def GumpContains(self, text, gump=None):
         return any(text.lower() in line.lower() for line in self.gump_text)

@@ -128,8 +128,10 @@ sources = Sources(stock, {
     "max_picks": MAX_PICKS,
     "pick_timeout": PICK_TIMEOUT,
     "open_delay": OPEN_DELAY,
+    "move_delay": MOVE_DELAY,
     "container_range": CONTAINER_RANGE,
     "pathfind_timeout": PATHFIND_TIMEOUT,
+    "box": None,
 }, log)
 restock = Restock(stock, sources, {
     "batch": BATCH_SIZE,

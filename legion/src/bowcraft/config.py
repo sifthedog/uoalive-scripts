@@ -1,3 +1,4 @@
+from uo.boxes import WOOD_BOX
 from uo.phrases import SAVE_DONE_TEXT, SAVING_TEXT, STOPPED, THROTTLED_TEXT
 from uo.timings import (HEARTBEAT_EVERY, LOG_EVERY, SAVE_POLL, SAVE_WAIT, STALL_STOP, STALL_WARN,
                         STEP_DELAY, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX)
@@ -14,7 +15,7 @@ MIN_SKILL = 30.0
 
 # The two bands that offer a choice: "fukiya darts" and "yumi" are the other way
 LOW_BAND_ITEM = "bow"
-HIGH_BAND_ITEM = "repeating crossbow"
+HIGH_BAND_ITEM = "yumi"
 
 # Ceilings are exclusive, in the client's float percentage - the src/training tables are in tenths
 BANDS = [
@@ -22,6 +23,7 @@ BANDS = [
     (70.0, "crossbow"),
     (80.0, "composite bow"),
     (90.0, "heavy crossbow"),
+    (100.0, "repeating crossbow"),
     (None, HIGH_BAND_ITEM),
 ]
 
@@ -85,15 +87,65 @@ WOOD_HUES = {
 # Wood of the wrong type is weight and nothing else. Off leaves it in the pack.
 RETURN_WRONG_WOOD = True
 
+# The shard's storage box, picked at the cursor beside chests and pack animals
+BOX = WOOD_BOX
+
+# What one restock draws from the box, in presses of 100
+BOX_TAKE = 200
+
+# How long the pack has to show a row's boards after the press, and how often it is read
+BOX_PRESS_TIMEOUT = 3.0
+BOX_PRESS_POLL = 0.25
+
+# Answered by the gump at the start; a closed gump means chests and pack animals, as before the box
+SOURCE_CHOICE = {
+    "text": "Draw wood from the storage box, or from the chests and pack animals you point at?",
+    "hue": 996,
+    "poll": 0.5,
+    "timeout": 60.0,
+}
+SOURCE_OPTIONS = [("box", "Storage box"), ("containers", "Chests and animals")]
+
 # Every restock fills the pack to this
 BATCH_SIZE = 300
 RESTOCK_AT = 25
 
-# Counted as amounts: fukiya darts stack ten to a craft, so raise it for that band
+# Counted as amounts, as DUMP_AT is: fukiya darts stack ten to a craft, so raise both for that band
 SELL_AT = 10
 
 # Matched against the name *and* the tooltip: "Alger" is "the bowyer" only in the tooltip
 BOWYER_TITLES = ["bowyer", "fletcher", "archer", "bowyers", "fletchers"]
+
+# Who buys each band's product: the noun for the log, and the titles matched against the name and
+# the tooltip. None when nobody buys it - the bowyer refuses a yumi - and it is unloaded instead.
+VENDORS = {
+    "bow": ("bowyer", BOWYER_TITLES),
+    "crossbow": ("bowyer", BOWYER_TITLES),
+    "composite bow": ("bowyer", BOWYER_TITLES),
+    "heavy crossbow": ("bowyer", BOWYER_TITLES),
+    "repeating crossbow": ("bowyer", BOWYER_TITLES),
+    "fukiya darts": ("bowyer", BOWYER_TITLES),
+    "yumi": None,
+}
+
+# Answered by the gump at the start; ESC on the unload cursor and a closed gump both mean keep. Sell
+# still asks for the container once a band nobody buys from is ahead.
+OUTPUT_CHOICE = {
+    "text": "Sell what is made to the bowyer, unload it into a container, or keep it?",
+    "hue": 996,
+    "poll": 0.5,
+    "timeout": 60.0,
+}
+OUTPUT_OPTIONS = [("sell", "Sell"), ("unload", "Unload"), ("keep", "Keep")]
+
+# Products the run made before they are unloaded: every band under Unload, the unsold under Sell
+DUMP_AT = 10
+
+# Keeping them, or selling with nowhere to put the unsold, the run ends once the pack holds this many
+MAX_HELD = 60
+
+# Unloads in a row that moved nothing before the run ends
+MAX_DUMP_MISSES = 3
 
 # The context entry first, matched by its text; the phrase for a menu with no such entry
 SELL_ENTRY = "sell"
