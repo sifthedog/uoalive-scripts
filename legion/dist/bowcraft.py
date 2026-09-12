@@ -2673,7 +2673,8 @@ def make_log(prefix):
     stamp = prefix + ": "
 
     def log(message):
-        API.SysMsg(stamp + message)
+        if log.enabled:
+            API.SysMsg(stamp + message)
 
     # The client puts a SysMsg in the journal beside the shard's own lines, so a script reading the
     # journal back needs to know which lines it wrote itself - without this a report of an unreadable
@@ -2682,6 +2683,7 @@ def make_log(prefix):
     # bundle is one script and one prefix, and a shared list would leak between scripts sharing this
     # process, such as the test suite.
     log.stamp = stamp.lower()
+    log.enabled = True
 
     return log
 
@@ -3160,7 +3162,7 @@ class Setup(object):
     def _show(self, heading, rows):
         outputs = self._config["outputs"]
         height = (TITLE_HEIGHT + ROW * 2 + ROW + LINE * MAX_SOURCE_LINES + ROW * 3
-                  + LINE * (len(rows) + 1) + ROW + BUTTON_HEIGHT + MARGIN * 4)
+                  + LINE * (len(rows) + 1) + ROW * 2 + BUTTON_HEIGHT + MARGIN * 4)
 
         gump = API.Gumps.CreateGump(True, True)
 
@@ -3247,6 +3249,11 @@ class Setup(object):
         c["message"] = self._label(gump, "", LABEL_X, y, WARN)
         y += ROW
 
+        c["debug_logs"] = API.Gumps.CreateGumpCheckbox("Debug logs", self._config["hue"], True)
+        c["debug_logs"].SetPos(LABEL_X, y)
+        gump.Add(c["debug_logs"])
+        y += ROW
+
         self._button(gump, "cancel", "Cancel", SETUP_WIDTH - MARGIN - 96 - 8 - 96, y, 96)
         self._button(gump, "ok", "OK", SETUP_WIDTH - MARGIN - 96, y, 96)
 
@@ -3263,6 +3270,9 @@ class Setup(object):
                 return self._config["outputs"][index][0]
 
         return self._config["outputs"][0][0]
+
+    def _debug_logs(self):
+        return self._controls["debug_logs"].GetIsChecked()
 
     def _dump_at(self):
         text = (self._controls["dump_at"].Text or "").strip()
@@ -3393,7 +3403,8 @@ class Setup(object):
                 dump_at = self._dump_at()
                 answers[0] = {"tools": self._mode(), "output": self._output(),
                               "sources": len(self._sources),
-                              "dump_at": dump_at if dump_at is not None else self._config["dump_at"]}
+                              "dump_at": dump_at if dump_at is not None else self._config["dump_at"],
+                              "debug_logs": self._debug_logs()}
 
                 return "OK was pressed"
 
@@ -3980,6 +3991,7 @@ answers = setup.ask({
 # The stop lands at the next Pause, so the lines until then read a form that was never answered
 output = answers["output"] if answers is not None else "keep"
 dump_at = answers["dump_at"] if answers is not None else DUMP_AT
+log.enabled = answers["debug_logs"] if answers is not None else False
 
 if answers is None:
     API.Stop()

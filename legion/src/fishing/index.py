@@ -5,21 +5,25 @@ from fishing.config import (AMBUSH_ALARM, AMBUSH_HOLD, AMBUSH_HOLD_BUTTON, AMBUS
                             AMBUSH_HOLD_POLL, AMBUSH_HOLD_TEXT, AMBUSH_HUE, AMBUSH_NOTICES,
                             AMBUSH_REPEATS, AMBUSH_TEXT, AMBUSH_WARNING, BOAT_STOPPED_HOLD,
                             BOAT_STOPPED_HOLD_TEXT, BOAT_STOPPED_HUE, BOAT_STOPPED_TEXT,
-                            BOAT_STOPPED_WARNING, CAST_POLL, CAST_TIMEOUT, CATCH_POLL,
+                            BOAT_STOPPED_WARNING, CAST_POLL, CAST_TIMEOUT, CATCH_MODE_DEFAULT,
+                            CATCH_MODE_HUE, CATCH_MODE_OPTIONS, CATCH_MODE_TEXT, CATCH_POLL,
                             CATCH_SETTLE, CAUGHT_TEXT, CURSOR_POLL, CURSOR_TIMEOUT, DATA_PATH,
-                            DISMOUNT_ATTEMPTS, DISMOUNT_POLL, DISMOUNT_TIMEOUT, GAIN_POLL,
-                            GAIN_SETTLE, GUARD_PHRASE, HAND_LAYERS, HEARTBEAT_EVERY,
-                            JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS, LAND_TILE_GRAPHIC, LOG_EVERY,
-                            MAX_CYCLES, MAX_THROTTLED, MAX_UNKNOWN, NO_CURSOR_READ, OUTCOME_TEXT,
-                            POLE_GRAPHICS, POLE_NAME_WORDS, PROMPT_TEXT, SAVE_DONE_TEXT, SAVE_POLL,
-                            SAVE_WAIT, SAVING_TEXT, SKILL_NAMES, SKILL_POLL, SKILL_TIMEOUT,
-                            STEP_DELAY, STOPPED, THREAT_RANGE, THROTTLE_BACKOFF,
-                            THROTTLE_BACKOFF_MAX, TILES_AHEAD_DEFAULT, TILES_AHEAD_HUE,
-                            TILES_AHEAD_POLL, TILES_AHEAD_PROMPT_TEXT, WATCH_FOR_TROUBLE,
+                            DISMOUNT_ATTEMPTS, DISMOUNT_POLL, DISMOUNT_TIMEOUT, DROP_OFFSETS,
+                            GAIN_POLL, GAIN_SETTLE, GUARD_PHRASE, HAND_LAYERS, HEARTBEAT_EVERY,
+                            JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS, JUNK_TEXT, LAND_TILE_GRAPHIC,
+                            LOG_EVERY, MAX_CYCLES, MAX_THROTTLED, MAX_UNKNOWN,
+                            MAX_UNREADABLE_REPORTS, MOVE_DELAY, NO_CURSOR_READ, OUTCOME_TEXT,
+                            PICK_TIMEOUT, POLE_GRAPHICS, POLE_NAME_WORDS, PROMPT_TEXT,
+                            SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT,
+                            SAVING_TEXT, SKILL_NAMES, SKILL_POLL, SKILL_TIMEOUT, STEP_DELAY,
+                            STOPPED, THREAT_RANGE, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX,
+                            TILES_AHEAD_DEFAULT, TILES_AHEAD_HUE, TILES_AHEAD_POLL,
+                            TILES_AHEAD_PROMPT_TEXT, TURN_DELAY, WATCH_FOR_TROUBLE,
                             WATER_LAND_GRAPHICS, WATER_STATIC_GRAPHICS)
-from fishing.direction import tile_ahead
+from fishing.direction import tile_ahead, turn_toward_water
 from fishing.pole import find_pole
-from fishing.prompt import TilesAheadPrompt
+from fishing.prompt import StartPrompt
+from uo.clock import now
 from uo.entity import hex_of
 from uo.guards import dead, first_reason, skill_capped, stopped
 from uo.heartbeat import Heartbeat
@@ -33,6 +37,8 @@ from uo.record import attempt_log
 from uo.retry import settled
 from uo.save import SaveWatch
 from uo.skill import SkillReader, find_skill_name, reading
+from uo.target import request_one
+from uo.text import any_in
 from uo.threat import ThreatWatch
 from uo.vitals import position_and_weight
 
@@ -124,16 +130,27 @@ def record_cast(recorder, skill, start, outcome, caught, before):
     recorder.close(skill.last())
 
 
-# The pack never keeps what is caught - it lands on the ground at your feet instead, so a long run
-# never has to be watched for filling up
-def drop_caught(before):
+def gained_items(before):
     settled(CATCH_SETTLE, CATCH_POLL, lambda: pack_total(pack_counts()) > pack_total(before))
     gained, _lost = diff_counts(before, pack_counts())
 
-    for graphic, hue in gained:
-        for item in pack_contents():
-            if item.Graphic == graphic and hue_of(item) == hue:
-                API.MoveItemOffset(item.Serial, amount_of(item))
+    return [item for graphic, hue in gained for item in pack_contents()
+            if item.Graphic == graphic and hue_of(item) == hue]
+
+
+# x/y are an offset from your own position (confirmed off TazUO's own LegionAPI.cs), so (0, 0)
+# already drops at your feet - one of the eight adjacent tiles is used instead so catches spread out
+# rather than stack underfoot. Picked off the clock since the sandbox has no random module
+def drop_caught(before):
+    for item in gained_items(before):
+        x, y = DROP_OFFSETS[int(now() * 1000) % len(DROP_OFFSETS)]
+        API.MoveItemOffset(item.Serial, amount_of(item), x, y, 0)
+
+
+def move_caught(container, before):
+    for item in gained_items(before):
+        API.MoveItem(item.Serial, container, amount_of(item))
+        API.Pause(MOVE_DELAY)
 
 
 skill = SkillReader(skill_name or SKILL_NAMES[0])
@@ -150,15 +167,37 @@ else:
     if start is None:
         stop = "%s is not reading yet - run it again once the skill list has arrived" % skill_name
 
+container = None
+
 if stop is None:
-    tiles_ahead = TilesAheadPrompt({
-        "text": TILES_AHEAD_PROMPT_TEXT,
-        "default": TILES_AHEAD_DEFAULT,
-        "hue": TILES_AHEAD_HUE,
+    answers = StartPrompt({
+        "tiles_text": TILES_AHEAD_PROMPT_TEXT,
+        "tiles_default": TILES_AHEAD_DEFAULT,
+        "tiles_hue": TILES_AHEAD_HUE,
+        "catch_text": CATCH_MODE_TEXT,
+        "catch_options": CATCH_MODE_OPTIONS,
+        "catch_default": CATCH_MODE_DEFAULT,
+        "catch_hue": CATCH_MODE_HUE,
         "poll": TILES_AHEAD_POLL,
     }, log, stop_reason).ask()
+    tiles_ahead = answers["tiles_ahead"]
+    catch_mode = answers["catch_mode"]
+    log.enabled = answers["debug_logs"]
+
+    if catch_mode == "container":
+        log("target the container to move junk catches into - ESC keeps them in the pack instead")
+        serial = request_one(PICK_TIMEOUT)
+
+        if serial is not None and serial != API.Backpack:
+            container = serial
+            log("moving junk catches into %s" % hex_of(container))
+        else:
+            catch_mode = "keep"
+            log("nothing picked - junk catches will stay in the pack")
+
     angler = Angler(OUTCOME_TEXT, CAST_CONFIG, log, log.stamp)
-    log("%s at %s, aiming %d tiles ahead" % (skill_name, reading(start), tiles_ahead))
+    log("%s at %s, aiming %d tiles ahead, junk catches: %s"
+        % (skill_name, reading(start), tiles_ahead, catch_mode))
 
     # Said once, before the loop: the pets stay guarding, so this does not need repeating every cast
     if GUARD_PHRASE:
@@ -170,6 +209,7 @@ unknown = 0
 throttled = 0
 reported = 0
 cycle = 0
+unreadable_reports = 0
 
 try:
     while stop is None and cycle < MAX_CYCLES:
@@ -200,6 +240,7 @@ try:
             stop = "no fishing pole in hand or in the pack"
             break
 
+        turn_toward_water(tiles_ahead, WATER_LAND_GRAPHICS, WATER_STATIC_GRAPHICS, TURN_DELAY)
         tile = tile_ahead(tiles_ahead, WATER_LAND_GRAPHICS, WATER_STATIC_GRAPHICS,
                          LAND_TILE_GRAPHIC)
         log("casting at %d,%d,%d (graphic %s, %s), standing at %d,%d, facing %s"
@@ -209,16 +250,22 @@ try:
         before = pack_counts()
         outcome, caught = angler.cast_once(pole, tile)
 
-        if outcome == "caught":
-            drop_caught(before)
-
+        # Recorded before the item moves - drop_caught/move_caught's own diff would otherwise see
+        # nothing gained, the item having already left the pack they are both diffing against
         if outcome in ("caught", "failed") and recorder.recording():
             record_cast(recorder, skill, value, outcome, caught, before)
+
+        if outcome == "caught" and any_in(caught, JUNK_TEXT):
+            if catch_mode == "discard":
+                drop_caught(before)
+            elif catch_mode == "container":
+                move_caught(container, before)
 
         if outcome == "caught":
             tally += 1
             unknown = 0
             throttled = 0
+            unreadable_reports = 0
             log("caught %s" % (caught or "something the journal did not name"))
         elif outcome == "failed":
             tally += 1
@@ -238,14 +285,19 @@ try:
             if throttled >= MAX_THROTTLED:
                 stop = "the shard kept refusing the cast"
                 break
-        elif outcome in ("empty", "tooFar", "notWater", "mounted"):
+        elif outcome in ("empty", "tooFar", "notWater", "mounted", "busy"):
             unknown = 0
+        # An unreadable outcome does not stop the run - only noCursor counts toward MAX_UNKNOWN. A
+        # short CAST_TIMEOUT hits this often as a matter of course, so the journal dump is capped
+        # rather than printed every time - MAX_UNREADABLE_REPORTS resets once a catch lands clean
         elif outcome == "unknown":
-            unknown += 1
-            log("unreadable outcome (%d/%d), check OUTCOME_TEXT" % (unknown, MAX_UNKNOWN))
+            if unreadable_reports < MAX_UNREADABLE_REPORTS:
+                unreadable_reports += 1
+                log("unreadable outcome (%d/%d shown), check OUTCOME_TEXT"
+                    % (unreadable_reports, MAX_UNREADABLE_REPORTS))
 
-            for line in journal_tail(JOURNAL_TAIL_SECONDS, JOURNAL_TAIL_LINES, log.stamp):
-                log("  " + line)
+                for line in journal_tail(JOURNAL_TAIL_SECONDS, JOURNAL_TAIL_LINES, log.stamp):
+                    log("  " + line)
         # noCursor: the pole raised no cursor and the shard said nothing either
         else:
             unknown += 1

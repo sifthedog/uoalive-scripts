@@ -25,3 +25,13 @@ class MakeLogTest(unittest.TestCase):
 
         self.assertEqual(first.stamp, "mining: ")
         self.assertEqual(second.stamp, "lumberjack: ")
+
+    def test_enabled_by_default(self):
+        self.assertTrue(make_log("mining").enabled)
+
+    def test_disabling_prints_nothing(self):
+        log = make_log("mining")
+        log.enabled = False
+        log("found a vein")
+
+        self.assertEqual(self.api.messages, [])

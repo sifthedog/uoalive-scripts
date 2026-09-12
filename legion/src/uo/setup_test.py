@@ -88,7 +88,8 @@ class SetupTest(unittest.TestCase):
     def test_ok_with_the_defaults_and_wood_in_the_pack(self):
         self.schedule({1: lambda: self.api.press("OK")})
 
-        self.assertEqual(self.ask(), {"tools": "stop", "output": "sell", "sources": 0, "dump_at": 10})
+        self.assertEqual(self.ask(), {"tools": "stop", "output": "sell", "sources": 0,
+                                      "dump_at": 10, "debug_logs": True})
         self.assertIn("OK was pressed", self.said)
         self.assertTrue(self.api.drawn[-1].IsDisposed)
         self.assertEqual(self.pick_buttons(), [False, False])
@@ -117,7 +118,8 @@ class SetupTest(unittest.TestCase):
             6: lambda: self.api.press("OK"),
         })
 
-        self.assertEqual(self.ask(), {"tools": "fetch", "output": "sell", "sources": 0, "dump_at": 10})
+        self.assertEqual(self.ask(), {"tools": "fetch", "output": "sell", "sources": 0,
+                                      "dump_at": 10, "debug_logs": True})
         self.assertEqual(seen[0], [True, False])
         self.assertTrue(any(text.startswith("pick a container holding") for text in seen[1]))
         self.assertIn("'a wooden box' 0x40001000 - 3 fletcher's tools", self.api.texts())
@@ -153,7 +155,8 @@ class SetupTest(unittest.TestCase):
             6: lambda: self.api.press("OK"),
         })
 
-        self.assertEqual(self.ask(), {"tools": "stop", "output": "unload", "sources": 0, "dump_at": 10})
+        self.assertEqual(self.ask(), {"tools": "stop", "output": "unload", "sources": 0,
+                                      "dump_at": 10, "debug_logs": True})
         self.assertEqual(seen[0], [False, True])
         self.assertIn("pick the container to unload into", seen[1])
         self.assertIn("'a trash barrel' 0x40002000", self.api.texts())
@@ -213,6 +216,11 @@ class SetupTest(unittest.TestCase):
         self.assertEqual(self.ask()["output"], "sell")
         self.assertEqual(seen[0], [False, True])
         self.assertIn("for what nobody buys", self.api.texts())
+
+    def test_unchecking_debug_logs_is_read_back(self):
+        self.schedule({1: lambda: self.api.uncheck("Debug logs"), 2: lambda: self.api.press("OK")})
+
+        self.assertEqual(self.ask()["debug_logs"], False)
 
     def test_sources_are_listed_as_picked_and_cleared_together(self):
         self.actions.source_answers = [("'a pack horse' 0x1234, 300 boards in it", None),

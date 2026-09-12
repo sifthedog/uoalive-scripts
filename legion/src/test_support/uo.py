@@ -62,6 +62,18 @@ class FakeMobile(object):
         return self.props
 
 
+_DIRECTION_NAMES = {
+    "north": "North",
+    "northeast": "Right", "right": "Right",
+    "east": "East",
+    "southeast": "Down", "down": "Down",
+    "south": "South",
+    "southwest": "Left", "left": "Left",
+    "west": "West",
+    "northwest": "Up", "up": "Up",
+}
+
+
 class FakeNotoriety(object):
     Innocent = 1
     Ally = 2
@@ -285,6 +297,7 @@ class FakeAPI(object):
         self.cancelled_pre_targets = 0
         self.moved = []
         self.dropped = []
+        self.turned = []
         self.renamed = []
         self.menu_entries = set()
         self.menus = []
@@ -400,6 +413,15 @@ class FakeAPI(object):
 
         if serial in self.opens:
             self.gump = self.opens[serial]
+
+    # Player.Direction reports ClassicUO's own enum names, not the compass words Turn() takes in -
+    # "northeast"/"right" both land on "Right", the same aliasing fishing.direction.NAMES relies on
+    def Turn(self, direction):
+        name = _DIRECTION_NAMES.get((direction or "").lower())
+
+        if name is not None and self.Player.Direction != name:
+            self.turned.append(direction)
+            self.Player.Direction = name
 
     def Target(self, *args):
         self.targeted.append(args)
@@ -570,6 +592,11 @@ class FakeAPI(object):
                         other.IsChecked = False
 
                 toggle.IsChecked = True
+
+    def uncheck(self, text):
+        for control in self.drawn_controls():
+            if isinstance(control, FakeToggle) and control.text == text:
+                control.IsChecked = False
 
     def select(self, index):
         dropdown = [control for control in self.drawn_controls()

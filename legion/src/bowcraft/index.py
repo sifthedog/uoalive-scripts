@@ -226,6 +226,7 @@ answers = setup.ask({
 # The stop lands at the next Pause, so the lines until then read a form that was never answered
 output = answers["output"] if answers is not None else "keep"
 dump_at = answers["dump_at"] if answers is not None else DUMP_AT
+log.enabled = answers["debug_logs"] if answers is not None else False
 
 if answers is None:
     API.Stop()

@@ -281,13 +281,34 @@ TILES_AHEAD_DEFAULT = 4
 TILES_AHEAD_HUE = 996
 TILES_AHEAD_POLL = 0.5
 
+# How long a turn (API.Turn) needs before the client's own Direction reflects it
+TURN_DELAY = 0.5
+
+# Matched against the caught item's own name text (the part after the colon in "You pull out an
+# item: ..."), not its graphic - there is no confirmed graphic ID for any of these on this shard
+JUNK_TEXT = ["fish", "boots", "sandals", "shoes", "thigh boots"]
+
+# Asked on the same start-up gump as the tiles-ahead question. Discard preserves the run's old
+# always-drop behavior as the default
+CATCH_MODE_TEXT = "What should happen to junk catches (fish, boots, sandals, shoes, thigh boots)?"
+CATCH_MODE_OPTIONS = [("container", "Container"), ("keep", "Keep"), ("discard", "Discard")]
+CATCH_MODE_DEFAULT = "discard"
+CATCH_MODE_HUE = 996
+
+PICK_TIMEOUT = 60.0
+MOVE_DELAY = 0.7
+
+# x/y are an offset from your own position (confirmed off TazUO's own LegionAPI.cs) - one of the
+# eight adjacent tiles is picked instead of always your own, so catches do not all stack underfoot
+DROP_OFFSETS = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
+
 # Seconds throughout - API.Pause takes seconds
 CURSOR_TIMEOUT = 2.0
 CURSOR_POLL = 0.1
 NO_CURSOR_READ = 1.0
 
 # Has to outlast the cast animation, which plays before the shard answers
-CAST_TIMEOUT = 12.0
+CAST_TIMEOUT = 2.0
 CAST_POLL = 0.2
 
 # The fish lands in the pack after the line that announced it
@@ -307,6 +328,11 @@ DISMOUNT_POLL = 0.2
 
 JOURNAL_TAIL_SECONDS = 20.0
 JOURNAL_TAIL_LINES = 10
+
+# What an unreadable outcome reports before it goes quiet - a short CAST_TIMEOUT means this shard
+# hits it often as a matter of course, not just on a genuinely unrecognized wording. Reset once a
+# catch lands clean, so a run that goes quiet still gets a fresh look if the wording changes later
+MAX_UNREADABLE_REPORTS = 2
 
 MAX_CYCLES = 5000
 MAX_UNKNOWN = 5
@@ -355,6 +381,8 @@ OUTCOME_TEXT = [
     ("tooFar", ["You need to be closer to the water", "too far away"]),
     ("notWater", ["You can't fish there", "You cannot fish there", "Try fishing elsewhere"]),
     ("mounted", ["You can't fish while riding", "can't fish while riding"]),
+    # A short CAST_TIMEOUT recasts before the shard is done resolving the last one - harmless
+    ("busy", ["You are already fishing"]),
     ("saving", SAVING_TEXT),
     ("throttled", THROTTLED_TEXT),
 ]
@@ -405,6 +433,48 @@ def tile_ahead(tiles_ahead, land_graphics, static_graphics, fallback_graphic):
         return {"x": x, "y": y, "z": land.Z, "graphic": land.Graphic, "source": source}
 
     return {"x": x, "y": y, "z": API.Player.Z, "graphic": fallback_graphic, "source": "fallback"}
+
+
+def _is_water(x, y, land_graphics, static_graphics):
+    for static in API.GetStaticsAt(x, y) or []:
+        if static.Graphic in static_graphics:
+            return True
+
+    land = API.GetTile(x, y)
+
+    return land is not None and land.Graphic in land_graphics
+
+
+# The DELTAS/NAMES index of the nearest direction whose tile at tiles_ahead is recognized water -
+# current facing checked first, so an already-good facing is never turned away from. None when none
+# of the eight match; the water tables are a hypothesis, same as tile_ahead's own fallback
+def water_direction(tiles_ahead, land_graphics, static_graphics):
+    current = facing()
+    order = [current] + [index for index in range(len(DELTAS)) if index != current]
+
+    for index in order:
+        dx, dy = DELTAS[index]
+        x = API.Player.X + dx * tiles_ahead
+        y = API.Player.Y + dy * tiles_ahead
+
+        if _is_water(x, y, land_graphics, static_graphics):
+            return index
+
+    return None
+
+
+# API.Turn only turns, the way a single directional key press does when you are not already facing
+# that way - it never steps forward. Does nothing when already facing water, or when none of the
+# eight directions match anything in the water tables
+def turn_toward_water(tiles_ahead, land_graphics, static_graphics, turn_delay):
+    current = facing()
+    direction = water_direction(tiles_ahead, land_graphics, static_graphics)
+
+    if direction is not None and direction != current:
+        API.Turn(NAMES[direction].lower())
+        API.Pause(turn_delay)
+
+    return direction
 
 
 # src/uo/entity.py
@@ -670,32 +740,57 @@ def wait_for_gump(gump, stop_reason, poll, resolve, closed_message="the gump was
     return why
 
 
+# src/uo/setup.py
+RADIO_CHAR = 8
+RADIO_GAP = 40
+
+
 # src/fishing/prompt.py
-PROMPT_WIDTH = 320
-PROMPT_HEIGHT = 110
+PROMPT_WIDTH = 380
+PROMPT_HEIGHT = 202
 PROMPT_BUTTON_HEIGHT = 26
 PROMPT_BOX_WIDTH = 60
+RADIO_ROW_Y = 16
+TILES_LABEL_Y = 62
+TILES_BOX_Y = 92
+DEBUG_LOGS_Y = 126
 
 
-class TilesAheadPrompt(object):
-    """Asked once, before the loop starts: how many tiles ahead of your facing to cast at."""
+class StartPrompt(object):
+    """Asked once, before the loop starts: how many tiles ahead to cast, and what to do with a
+    junk catch (fish, boots, sandals, shoes, thigh boots) - a container, the pack, or the ground."""
 
     def __init__(self, config, log, stop_reason):
         self._config = config
         self._log = log
         self._stop_reason = stop_reason
+        self._radios = []
 
     # A blank, zero, negative or non-numeric box answers the default rather than refusing to start
-    def _reading(self, box):
+    def _tiles_ahead(self, box):
         text = (box.Text or "").strip()
 
-        return int(text) if text.isdigit() and int(text) > 0 else self._config["default"]
+        return int(text) if text.isdigit() and int(text) > 0 else self._config["tiles_default"]
+
+    # Falls back to catch_default, not the first option - a radio's isChecked at creation is not
+    # always something GetIsChecked reflects back until something has actually clicked one
+    def _catch_mode(self):
+        options = self._config["catch_options"]
+
+        for index in range(len(self._radios)):
+            if self._radios[index].GetIsChecked():
+                return options[index][0]
+
+        return self._config["catch_default"]
+
+    def _debug_logs(self, checkbox):
+        return checkbox.GetIsChecked()
 
     def _show(self, on_press):
         gump = API.Gumps.CreateGump(True, True)
 
         if gump is None:
-            return None, None
+            return None, None, None
 
         gump.SetRect(0, 0, PROMPT_WIDTH, PROMPT_HEIGHT)
         gump.CenterXInViewPort()
@@ -705,14 +800,37 @@ class TilesAheadPrompt(object):
         background.SetRect(0, 0, PROMPT_WIDTH, PROMPT_HEIGHT)
         gump.Add(background)
 
-        label = API.Gumps.CreateGumpLabel(self._config["text"], self._config["hue"])
-        label.SetPos(16, 16)
+        catch_label = API.Gumps.CreateGumpLabel(self._config["catch_text"],
+                                                self._config["catch_hue"])
+        catch_label.SetPos(16, RADIO_ROW_Y)
+        gump.Add(catch_label)
+
+        options = self._config["catch_options"]
+        default = self._config["catch_default"]
+        x = 16
+
+        # Spaced by caption: the classic font runs about RADIO_CHAR pixels a letter
+        for index in range(len(options)):
+            key, caption = options[index]
+            radio = API.Gumps.CreateGumpRadioButton(caption, 1, 0x00D0, 0x00D1,
+                                                     self._config["catch_hue"], key == default)
+            radio.SetPos(x, RADIO_ROW_Y + 24)
+            gump.Add(radio)
+            self._radios.append(radio)
+            x += RADIO_GAP + RADIO_CHAR * len(caption)
+
+        label = API.Gumps.CreateGumpLabel(self._config["tiles_text"], self._config["tiles_hue"])
+        label.SetPos(16, TILES_LABEL_Y)
         gump.Add(label)
 
-        box = API.Gumps.CreateGumpTextBox(str(self._config["default"]), PROMPT_BOX_WIDTH,
+        box = API.Gumps.CreateGumpTextBox(str(self._config["tiles_default"]), PROMPT_BOX_WIDTH,
                                           PROMPT_BUTTON_HEIGHT, False, 20)
-        box.SetPos(16, 46)
+        box.SetPos(16, TILES_BOX_Y)
         gump.Add(box)
+
+        checkbox = API.Gumps.CreateGumpCheckbox("Debug logs", self._config["tiles_hue"], True)
+        checkbox.SetPos(16, DEBUG_LOGS_Y)
+        gump.Add(checkbox)
 
         ok = API.Gumps.CreateSimpleButton("OK", 90, PROMPT_BUTTON_HEIGHT)
         ok.SetPos(16, PROMPT_HEIGHT - 42)
@@ -726,30 +844,41 @@ class TilesAheadPrompt(object):
 
         API.Gumps.AddGump(gump)
 
-        return gump, box
+        return gump, box, checkbox
 
     def ask(self):
+        defaults = {"tiles_ahead": self._config["tiles_default"],
+                    "catch_mode": self._config["catch_default"],
+                    "debug_logs": True}
         pressed = [None]
-        gump, box = self._show(lambda button: pressed.__setitem__(0, button))
+        gump, box, checkbox = self._show(lambda button: pressed.__setitem__(0, button))
 
         if gump is None:
             self._log("not asking - the run is being stopped")
 
-            return self._config["default"]
+            return defaults
 
-        self._log("asking - how many tiles ahead to cast at")
+        self._log("asking - %s / %s" % (self._config["tiles_text"], self._config["catch_text"]))
 
         def resolve():
             return pressed[0]
 
-        # A gump closed by hand and a Cancel press read the same: both take the default
+        # A gump closed by hand and a Cancel press read the same: both take the defaults
         why = wait_for_gump(gump, self._stop_reason, self._config["poll"], resolve,
                             closed_message="cancel")
-        value = self._reading(box) if why == "ok" else self._config["default"]
+        answers = ({"tiles_ahead": self._tiles_ahead(box), "catch_mode": self._catch_mode(),
+                    "debug_logs": self._debug_logs(checkbox)}
+                  if why == "ok" else defaults)
 
-        self._log("%s, casting %d tiles ahead" % (why, value))
+        self._log("%s, casting %d tiles ahead, junk catches: %s"
+                  % (why, answers["tiles_ahead"], answers["catch_mode"]))
 
-        return value
+        return answers
+
+
+# src/uo/clock.py
+def now():
+    return time.time()
 
 
 # src/uo/guards.py
@@ -821,11 +950,6 @@ def hurt(floor):
         return None
 
     return clause
-
-
-# src/uo/clock.py
-def now():
-    return time.time()
 
 
 # src/uo/heartbeat.py
@@ -938,7 +1062,8 @@ def make_log(prefix):
     stamp = prefix + ": "
 
     def log(message):
-        API.SysMsg(stamp + message)
+        if log.enabled:
+            API.SysMsg(stamp + message)
 
     # The client puts a SysMsg in the journal beside the shard's own lines, so a script reading the
     # journal back needs to know which lines it wrote itself - without this a report of an unreadable
@@ -947,6 +1072,7 @@ def make_log(prefix):
     # bundle is one script and one prefix, and a shared list would leak between scripts sharing this
     # process, such as the test suite.
     log.stamp = stamp.lower()
+    log.enabled = True
 
     return log
 
@@ -1333,6 +1459,21 @@ class SkillReader(object):
         return skill.Value
 
 
+# src/uo/target.py
+# The serial one cursor answered, or None for ESC or a timeout. Clears a cursor left open from
+# before, and the one just answered too, so a target flag never survives past it.
+def request_one(timeout):
+    if API.HasTarget():
+        API.CancelTarget()
+
+    serial = API.RequestTarget(timeout)
+
+    if API.HasTarget():
+        API.CancelTarget()
+
+    return serial or None
+
+
 # src/uo/alert.py
 class Launcher(object):
     def __init__(self, log):
@@ -1638,16 +1779,27 @@ def record_cast(recorder, skill, start, outcome, caught, before):
     recorder.close(skill.last())
 
 
-# The pack never keeps what is caught - it lands on the ground at your feet instead, so a long run
-# never has to be watched for filling up
-def drop_caught(before):
+def gained_items(before):
     settled(CATCH_SETTLE, CATCH_POLL, lambda: pack_total(pack_counts()) > pack_total(before))
     gained, _lost = diff_counts(before, pack_counts())
 
-    for graphic, hue in gained:
-        for item in pack_contents():
-            if item.Graphic == graphic and hue_of(item) == hue:
-                API.MoveItemOffset(item.Serial, amount_of(item))
+    return [item for graphic, hue in gained for item in pack_contents()
+            if item.Graphic == graphic and hue_of(item) == hue]
+
+
+# x/y are an offset from your own position (confirmed off TazUO's own LegionAPI.cs), so (0, 0)
+# already drops at your feet - one of the eight adjacent tiles is used instead so catches spread out
+# rather than stack underfoot. Picked off the clock since the sandbox has no random module
+def drop_caught(before):
+    for item in gained_items(before):
+        x, y = DROP_OFFSETS[int(now() * 1000) % len(DROP_OFFSETS)]
+        API.MoveItemOffset(item.Serial, amount_of(item), x, y, 0)
+
+
+def move_caught(container, before):
+    for item in gained_items(before):
+        API.MoveItem(item.Serial, container, amount_of(item))
+        API.Pause(MOVE_DELAY)
 
 
 skill = SkillReader(skill_name or SKILL_NAMES[0])
@@ -1664,15 +1816,37 @@ else:
     if start is None:
         stop = "%s is not reading yet - run it again once the skill list has arrived" % skill_name
 
+container = None
+
 if stop is None:
-    tiles_ahead = TilesAheadPrompt({
-        "text": TILES_AHEAD_PROMPT_TEXT,
-        "default": TILES_AHEAD_DEFAULT,
-        "hue": TILES_AHEAD_HUE,
+    answers = StartPrompt({
+        "tiles_text": TILES_AHEAD_PROMPT_TEXT,
+        "tiles_default": TILES_AHEAD_DEFAULT,
+        "tiles_hue": TILES_AHEAD_HUE,
+        "catch_text": CATCH_MODE_TEXT,
+        "catch_options": CATCH_MODE_OPTIONS,
+        "catch_default": CATCH_MODE_DEFAULT,
+        "catch_hue": CATCH_MODE_HUE,
         "poll": TILES_AHEAD_POLL,
     }, log, stop_reason).ask()
+    tiles_ahead = answers["tiles_ahead"]
+    catch_mode = answers["catch_mode"]
+    log.enabled = answers["debug_logs"]
+
+    if catch_mode == "container":
+        log("target the container to move junk catches into - ESC keeps them in the pack instead")
+        serial = request_one(PICK_TIMEOUT)
+
+        if serial is not None and serial != API.Backpack:
+            container = serial
+            log("moving junk catches into %s" % hex_of(container))
+        else:
+            catch_mode = "keep"
+            log("nothing picked - junk catches will stay in the pack")
+
     angler = Angler(OUTCOME_TEXT, CAST_CONFIG, log, log.stamp)
-    log("%s at %s, aiming %d tiles ahead" % (skill_name, reading(start), tiles_ahead))
+    log("%s at %s, aiming %d tiles ahead, junk catches: %s"
+        % (skill_name, reading(start), tiles_ahead, catch_mode))
 
     # Said once, before the loop: the pets stay guarding, so this does not need repeating every cast
     if GUARD_PHRASE:
@@ -1684,6 +1858,7 @@ unknown = 0
 throttled = 0
 reported = 0
 cycle = 0
+unreadable_reports = 0
 
 try:
     while stop is None and cycle < MAX_CYCLES:
@@ -1714,6 +1889,7 @@ try:
             stop = "no fishing pole in hand or in the pack"
             break
 
+        turn_toward_water(tiles_ahead, WATER_LAND_GRAPHICS, WATER_STATIC_GRAPHICS, TURN_DELAY)
         tile = tile_ahead(tiles_ahead, WATER_LAND_GRAPHICS, WATER_STATIC_GRAPHICS,
                          LAND_TILE_GRAPHIC)
         log("casting at %d,%d,%d (graphic %s, %s), standing at %d,%d, facing %s"
@@ -1723,16 +1899,22 @@ try:
         before = pack_counts()
         outcome, caught = angler.cast_once(pole, tile)
 
-        if outcome == "caught":
-            drop_caught(before)
-
+        # Recorded before the item moves - drop_caught/move_caught's own diff would otherwise see
+        # nothing gained, the item having already left the pack they are both diffing against
         if outcome in ("caught", "failed") and recorder.recording():
             record_cast(recorder, skill, value, outcome, caught, before)
+
+        if outcome == "caught" and any_in(caught, JUNK_TEXT):
+            if catch_mode == "discard":
+                drop_caught(before)
+            elif catch_mode == "container":
+                move_caught(container, before)
 
         if outcome == "caught":
             tally += 1
             unknown = 0
             throttled = 0
+            unreadable_reports = 0
             log("caught %s" % (caught or "something the journal did not name"))
         elif outcome == "failed":
             tally += 1
@@ -1752,14 +1934,19 @@ try:
             if throttled >= MAX_THROTTLED:
                 stop = "the shard kept refusing the cast"
                 break
-        elif outcome in ("empty", "tooFar", "notWater", "mounted"):
+        elif outcome in ("empty", "tooFar", "notWater", "mounted", "busy"):
             unknown = 0
+        # An unreadable outcome does not stop the run - only noCursor counts toward MAX_UNKNOWN. A
+        # short CAST_TIMEOUT hits this often as a matter of course, so the journal dump is capped
+        # rather than printed every time - MAX_UNREADABLE_REPORTS resets once a catch lands clean
         elif outcome == "unknown":
-            unknown += 1
-            log("unreadable outcome (%d/%d), check OUTCOME_TEXT" % (unknown, MAX_UNKNOWN))
+            if unreadable_reports < MAX_UNREADABLE_REPORTS:
+                unreadable_reports += 1
+                log("unreadable outcome (%d/%d shown), check OUTCOME_TEXT"
+                    % (unreadable_reports, MAX_UNREADABLE_REPORTS))
 
-            for line in journal_tail(JOURNAL_TAIL_SECONDS, JOURNAL_TAIL_LINES, log.stamp):
-                log("  " + line)
+                for line in journal_tail(JOURNAL_TAIL_SECONDS, JOURNAL_TAIL_LINES, log.stamp):
+                    log("  " + line)
         # noCursor: the pole raised no cursor and the shard said nothing either
         else:
             unknown += 1

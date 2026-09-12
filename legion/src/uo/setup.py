@@ -63,7 +63,7 @@ class Setup(object):
     def _show(self, heading, rows):
         outputs = self._config["outputs"]
         height = (TITLE_HEIGHT + ROW * 2 + ROW + LINE * MAX_SOURCE_LINES + ROW * 3
-                  + LINE * (len(rows) + 1) + ROW + BUTTON_HEIGHT + MARGIN * 4)
+                  + LINE * (len(rows) + 1) + ROW * 2 + BUTTON_HEIGHT + MARGIN * 4)
 
         gump = API.Gumps.CreateGump(True, True)
 
@@ -150,6 +150,11 @@ class Setup(object):
         c["message"] = self._label(gump, "", LABEL_X, y, WARN)
         y += ROW
 
+        c["debug_logs"] = API.Gumps.CreateGumpCheckbox("Debug logs", self._config["hue"], True)
+        c["debug_logs"].SetPos(LABEL_X, y)
+        gump.Add(c["debug_logs"])
+        y += ROW
+
         self._button(gump, "cancel", "Cancel", SETUP_WIDTH - MARGIN - 96 - 8 - 96, y, 96)
         self._button(gump, "ok", "OK", SETUP_WIDTH - MARGIN - 96, y, 96)
 
@@ -166,6 +171,9 @@ class Setup(object):
                 return self._config["outputs"][index][0]
 
         return self._config["outputs"][0][0]
+
+    def _debug_logs(self):
+        return self._controls["debug_logs"].GetIsChecked()
 
     def _dump_at(self):
         text = (self._controls["dump_at"].Text or "").strip()
@@ -296,7 +304,8 @@ class Setup(object):
                 dump_at = self._dump_at()
                 answers[0] = {"tools": self._mode(), "output": self._output(),
                               "sources": len(self._sources),
-                              "dump_at": dump_at if dump_at is not None else self._config["dump_at"]}
+                              "dump_at": dump_at if dump_at is not None else self._config["dump_at"],
+                              "debug_logs": self._debug_logs()}
 
                 return "OK was pressed"
 

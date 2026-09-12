@@ -188,6 +188,7 @@ answers = setup.ask({
 })
 
 dump_at = answers["dump_at"] if answers is not None else DUMP_AT
+log.enabled = answers["debug_logs"] if answers is not None else False
 
 if answers is None:
     API.Stop()
