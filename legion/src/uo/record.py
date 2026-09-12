@@ -178,5 +178,9 @@ def attempt_log(path, skill, log):
     if me is None and path:
         log("the client is not reporting the character - rows will not name it")
 
-    return AttemptLog(beside_script(path), getattr(me, "Name", ""), getattr(me, "Serial", 0),
-                      skill, log)
+    where = beside_script(path)
+
+    if where:
+        log("recording to %s" % where)
+
+    return AttemptLog(where, getattr(me, "Name", ""), getattr(me, "Serial", 0), skill, log)

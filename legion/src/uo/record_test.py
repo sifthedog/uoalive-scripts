@@ -280,8 +280,9 @@ class AttemptLogFactoryTest(unittest.TestCase):
         self.api.Player = None
         log = attempt_log("attempts.jsonl", "Magery", self.said.append)
 
-        self.assertEqual(len(self.said), 1)
+        self.assertEqual(len(self.said), 2)
         self.assertIn("not reporting the character", self.said[0])
+        self.assertEqual(self.said[1], "recording to LegionScripts/attempts.jsonl")
 
     def test_it_stays_quiet_when_recording_is_off(self):
         self.api.Player = None

@@ -95,7 +95,7 @@ class SweepTest(unittest.TestCase):
 
         self.assertEqual((written, unread, opened), (2, 0, 1))
         self.assertEqual(len(self.sink.lines), 2)
-        self.assertEqual(self.sink.lines[0][0], "bag-items.jsonl")
+        self.assertEqual(self.sink.lines[0][0], "LegionScripts/bag-items.jsonl")
         self.assertTrue(self.lines()[0].startswith('{"v":1,"scan":"0x40001000/1000000","t":1000.0,'
                                                   '"char":"Kaldor","bag":"0x40001000",'
                                                   '"serial":"0x40012345","graphic":"0xf61","hue":0,'
@@ -222,7 +222,7 @@ class SweepTest(unittest.TestCase):
 
         self.assertEqual(written, 2)
         self.assertEqual(len(self.said), 2)
-        self.assertIn("cannot write bag-items.jsonl", self.said[1])
+        self.assertIn("cannot write LegionScripts/bag-items.jsonl", self.said[1])
 
     def test_a_stop_ends_the_read_with_what_was_written(self):
         api = self.api

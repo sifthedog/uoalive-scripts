@@ -26,6 +26,12 @@ class BesideScriptTest(unittest.TestCase):
         self.assertEqual(beside_script("/tmp/attempts.jsonl"), "/tmp/attempts.jsonl")
         self.assertEqual(beside_script("data/attempts.jsonl"), "data/attempts.jsonl")
 
-    def test_without_a_script_path_the_name_stands(self):
-        self.assertEqual(beside_script("skill-attempts.jsonl"), "skill-attempts.jsonl")
+    def test_without_a_script_path_the_standard_folder_is_assumed(self):
+        self.assertEqual(beside_script("skill-attempts.jsonl"), "LegionScripts/skill-attempts.jsonl")
+
+        self.api.ScriptPath = "bowcraft.py"
+
+        self.assertEqual(beside_script("skill-attempts.jsonl"), "LegionScripts/skill-attempts.jsonl")
+
+    def test_no_name_stays_no_name(self):
         self.assertEqual(beside_script(""), "")

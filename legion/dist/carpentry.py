@@ -1731,6 +1731,10 @@ class Materials(object):
 
 
 # src/uo/paths.py
+# TazUO's working directory is its own folder, and the scripts live in this subfolder of it
+SCRIPTS_FOLDER = "LegionScripts"
+
+
 # A bare name lands in TazUO's working directory; beside the script is where anyone looks for it.
 # A name with a folder in it, relative or absolute, is left as written.
 def beside_script(name):
@@ -1740,8 +1744,9 @@ def beside_script(name):
     script = getattr(API, "ScriptPath", None) or ""
     cut = max(script.rfind("/"), script.rfind("\\"))
 
+    # A client that does not say where the script is still runs it out of the standard folder
     if cut < 0:
-        return name
+        return SCRIPTS_FOLDER + "/" + name
 
     return script[:cut + 1] + name
 
@@ -1899,8 +1904,12 @@ def attempt_log(path, skill, log):
     if me is None and path:
         log("the client is not reporting the character - rows will not name it")
 
-    return AttemptLog(beside_script(path), getattr(me, "Name", ""), getattr(me, "Serial", 0),
-                      skill, log)
+    where = beside_script(path)
+
+    if where:
+        log("recording to %s" % where)
+
+    return AttemptLog(where, getattr(me, "Name", ""), getattr(me, "Serial", 0), skill, log)
 
 
 # src/uo/stock.py

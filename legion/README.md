@@ -221,8 +221,9 @@ reports everything as unread is also crawling; fix the wording, not the timeout.
 ## The attempt log
 
 Thirteen scripts append one JSON line per attempt to `DATA_PATH`; `skilldb.py` turns them into two CSV
-tables. A bare filename lands beside the running script, in the `LegionScripts` folder; a path with
-a folder in it is used as written. `DATA_PATH = ""` records nothing. The file is opened and closed per row; a run that cannot write says so once and
+tables. A bare filename lands beside the running script, in the `LegionScripts` folder, read off
+`API.ScriptPath` or assumed when the client does not say; the run logs `recording to …` at the start.
+A path with a folder in it is used as written. `DATA_PATH = ""` records nothing. The file is opened and closed per row; a run that cannot write says so once and
 carries on.
 
 Only what the shard clearly called a success or a failure is written. Throttles, dry mana, saves and
