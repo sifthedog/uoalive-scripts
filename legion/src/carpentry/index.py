@@ -3,7 +3,8 @@ import API
 from carpentry.config import (BANDS, BATCH_SIZE, BOX, BOX_PRESS_POLL, BOX_PRESS_TIMEOUT, BOX_TAKE,
                               BUTTON_STRIDE, CATEGORY_BUTTON_TYPE, CATEGORY_NAMES, CONTAINER_RANGE,
                               CRAFT_POLL, CRAFT_SETTLE, CRAFT_TIMEOUT, CRAFT_TITLE,
-                              CRAFT_TITLE_FRAGMENTS, CRAFT_TITLE_TEXT, DATA_PATH, DUMP_AT,
+                              CRAFT_TITLE_FRAGMENTS, CRAFT_TITLE_TEXT, DATA_PATH, DEED_GRAPHICS,
+                              DUMP_AT,
                               FETCH_POLL, FETCH_TIMEOUT, GUMP_POLL, GUMP_TIMEOUT, HEARTBEAT_EVERY,
                               ITEM_BUTTON_TYPE, JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS,
                               LAST_TEN_LABEL, LOG_EVERY, MAKE_LAST_BUTTON, MATERIAL_GRAPHICS,
@@ -106,6 +107,7 @@ dump = Dump(sources, PRODUCT_GRAPHICS, {
     "pick_timeout": PICK_TIMEOUT,
     "move_delay": MOVE_DELAY,
     "keep_existing": True,
+    "keep_graphics": DEED_GRAPHICS,
 }, log)
 tool_store = ToolStore(tools, sources, {
     "noun": "carpentry tools",

@@ -64,6 +64,17 @@ class DumpTest(unittest.TestCase):
         self.assertEqual(dump.held(), 1)
         self.assertEqual([held.Serial for held in dump.items()], [1])
 
+    # A restart with un-dumped stock from a previous run should not lock it out of the dump for
+    # good just because it shares a graphic with a genuinely ambiguous item like a house deed
+    def test_keep_graphics_narrows_what_a_restart_protects(self):
+        leftover = item(serial=2, graphic=STAFF, name="a quarter staff")
+        self.api.hold(self.house, leftover)
+        config = dict(CONFIG, keep_graphics=set([DEED]))
+        dump = Dump(self.sources, set([DEED, STAFF]), config, self.api.SysMsg)
+
+        self.assertEqual(dump.held(), 1)
+        self.assertEqual([held.Serial for held in dump.items()], [2])
+
     def test_pick_takes_the_container_and_opens_it(self):
         self.api.requested_target = BARREL
 

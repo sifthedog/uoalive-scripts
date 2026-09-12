@@ -14,8 +14,11 @@ class Dump(object):
         self._config = config
         self._log = log
         self._entry = None
-        # Carpentry keeps: the deed art is also a house deed's
-        self._kept = (set(item.Serial for item in self._products())
+        keep_graphics = config.get("keep_graphics", graphics)
+        # Carpentry narrows this to the deed art, which doubles as a house deed's - keeping every
+        # matching graphic locked out leftover, un-dumped stock from a previous run for good
+        self._kept = (set(item.Serial for item in pack_contents()
+                           if item.Graphic in keep_graphics)
                       if config["keep_existing"] else set())
 
     def _products(self):
