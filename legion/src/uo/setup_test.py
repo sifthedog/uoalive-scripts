@@ -10,6 +10,7 @@ CONFIG = {
     "outputs": [("sell", "Sell to the bowyer"), ("unload", "Unload into a container"),
                 ("keep", "Keep")],
     "unsold_hint": "for what nobody buys",
+    "dump_at": 10,
     "hue": 996,
     "poll": 0.5,
     "timeout": 5.0,
@@ -87,7 +88,7 @@ class SetupTest(unittest.TestCase):
     def test_ok_with_the_defaults_and_wood_in_the_pack(self):
         self.schedule({1: lambda: self.api.press("OK")})
 
-        self.assertEqual(self.ask(), {"tools": "stop", "output": "sell", "sources": 0})
+        self.assertEqual(self.ask(), {"tools": "stop", "output": "sell", "sources": 0, "dump_at": 10})
         self.assertIn("OK was pressed", self.said)
         self.assertTrue(self.api.drawn[-1].IsDisposed)
         self.assertEqual(self.pick_buttons(), [False, False])
@@ -116,7 +117,7 @@ class SetupTest(unittest.TestCase):
             6: lambda: self.api.press("OK"),
         })
 
-        self.assertEqual(self.ask(), {"tools": "fetch", "output": "sell", "sources": 0})
+        self.assertEqual(self.ask(), {"tools": "fetch", "output": "sell", "sources": 0, "dump_at": 10})
         self.assertEqual(seen[0], [True, False])
         self.assertTrue(any(text.startswith("pick a container holding") for text in seen[1]))
         self.assertIn("'a wooden box' 0x40001000 - 3 fletcher's tools", self.api.texts())
@@ -152,10 +153,56 @@ class SetupTest(unittest.TestCase):
             6: lambda: self.api.press("OK"),
         })
 
-        self.assertEqual(self.ask(), {"tools": "stop", "output": "unload", "sources": 0})
+        self.assertEqual(self.ask(), {"tools": "stop", "output": "unload", "sources": 0, "dump_at": 10})
         self.assertEqual(seen[0], [False, True])
         self.assertIn("pick the container to unload into", seen[1])
         self.assertIn("'a trash barrel' 0x40002000", self.api.texts())
+
+    def test_the_unload_count_shows_its_default_and_reads_back_what_was_typed(self):
+        seen = []
+
+        def pick():
+            self.actions.unload_answer = ("'a trash barrel' 0x40002000", None)
+            self.actions.unloaded = True
+            self.api.press("Pick container")
+
+        self.schedule({
+            1: lambda: seen.append(self.api.visible("Unload every")),
+            2: lambda: self.api.check("Unload into a container"),
+            3: lambda: seen.append(self.api.visible("Unload every")),
+            4: pick,
+            5: lambda: self.api.type_into(0, " 25 "),
+            6: lambda: self.api.press("OK"),
+        })
+
+        self.assertEqual(self.ask()["dump_at"], 25)
+        self.assertEqual(self.api.text_boxes()[0].text, " 25 ")
+        self.assertEqual(seen, [False, True])
+
+    def test_the_unload_count_starts_at_the_configured_default(self):
+        self.schedule({1: lambda: self.api.press("OK")})
+
+        self.assertEqual(self.ask()["dump_at"], 10)
+        self.assertEqual(self.api.text_boxes()[0].Text, "10")
+
+    def test_a_bad_unload_count_is_refused(self):
+        self.actions.unloaded = True
+        self.schedule({
+            1: lambda: self.api.check("Unload into a container"),
+            2: lambda: self.api.type_into(0, "lots"),
+            3: lambda: self.api.press("OK"),
+            4: lambda: self.api.type_into(0, "0"),
+            5: lambda: self.api.press("OK"),
+            6: lambda: self.api.press("Cancel"),
+        })
+
+        self.assertIsNone(self.ask())
+        self.assertIn("unload every: a whole number of products, 1 or more", self.api.texts())
+
+    def test_a_hidden_unload_count_falls_back_to_the_default(self):
+        self.schedule({1: lambda: self.api.type_into(0, "lots"), 2: lambda: self.api.press("OK")})
+
+        self.assertEqual(self.ask()["dump_at"], 10)
 
     def test_selling_with_an_unsold_band_ahead_shows_the_hint_but_allows_ok(self):
         self.actions.unsold = True

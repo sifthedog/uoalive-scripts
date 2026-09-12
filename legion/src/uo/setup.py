@@ -17,6 +17,7 @@ MAX_SOURCE_LINES = 4
 LINE_CHARS = 92
 RADIO_CHAR = 8
 RADIO_GAP = 40
+DUMP_AT_WIDTH = 56
 
 TEXT = "#E6E6E6"
 MUTED = "#8C8C8C"
@@ -61,7 +62,7 @@ class Setup(object):
 
     def _show(self, heading, rows):
         outputs = self._config["outputs"]
-        height = (TITLE_HEIGHT + ROW * 2 + ROW + LINE * MAX_SOURCE_LINES + ROW * 2
+        height = (TITLE_HEIGHT + ROW * 2 + ROW + LINE * MAX_SOURCE_LINES + ROW * 3
                   + LINE * (len(rows) + 1) + ROW + BUTTON_HEIGHT + MARGIN * 4)
 
         gump = API.Gumps.CreateGump(True, True)
@@ -126,6 +127,14 @@ class Setup(object):
 
         c["unload_button"] = self._button(gump, "unload", "Pick container", FIELD_X, y, 148)
         c["unload_value"] = self._label(gump, "", VALUE_X, y + 3, MUTED)
+        y += ROW
+
+        c["dump_label"] = self._label(gump, "Unload every", FIELD_X, y + 3, MUTED, 148)
+        c["dump_at"] = API.Gumps.CreateGumpTextBox(str(self._config["dump_at"]), DUMP_AT_WIDTH,
+                                                   BUTTON_HEIGHT, False, FONT)
+        c["dump_at"].SetPos(VALUE_X, y)
+        gump.Add(c["dump_at"])
+        c["dump_unit"] = self._label(gump, "products", VALUE_X + DUMP_AT_WIDTH + 8, y + 3, MUTED)
         y += ROW + MARGIN // 2
 
         self._label(gump, "Training", LABEL_X, y)
@@ -158,6 +167,18 @@ class Setup(object):
 
         return self._config["outputs"][0][0]
 
+    def _dump_at(self):
+        text = (self._controls["dump_at"].Text or "").strip()
+
+        return int(text) if text.isdigit() and int(text) > 0 else None
+
+    def _unloading(self, actions):
+        output = self._output()
+        unsold = output == "sell" and actions["unsold_ahead"] is not None \
+            and actions["unsold_ahead"]()
+
+        return output == "unload" or unsold
+
     def _say(self, message):
         self._message = message
         self._controls["message"].SetText(message or "")
@@ -177,17 +198,16 @@ class Setup(object):
             else:
                 c["sources"][index].SetText("")
 
-        output = self._output()
-        unsold = output == "sell" and actions["unsold_ahead"] is not None \
-            and actions["unsold_ahead"]()
-        showing = output == "unload" or unsold
-        c["unload_button"].IsVisible = showing
-        c["unload_value"].IsVisible = showing
+        showing = self._unloading(actions)
+
+        for key in ("unload_button", "unload_value", "dump_label", "dump_at", "dump_unit"):
+            c[key].IsVisible = showing
 
         if self._unload_line is not None:
             c["unload_value"].SetText(clipped(self._unload_line, LINE_CHARS))
         else:
-            c["unload_value"].SetText(self._config["unsold_hint"] if unsold else "required")
+            c["unload_value"].SetText(self._config["unsold_hint"] if self._output() == "sell"
+                                      else "required")
 
     def _validate(self, actions):
         if self._mode() == "fetch" and not actions["tools_ready"]():
@@ -196,6 +216,9 @@ class Setup(object):
 
         if self._output() == "unload" and not actions["unload_ready"]():
             return "pick the container to unload into"
+
+        if self._unloading(actions) and self._dump_at() is None:
+            return "unload every: a whole number of products, 1 or more"
 
         if len(self._sources) == 0 and not actions["has_wood"]():
             return "add a source of wood, or carry some"
@@ -270,8 +293,10 @@ class Setup(object):
             self._refresh(actions)
 
             if done == "ok":
+                dump_at = self._dump_at()
                 answers[0] = {"tools": self._mode(), "output": self._output(),
-                              "sources": len(self._sources)}
+                              "sources": len(self._sources),
+                              "dump_at": dump_at if dump_at is not None else self._config["dump_at"]}
 
                 return "OK was pressed"
 

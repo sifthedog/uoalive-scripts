@@ -172,6 +172,19 @@ class FakeToggle(FakeControl):
         self.IsChecked = checked
 
 
+class FakeTextBox(FakeControl):
+    def __init__(self, text):
+        FakeControl.__init__(self, "textbox", text)
+
+    @property
+    def Text(self):
+        return self.text
+
+    @Text.setter
+    def Text(self, text):
+        self.text = text
+
+
 class FakeDropDown(FakeControl):
     def __init__(self, items, index):
         FakeControl.__init__(self, "dropdown", items[index] if items else "")
@@ -221,6 +234,9 @@ class FakeGumps(object):
 
     def CreateDropDown(self, width, items, selectedIndex=0):
         return FakeDropDown(items, selectedIndex)
+
+    def CreateGumpTextBox(self, text="", width=200, height=30, multiline=False, fontSize=20):
+        return FakeTextBox(text)
 
     def AddControlOnClick(self, control, onClick, leftOnly=True):
         control.on_click.append(onClick)
@@ -560,6 +576,12 @@ class FakeAPI(object):
     def texts(self):
         return [control.text for control in self.drawn_controls()
                 if control.kind in ("label", "ttf")]
+
+    def text_boxes(self):
+        return [control for control in self.drawn_controls() if isinstance(control, FakeTextBox)]
+
+    def type_into(self, index, text):
+        self.text_boxes()[index].Text = text
 
     def visible(self, text):
         return any(control.IsVisible for control in self.drawn_controls()

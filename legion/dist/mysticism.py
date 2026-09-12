@@ -500,7 +500,7 @@ def dead():
     return clause
 
 
-# The base, not Value: jewelry lifts Value past the cap while the skill is still gaining
+# By the value as well as the base: with no base reported, or a lifted value, the run never ends
 def skill_capped(name):
     def clause():
         skill = API.GetSkill(name) if name is not None else None
@@ -508,13 +508,20 @@ def skill_capped(name):
         if skill is None:
             return None
 
-        base = getattr(skill, "Base", None)
-        value = base if base is not None else skill.Value
+        base = getattr(skill, "Base", None) or 0.0
+        value = skill.Value
 
-        if value > 0 and value >= skill.Cap:
-            return "%s is capped at %.1f" % (name, value)
+        if max(base, value) <= 0 or max(base, value) < skill.Cap:
+            return None
 
-        return None
+        if base >= skill.Cap:
+            return "%s is capped at %.1f" % (name, base)
+
+        if base > 0:
+            return ("%s shows %.1f against its %.1f cap while its base is %.1f - take off what lifts "
+                    "it to keep gaining" % (name, value, skill.Cap, base))
+
+        return "%s is capped at %.1f" % (name, value)
 
     return clause
 

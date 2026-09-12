@@ -94,7 +94,21 @@ class SkillReader(object):
                 return value
 
             if waited >= timeout:
-                return None
+                return self._accept_zero()
 
             API.Pause(poll)
             waited += poll
+
+        return None
+
+    # A 0 the client still answers once the wait is over is a real 0, not an unsent skill list
+    def _accept_zero(self):
+        skill = API.GetSkill(self._name)
+
+        if skill is None:
+            return None
+
+        self._seen = True
+        self._last = skill.Value
+
+        return skill.Value

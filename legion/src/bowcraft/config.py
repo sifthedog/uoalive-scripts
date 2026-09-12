@@ -143,6 +143,7 @@ SETUP = {
     "tool_modes": TOOL_MODES,
     "outputs": OUTPUT_OPTIONS,
     "unsold_hint": "for what nobody buys - without one the run ends at %d unsold" % MAX_HELD,
+    "dump_at": DUMP_AT,
     "hue": 996,
     "poll": 0.25,
     "timeout": 600.0,

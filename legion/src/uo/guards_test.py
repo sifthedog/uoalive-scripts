@@ -64,8 +64,17 @@ class ClauseTest(unittest.TestCase):
     def test_skill_capped_is_quiet_for_no_skill_name(self):
         self.assertIsNone(skill_capped(None)())
 
-    def test_skill_capped_reads_the_base_and_not_what_jewelry_adds(self):
+    def test_skill_capped_stops_on_a_value_lifted_past_the_cap_and_says_why(self):
         self.api.skills["Magery"] = skill(105.0, 100.0)
+        self.api.skills["Magery"].Base = 99.0
+
+        self.assertEqual(
+            skill_capped("Magery")(),
+            "Magery shows 105.0 against its 100.0 cap while its base is 99.0 - take off what lifts "
+            "it to keep gaining")
+
+    def test_skill_capped_is_quiet_while_both_are_under_the_cap(self):
+        self.api.skills["Magery"] = skill(99.5, 100.0)
         self.api.skills["Magery"].Base = 99.0
 
         self.assertIsNone(skill_capped("Magery")())
@@ -75,6 +84,24 @@ class ClauseTest(unittest.TestCase):
         self.api.skills["Magery"].Base = 100.0
 
         self.assertEqual(skill_capped("Magery")(), "Magery is capped at 100.0")
+
+    def test_skill_capped_fires_on_a_capped_base_under_a_lowered_value(self):
+        self.api.skills["Magery"] = skill(95.0, 100.0)
+        self.api.skills["Magery"].Base = 100.0
+
+        self.assertEqual(skill_capped("Magery")(), "Magery is capped at 100.0")
+
+    def test_skill_capped_reads_the_value_when_the_shard_reports_no_base(self):
+        self.api.skills["Bowcraft"] = skill(120.0, 120.0)
+        self.api.skills["Bowcraft"].Base = 0.0
+
+        self.assertEqual(skill_capped("Bowcraft")(), "Bowcraft is capped at 120.0")
+
+    def test_skill_capped_reads_the_value_when_the_client_has_no_base_field(self):
+        self.api.skills["Bowcraft"] = skill(120.0, 120.0)
+        del self.api.skills["Bowcraft"].Base
+
+        self.assertEqual(skill_capped("Bowcraft")(), "Bowcraft is capped at 120.0")
 
     def test_hurt_ignores_a_hitsmax_of_zero(self):
         self.api.Player.Hits = 1

@@ -31,8 +31,8 @@ repo targets the ClassicUO web client; nothing is shared between the two.
    `mine-here.py` want your fire beetle; `lumberjack.py` wants your pack animals, one after another;
    `arms-lore.py` wants the weapon; `bowcraft.py` and `carpentry.py` draw a form: what happens when
    the tools run out, the chests, storage box and pack animals holding wood, added one cursor at a
-   time, and whether what is made is sold, unloaded or kept, with a cursor for each container the
-   choices need, then OK; `tinkering.py` draws a gump asking whether what it makes is sold,
+   time, whether what is made is sold, unloaded or kept, with a cursor for each container the
+   choices need, and how many products pile up before each unload, then OK; `tinkering.py` draws a gump asking whether what it makes is sold,
    unloaded or kept, and wants the unload container if you press Unload;
    `inscription.py` wants the containers holding scrolls and reagents, then draws the same
    gump and wants the unload container if you press Unload; `bod.py`

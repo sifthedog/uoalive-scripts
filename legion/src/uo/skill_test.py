@@ -83,6 +83,25 @@ class SkillReaderTest(unittest.TestCase):
     def test_gives_up_after_the_timeout(self):
         self.assertIsNone(self.reader.wait(1.0, 0.5))
 
+    def test_a_genuine_zero_is_waited_out_then_returned(self):
+        self.api.skills["Magery"] = skill(0.0)
+
+        self.assertEqual(self.reader.wait(1.0, 0.5), 0.0)
+        self.assertAlmostEqual(self.api.paused, 1.0)
+
+    def test_a_zero_accepted_by_the_wait_keeps_reading(self):
+        self.api.skills["Magery"] = skill(0.0)
+        self.reader.wait(1.0, 0.5)
+
+        self.assertEqual(self.reader.read(), 0.0)
+        self.assertEqual(self.reader.last(), 0.0)
+
+    def test_a_stop_during_the_wait_reads_as_unknown(self):
+        self.api.skills["Magery"] = skill(0.0)
+        self.api.StopRequested = True
+
+        self.assertIsNone(self.reader.wait(1.0, 0.5))
+
     def test_two_readers_do_not_share_the_latch(self):
         self.api.skills["Magery"] = skill(41.2)
         self.reader.read()

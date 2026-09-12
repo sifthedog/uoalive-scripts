@@ -185,10 +185,14 @@ answers = setup.ask({
     "unsold_ahead": None,
 })
 
+dump_at = answers["dump_at"] if answers is not None else DUMP_AT
+
 if answers is None:
     API.Stop()
 
-if not dump.picked():
+if dump.picked():
+    log("unloading every %d products" % dump_at)
+else:
     log("nothing picked to unload into - the run ends once the pack holds %d products" % MAX_HELD)
 
 # A picked tool container fills an empty pack before the first craft
@@ -281,7 +285,7 @@ try:
 
         held = dump.held()
 
-        if held >= DUMP_AT and dump.picked():
+        if held >= dump_at and dump.picked():
             if unloader.run():
                 stop = end_cycle(stall, "unloading", cycle, tally, stop)
                 continue

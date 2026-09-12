@@ -41,5 +41,5 @@ class SetupTest(unittest.TestCase):
     def test_every_choice_answers_with_a_key_the_loop_branches_on(self):
         self.assertEqual([key for key, _caption in OUTPUT_OPTIONS], ["sell", "unload", "keep"])
         self.assertEqual([key for key, _caption in TOOL_MODES], ["stop", "fetch"])
-        self.assertEqual(sorted(SETUP), ["hue", "outputs", "poll", "timeout", "title",
-                                         "tool_modes", "tool_noun", "unsold_hint"])
+        self.assertEqual(sorted(SETUP), ["dump_at", "hue", "outputs", "poll", "timeout",
+                                     "title", "tool_modes", "tool_noun", "unsold_hint"])

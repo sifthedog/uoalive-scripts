@@ -225,6 +225,7 @@ answers = setup.ask({
 
 # The stop lands at the next Pause, so the lines until then read a form that was never answered
 output = answers["output"] if answers is not None else "keep"
+dump_at = answers["dump_at"] if answers is not None else DUMP_AT
 
 if answers is None:
     API.Stop()
@@ -236,6 +237,8 @@ if output == "sell":
     if unsold_ahead(start) and not dump.picked():
         log("nothing picked to unload into - the run ends once the pack holds %d unsold products"
             % MAX_HELD)
+elif output == "unload":
+    log("unloading every %d products" % dump_at)
 elif output == "keep":
     log("keeping what is made - the run ends once the pack holds %d" % MAX_HELD)
 
@@ -331,7 +334,7 @@ try:
         held = dump.held()
 
         if output == "unload":
-            if held >= DUMP_AT:
+            if held >= dump_at:
                 if unloader.run():
                     stop = end_cycle(stall, "unloading", cycle, tally, stop)
                     continue
@@ -342,7 +345,7 @@ try:
                     break
         elif output == "sell":
             if VENDORS[product] is None:
-                if held >= DUMP_AT and dump.picked():
+                if held >= dump_at and dump.picked():
                     if unloader.run():
                         stop = end_cycle(stall, "unloading", cycle, tally, stop)
                         continue
