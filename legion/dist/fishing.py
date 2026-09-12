@@ -2,6 +2,8 @@
 
 import API
 import time
+import clr
+import System
 
 
 # src/uo/text.py
@@ -81,6 +83,15 @@ def forget(phrases):
 def forget_outcomes(buckets):
     for _name, phrases in buckets:
         forget(phrases)
+
+
+def matched_bucket(buckets):
+    for name, phrases in buckets:
+        # clearMatches, or a line already read answers the next wait as well
+        if API.InJournalAny(phrases, True):
+            return name
+
+    return None
 
 
 # src/fishing/angler.py
@@ -190,6 +201,7 @@ class Angler(object):
 """The shard's own wordings, as far as they are the same whatever the script is doing."""
 
 SAVING_TEXT = ["The world is saving", "Saving world", "World save started"]
+SAVE_DONE_TEXT = ["World save complete", "Save complete", "World save is complete"]
 
 # Ends in a bare 'You must wait', which longer refusals contain - so a bucket that has to be told
 # apart from a throttle is ordered before this one
@@ -199,6 +211,29 @@ THROTTLED_TEXT = [
     "You must wait",
 ]
 
+STOPPED = "stopped from the script manager"
+
+# A fragment: the journal line is your own character's "You have been ambushed!" with the name first
+AMBUSH_TEXT = ["been ambushed"]
+
+
+# src/uo/timings.py
+"""The constants the scripts agreed on. Every one is in seconds - API.Pause takes seconds."""
+
+SAVE_WAIT = 60.0
+SAVE_POLL = 1.0
+
+THROTTLE_BACKOFF = 1.0
+THROTTLE_BACKOFF_MAX = 8.0
+
+LOG_EVERY = 25
+HEARTBEAT_EVERY = 30.0
+
+STEP_DELAY = 0.3
+
+GAIN_PATH_TIMEOUT = 5.0
+GAIN_PATH_POLL = 0.25
+
 
 # src/fishing/config.py
 # One JSON object per cast, for legion/skilldb.py. "" turns recording off. A bare name lands
@@ -207,7 +242,7 @@ DATA_PATH = "skill-attempts.jsonl"
 
 SKILL_NAMES = ["Fishing"]
 
-# Said once, before the cast. "" says nothing.
+# Said once, before the loop starts. "" says nothing
 GUARD_PHRASE = "all guard"
 
 POLE_GRAPHICS = set([0x0DBF])
@@ -216,8 +251,12 @@ POLE_NAME_WORDS = ["fishing", "pole"]
 # Two-handed on stock shards; the other layer is for a reskinned one
 HAND_LAYERS = ["twohanded", "onehanded"]
 
+# Confirmed on this shard; HasTarget is what the wait actually leans on
+PROMPT_TEXT = ["What water do you want to fish in"]
+
 # Stock RunUO Fishing.cs bands, a hypothesis about this shard. Land and statics are numbered apart,
-# and the static bands are RunUO's 0x4000-offset ids brought back down.
+# and the static bands are RunUO's 0x4000-offset ids brought back down. A shoreline's water is
+# commonly a static laid over plain grass, which is why the aimed-at tile checks statics first
 WATER_LAND_GRAPHICS = set()
 for _low, _high in [(0x00A8, 0x00AB), (0x0136, 0x0137)]:
     for _water in range(_low, _high + 1):
@@ -228,11 +267,19 @@ for _low, _high in [(0x1797, 0x179C), (0x346E, 0x3485), (0x3490, 0x34AB), (0x34B
     for _water in range(_low, _high + 1):
         WATER_STATIC_GRAPHICS.add(_water)
 
-# RunUO's fishing range: past it the shard says to stand closer to the water
-FISH_RANGE = 4
+# Used only when the client has no land data at all for the computed tile (out of range, or the
+# chunk never loaded) - normally the real tile there is read and used instead, static or land. An
+# earlier version always passed 1337 outright, and later the land tile's own real graphic outright,
+# and the shard silently dropped every cast either way - it needs to be a real water tile, not just
+# a real tile
+LAND_TILE_GRAPHIC = 1337
 
-# The cursor prompt is a guess; HasTarget is what the wait leans on
-PROMPT_TEXT = ["Where do you want to fish"]
+# Asked once, via a gump, before the loop starts. Uncapped - RunUO's own fishing range does not
+# apply to a cast this run never scans the water for
+TILES_AHEAD_PROMPT_TEXT = "How many tiles ahead should the cast land?"
+TILES_AHEAD_DEFAULT = 4
+TILES_AHEAD_HUE = 996
+TILES_AHEAD_POLL = 0.5
 
 # Seconds throughout - API.Pause takes seconds
 CURSOR_TIMEOUT = 2.0
@@ -261,6 +308,42 @@ DISMOUNT_POLL = 0.2
 JOURNAL_TAIL_SECONDS = 20.0
 JOURNAL_TAIL_LINES = 10
 
+MAX_CYCLES = 5000
+MAX_UNKNOWN = 5
+MAX_THROTTLED = 20
+
+WATCH_FOR_TROUBLE = True
+THREAT_RANGE = 12
+
+AMBUSH_WARNING = "AMBUSHED!"
+AMBUSH_HUE = 33
+
+# Run on this Mac, outside the game, so the client's sound setting does not matter. An empty list
+# turns the one off. The alarm restarts while trouble lasts, up to AMBUSH_REPEATS starts. Shared
+# by the boat-stopped watch below - the same mechanism, a different trigger phrase and wording
+AMBUSH_ALARM = ["afplay", "/System/Library/Sounds/Sosumi.aiff"]
+AMBUSH_NOTICES = [
+    ["osascript", "-e", 'display notification "You have been ambushed!" with title "Ultima Online"'],
+]
+AMBUSH_REPEATS = 30
+
+# The run stands still behind a gump until its button is pressed - no cast, no walk - with the
+# alarm restarting all the while
+AMBUSH_HOLD = True
+AMBUSH_HOLD_TEXT = "You have been ambushed. Press the button when it is safe"
+AMBUSH_HOLD_BUTTON = "Resume"
+AMBUSH_HOLD_HUE = 33
+AMBUSH_HOLD_POLL = 0.5
+
+# The shard's boat auto-pilot-stopped line, handled exactly like an ambush (sound, HeadMsg,
+# notices, an optional hold) - only the trigger text and the wording differ. Wording unconfirmed;
+# see the README's Unverified section
+BOAT_STOPPED_TEXT = ["Ar, we've stopped, sir"]
+BOAT_STOPPED_WARNING = "THE BOAT HAS STOPPED!"
+BOAT_STOPPED_HUE = 43
+BOAT_STOPPED_HOLD = True
+BOAT_STOPPED_HOLD_TEXT = "The boat has stopped. Press the button once it is safe to carry on"
+
 # The catch is named after the colon: 'You pull out an item: a fish'
 CAUGHT_TEXT = ["You pull out an item"]
 
@@ -275,6 +358,53 @@ OUTCOME_TEXT = [
     ("saving", SAVING_TEXT),
     ("throttled", THROTTLED_TEXT),
 ]
+
+
+# src/fishing/direction.py
+# API.Player.Direction is a string, not a bitmask - confirmed live, after an earlier version of
+# this tried "& 0x07" on it and threw. These are ClassicUO's own Direction enum names, matched
+# case-insensitively; a running character may report an extra word (e.g. "North, Running"), so the
+# match looks at each word rather than the whole string. Falls back to North if nothing matches.
+NAMES = ["North", "Right", "East", "Down", "South", "Left", "West", "Up"]
+
+# Index order matches NAMES: N, NE, E, SE, S, SW, W, NW
+DELTAS = [(0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1)]
+
+
+def facing():
+    text = (API.Player.Direction or "").replace(",", " ")
+
+    for word in text.split():
+        for index, name in enumerate(NAMES):
+            if word.lower() == name.lower():
+                return index
+
+    return 0
+
+
+# A shoreline's water is commonly a static laid over plain grass, not a change to the land tile
+# underneath - an earlier version read only the land tile there, named the grass, and the shard
+# silently ignored every cast. A static match wins over the land tile it sits on; failing that, the
+# plain land tile is used as given - that is what open ocean off a boat looks like, with no static
+# to name at all - and fallback_graphic only covers a coordinate the client has no land data for.
+# "source" is not read by the cast itself; it is there so a run can log which path a tile came from
+def tile_ahead(tiles_ahead, land_graphics, static_graphics, fallback_graphic):
+    dx, dy = DELTAS[facing()]
+    x = API.Player.X + dx * tiles_ahead
+    y = API.Player.Y + dy * tiles_ahead
+
+    for static in API.GetStaticsAt(x, y) or []:
+        if static.Graphic in static_graphics:
+            return {"x": x, "y": y, "z": static.Z, "graphic": static.Graphic, "source": "static"}
+
+    land = API.GetTile(x, y)
+
+    if land is not None:
+        source = "land" if land.Graphic in land_graphics else "land (unrecognized)"
+
+        return {"x": x, "y": y, "z": land.Z, "graphic": land.Graphic, "source": source}
+
+    return {"x": x, "y": y, "z": API.Player.Z, "graphic": fallback_graphic, "source": "fallback"}
 
 
 # src/uo/entity.py
@@ -497,34 +627,129 @@ def find_pole(graphics, name_words, layers, log):
     return CraftTool("fishing pole", graphics, name_words, log).serial()
 
 
-# src/uo/clock.py
-def now():
-    return time.time()
+# src/uo/gumpwait.py
+# Waits behind a gump the script drew, one poll slice at a time, until resolve() answers a reason
+# to stop (checked first, so a click wins over the gump closing), the gump is disposed, stop_reason
+# gives one, or timeout seconds pass - timeout=None means no ceiling. each(), when given, runs once
+# a slice before resolve(), so an alarm or a heartbeat keeps going while the gump is up. Disposes
+# the gump before returning why. The click only arrives through ProcessCallbacks, and a stopped
+# script's client calls all answer with nothing, so the stop flag is the one read that still means
+# something then.
+def wait_for_gump(gump, stop_reason, poll, resolve, closed_message="the gump was closed",
+                  timeout=None, each=None):
+    waited = 0.0
+    why = None
+
+    while why is None:
+        if API.StopRequested:
+            why = "the run is being stopped"
+            break
+
+        if each is not None:
+            each()
+
+        API.ProcessCallbacks()
+
+        why = resolve()
+
+        if why is not None:
+            pass
+        elif gump.IsDisposed:
+            why = closed_message
+        elif stop_reason() is not None:
+            why = "the run has a reason to stop"
+        elif timeout is not None and waited >= timeout:
+            why = "nothing was pressed in %.0fs" % timeout
+        else:
+            API.Pause(poll)
+            waited += poll
+
+    if not gump.IsDisposed:
+        gump.Dispose()
+
+    return why
 
 
-# src/uo/scan.py
-def chebyshev_to(tile):
-    return max(abs(tile["x"] - API.Player.X), abs(tile["y"] - API.Player.Y))
+# src/fishing/prompt.py
+PROMPT_WIDTH = 320
+PROMPT_HEIGHT = 110
+PROMPT_BUTTON_HEIGHT = 26
+PROMPT_BOX_WIDTH = 60
 
 
-# src/fishing/water.py
-def is_water(tile, land_graphics, static_graphics):
-    table = land_graphics if tile["is_land"] else static_graphics
+class TilesAheadPrompt(object):
+    """Asked once, before the loop starts: how many tiles ahead of your facing to cast at."""
 
-    return tile["graphic"] in table
+    def __init__(self, config, log, stop_reason):
+        self._config = config
+        self._log = log
+        self._stop_reason = stop_reason
 
+    # A blank, zero, negative or non-numeric box answers the default rather than refusing to start
+    def _reading(self, box):
+        text = (box.Text or "").strip()
 
-# Nearest by crow flight and nothing else: the run never walks, so there is no route to price
-def nearest_water(terrain, radius, land_graphics, static_graphics):
-    found = [tile for tile in terrain.box(radius)
-             if is_water(tile, land_graphics, static_graphics)]
+        return int(text) if text.isdigit() and int(text) > 0 else self._config["default"]
 
-    if not found:
-        return None
+    def _show(self, on_press):
+        gump = API.Gumps.CreateGump(True, True)
 
-    found.sort(key=chebyshev_to)
+        if gump is None:
+            return None, None
 
-    return found[0]
+        gump.SetRect(0, 0, PROMPT_WIDTH, PROMPT_HEIGHT)
+        gump.CenterXInViewPort()
+        gump.CenterYInViewPort()
+
+        background = API.Gumps.CreateGumpColorBox(0.85, "#1E1E1E")
+        background.SetRect(0, 0, PROMPT_WIDTH, PROMPT_HEIGHT)
+        gump.Add(background)
+
+        label = API.Gumps.CreateGumpLabel(self._config["text"], self._config["hue"])
+        label.SetPos(16, 16)
+        gump.Add(label)
+
+        box = API.Gumps.CreateGumpTextBox(str(self._config["default"]), PROMPT_BOX_WIDTH,
+                                          PROMPT_BUTTON_HEIGHT, False, 20)
+        box.SetPos(16, 46)
+        gump.Add(box)
+
+        ok = API.Gumps.CreateSimpleButton("OK", 90, PROMPT_BUTTON_HEIGHT)
+        ok.SetPos(16, PROMPT_HEIGHT - 42)
+        API.Gumps.AddControlOnClick(ok, lambda: on_press("ok"))
+        gump.Add(ok)
+
+        cancel = API.Gumps.CreateSimpleButton("Cancel", 90, PROMPT_BUTTON_HEIGHT)
+        cancel.SetPos(114, PROMPT_HEIGHT - 42)
+        API.Gumps.AddControlOnClick(cancel, lambda: on_press("cancel"))
+        gump.Add(cancel)
+
+        API.Gumps.AddGump(gump)
+
+        return gump, box
+
+    def ask(self):
+        pressed = [None]
+        gump, box = self._show(lambda button: pressed.__setitem__(0, button))
+
+        if gump is None:
+            self._log("not asking - the run is being stopped")
+
+            return self._config["default"]
+
+        self._log("asking - how many tiles ahead to cast at")
+
+        def resolve():
+            return pressed[0]
+
+        # A gump closed by hand and a Cancel press read the same: both take the default
+        why = wait_for_gump(gump, self._stop_reason, self._config["poll"], resolve,
+                            closed_message="cancel")
+        value = self._reading(box) if why == "ok" else self._config["default"]
+
+        self._log("%s, casting %d tiles ahead" % (why, value))
+
+        return value
 
 
 # src/uo/guards.py
@@ -536,6 +761,13 @@ def first_reason(clauses):
             return reason
 
     return None
+
+
+def stopped(text):
+    def clause():
+        return text if API.StopRequested else None
+
+    return clause
 
 
 def dead():
@@ -573,6 +805,134 @@ def skill_capped(name):
     return clause
 
 
+def hurt(floor):
+    def clause():
+        me = player()
+
+        if me is None:
+            return None
+
+        # HitsMax reads 0 before the client has been told, the way ManaMax does
+        ceiling = me.HitsMax
+
+        if ceiling > 0 and me.Hits < ceiling * floor:
+            return "hurt (%d/%d)" % (me.Hits, ceiling)
+
+        return None
+
+    return clause
+
+
+# src/uo/clock.py
+def now():
+    return time.time()
+
+
+# src/uo/heartbeat.py
+class Heartbeat(object):
+    """Proof of life: a loop standing still in silence looks exactly like a hung one."""
+
+    def __init__(self, every, log, noun, vitals):
+        self._every = every
+        self._log = log
+        self._noun = noun
+        self._vitals = vitals
+        self._last = None
+
+    # The clock, not the cycle counter: a cycle can be 300ms or 8s depending on which waits it hit
+    def beat(self, phase, cycle, tally):
+        moment = now()
+
+        # The first call sets the clock rather than logging: the run has just said what it is doing
+        if self._last is None:
+            self._last = moment
+            return
+
+        if moment - self._last < self._every:
+            return
+
+        self._last = moment
+        self._log("still here - %s, cycle %d, %s, %d %s"
+                  % (phase, cycle, self._vitals(), tally, self._noun))
+
+    def reset(self):
+        self._last = now()
+
+
+# src/uo/hold.py
+HOLD_WIDTH = 340
+HEIGHT = 110
+
+
+class Hold(object):
+    """Standing still behind a gump the script drew, until its button is pressed."""
+
+    def __init__(self, config, log, stop_reason, heartbeat):
+        self._config = config
+        self._log = log
+        self._stop_reason = stop_reason
+        self._heartbeat = heartbeat
+
+    def _show(self, on_press):
+        gump = API.Gumps.CreateGump(True, True)
+
+        if gump is None:
+            return None
+
+        gump.SetRect(0, 0, HOLD_WIDTH, HEIGHT)
+        gump.CenterXInViewPort()
+        gump.CenterYInViewPort()
+
+        background = API.Gumps.CreateGumpColorBox(0.85, "#1E1E1E")
+        background.SetRect(0, 0, HOLD_WIDTH, HEIGHT)
+        gump.Add(background)
+
+        label = API.Gumps.CreateGumpLabel(self._config["text"], self._config["hue"])
+        label.SetPos(16, 16)
+        gump.Add(label)
+
+        button = API.Gumps.CreateSimpleButton(self._config["button"], 120, 26)
+        button.SetPos(16, HEIGHT - 42)
+        API.Gumps.AddControlOnClick(button, on_press)
+        gump.Add(button)
+
+        API.Gumps.AddGump(gump)
+
+        return gump
+
+    # each() runs once a slice, so the caller's alarm can keep restarting while the gump is up
+    def wait(self, each):
+        if API.Pathfinding():
+            API.CancelPathfinding()
+
+        if API.HasTarget():
+            API.CancelTarget()
+
+        pressed = [False]
+
+        def on_press():
+            pressed[0] = True
+
+        gump = self._show(on_press)
+
+        # API.Stop() only lands at the next Pause, and every client call before it answers nothing
+        if gump is None:
+            self._log("not holding - the run is being stopped")
+            return False
+
+        self._log("holding - %s" % self._config["text"])
+
+        def resolve():
+            return "the button was pressed" if pressed[0] else None
+
+        why = wait_for_gump(gump, self._stop_reason, self._config["poll"], resolve, each=each)
+
+        self._heartbeat.reset()
+        self._log("%s, carrying on" % why)
+
+        return why in ("the button was pressed", "the gump was closed")
+
+
 # src/uo/log.py
 def make_log(prefix):
     stamp = prefix + ": "
@@ -589,6 +949,11 @@ def make_log(prefix):
     log.stamp = stamp.lower()
 
     return log
+
+
+# src/uo/loop.py
+def backoff_for(count, step, cap):
+    return min(step * count, cap)
 
 
 # src/uo/mount.py
@@ -624,6 +989,53 @@ def beside_script(name):
         return SCRIPTS_FOLDER + "/" + name
 
     return script[:cut + 1] + name
+
+
+# src/uo/gainpath.py
+COMMAND = "[SkillGainMode"
+PROMPT = "skill gain path is"
+PATHS = ("Modern", "Legacy", "Perilous")
+
+
+def _named(text):
+    low = (text or "").lower()
+    at = low.find(PROMPT)
+
+    if at < 0:
+        return None
+
+    words = words_of(text[at + len(PROMPT):])
+
+    for path in PATHS:
+        if path.lower() in words:
+            return path
+
+    return None
+
+
+# Sent once per run, ahead of the loop that records attempts: the client answers "Your skill gain
+# path is Modern. This character's ..." and every recorded row carries whichever of Modern, Legacy
+# or Perilous follows.
+def read_gain_path(budget, poll, log):
+    API.Msg(COMMAND)
+
+    waited = 0.0
+
+    while not API.StopRequested:
+        for entry in API.GetJournalEntries(budget + poll) or []:
+            path = _named(getattr(entry, "Text", None))
+
+            if path is not None:
+                return path
+
+        if waited >= budget:
+            log("no skill gain path reported - recording without one")
+            return None
+
+        API.Pause(poll)
+        waited += poll
+
+    return None
 
 
 # src/uo/record.py
@@ -679,11 +1091,12 @@ class AttemptLog(object):
     file that under-reports every gain it exists to measure.
     """
 
-    def __init__(self, path, character, serial, skill, log, append=None):
+    def __init__(self, path, character, serial, skill, log, append=None, gain_path=None):
         self._path = path or ""
         self._character = character or ""
         self._serial = serial
         self._skill = skill
+        self._gain_path = gain_path
         self._log = log
         self._append = append if append is not None else append_line
         self._off = not self._path
@@ -741,6 +1154,7 @@ class AttemptLog(object):
             '"char":%s' % quoted(self._character),
             '"serial":%s' % quoted(hex_of(self._serial)),
             '"skill":%s' % quoted(self._skill),
+            '"gainPath":%s' % (quoted(self._gain_path) if self._gain_path else "null"),
             '"used":%s' % quoted(row["used"]),
             '"from":%s' % skill_json(row["from"]),
             '"to":%s' % skill_json(skill_to),
@@ -784,7 +1198,48 @@ def attempt_log(path, skill, log):
     if where:
         log("recording to %s" % where)
 
-    return AttemptLog(where, getattr(me, "Name", ""), getattr(me, "Serial", 0), skill, log)
+    gain_path = read_gain_path(GAIN_PATH_TIMEOUT, GAIN_PATH_POLL, log) if where else None
+
+    return AttemptLog(where, getattr(me, "Name", ""), getattr(me, "Serial", 0), skill, log,
+                       gain_path=gain_path)
+
+
+# src/uo/save.py
+class SaveWatch(object):
+    def __init__(self, saving_text, done_text, wait, poll, log, heartbeat, stop_reason):
+        self._saving_text = saving_text
+        self._done_text = done_text
+        self._wait = wait
+        self._poll = poll
+        self._log = log
+        self._heartbeat = heartbeat
+        self._stop_reason = stop_reason
+
+    def is_saving(self):
+        return said(self._saving_text)
+
+    def wait_out(self):
+        self._log("the world is saving, waiting it out")
+
+        # Read before the clear: a save can start and finish inside one cycle, and clearing first
+        # threw the completion away and then stood still for the whole of the wait
+        ended = "the shard had already finished" if said(self._done_text) else None
+
+        forget(self._saving_text + self._done_text)
+
+        waited = 0.0
+
+        while ended is None and waited < self._wait:
+            API.Pause(self._poll)
+            waited += self._poll
+
+            if said(self._done_text):
+                ended = "the shard says it is done"
+            elif self._stop_reason() is not None:
+                ended = "the run has a reason to stop"
+
+        self._log("%s, carrying on" % (ended or "nothing said in %ds" % int(self._wait)))
+        self._heartbeat.reset()
 
 
 # src/uo/skill.py
@@ -878,112 +1333,274 @@ class SkillReader(object):
         return skill.Value
 
 
-# src/uo/terrain.py
-# Plain Python types, not the client's sbyte and ushort: json cannot write those, and a .NET string
-# is only a str by courtesy
-def land_tile(x, y, land):
-    return {"x": int(x), "y": int(y), "z": int(land.Z), "graphic": int(land.Graphic),
-            "is_land": True, "name": ""}
+# src/uo/alert.py
+class Launcher(object):
+    def __init__(self, log):
+        self._log = log
+        self._playing = None
+        self._referenced = False
+        self._failed = set()
+
+    def _start(self, command):
+        if not self._referenced:
+            self._referenced = True
+            # Process is in its own assembly on .NET Core, and IronPython does not load it unasked
+            clr.AddReference("System.Diagnostics.Process")
+
+        info = System.Diagnostics.ProcessStartInfo()
+        info.FileName = command[0]
+        info.UseShellExecute = False
+        info.CreateNoWindow = True
+
+        for argument in command[1:]:
+            info.ArgumentList.Add(argument)
+
+        return System.Diagnostics.Process.Start(info)
+
+    def _try(self, command):
+        try:
+            return self._start(command)
+        except Exception as error:
+            # The stop button's interrupt can land inside Process.Start, and swallowed here it would
+            # leave a detached thread restarting the alarm
+            if API.StopRequested:
+                raise
+
+            if command[0] not in self._failed:
+                self._failed.add(command[0])
+                self._log("could not run %s - %s" % (command[0], error))
+
+            return None
+
+    def run(self, command):
+        if command:
+            self._try(command)
+
+    # One at a time, so a long file is not layered over itself every cycle. True means a start
+    # was attempted, which is what the caller counts
+    def play(self, command):
+        if not command:
+            return False
+
+        if self._playing is not None and not self._playing.HasExited:
+            return False
+
+        self._playing = self._try(command)
+
+        return True
+
+    def stop(self):
+        playing, self._playing = self._playing, None
+
+        if playing is not None and not playing.HasExited:
+            try:
+                playing.Kill()
+            except Exception:
+                pass
 
 
-def static_tile(x, y, static):
-    return {"x": int(x), "y": int(y), "z": int(static.Z), "graphic": int(static.Graphic),
-            "is_land": False, "name": str(static.Name or "")}
+# src/uo/notoriety.py
+"""Passed through to the scans, never compared or OR-ed: the API.py stub lists every value as 1."""
+
+# Innocent is out, or every blue NPC in the world is trouble
+HOSTILE = [
+    API.Notoriety.Gray,
+    API.Notoriety.Criminal,
+    API.Notoriety.Enemy,
+    API.Notoriety.Murderer,
+]
 
 
-class Terrain(object):
-    """Land and statics do not change during a session, so a coordinate is read once. Every read is
-    a client frame, which is why the statics of a box come in one call and the land only on demand."""
+# src/uo/threat.py
+# 0 is what the client reports while it is refreshing stats, and for a mobile it has lost track of,
+# so a fall to 0 is no news at all
+def dropped(was, is_now):
+    return was > 0 and is_now > 0 and is_now < was
 
-    def __init__(self):
-        self._land = {}
-        self._statics = {}
-        self._fresh = set()
-        self.reads = 0
 
-    def _land_at(self, x, y):
-        cached = self._land.get((x, y))
+def hostiles_near(notoriety, within):
+    found = API.GetAllMobiles(None, within, notoriety) or []
 
-        if cached is None:
-            self.reads += 1
-            land = API.GetTile(x, y)
-            cached = [land_tile(x, y, land)] if land is not None else []
-            self._land[(x, y)] = cached
-            self._fresh.add((x, y))
+    for mobile in found:
+        # IsRenamable is how the rest of this repo tells your own pet from a stranger's, and a pet
+        # flagged gray by whatever it was fighting would otherwise read as the thing attacking you
+        if mobile.Serial != API.Player.Serial and not mobile.IsDead and not mobile.IsRenamable:
+            return mobile
 
-        return cached
+    return None
 
-    def _statics_at(self, x, y):
-        cached = self._statics.get((x, y))
 
-        if cached is None:
-            self.reads += 1
-            cached = [static_tile(x, y, static) for static in API.GetStaticsAt(x, y) or []]
-            self._statics[(x, y)] = cached
-            self._fresh.add((x, y))
+class ThreatWatch(object):
+    def __init__(self, config, log, companion, friend_label, hold=None):
+        self._config = config
+        self._log = log
+        self._companion = companion
+        self._friend_label = friend_label
+        self._hold = hold
+        self._alert = Launcher(log)
+        self._last_hits = 0
+        self._last_companion_hits = 0
+        self._in_episode = False
+        self._trouble_seen = False
+        self._alarm_left = 0
 
-        return cached
+    # Consuming: the roam idle loop never clears the journal, so said() would re-arm this every poll
+    def _ambushed(self):
+        text = self._config["ambush_text"]
+        return bool(text) and matched_bucket([("ambushed", text)]) is not None
 
-    def _fill_statics(self, x1, y1, x2, y2):
-        missing = [(x, y) for x in range(x1, x2 + 1) for y in range(y1, y2 + 1)
-                   if (x, y) not in self._statics]
+    def _sound(self):
+        if self._alarm_left > 0 and self._alert.play(self._config["ambush_alarm"]):
+            self._alarm_left -= 1
 
-        if not missing:
+    def _describe(self, hostile, friend):
+        if hostile is not None:
+            who = "'%s' %s %d tiles off" % (
+                hostile.Name or "?",
+                hex_of(hostile.Graphic),
+                hostile.Distance,
+            )
+        else:
+            who = "nothing in sight"
+
+        ceiling = API.Player.HitsMax
+        mine = "you %d/%s" % (API.Player.Hits, ceiling if ceiling > 0 else "?")
+        theirs = ""
+
+        if friend is not None:
+            theirs = ", %s %d/%s" % (self._friend_label(friend), friend.Hits,
+                                     friend.HitsMax or "?")
+
+        return "%s, %s%s" % (who, mine, theirs)
+
+    def look(self):
+        if not self._config["watch"]:
             return
 
-        self.reads += 1
-        by_coord = {}
+        hits = API.Player.Hits
+        hurt = dropped(self._last_hits, hits)
 
-        for static in API.GetStaticsInArea(x1, y1, x2, y2) or []:
-            by_coord.setdefault((static.X, static.Y), []).append(static)
+        if hits > 0:
+            self._last_hits = hits
 
-        for x, y in missing:
-            self._statics[(x, y)] = [static_tile(x, y, static)
-                                     for static in by_coord.get((x, y), [])]
-            self._fresh.add((x, y))
+        friend = self._companion()
+        friend_hits = friend.Hits if friend is not None else 0
+        friend_hurt = dropped(self._last_companion_hits, friend_hits)
 
-    def remember(self, x, y, land, statics):
-        self._land[(x, y)] = land
-        self._statics[(x, y)] = statics
+        if friend_hits > 0:
+            self._last_companion_hits = friend_hits
 
-    # Coordinates read this session with both halves in, handed out once
-    def fresh(self):
-        done = [xy for xy in self._fresh if xy in self._land and xy in self._statics]
-        self._fresh.difference_update(done)
+        hostile = hostiles_near(HOSTILE, self._config["range"])
+        trouble = hostile is not None or hurt or friend_hurt
 
-        return [(xy, self._land[xy], self._statics[xy]) for xy in sorted(done)]
+        if self._ambushed():
+            self._in_episode = True
+            self._trouble_seen = False
+            self._alarm_left = self._config["ambush_repeats"] if self._config["ambush_alarm"] else 0
+            self._log("ambushed - %s" % self._describe(hostile, friend))
+            API.HeadMsg(self._config["ambush_warning"], API.Player.Serial,
+                        self._config["ambush_hue"])
 
-    def at(self, x, y):
-        return self._land_at(x, y) + self._statics_at(x, y)
+            for command in self._config["ambush_notices"]:
+                self._alert.run(command)
 
-    def _bounds(self, radius):
-        return (API.Player.X - radius, API.Player.Y - radius,
-                API.Player.X + radius, API.Player.Y + radius)
+            # The scan above is stale once the hold returns; the next look reads the fight afresh
+            if self._hold is not None:
+                self._hold.wait(self._sound)
+                self._in_episode = False
+                self._trouble_seen = False
+                self._alarm_left = 0
+                self._alert.stop()
 
-    def statics_box(self, radius):
-        x1, y1, x2, y2 = self._bounds(radius)
-        self._fill_statics(x1, y1, x2, y2)
+                return
 
-        for x in range(x1, x2 + 1):
-            for y in range(y1, y2 + 1):
-                for tile in self._statics[(x, y)]:
-                    yield tile
+        if trouble:
+            if not self._in_episode:
+                self._in_episode = True
+                self._log("trouble - %s" % self._describe(hostile, friend))
 
-    def box(self, radius):
-        x1, y1, x2, y2 = self._bounds(radius)
-        self._fill_statics(x1, y1, x2, y2)
+            self._trouble_seen = True
+        # An ambush announces monsters that take a cycle to appear, so the alarm outlives an empty
+        # scan until a fight has come and gone or the repeats run out
+        elif self._in_episode and (self._trouble_seen or self._alarm_left == 0):
+            self._in_episode = False
+            self._trouble_seen = False
+            self._alarm_left = 0
+            self._alert.stop()
+            self._log("clear")
 
-        for x in range(x1, x2 + 1):
-            for y in range(y1, y2 + 1):
-                for tile in self._land_at(x, y):
-                    yield tile
+        self._sound()
 
-                for tile in self._statics[(x, y)]:
-                    yield tile
+
+# src/uo/vitals.py
+def weight_reading():
+    me = player()
+
+    return "?/?" if me is None else "%d/%d" % (me.Weight, me.WeightMax)
+
+
+def where():
+    me = player()
+
+    return "somewhere" if me is None else "at %d,%d" % (me.X, me.Y)
+
+
+def position_and_weight():
+    return "%s, %s" % (where(), weight_reading())
 
 
 # src/fishing/index.py
 log = make_log("fishing")
+heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "casts", position_and_weight)
+
+skill_name = find_skill_name(SKILL_NAMES)
+
+
+def stop_reason():
+    return first_reason([stopped(STOPPED), dead(), skill_capped(skill_name)])
+
+
+saves = SaveWatch(SAVING_TEXT, SAVE_DONE_TEXT, SAVE_WAIT, SAVE_POLL, log, heartbeat, stop_reason)
+
+# Hold.wait() calls heartbeat.reset() - the only reason this script keeps one at all
+hold_ambush = Hold({
+    "text": AMBUSH_HOLD_TEXT,
+    "button": AMBUSH_HOLD_BUTTON,
+    "hue": AMBUSH_HOLD_HUE,
+    "poll": AMBUSH_HOLD_POLL,
+}, log, stop_reason, heartbeat)
+
+hold_boat_stopped = Hold({
+    "text": BOAT_STOPPED_HOLD_TEXT,
+    "button": AMBUSH_HOLD_BUTTON,
+    "hue": BOAT_STOPPED_HUE,
+    "poll": AMBUSH_HOLD_POLL,
+}, log, stop_reason, heartbeat)
+
+# No companion aboard: fishing has no pet to lose track of, so both watches take no-ops for it
+threat_ambush = ThreatWatch({
+    "watch": WATCH_FOR_TROUBLE,
+    "range": THREAT_RANGE,
+    "ambush_text": AMBUSH_TEXT,
+    "ambush_alarm": AMBUSH_ALARM,
+    "ambush_notices": AMBUSH_NOTICES,
+    "ambush_warning": AMBUSH_WARNING,
+    "ambush_hue": AMBUSH_HUE,
+    "ambush_repeats": AMBUSH_REPEATS,
+}, log, lambda: None, lambda friend: "", hold_ambush if AMBUSH_HOLD else None)
+
+# The same mechanism as an ambush - sound, HeadMsg, notices, an optional hold - just a different
+# trigger phrase and wording
+threat_boat_stopped = ThreatWatch({
+    "watch": WATCH_FOR_TROUBLE,
+    "range": THREAT_RANGE,
+    "ambush_text": BOAT_STOPPED_TEXT,
+    "ambush_alarm": AMBUSH_ALARM,
+    "ambush_notices": AMBUSH_NOTICES,
+    "ambush_warning": BOAT_STOPPED_WARNING,
+    "ambush_hue": BOAT_STOPPED_HUE,
+    "ambush_repeats": AMBUSH_REPEATS,
+}, log, lambda: None, lambda friend: "", hold_boat_stopped if BOAT_STOPPED_HOLD else None)
 
 CAST_CONFIG = {
     "cursor_timeout": CURSOR_TIMEOUT,
@@ -995,19 +1612,6 @@ CAST_CONFIG = {
     "caught_text": CAUGHT_TEXT,
     "tail_seconds": JOURNAL_TAIL_SECONDS,
     "tail_lines": JOURNAL_TAIL_LINES,
-}
-
-ENDINGS = {
-    "failed": "nothing bit",
-    "empty": "the fish are not biting here - try further along the shore",
-    "tooFar": "the shard says the water is out of reach - stand closer to it",
-    "notWater": "the shard says that tile is not water - check WATER_LAND_GRAPHICS and "
-                "WATER_STATIC_GRAPHICS",
-    "mounted": "the shard says you are still mounted",
-    "saving": "the world is saving - run it again in a moment",
-    "throttled": "the shard says wait - run it again in a moment",
-    "noCursor": "the pole raised no cursor",
-    "unknown": "unreadable outcome, check OUTCOME_TEXT",
 }
 
 
@@ -1034,69 +1638,158 @@ def record_cast(recorder, skill, start, outcome, caught, before):
     recorder.close(skill.last())
 
 
-def fish():
-    if API.HasTarget():
-        API.CancelTarget()
+# The pack never keeps what is caught - it lands on the ground at your feet instead, so a long run
+# never has to be watched for filling up
+def drop_caught(before):
+    settled(CATCH_SETTLE, CATCH_POLL, lambda: pack_total(pack_counts()) > pack_total(before))
+    gained, _lost = diff_counts(before, pack_counts())
 
-    skill_name = find_skill_name(SKILL_NAMES)
+    for graphic, hue in gained:
+        for item in pack_contents():
+            if item.Graphic == graphic and hue_of(item) == hue:
+                API.MoveItemOffset(item.Serial, amount_of(item))
 
-    if skill_name is None:
-        return "the client reports none of %s - check SKILL_NAMES" % ", ".join(SKILL_NAMES)
 
-    skill = SkillReader(skill_name)
+skill = SkillReader(skill_name or SKILL_NAMES[0])
+recorder = attempt_log(DATA_PATH if skill_name else "", skill.name(), log)
+
+stop = None
+start = None
+
+if skill_name is None:
+    stop = "the client reports none of %s - check SKILL_NAMES" % ", ".join(SKILL_NAMES)
+else:
     start = skill.wait(SKILL_TIMEOUT, SKILL_POLL)
 
     if start is None:
-        return "%s is not reading yet - run it again once the skill list has arrived" % skill_name
+        stop = "%s is not reading yet - run it again once the skill list has arrived" % skill_name
 
-    reason = first_reason([dead(), skill_capped(skill_name)])
+if stop is None:
+    tiles_ahead = TilesAheadPrompt({
+        "text": TILES_AHEAD_PROMPT_TEXT,
+        "default": TILES_AHEAD_DEFAULT,
+        "hue": TILES_AHEAD_HUE,
+        "poll": TILES_AHEAD_POLL,
+    }, log, stop_reason).ask()
+    angler = Angler(OUTCOME_TEXT, CAST_CONFIG, log, log.stamp)
+    log("%s at %s, aiming %d tiles ahead" % (skill_name, reading(start), tiles_ahead))
 
-    if reason is not None:
-        return reason
-
-    if not dismount(DISMOUNT_ATTEMPTS, DISMOUNT_TIMEOUT, DISMOUNT_POLL):
-        return "could not get off the mount"
-
+    # Said once, before the loop: the pets stay guarding, so this does not need repeating every cast
     if GUARD_PHRASE:
         API.Msg(GUARD_PHRASE)
 
-    pole = find_pole(POLE_GRAPHICS, POLE_NAME_WORDS, HAND_LAYERS, log)
-
-    if pole is None:
-        return "no fishing pole in hand or in the pack"
-
-    tile = nearest_water(Terrain(), FISH_RANGE, WATER_LAND_GRAPHICS, WATER_STATIC_GRAPHICS)
-
-    if tile is None:
-        return "no water within %d tiles" % FISH_RANGE
-
-    log("%s at %s, casting at %d,%d" % (skill_name, reading(start), tile["x"], tile["y"]))
-
-    recorder = attempt_log(DATA_PATH, skill_name, log)
-    before = pack_counts() if recorder.recording() else {}
-    outcome, caught = Angler(OUTCOME_TEXT, CAST_CONFIG, log, log.stamp).cast_once(pole, tile)
-
-    if outcome in ("caught", "failed") and recorder.recording():
-        record_cast(recorder, skill, start, outcome, caught, before)
-
-    if outcome == "caught":
-        return "caught %s" % (caught or "something the journal did not name")
-
-    if outcome == "unknown":
-        for line in journal_tail(JOURNAL_TAIL_SECONDS, JOURNAL_TAIL_LINES, log.stamp):
-            log("  " + line)
-
-    return ENDINGS.get(outcome, outcome)
-
+tally = 0
+fails = 0
+unknown = 0
+throttled = 0
+reported = 0
+cycle = 0
 
 try:
-    ending = fish()
+    while stop is None and cycle < MAX_CYCLES:
+        cycle += 1
+        stop = stop_reason()
+
+        if stop is not None:
+            break
+
+        # A frozen shard reads as every failure below, so it is waited out before any of them
+        if saves.is_saving():
+            saves.wait_out()
+            unknown = 0
+            throttled = 0
+            continue
+
+        threat_ambush.look()
+        threat_boat_stopped.look()
+
+        # Asked every cycle, so a remount costs a single cycle instead of the rest of the run
+        if not dismount(DISMOUNT_ATTEMPTS, DISMOUNT_TIMEOUT, DISMOUNT_POLL):
+            stop = "could not get off the mount"
+            break
+
+        pole = find_pole(POLE_GRAPHICS, POLE_NAME_WORDS, HAND_LAYERS, log)
+
+        if pole is None:
+            stop = "no fishing pole in hand or in the pack"
+            break
+
+        tile = tile_ahead(tiles_ahead, WATER_LAND_GRAPHICS, WATER_STATIC_GRAPHICS,
+                         LAND_TILE_GRAPHIC)
+        log("casting at %d,%d,%d (graphic %s, %s), standing at %d,%d, facing %s"
+            % (tile["x"], tile["y"], tile["z"], hex_of(tile["graphic"]), tile["source"],
+               API.Player.X, API.Player.Y, API.Player.Direction))
+        value = skill.read()
+        before = pack_counts()
+        outcome, caught = angler.cast_once(pole, tile)
+
+        if outcome == "caught":
+            drop_caught(before)
+
+        if outcome in ("caught", "failed") and recorder.recording():
+            record_cast(recorder, skill, value, outcome, caught, before)
+
+        if outcome == "caught":
+            tally += 1
+            unknown = 0
+            throttled = 0
+            log("caught %s" % (caught or "something the journal did not name"))
+        elif outcome == "failed":
+            tally += 1
+            fails += 1
+            unknown = 0
+            throttled = 0
+        elif outcome == "saving":
+            saves.wait_out()
+            unknown = 0
+            throttled = 0
+        elif outcome == "throttled":
+            throttled += 1
+            unknown = 0
+            log("shard says wait (%d/%d), backing off" % (throttled, MAX_THROTTLED))
+            API.Pause(backoff_for(throttled, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX))
+
+            if throttled >= MAX_THROTTLED:
+                stop = "the shard kept refusing the cast"
+                break
+        elif outcome in ("empty", "tooFar", "notWater", "mounted"):
+            unknown = 0
+        elif outcome == "unknown":
+            unknown += 1
+            log("unreadable outcome (%d/%d), check OUTCOME_TEXT" % (unknown, MAX_UNKNOWN))
+
+            for line in journal_tail(JOURNAL_TAIL_SECONDS, JOURNAL_TAIL_LINES, log.stamp):
+                log("  " + line)
+        # noCursor: the pole raised no cursor and the shard said nothing either
+        else:
+            unknown += 1
+            log("no target cursor (%d/%d), backing off" % (unknown, MAX_UNKNOWN))
+            API.Pause(backoff_for(unknown, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX))
+
+        if unknown >= MAX_UNKNOWN:
+            stop = "%d unreadable outcomes in a row" % MAX_UNKNOWN
+            break
+
+        if tally >= reported + LOG_EVERY:
+            reported = tally
+            log("%d casts, %d caught, %d failed" % (tally, tally - fails, fails))
+
+        API.Pause(STEP_DELAY)
 except Exception as error:
     # The stop button lands here as well, and the client waits for it to unwind the thread
     if API.StopRequested:
         raise
 
-    ending = "threw - %s" % error
+    if stop is None:
+        stop = "threw - %s" % error
+finally:
+    recorder.close(skill.last())
 
-log(ending)
+if API.Pathfinding():
+    API.CancelPathfinding()
+
+reason = stop or "hit the %d working cycle backstop" % MAX_CYCLES
+
+log("%d casts, %d caught, %d failed" % (tally, tally - fails, fails))
+log("stopping - %s" % reason)
 API.Stop()

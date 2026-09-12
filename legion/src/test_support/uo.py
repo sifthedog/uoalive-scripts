@@ -79,6 +79,7 @@ class FakePlayer(object):
         self.X = fields.get("x", 1000)
         self.Y = fields.get("y", 1000)
         self.Z = fields.get("z", 0)
+        self.Direction = fields.get("direction", "North")
         self.IsDead = fields.get("is_dead", False)
         self.IsCasting = fields.get("is_casting", False)
         self.IsMounted = fields.get("is_mounted", False)
@@ -283,6 +284,7 @@ class FakeAPI(object):
         self.pre_targeted = []
         self.cancelled_pre_targets = 0
         self.moved = []
+        self.dropped = []
         self.renamed = []
         self.menu_entries = set()
         self.menus = []
@@ -421,6 +423,11 @@ class FakeAPI(object):
 
     def MoveItem(self, serial, container, amount=-1):
         self.moved.append((serial, container, amount))
+
+        return True
+
+    def MoveItemOffset(self, serial, amount=0, x=0, y=0, z=0, OSI=False):
+        self.dropped.append((serial, amount, x, y, z))
 
         return True
 

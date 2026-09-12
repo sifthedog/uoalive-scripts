@@ -1,26 +1,92 @@
 import API
 
 from fishing.angler import Angler
-from fishing.config import (CAST_POLL, CAST_TIMEOUT, CATCH_POLL, CATCH_SETTLE, CAUGHT_TEXT,
-                            CURSOR_POLL, CURSOR_TIMEOUT, DATA_PATH, DISMOUNT_ATTEMPTS,
-                            DISMOUNT_POLL, DISMOUNT_TIMEOUT, FISH_RANGE, GAIN_POLL, GAIN_SETTLE,
-                            GUARD_PHRASE, HAND_LAYERS, JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS,
-                            NO_CURSOR_READ, OUTCOME_TEXT, POLE_GRAPHICS, POLE_NAME_WORDS,
-                            PROMPT_TEXT, SKILL_NAMES, SKILL_POLL, SKILL_TIMEOUT,
+from fishing.config import (AMBUSH_ALARM, AMBUSH_HOLD, AMBUSH_HOLD_BUTTON, AMBUSH_HOLD_HUE,
+                            AMBUSH_HOLD_POLL, AMBUSH_HOLD_TEXT, AMBUSH_HUE, AMBUSH_NOTICES,
+                            AMBUSH_REPEATS, AMBUSH_TEXT, AMBUSH_WARNING, BOAT_STOPPED_HOLD,
+                            BOAT_STOPPED_HOLD_TEXT, BOAT_STOPPED_HUE, BOAT_STOPPED_TEXT,
+                            BOAT_STOPPED_WARNING, CAST_POLL, CAST_TIMEOUT, CATCH_POLL,
+                            CATCH_SETTLE, CAUGHT_TEXT, CURSOR_POLL, CURSOR_TIMEOUT, DATA_PATH,
+                            DISMOUNT_ATTEMPTS, DISMOUNT_POLL, DISMOUNT_TIMEOUT, GAIN_POLL,
+                            GAIN_SETTLE, GUARD_PHRASE, HAND_LAYERS, HEARTBEAT_EVERY,
+                            JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS, LAND_TILE_GRAPHIC, LOG_EVERY,
+                            MAX_CYCLES, MAX_THROTTLED, MAX_UNKNOWN, NO_CURSOR_READ, OUTCOME_TEXT,
+                            POLE_GRAPHICS, POLE_NAME_WORDS, PROMPT_TEXT, SAVE_DONE_TEXT, SAVE_POLL,
+                            SAVE_WAIT, SAVING_TEXT, SKILL_NAMES, SKILL_POLL, SKILL_TIMEOUT,
+                            STEP_DELAY, STOPPED, THREAT_RANGE, THROTTLE_BACKOFF,
+                            THROTTLE_BACKOFF_MAX, TILES_AHEAD_DEFAULT, TILES_AHEAD_HUE,
+                            TILES_AHEAD_POLL, TILES_AHEAD_PROMPT_TEXT, WATCH_FOR_TROUBLE,
                             WATER_LAND_GRAPHICS, WATER_STATIC_GRAPHICS)
+from fishing.direction import tile_ahead
 from fishing.pole import find_pole
-from fishing.water import nearest_water
-from uo.guards import dead, first_reason, skill_capped
+from fishing.prompt import TilesAheadPrompt
+from uo.entity import hex_of
+from uo.guards import dead, first_reason, skill_capped, stopped
+from uo.heartbeat import Heartbeat
+from uo.hold import Hold
 from uo.journal import journal_tail
 from uo.log import make_log
+from uo.loop import backoff_for
 from uo.mount import dismount
-from uo.pack import counts_by_graphic, diff_counts, pack_contents
+from uo.pack import amount_of, counts_by_graphic, diff_counts, hue_of, pack_contents
 from uo.record import attempt_log
 from uo.retry import settled
+from uo.save import SaveWatch
 from uo.skill import SkillReader, find_skill_name, reading
-from uo.terrain import Terrain
+from uo.threat import ThreatWatch
+from uo.vitals import position_and_weight
 
 log = make_log("fishing")
+heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "casts", position_and_weight)
+
+skill_name = find_skill_name(SKILL_NAMES)
+
+
+def stop_reason():
+    return first_reason([stopped(STOPPED), dead(), skill_capped(skill_name)])
+
+
+saves = SaveWatch(SAVING_TEXT, SAVE_DONE_TEXT, SAVE_WAIT, SAVE_POLL, log, heartbeat, stop_reason)
+
+# Hold.wait() calls heartbeat.reset() - the only reason this script keeps one at all
+hold_ambush = Hold({
+    "text": AMBUSH_HOLD_TEXT,
+    "button": AMBUSH_HOLD_BUTTON,
+    "hue": AMBUSH_HOLD_HUE,
+    "poll": AMBUSH_HOLD_POLL,
+}, log, stop_reason, heartbeat)
+
+hold_boat_stopped = Hold({
+    "text": BOAT_STOPPED_HOLD_TEXT,
+    "button": AMBUSH_HOLD_BUTTON,
+    "hue": BOAT_STOPPED_HUE,
+    "poll": AMBUSH_HOLD_POLL,
+}, log, stop_reason, heartbeat)
+
+# No companion aboard: fishing has no pet to lose track of, so both watches take no-ops for it
+threat_ambush = ThreatWatch({
+    "watch": WATCH_FOR_TROUBLE,
+    "range": THREAT_RANGE,
+    "ambush_text": AMBUSH_TEXT,
+    "ambush_alarm": AMBUSH_ALARM,
+    "ambush_notices": AMBUSH_NOTICES,
+    "ambush_warning": AMBUSH_WARNING,
+    "ambush_hue": AMBUSH_HUE,
+    "ambush_repeats": AMBUSH_REPEATS,
+}, log, lambda: None, lambda friend: "", hold_ambush if AMBUSH_HOLD else None)
+
+# The same mechanism as an ambush - sound, HeadMsg, notices, an optional hold - just a different
+# trigger phrase and wording
+threat_boat_stopped = ThreatWatch({
+    "watch": WATCH_FOR_TROUBLE,
+    "range": THREAT_RANGE,
+    "ambush_text": BOAT_STOPPED_TEXT,
+    "ambush_alarm": AMBUSH_ALARM,
+    "ambush_notices": AMBUSH_NOTICES,
+    "ambush_warning": BOAT_STOPPED_WARNING,
+    "ambush_hue": BOAT_STOPPED_HUE,
+    "ambush_repeats": AMBUSH_REPEATS,
+}, log, lambda: None, lambda friend: "", hold_boat_stopped if BOAT_STOPPED_HOLD else None)
 
 CAST_CONFIG = {
     "cursor_timeout": CURSOR_TIMEOUT,
@@ -32,19 +98,6 @@ CAST_CONFIG = {
     "caught_text": CAUGHT_TEXT,
     "tail_seconds": JOURNAL_TAIL_SECONDS,
     "tail_lines": JOURNAL_TAIL_LINES,
-}
-
-ENDINGS = {
-    "failed": "nothing bit",
-    "empty": "the fish are not biting here - try further along the shore",
-    "tooFar": "the shard says the water is out of reach - stand closer to it",
-    "notWater": "the shard says that tile is not water - check WATER_LAND_GRAPHICS and "
-                "WATER_STATIC_GRAPHICS",
-    "mounted": "the shard says you are still mounted",
-    "saving": "the world is saving - run it again in a moment",
-    "throttled": "the shard says wait - run it again in a moment",
-    "noCursor": "the pole raised no cursor",
-    "unknown": "unreadable outcome, check OUTCOME_TEXT",
 }
 
 
@@ -71,69 +124,158 @@ def record_cast(recorder, skill, start, outcome, caught, before):
     recorder.close(skill.last())
 
 
-def fish():
-    if API.HasTarget():
-        API.CancelTarget()
+# The pack never keeps what is caught - it lands on the ground at your feet instead, so a long run
+# never has to be watched for filling up
+def drop_caught(before):
+    settled(CATCH_SETTLE, CATCH_POLL, lambda: pack_total(pack_counts()) > pack_total(before))
+    gained, _lost = diff_counts(before, pack_counts())
 
-    skill_name = find_skill_name(SKILL_NAMES)
+    for graphic, hue in gained:
+        for item in pack_contents():
+            if item.Graphic == graphic and hue_of(item) == hue:
+                API.MoveItemOffset(item.Serial, amount_of(item))
 
-    if skill_name is None:
-        return "the client reports none of %s - check SKILL_NAMES" % ", ".join(SKILL_NAMES)
 
-    skill = SkillReader(skill_name)
+skill = SkillReader(skill_name or SKILL_NAMES[0])
+recorder = attempt_log(DATA_PATH if skill_name else "", skill.name(), log)
+
+stop = None
+start = None
+
+if skill_name is None:
+    stop = "the client reports none of %s - check SKILL_NAMES" % ", ".join(SKILL_NAMES)
+else:
     start = skill.wait(SKILL_TIMEOUT, SKILL_POLL)
 
     if start is None:
-        return "%s is not reading yet - run it again once the skill list has arrived" % skill_name
+        stop = "%s is not reading yet - run it again once the skill list has arrived" % skill_name
 
-    reason = first_reason([dead(), skill_capped(skill_name)])
+if stop is None:
+    tiles_ahead = TilesAheadPrompt({
+        "text": TILES_AHEAD_PROMPT_TEXT,
+        "default": TILES_AHEAD_DEFAULT,
+        "hue": TILES_AHEAD_HUE,
+        "poll": TILES_AHEAD_POLL,
+    }, log, stop_reason).ask()
+    angler = Angler(OUTCOME_TEXT, CAST_CONFIG, log, log.stamp)
+    log("%s at %s, aiming %d tiles ahead" % (skill_name, reading(start), tiles_ahead))
 
-    if reason is not None:
-        return reason
-
-    if not dismount(DISMOUNT_ATTEMPTS, DISMOUNT_TIMEOUT, DISMOUNT_POLL):
-        return "could not get off the mount"
-
+    # Said once, before the loop: the pets stay guarding, so this does not need repeating every cast
     if GUARD_PHRASE:
         API.Msg(GUARD_PHRASE)
 
-    pole = find_pole(POLE_GRAPHICS, POLE_NAME_WORDS, HAND_LAYERS, log)
-
-    if pole is None:
-        return "no fishing pole in hand or in the pack"
-
-    tile = nearest_water(Terrain(), FISH_RANGE, WATER_LAND_GRAPHICS, WATER_STATIC_GRAPHICS)
-
-    if tile is None:
-        return "no water within %d tiles" % FISH_RANGE
-
-    log("%s at %s, casting at %d,%d" % (skill_name, reading(start), tile["x"], tile["y"]))
-
-    recorder = attempt_log(DATA_PATH, skill_name, log)
-    before = pack_counts() if recorder.recording() else {}
-    outcome, caught = Angler(OUTCOME_TEXT, CAST_CONFIG, log, log.stamp).cast_once(pole, tile)
-
-    if outcome in ("caught", "failed") and recorder.recording():
-        record_cast(recorder, skill, start, outcome, caught, before)
-
-    if outcome == "caught":
-        return "caught %s" % (caught or "something the journal did not name")
-
-    if outcome == "unknown":
-        for line in journal_tail(JOURNAL_TAIL_SECONDS, JOURNAL_TAIL_LINES, log.stamp):
-            log("  " + line)
-
-    return ENDINGS.get(outcome, outcome)
-
+tally = 0
+fails = 0
+unknown = 0
+throttled = 0
+reported = 0
+cycle = 0
 
 try:
-    ending = fish()
+    while stop is None and cycle < MAX_CYCLES:
+        cycle += 1
+        stop = stop_reason()
+
+        if stop is not None:
+            break
+
+        # A frozen shard reads as every failure below, so it is waited out before any of them
+        if saves.is_saving():
+            saves.wait_out()
+            unknown = 0
+            throttled = 0
+            continue
+
+        threat_ambush.look()
+        threat_boat_stopped.look()
+
+        # Asked every cycle, so a remount costs a single cycle instead of the rest of the run
+        if not dismount(DISMOUNT_ATTEMPTS, DISMOUNT_TIMEOUT, DISMOUNT_POLL):
+            stop = "could not get off the mount"
+            break
+
+        pole = find_pole(POLE_GRAPHICS, POLE_NAME_WORDS, HAND_LAYERS, log)
+
+        if pole is None:
+            stop = "no fishing pole in hand or in the pack"
+            break
+
+        tile = tile_ahead(tiles_ahead, WATER_LAND_GRAPHICS, WATER_STATIC_GRAPHICS,
+                         LAND_TILE_GRAPHIC)
+        log("casting at %d,%d,%d (graphic %s, %s), standing at %d,%d, facing %s"
+            % (tile["x"], tile["y"], tile["z"], hex_of(tile["graphic"]), tile["source"],
+               API.Player.X, API.Player.Y, API.Player.Direction))
+        value = skill.read()
+        before = pack_counts()
+        outcome, caught = angler.cast_once(pole, tile)
+
+        if outcome == "caught":
+            drop_caught(before)
+
+        if outcome in ("caught", "failed") and recorder.recording():
+            record_cast(recorder, skill, value, outcome, caught, before)
+
+        if outcome == "caught":
+            tally += 1
+            unknown = 0
+            throttled = 0
+            log("caught %s" % (caught or "something the journal did not name"))
+        elif outcome == "failed":
+            tally += 1
+            fails += 1
+            unknown = 0
+            throttled = 0
+        elif outcome == "saving":
+            saves.wait_out()
+            unknown = 0
+            throttled = 0
+        elif outcome == "throttled":
+            throttled += 1
+            unknown = 0
+            log("shard says wait (%d/%d), backing off" % (throttled, MAX_THROTTLED))
+            API.Pause(backoff_for(throttled, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX))
+
+            if throttled >= MAX_THROTTLED:
+                stop = "the shard kept refusing the cast"
+                break
+        elif outcome in ("empty", "tooFar", "notWater", "mounted"):
+            unknown = 0
+        elif outcome == "unknown":
+            unknown += 1
+            log("unreadable outcome (%d/%d), check OUTCOME_TEXT" % (unknown, MAX_UNKNOWN))
+
+            for line in journal_tail(JOURNAL_TAIL_SECONDS, JOURNAL_TAIL_LINES, log.stamp):
+                log("  " + line)
+        # noCursor: the pole raised no cursor and the shard said nothing either
+        else:
+            unknown += 1
+            log("no target cursor (%d/%d), backing off" % (unknown, MAX_UNKNOWN))
+            API.Pause(backoff_for(unknown, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX))
+
+        if unknown >= MAX_UNKNOWN:
+            stop = "%d unreadable outcomes in a row" % MAX_UNKNOWN
+            break
+
+        if tally >= reported + LOG_EVERY:
+            reported = tally
+            log("%d casts, %d caught, %d failed" % (tally, tally - fails, fails))
+
+        API.Pause(STEP_DELAY)
 except Exception as error:
     # The stop button lands here as well, and the client waits for it to unwind the thread
     if API.StopRequested:
         raise
 
-    ending = "threw - %s" % error
+    if stop is None:
+        stop = "threw - %s" % error
+finally:
+    recorder.close(skill.last())
 
-log(ending)
+if API.Pathfinding():
+    API.CancelPathfinding()
+
+reason = stop or "hit the %d working cycle backstop" % MAX_CYCLES
+
+log("%d casts, %d caught, %d failed" % (tally, tally - fails, fails))
+log("stopping - %s" % reason)
 API.Stop()

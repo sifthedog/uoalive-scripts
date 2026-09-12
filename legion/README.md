@@ -919,40 +919,50 @@ Trouble and stopping, the hold included, carry the same names and defaults as `m
 
 ## fishing.py
 
-One cast, then it stops: get off the mount, say `GUARD_PHRASE`, double-click the fishing pole,
-answer the cursor with the nearest water tile, read the shard's answer, append one row. Run it again
-for the next cast. There is no loop, no stall watch and no heartbeat.
+A loop, meant for standing on a boat: ask once how many tiles ahead to aim, say `GUARD_PHRASE`, then
+each cycle get off the mount, double-click the fishing pole, and answer the cursor with the tile
+straight ahead of whichever way you are facing - no water search, since a boat sits in open water
+on every side. Runs until told to stop, `Fishing` caps, you die, `MAX_CYCLES` is hit, or the shard
+keeps refusing. Every catch is dropped on the ground at your feet as soon as it lands, so the pack
+is never something this run has to manage.
 
-1. Wait for the skill to read, and stop if you are dead or Fishing is capped.
-2. Dismount, up to `DISMOUNT_ATTEMPTS` times.
-3. Say `GUARD_PHRASE`.
+1. Ask once, via a gump, how many tiles ahead to cast at (`TILES_AHEAD_DEFAULT` prefilled;
+   Cancel, a closed gump, or a blank/zero/non-numeric answer all keep the default), then say
+   `GUARD_PHRASE` once.
+2. Each cycle: stop if you are dead, Fishing is capped, or told to stop. Wait out a save. Look for
+   an ambush and for the boat having stopped (see below).
+3. Dismount, up to `DISMOUNT_ATTEMPTS` times.
 4. Find the pole in either hand, then in the pack. Nothing is equipped.
-5. Read the land and statics within `FISH_RANGE` and take the water tile nearest by crow flight.
+5. Read `API.Player.Direction`, the tiles-ahead answer out from where you stand. A water static
+   there (common at a shoreline) wins over the land tile it sits on; otherwise the land tile is
+   used as given, whatever its art - `LAND_TILE_GRAPHIC` is only a fallback for a spot the client
+   has no land data for at all.
 6. Use the pole, wait for the cursor, answer it with `Target(x, y, z, graphic)`.
-7. Read the outcome. A catch is named off the text past the colon of `You pull out an item: …`.
+7. Read the outcome. A catch is named off the text past the colon of `You pull out an item: …`,
+   recorded, and dropped at your feet through `API.MoveItemOffset`.
 
 | Outcome | What it means |
 | --- | --- |
-| `caught` | `You pull out an item: …`. Recorded with what the pack gained |
+| `caught` | `You pull out an item: …`. Recorded with what the pack gained, then dropped on the ground |
 | `failed` | `You fish a while, but fail to catch anything`. Recorded |
-| `empty` | The fish are not biting here. Move along the shore |
-| `tooFar` | The shard wants you closer to the water |
-| `notWater` | The shard refused the tile. `WATER_LAND_GRAPHICS` or `WATER_STATIC_GRAPHICS` is wrong for this shard |
+| `empty` | The fish are not biting off this tile |
+| `tooFar` | The shard wants you closer to the water - answer a smaller number next run, or move |
+| `notWater` | The tile aimed at was not water. Face open water, or answer a different tiles-ahead number |
 | `mounted` | The shard still sees you mounted |
-| `noCursor` | The pole raised no cursor and the shard said nothing |
-| `throttled` / `saving` | Run it again in a moment |
-| `unknown` | Nothing matched. The journal's last lines are printed |
+| `noCursor` / `unknown` | Share `MAX_UNKNOWN`'s backstop. An unreadable outcome prints the journal's last lines |
+| `throttled` / `saving` | Waited out; `throttled` counts toward `MAX_THROTTLED` |
 
 Only `caught` and `failed` are recorded. The row is written after `GAIN_SETTLE`, or as soon as the
 skill value moves, because the client applies the gain after the outcome line. A `caught` row waits
-`CATCH_SETTLE` for the pack to show the fish first.
+`CATCH_SETTLE` for the pack to show the fish first - the same wait that decides when it is safe to
+drop the catch on the ground.
 
 ### Before you run it
 
 - **A fishing pole in hand or in the pack.** A held one is preferred.
-- **Stand within `FISH_RANGE` tiles of water**, on foot or mounted; it dismounts you.
-- **`GUARD_PHRASE` is said every run.** Set it to `""` if the guards are already set or you have
-  none.
+- **Face open water** - the tile aimed at is always straight ahead, the tiles-ahead answer out,
+  with no scan of what is actually there.
+- **`GUARD_PHRASE` is said once**, before the loop starts.
 - **`DATA_PATH` lands beside the script** when it is a bare name, in `LegionScripts`; a path with a
   folder in it is used as written.
 
@@ -960,45 +970,71 @@ skill value moves, because the client applies the gain after the outcome line. A
 
 | Setting | Default | What it is for |
 | --- | --- | --- |
-| `GUARD_PHRASE` | `all guard` | Said before the cast. `""` says nothing |
+| `GUARD_PHRASE` | `all guard` | Said once, before the loop starts. `""` says nothing |
 | `POLE_GRAPHICS` / `POLE_NAME_WORDS` | `0x0DBF` / `fishing`, `pole` | A pack art learned by name joins the set |
 | `HAND_LAYERS` | `twohanded`, `onehanded` | Where a held pole is looked for |
-| `WATER_LAND_GRAPHICS` / `WATER_STATIC_GRAPHICS` | stock RunUO bands | **The important one.** What counts as water. Statics are numbered apart from land |
-| `FISH_RANGE` | `4` | How far it looks for water. RunUO's fishing range |
-| `PROMPT_TEXT` | *Where do you want to fish* | The cursor prompt, a guess. `HasTarget` is what the wait leans on |
+| `WATER_LAND_GRAPHICS` / `WATER_STATIC_GRAPHICS` | stock RunUO bands | What counts as a water static at the aimed-at tile, overriding the land tile it sits on. Statics are numbered apart from land |
+| `LAND_TILE_GRAPHIC` | `1337` | Fallback art for the aimed-at tile, used only when the client has no land data there at all - normally the real tile there is read and used, static or land |
+| `TILES_AHEAD_DEFAULT` | `4` | Prefilled in the start-up gump. Not a cap - whatever is typed there is used as given |
+| `PROMPT_TEXT` | *What water do you want to fish in* | The cursor prompt. `HasTarget` is what the wait actually leans on |
 | `CURSOR_TIMEOUT` / `NO_CURSOR_READ` | `2.0` / `1.0` | How long the pole has to raise a cursor, and how long a refusal is listened for when it does not |
 | `CAST_TIMEOUT` | `12.0` | How long the shard has to answer after the cast animation |
 | `CATCH_SETTLE` / `GAIN_SETTLE` | `1.5` / `2.0` | How long the pack has to show the fish, and the client the gain |
 | `DISMOUNT_ATTEMPTS` | `3` | Before *could not get off the mount* |
 | `DATA_PATH` | `skill-attempts.jsonl` | Where each cast is appended. `""` records nothing |
+| `MAX_CYCLES` / `MAX_UNKNOWN` / `MAX_THROTTLED` | `5000` / `5` / `20` | Backstops - a working-cycle cap, unreadable outcomes in a row, throttles in a row |
+| `WATCH_FOR_TROUBLE` / `THREAT_RANGE` | `True` / `12` | Turns the ambush and boat-stopped watches on, and how far the (unused here) hostile scan looks |
+| `AMBUSH_ALARM` / `AMBUSH_NOTICES` / `AMBUSH_REPEATS` | as `mining.py` | Shared by both watches below - the sound, the OS notices, and how many times the alarm restarts |
+| `AMBUSH_HOLD` / `BOAT_STOPPED_HOLD` | `True` / `True` | Whether each watch freezes the run behind a gump until its button is pressed |
+| `BOAT_STOPPED_TEXT` | *Ar, we've stopped, sir* | The boat auto-pilot-stopped line - unconfirmed wording, see Unverified |
 
 ### When it goes wrong
 
-- **`no water within 4 tiles`**: nothing in either table is in range. Stand nearer the water, or
-  the shard's water arts are not the stock ones: read them off a `mine-here.py` style survey, or
-  off `API.GetTile` and `API.GetStaticsAt` at a tile you can fish from by hand, and add them.
-- **`the shard says that tile is not water`**: the table matched an art the shard does not fish.
-  Same fix.
-- **`the pole raised no cursor`**: the pole was refused silently. Check it is a fishing pole and
-  not worn out.
+- **`the shard wants you closer to the water`** (`tooFar`): the tile is past the shard's real
+  fishing range. Answer a smaller tiles-ahead number next run, or stand closer to the water's edge.
+- **`the tile aimed at was not water`** (`notWater`): you are not facing open water, or the
+  tiles-ahead answer walked the target onto land or a deck. Turn to face the water, or answer a
+  different number.
+- **`no fishing pole in hand or in the pack`**: stops the run immediately - equip or carry one and
+  start it again.
+- **`the shard kept refusing the cast`**: `MAX_THROTTLED` casts in a row came back `throttled`.
 - **`unreadable outcome, check OUTCOME_TEXT`**: the last journal lines are printed under it; copy
   the shard's wording into the matching bucket.
 - **`caught something the journal did not name`**: the catch line had no colon. The row is still
-  written, with an empty name.
+  written, with an empty name, and the item is still dropped.
 
 ### Notes
 
-- The catch bucket is read off the journal tail rather than through `InJournalAny`, because that
-  clears the line and the name is on it.
-- A self-target is refused for fishing on this shard, which is why the tile is named.
+- `API.Player.Direction` is read fresh before every cast, so turning between casts changes where
+  the next one lands.
+- The water-art tables are only used to prefer a water static over the land tile under it - there
+  is no search or scan any more, just the one aimed-at coordinate.
+- The boat-stopped watch reuses `uo.threat.ThreatWatch` exactly the way `mining.py` and
+  `lumberjack.py` reuse it for an ambush - same sound, same notices, same hold mechanics - as a
+  second instance with its own trigger phrase and wording. Neither watch has a companion to track,
+  so both pass no-ops for it.
+- `Heartbeat` exists only because `Hold.wait()` calls `heartbeat.reset()` when a hold ends - there
+  is no stall watch and no periodic "still here" line.
+- `find_pole` and the dismount check repeat every cast now; `GUARD_PHRASE` stays a once-only line,
+  the way it was before the loop existed - the pets it sets guarding do not need telling twice.
 
 ### Unverified
 
-- Every water band. They are RunUO's `Fishing.cs` tables with the static ids brought down by
-  `0x4000`.
-- Whether `Target(x, y, z, graphic)` on a *land* water tile is taken. The land art is passed as
-  read; if the shard wants the default, try `1337` in its place.
-- The cursor prompt and every wording in `OUTCOME_TEXT`.
+- **`API.Player.Direction`'s exact values.** It is a `str`, not a bitmask - an earlier version of
+  this tried `& 0x07` on it and threw `unsupported operand type(s) for &: 'str' and 'int'` live.
+  It is now matched by name (`North`, `Right`, `East`, `Down`, `South`, `Left`, `West`, `Up` -
+  ClassicUO's own `Direction` enum members), case-insensitively, word by word so a trailing
+  "Running" does not break the match. Whether those are really the eight words this shard sends,
+  and whether "Running" is really how it says a running character's Direction, is unconfirmed.
+- **The boat-stopped wording.** `BOAT_STOPPED_TEXT` guesses `"Ar, we've stopped, sir"`, matched as
+  a fragment with the trailing punctuation dropped on purpose, the way other phrase tables here do.
+- Whether preferring a water static over the land tile under it is actually what makes
+  `Target(x, y, z, graphic)` land as a fishing spot. Two earlier versions - a made-up `1337`
+  graphic with no land lookup at all, then the real land tile's own graphic with no static check -
+  both got no answer whatsoever from the shard; every cast timed out `unreadable` with nothing in
+  the journal either time. Live testing is what turned up both failures; a third has not been
+  ruled out.
+- Every wording in `OUTCOME_TEXT` past `caught`/`failed` - none has been seen on this shard yet.
 - That a pole in the pack is accepted without being equipped.
 - The catch line's shape on this shard. Anything past the first colon is the name.
 
