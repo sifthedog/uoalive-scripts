@@ -50,61 +50,20 @@ class ItemRowsTest(unittest.TestCase):
         self.api.gump = 88
         self.api.GetGumpContents = lambda ident: "\n".join(lines)
 
-    def test_everything_past_the_last_group_name_is_a_row(self):
-        self._gump("BOWCRAFT AND FLETCHING", "Materials", "Ammunition", "Weapons",
-                   "bow", "crossbow")
-
-        self.assertEqual(self.menu.item_rows(88), ["bow", "crossbow"])
-
-    def test_a_gump_with_no_group_names_has_no_rows(self):
-        self._gump("BOWCRAFT AND FLETCHING", "bow")
-
-        self.assertEqual(self.menu.item_rows(88), [])
-
-    def test_a_one_line_menu_matches_the_phrase_in_any_case(self):
+    def test_a_one_line_menu_has_no_rows_and_matches_the_phrase_in_any_case(self):
         self._gump("<CENTER>INSCRIPTION MENU</CENTER> LAST TEN Bless Lightning NEXT PAGE Recall")
 
+        self.assertEqual(self.menu.item_rows(88), [])
         self.assertTrue(self.menu.page_has("lightning", 88))
         self.assertFalse(self.menu.page_has("chain lightning", 88))
 
-    def test_a_whole_row_matches_and_a_substring_does_not(self):
-        self._gump("Weapons", "crossbow bolt")
-
-        self.assertFalse(self.menu.page_has("crossbow", 88))
-
-        self._gump("Weapons", "crossbow")
-
-        self.assertTrue(self.menu.page_has("crossbow", 88))
-
-    def test_the_named_row_is_tried_first(self):
-        self._gump("Weapons", "bow", "crossbow")
-        order = self.menu.candidate_buttons("crossbow", 88)
-
-        self.assertEqual(order[0], 22)
-
-    def test_named_row_is_text_only(self):
-        self._gump("Weapons", "bow", "crossbow")
-
-        self.assertEqual(self.menu.named_row("crossbow", 88), 22)
-        self.assertIsNone(self.menu.named_row("yumi", 88))
-
-    def test_every_row_is_still_walked_after_the_named_one(self):
-        self._gump("Weapons", "bow", "crossbow")
-
-        self.assertEqual(len(self.menu.candidate_buttons("crossbow", 88)), 12)
-
-    def test_says_once_when_the_text_names_no_row(self):
+    def test_says_once_when_no_row_is_named(self):
         self._gump("Weapons")
         self.menu.candidate_buttons("crossbow", 88)
         self.menu.candidate_buttons("crossbow", 88)
 
-        self.assertEqual(len([line for line in self.said if "walking the rows" in line]), 1)
-
-    def test_page_turn_labels_are_not_rows_in_the_text(self):
-        self._gump("Weapons", "bow", "NEXT PAGE", "PREV PAGE", "crossbow")
-
-        self.assertEqual(self.menu.item_rows(88), ["bow", "crossbow"])
-        self.assertEqual(self.menu.named_row("crossbow", 88), 22)
+        self.assertEqual(self.said, ["no SELECTIONS row reads 'crossbow' - walking the rows",
+                                     "rows seen: none"])
 
 
 # UOAlive's menu: one line of text for every page, and each row drawn as its button, its name, then
@@ -147,6 +106,23 @@ class ControlRowsTest(unittest.TestCase):
     def test_candidates_are_the_named_row_then_the_rows_carrying_the_name_then_the_rest(self):
         self.assertEqual(self.menu.candidate_buttons("crossbow", 88)[:4], [222, 22, 202, 2])
         self.assertEqual(self.menu.candidate_buttons("bow", 88)[:2], [2, 22])
+        self.assertEqual(self.said, [])
+
+    def test_every_row_is_still_walked_after_the_named_ones(self):
+        del self.api.gump_controls[88]
+        self.api.gump_controls[88] = [FakeButton(2), FakeHtml("bow"), FakeButton(22),
+                                      FakeHtml("crossbow")] + [FakeButton(2 + n * 20)
+                                                               for n in range(12)]
+
+        self.assertEqual(self.menu.candidate_buttons("crossbow", 88)[:2], [22, 2])
+        self.assertEqual(len(self.menu.candidate_buttons("crossbow", 88)), 12)
+
+    def test_a_row_the_controls_do_not_name_is_said_once_with_the_rows_seen(self):
+        self.menu.candidate_buttons("yumi", 88)
+        self.menu.candidate_buttons("yumi", 88)
+
+        self.assertEqual(self.said, ["no SELECTIONS row reads 'yumi' - walking the rows",
+                                     "rows seen: bow, crossbow bolt, heavy crossbow, crossbow"])
 
     def test_unreadable_controls_leave_the_text_to_answer(self):
         del self.api.gump_controls[88]
@@ -355,10 +331,9 @@ class PressTest(unittest.TestCase):
         self.assertEqual(self.menu.press(47, 88, 1.0), 88)
 
     def test_candidate_rows_the_gump_lacks_are_dropped(self):
-        self.api.gump_contents[88] = "Weapons\nbow\ncrossbow"
         self.api.gump_buttons[88] = set([41, 2, 22, 42])
 
-        self.assertEqual(self.menu.candidate_buttons("crossbow", 88), [22, 2, 42])
+        self.assertEqual(self.menu.candidate_buttons("crossbow", 88), [2, 22, 42])
 
     def test_a_page_press_answers_with_the_gump_that_appeared(self):
         def reply(button, gump=None):
@@ -485,6 +460,12 @@ class FindRowTest(unittest.TestCase):
 
         self.assertEqual(self.menu.find_row("crossbow", 88), (88, 42))
         self.assertEqual(self.pressed(), [43, 41])
-        self.assertEqual(self.said[0], "no SELECTIONS row reads 'crossbow', opening each row's "
-                                       "details page instead")
+        self.assertEqual(self.said[0], "no SELECTIONS row reads 'crossbow' - walking the rows")
         self.assertEqual(self.said[1], "rows seen: bow, yumi, heavy crossbow")
+
+    def test_rows_whose_names_lack_the_product_have_no_details_opened(self):
+        self._controls("bow", "yumi")
+        self.details = {3: "ITEM bow BACK", 23: "ITEM yumi BACK"}
+
+        self.assertEqual(self.menu.find_row("crossbow", 88), (88, None))
+        self.assertEqual(self.pressed(), [])

@@ -1551,11 +1551,11 @@ the pack is still what proves a craft. Anything else walks the categories: each 
 its rows name the product, and the row's button is read off the gump's controls, which draw each
 `SELECTIONS` row as its button, its name, then its details button, every page at once (UOAlive's
 Misc. Add-Ons is 59 rows over six pages, and `GetGumpContents` hands them back as one line). A row
-the controls do not name has each row's details page (its button plus one, which spends nothing)
-opened until one names the product, the rows whose names carry it first, so `MAX_ITEM_ROWS` counts
-the category, not a page. A menu with no readable controls falls back to the text past the last
-category name, and a craft that added none of the product's graphics tries the next candidate, up
-to `MAX_ITEM_PROBES`, then the next category. Matches are whole-row: `crossbow` is inside `crossbow
+the controls do not name has the details page (its button plus one, which spends nothing) of each
+row whose name carries the product opened until one names it; a details page shows the row's own
+name, so the other rows are not opened. With no names to read, every row's page is, so
+`MAX_ITEM_ROWS` counts the category, not a page. A craft that added none of the product's graphics tries the next
+candidate, up to `MAX_ITEM_PROBES`, then the next category. Matches are whole-row: `crossbow` is inside `crossbow
 bolt`, and a substring match finds Ammunition first. Once a row has made the item,
 every craft after is `MAKE LAST`, when the menu has that button; a band change, a worn tool or a
 wrong graphic sends it back. A `RECIPES` button the menu does not have is never sent: the product
@@ -1657,8 +1657,8 @@ when `DATA_PATH` is set.
 
 ### When it goes wrong
 
-- **`the gump text does not name 'crossbow' on a row of its own`** then **`rows seen: …`**: the
-  split missed the item rows. The run pays crafts to find the row instead. If the names are spelled
+- **`no SELECTIONS row reads 'crossbow' - walking the rows`** then **`rows seen: …`**: the
+  controls named no such row. The run pays crafts to find the row instead. If the names are spelled
   differently, fix `PRODUCTS`; if the block is the group names, this shard emits labels the other
   way round.
 - **`no category lists 'yumi'`** or **`could not find the SELECTIONS row`**: the name in `PRODUCTS`
@@ -1708,8 +1708,8 @@ when `DATA_PATH` is set.
 
 ### Unverified
 
-- Whether `GetGumpContents` resolves localized row names or hands back cliloc numbers. If the
-  latter, every run walks the rows.
+- Whether every `HtmlControl.Text` on a row resolves the localized name or hands back a cliloc
+  number. If the latter, every run walks the rows.
 - Whether `API.RequestTarget` returning falsy is ESC, which ends the multi-pick.
 - The product graphics are stock; a reskinned one reads every craft as `wrongRow`.
 
@@ -1786,8 +1786,8 @@ then counts toward `MAX_NO_MATERIAL`, since a menu set to another metal is the o
 - **`the shard refused 40 ingots in the pack 3 times`**: the menu's material is not iron. The gump's
   own words are printed above it.
 - **`no jeweler within 18`**: said once per band. Walk to one; the trips retry on their own.
-- **`the gump text does not name 'iron key' on a row of its own`**: the row is spelled differently
-  on this shard. `rows seen` lists what it read; fix `BANDS` and `PRODUCTS` to match.
+- **`no SELECTIONS row reads 'iron key' - walking the rows`**: the row is spelled differently on
+  this shard. `rows seen` lists what it read; fix `BANDS` and `PRODUCTS` to match.
 - **`the pack holds 60 unsold and nothing was picked to unload into`**, or **`the pack holds 60 and
   nothing was picked to unload into`** on a keeping run: pick a container next time.
 - **`nothing was pressed in 60s`**: the gump timed out, so everything is kept. Press faster, or
@@ -1877,8 +1877,8 @@ destroys it; a chest keeps it.
 
 ### When it goes wrong
 
-- **`no SELECTIONS row reads 'display case (south)'`** (or `the gump text does not name … on a
-  row of its own`): the row is spelled differently on this shard. `rows seen` lists what it read;
+- **`no SELECTIONS row reads 'display case (south)' - walking the rows`**: the row is spelled
+  differently on this shard. `rows seen` lists what it read;
   fix `BANDS`, `PRODUCTS` and `WOOD_COST` to match. UOAlive's Misc. Add-Ons has `Small Display
   Case (South)` and no plain display case, and the wiki names addons without the facing.
 - **`no category lists 'dark wooden sign hanger'`**: the shard may not have the item. Put a
@@ -1981,7 +1981,7 @@ counts the band's scroll by art, so it does count one you carried in.
   regeneration did not reach the figure inside `REGEN_TIMEOUT`. Empty your hands.
 - **`the shard refused ... in the pack 3 times`**: everything the recipe takes is there and the shard
   still refuses, so the row pressed is another spell. Read `rows seen` and correct `BANDS`.
-- **`the gump text does not name 'magic reflection' on a row of its own`**: the row is spelled
+- **`no SELECTIONS row reads 'magic reflection' - walking the rows`**: the row is spelled
   differently on this shard. `rows seen` lists what it read; fix `BANDS` and `SPELLS` to match.
 - **`no mage or scribe within 18`**: walk to one; the trips retry on their own.
 - **`nothing was pressed in 60s`**: the gump timed out, so the scrolls are kept. Press faster, or
