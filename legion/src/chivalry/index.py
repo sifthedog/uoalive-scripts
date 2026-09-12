@@ -345,7 +345,7 @@ try:
 
                 if unread_reports < MAX_UNREAD_REPORTS:
                     unread_reports += 1
-                    lines = journal_tail(JOURNAL_TAIL_SECONDS, JOURNAL_TAIL_LINES)
+                    lines = journal_tail(JOURNAL_TAIL_SECONDS, JOURNAL_TAIL_LINES, log.stamp)
 
                     for line in lines or ["(the journal said nothing)"]:
                         log("  " + line)

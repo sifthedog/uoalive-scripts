@@ -133,6 +133,10 @@ def imports_of(path, tree):
                     raise BuildError("%s:%d: import %s - only %s may be imported outright"
                                      % (rel(path), node.lineno, alias.name, " and ".join(HOISTED)))
 
+                if alias.asname is not None:
+                    raise BuildError("%s:%d: `as %s` cannot survive a flat namespace; rename at the source"
+                                     % (rel(path), node.lineno, alias.asname))
+
                 hoisted.add(alias.name)
 
             spans.append((node.lineno, node.end_lineno))
@@ -171,15 +175,22 @@ def imports_of(path, tree):
 
 
 def defines(node):
-    """The single top-level name a statement defines, or None if it is a statement to run."""
+    """The top-level names a statement defines, empty if it is a statement to run."""
     if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
-        return node.name
+        return [node.name]
 
-    if isinstance(node, ast.Assign) and len(node.targets) == 1:
-        if isinstance(node.targets[0], ast.Name):
-            return node.targets[0].id
+    if isinstance(node, ast.Assign):
+        names = []
 
-    return None
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                names.append(target.id)
+            elif isinstance(target, (ast.Tuple, ast.List)):
+                names.extend(element.id for element in target.elts if isinstance(element, ast.Name))
+
+        return names
+
+    return []
 
 
 def mentions(node):
@@ -222,17 +233,18 @@ def shake(modules, entry_path):
     owner = {}
 
     for path, chunks in modules:
-        for name, _uses, _text, _gap in chunks:
-            if name is not None and path != entry_path:
-                owner.setdefault(name, (path, name))
+        for names, _uses, _text, _gap in chunks:
+            if path != entry_path:
+                for name in names:
+                    owner.setdefault(name, (path, name))
 
     wanted = set()
     pending = []
 
     for path, chunks in modules:
-        for name, uses, _text, _gap in chunks:
+        for names, uses, _text, _gap in chunks:
             # Everything in the entry is the script itself, and a bare statement anywhere runs
-            if path == entry_path or name is None:
+            if path == entry_path or not names:
                 pending.append(uses)
 
     while pending:
@@ -241,15 +253,15 @@ def shake(modules, entry_path):
                 wanted.add(used)
 
                 for path, chunks in modules:
-                    for name, uses, _text, _gap in chunks:
-                        if name == used and path != entry_path:
+                    for names, uses, _text, _gap in chunks:
+                        if used in names and path != entry_path:
                             pending.append(uses)
 
     kept = []
 
     for path, chunks in modules:
-        keeping = [(text, gap) for name, _uses, text, gap in chunks
-                   if path == entry_path or name is None or name in wanted]
+        keeping = [(text, gap) for names, _uses, text, gap in chunks
+                   if path == entry_path or not names or any(name in wanted for name in names)]
 
         if keeping:
             kept.append((path, keeping))
@@ -330,15 +342,13 @@ def bundle(entry):
     owner = {}
 
     for path, chunks in modules:
-        for name, _uses, _text, _gap in chunks:
-            if name is None:
-                continue
+        for names, _uses, _text, _gap in chunks:
+            for name in names:
+                if name in owner:
+                    raise BuildError("%s and %s both define `%s` at the top level"
+                                     % (rel(owner[name]), rel(path), name))
 
-            if name in owner:
-                raise BuildError("%s and %s both define `%s` at the top level"
-                                 % (rel(owner[name]), rel(path), name))
-
-            owner[name] = path
+                owner[name] = path
 
     head = "# Built from %s by build.py - do not edit.\n\n" % entry["in"]
     head += "\n".join("import " + name for name in HOISTED if name in needed)

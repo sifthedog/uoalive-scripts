@@ -1,7 +1,7 @@
 import unittest
 
 from bowcraft.config import (BANDS, OUTCOME_TEXT, OUTPUT_OPTIONS, PRODUCTS, RECIPES, SETUP,
-                             TOOL_MODES, VENDORS)
+                             TOOL_MODES, VENDORS, WOOD_COST)
 from uo.stages import band_for
 
 
@@ -24,6 +24,7 @@ class BandsTest(unittest.TestCase):
             self.assertIn(product, PRODUCTS)
             self.assertIn(product, RECIPES)
             self.assertIn(product, VENDORS)
+            self.assertIn(product, WOOD_COST)
 
         self.assertIsNone(VENDORS["yumi"])
 

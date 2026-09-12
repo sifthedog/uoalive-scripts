@@ -2,17 +2,17 @@ import API
 
 from taming.attempt import Tamer
 from taming.config import (AFTER_TAME, ANGRY_DELAY, CHASE_TIMEOUT, CONTEXT_TIMEOUT, DATA_PATH,
-                           HEARTBEAT_EVERY, HUNT_RADIUS, KILL_CURSOR_TIMEOUT, KILL_MENU_TEXT,
-                           KILL_PICK_POLL, KILL_PICK_TIMEOUT, LOG_EVERY, MAX_ANGRY, MAX_AWAY,
-                           MAX_CONTESTED, MAX_CYCLES, MAX_PENDING, MAX_THROTTLED, MENU_RETRY_DELAY,
-                           OPL_TIMEOUT, OUTCOME_TEXT, PACE_EASE_AFTER, PACE_MAX, PACE_STEP,
-                           PET_NAME, PET_SETTLE_POLL, PET_SETTLE_TIMEOUT, RELEASE_ATTEMPTS,
-                           RELEASE_CONFIRM_BUTTONS, RELEASE_CONFIRM_POLL, RELEASE_CONFIRM_TEXT,
-                           RELEASE_CONFIRM_TIMEOUT, RELEASE_MENU_TEXT, RELEASE_POLL,
-                           RELEASE_TIMEOUT, RENAME_ATTEMPTS, RENAME_POLL, RENAME_TIMEOUT,
-                           RESOLUTION_TEXT, SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT, SAVING_TEXT,
-                           SKILL_NAME, SKILL_POLL, SKILL_TIMEOUT, STALL_STOP, STALL_WARN,
-                           STOP_REASON, STOPPED, TAME_DELAY, TAME_RANGE, TAME_RESOLVE_TIMEOUT,
+                           GIVE_UP_REASON, HEARTBEAT_EVERY, HUNT_RADIUS, KILL_CURSOR_TIMEOUT,
+                           KILL_MENU_TEXT, KILL_PICK_POLL, KILL_PICK_TIMEOUT, LOG_EVERY, MAX_ANGRY,
+                           MAX_AWAY, MAX_CONTESTED, MAX_CYCLES, MAX_PENDING, MAX_THROTTLED,
+                           MENU_RETRY_DELAY, OPL_TIMEOUT, OUTCOME_TEXT, PACE_EASE_AFTER, PACE_MAX,
+                           PACE_STEP, PET_NAME, PET_SETTLE_POLL, PET_SETTLE_TIMEOUT,
+                           RELEASE_ATTEMPTS, RELEASE_CONFIRM_BUTTONS, RELEASE_CONFIRM_POLL,
+                           RELEASE_CONFIRM_TEXT, RELEASE_CONFIRM_TIMEOUT, RELEASE_MENU_TEXT,
+                           RELEASE_POLL, RELEASE_TIMEOUT, RENAME_ATTEMPTS, RENAME_POLL,
+                           RENAME_TIMEOUT, RESOLUTION_TEXT, SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT,
+                           SAVING_TEXT, SKILL_NAME, SKILL_POLL, SKILL_TIMEOUT, STALL_STOP,
+                           STALL_WARN, STOPPED, TAME_DELAY, TAME_RANGE, TAME_RESOLVE_TIMEOUT,
                            TAME_START_TIMEOUT, TAME_WAIT_SLICE, TARGET_TIMEOUT, THROTTLE_BACKOFF,
                            THROTTLE_BACKOFF_MAX, HEALTH_FLOOR)
 from taming.pet import Release, command_kill, rename_pet
@@ -320,8 +320,8 @@ try:
                 if throttled >= MAX_THROTTLED:
                     stop = "the shard kept refusing the attempt"
 
-            elif outcome in STOP_REASON:
-                done = STOP_REASON[outcome]
+            elif outcome in GIVE_UP_REASON:
+                done = GIVE_UP_REASON[outcome]
 
             else:
                 unread += 1

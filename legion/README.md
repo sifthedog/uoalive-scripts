@@ -75,6 +75,8 @@ proves nothing; `build.py` walks the AST and refuses all of it.
 
 ```
 alert       a command run on the machine through .NET, so a warning does not depend on the game
+box         the shard's resource box, its stock read off its gump a button press at a time
+boxes       the storage box tables: names, arts, rows and their fallback buttons
 buffbar     the buff bar, re-read every time because ApiBuff never refreshes
 cast        a spell, and the two silent proofs a shard that says nothing still leaves
 choice      a gump the script draws with one button per option, answered by the first press
@@ -84,21 +86,27 @@ convert     resource -> product, judged by the pack diff, with a per-hue write-o
 cost        what one craft of a product takes, and how short the pack is of it
 craft       one craft through the menu: the row, MAKE LAST, and the outcome read three ways
 craftmenu   a craft gump: opening it, walking the categories, reading and pressing the rows
+craftrun    the crafting scripts' shared bookkeeping: ending a cycle, a sell or unload trip, what a
+            craft spent, and freeing weight for a restock by selling or unloading
 crafttool   the tool a craft menu is opened with, found in the pack by art or by name
 dump        the container the products are unloaded into, and moving them there
 entity      hex, the guarded player read, Chebyshev, find-a-mobile
 gathered    what a swing and a conversion put in the pack, as attempt rows, below the cap
 gear        what is in either hand
+gump        waiting for a gump, and reading what it says
+gumpwait    waiting behind a gump the script drew until a click, a close, a stop reason or a
+            timeout answers it
 hands       what the hands held at start-up, put in the pack for a trance and drawn again by serial
+harvest     one swing at a resource: use the tool, answer the cursor, and read what landed three ways
 heal        bandaging the character it runs on, proved by the hits rising
 guards      the stop conditions, composed per script
-gump        waiting for a gump, and reading what it says
 heartbeat   'still here', on the clock rather than per cycle
 hold        standing still behind a gump the script drew, until its button is pressed
 journal     the phrase table, the reverse lookup off it, and the tail of what was said
 log         the script's own prefix
 loop        the throttle backoff and the stall watchdog
 mana        the pool, watched in slices so the guards get a look in
+mapfile     the ground a mining run has read, kept between starts as one JSON line per coordinate
 materials   what a craft spent, measured either side of it
 meditate    filling the pool, and retiring the skill when the shard refuses it
 menu        a context menu entry, matched by its text
@@ -106,6 +114,8 @@ mount       getting off the mount, proved by the flag
 notoriety   the values the threat scans are handed
 pace        the shard's skill timer, learned from its refusals rather than configured
 pack        counting and diffing what the backpack holds
+parked      the tiles and spots a run is done with for a while, and when to try them again
+paths       where a script's own files land beside it in LegionScripts
 phrases     the shard's own wordings, as far as they do not depend on the script
 record      one line per attempt, written at the next attempt or at the close so the gain it earned is in it
 restock     filling the pack from the picked containers, and putting the wrong wood back
@@ -113,17 +123,21 @@ retry       act, poll for the proof
 roam        walking to the next spot, and waiting where there is nothing but a clock
 save        sitting out a world save
 scan        the crow-flight sort, the route probe, and the shortest way in
+setup       the start-up form: tools, wood sources, what is made, and the band table
 skill       every read of GetSkill, and what a client that has not answered means
 sources     the containers and pack animals picked at the cursor, and reaching them again
 stages      the band tables: which row trains now, and what one of its cycles costs
 stock       the craft's material in the pack: which kind, which type, and what the menu will spend
+store       a JSON Lines file, read whole and appended a row at a time
 survey      the dead-end report: what the run actually saw
 target      answering a self cursor the pre-target did not take
 terrain     the land and statics cache, one pair of calls per coordinate for the run
+text        matching a fragment or a whole word, and stripping a tooltip's tags
 threat      noticing trouble and sounding the ambush alarm, without ending the run over it
 tiles       what is worked out, unreachable, or not the resource at all
 timings     the constants the scripts agreed on
 tool        find it, learn its graphic, equip it, notice it break
+toolstore   the container craft tools are fetched from, one at a time, once the pack runs out
 tooltip     an item's property lines, read into numbers, ranges, flags and text
 travel      chasing a mobile, and following one between the slices of a wait
 vendor      finding the one who buys, walking up, and selling through the context menu

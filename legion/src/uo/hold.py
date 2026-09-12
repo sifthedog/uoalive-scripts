@@ -1,6 +1,8 @@
 import API
 
-WIDTH = 340
+from uo.gumpwait import wait_for_gump
+
+HOLD_WIDTH = 340
 HEIGHT = 110
 
 
@@ -19,12 +21,12 @@ class Hold(object):
         if gump is None:
             return None
 
-        gump.SetRect(0, 0, WIDTH, HEIGHT)
+        gump.SetRect(0, 0, HOLD_WIDTH, HEIGHT)
         gump.CenterXInViewPort()
         gump.CenterYInViewPort()
 
         background = API.Gumps.CreateGumpColorBox(0.85, "#1E1E1E")
-        background.SetRect(0, 0, WIDTH, HEIGHT)
+        background.SetRect(0, 0, HOLD_WIDTH, HEIGHT)
         gump.Add(background)
 
         label = API.Gumps.CreateGumpLabel(self._config["text"], self._config["hue"])
@@ -61,29 +63,11 @@ class Hold(object):
             return False
 
         self._log("holding - %s" % self._config["text"])
-        why = None
 
-        # The click only arrives through ProcessCallbacks, and a stopped script's client calls all
-        # answer with nothing, so the stop flag is the one read that still means something then
-        while why is None:
-            if API.StopRequested:
-                why = "the run is being stopped"
-                break
+        def resolve():
+            return "the button was pressed" if pressed[0] else None
 
-            each()
-            API.ProcessCallbacks()
-
-            if pressed[0]:
-                why = "the button was pressed"
-            elif gump.IsDisposed:
-                why = "the gump was closed"
-            elif self._stop_reason() is not None:
-                why = "the run has a reason to stop"
-            else:
-                API.Pause(self._config["poll"])
-
-        if not gump.IsDisposed:
-            gump.Dispose()
+        why = wait_for_gump(gump, self._stop_reason, self._config["poll"], resolve, each=each)
 
         self._heartbeat.reset()
         self._log("%s, carrying on" % why)

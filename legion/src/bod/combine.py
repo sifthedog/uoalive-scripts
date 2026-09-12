@@ -9,12 +9,13 @@ from uo.text import clipped
 class DeedCombiner(object):
     """The deed's 'combine with contained items', aimed at the bag the pieces are in."""
 
-    def __init__(self, deed, items, buckets, config, log):
+    def __init__(self, deed, items, buckets, config, log, stamp=None):
         self._deed = deed
         self._items = items
         self._buckets = buckets
         self._config = config
         self._log = log
+        self._stamp = stamp
         self._said_gump_text = False
         self._reported = 0
         self._gump = 0
@@ -52,7 +53,7 @@ class DeedCombiner(object):
 
         self._reported += 1
         text = clipped(" ".join(self._lines(gump)), self._config["text_limit"]) if gump else ""
-        lines = journal_tail(self._config["tail_seconds"], self._config["tail_lines"])
+        lines = journal_tail(self._config["tail_seconds"], self._config["tail_lines"], self._stamp)
 
         self._log("%s - the gump says '%s'" % (why, text or "(nothing)"))
         self._log("the journal says '%s'" % (" | ".join(lines) or "(nothing)"))

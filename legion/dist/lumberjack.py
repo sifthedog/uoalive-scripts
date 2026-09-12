@@ -6,26 +6,6 @@ import clr
 import System
 
 
-# src/uo/log.py
-# Every stamp make_log has handed out. The client puts a SysMsg in the journal beside the shard's
-# own lines, so a script reading the journal back needs to know which of them it wrote itself -
-# without this a report of an unreadable outcome quotes the last report of an unreadable outcome.
-# Lowercase, because that is how the journal readers compare. One entry per script in practice.
-STAMPS = []
-
-
-def make_log(prefix):
-    stamp = prefix + ": "
-
-    if stamp.lower() not in STAMPS:
-        STAMPS.append(stamp.lower())
-
-    def log(message):
-        API.SysMsg(stamp + message)
-
-    return log
-
-
 # src/uo/text.py
 def words_of(text):
     letters = []
@@ -427,21 +407,30 @@ class Boards(object):
         return self._converter.run()
 
 
-# src/lumberjacking/chop.py
-class Chopper(object):
-    def __init__(self, wood, tool, buckets, config, log):
-        self._wood = wood
-        self._tool = tool
+# src/uo/harvest.py
+class Harvester(object):
+    """The swing lumberjacking's Chopper and mining's Digger share: use the tool, wait for a
+    cursor, answer it, and read what the shard says three ways - the journal, silence with the
+    pile larger, or the tool gone."""
+
+    def __init__(self, resource_total, buckets, config, log, noun, made_outcome, swing_timeout_key,
+                tool=None, cancel_pathfinding=True):
+        self._resource_total = resource_total
         self._buckets = buckets
         self._config = config
         self._log = log
+        self._noun = noun
+        self._made_outcome = made_outcome
+        self._swing_timeout_key = swing_timeout_key
+        self._tool = tool
+        self._cancel_pathfinding = cancel_pathfinding
 
-    def _silent_outcome(self, serial, logs_before):
+    def _silent_outcome(self, serial, before):
         if serial is not None and API.FindItem(serial) is None:
             return "wornOut"
 
-        if self._wood.log_total() > logs_before:
-            return "chopped"
+        if self._resource_total() > before:
+            return self._made_outcome
 
         return "unknown"
 
@@ -461,27 +450,32 @@ class Chopper(object):
 
     # No cursor is not the same as nothing having happened: the commonest reason a shard declines a
     # swing is that it refused the action outright and said so
-    def _refused_outcome(self, serial, logs_before):
+    def _refused_outcome(self, serial, before):
         matched = read_outcome(self._buckets, self._config["no_cursor_read"],
                                self._config["cursor_poll"])
 
         if matched is not None:
             return matched
 
-        silent = self._silent_outcome(serial, logs_before)
+        silent = self._silent_outcome(serial, before)
 
         if silent != "unknown":
             return silent
 
-        held = self._tool.held()
-        self._log("no target cursor - hand %s, the shard never asked where to chop"
-                  % ((held.Name or hex_of(held.Graphic)) if held is not None else "empty"))
+        if self._tool is not None:
+            held = self._tool.held()
+            self._log("no target cursor - hand %s, the shard never asked where to %s"
+                      % ((held.Name or hex_of(held.Graphic)) if held is not None else "empty",
+                         self._noun))
+        else:
+            self._log("no target cursor - the shard never asked where to %s" % self._noun)
 
         return "noCursor"
 
-    def chop_once(self, serial, tree):
+    # aim is called with no arguments once the cursor is open, to answer it
+    def swing_once(self, serial, aim):
         # A pathfind still running would walk the character away mid-swing
-        if API.Pathfinding():
+        if self._cancel_pathfinding and API.Pathfinding():
             API.CancelPathfinding()
 
         # Cancelled only when there is one to cancel: an unconditional cancel a few hundred
@@ -490,30 +484,43 @@ class Chopper(object):
         if API.HasTarget():
             API.CancelTarget()
 
-        logs_before = self._wood.log_total()
+        before = self._resource_total()
         forget(self._config["prompt_text"])
         forget_outcomes(self._buckets)
 
         API.UseObject(serial)
 
         if not self._cursor_opened():
-            return self._refused_outcome(serial, logs_before)
+            return self._refused_outcome(serial, before)
 
+        aim()
+
+        matched = read_outcome(self._buckets, self._config[self._swing_timeout_key],
+                               self._config["cursor_poll"])
+
+        return matched if matched is not None else self._silent_outcome(serial, before)
+
+
+# src/lumberjacking/chop.py
+class Chopper(object):
+    def __init__(self, wood, tool, buckets, config, log):
+        self._config = config
+        self._harvester = Harvester(wood.log_total, buckets, config, log, "chop", "chopped",
+                                    "chop_timeout", tool=tool)
+
+    def chop_once(self, serial, tree):
         if self._config["aim_at_self"]:
             # This shard takes a self-target as 'harvest what is in reach' and picks the tree
             # itself, so nothing has to name a static. The scan still earns its place: it is what
             # decides where to stand, and 'in reach' is only ever the trunk you walked to.
-            API.TargetSelf()
+            aim = API.TargetSelf
         else:
             # The four-argument overload, and the graphic is never left off: target.terrain with no
             # art hits the land tile, which the shard answers as mining rather than as chopping. A
             # static carries no serial, so naming the tile and its art is the only other way in.
-            API.Target(tree["x"], tree["y"], tree["z"], tree["graphic"])
+            aim = lambda: API.Target(tree["x"], tree["y"], tree["z"], tree["graphic"])
 
-        matched = read_outcome(self._buckets, self._config["chop_timeout"],
-                               self._config["cursor_poll"])
-
-        return matched if matched is not None else self._silent_outcome(serial, logs_before)
+        return self._harvester.swing_once(serial, aim)
 
 
 # src/uo/phrases.py
@@ -1753,8 +1760,51 @@ class Heartbeat(object):
         self._last = now()
 
 
+# src/uo/gumpwait.py
+# Waits behind a gump the script drew, one poll slice at a time, until resolve() answers a reason
+# to stop (checked first, so a click wins over the gump closing), the gump is disposed, stop_reason
+# gives one, or timeout seconds pass - timeout=None means no ceiling. each(), when given, runs once
+# a slice before resolve(), so an alarm or a heartbeat keeps going while the gump is up. Disposes
+# the gump before returning why. The click only arrives through ProcessCallbacks, and a stopped
+# script's client calls all answer with nothing, so the stop flag is the one read that still means
+# something then.
+def wait_for_gump(gump, stop_reason, poll, resolve, closed_message="the gump was closed",
+                  timeout=None, each=None):
+    waited = 0.0
+    why = None
+
+    while why is None:
+        if API.StopRequested:
+            why = "the run is being stopped"
+            break
+
+        if each is not None:
+            each()
+
+        API.ProcessCallbacks()
+
+        why = resolve()
+
+        if why is not None:
+            pass
+        elif gump.IsDisposed:
+            why = closed_message
+        elif stop_reason() is not None:
+            why = "the run has a reason to stop"
+        elif timeout is not None and waited >= timeout:
+            why = "nothing was pressed in %.0fs" % timeout
+        else:
+            API.Pause(poll)
+            waited += poll
+
+    if not gump.IsDisposed:
+        gump.Dispose()
+
+    return why
+
+
 # src/uo/hold.py
-WIDTH = 340
+HOLD_WIDTH = 340
 HEIGHT = 110
 
 
@@ -1773,12 +1823,12 @@ class Hold(object):
         if gump is None:
             return None
 
-        gump.SetRect(0, 0, WIDTH, HEIGHT)
+        gump.SetRect(0, 0, HOLD_WIDTH, HEIGHT)
         gump.CenterXInViewPort()
         gump.CenterYInViewPort()
 
         background = API.Gumps.CreateGumpColorBox(0.85, "#1E1E1E")
-        background.SetRect(0, 0, WIDTH, HEIGHT)
+        background.SetRect(0, 0, HOLD_WIDTH, HEIGHT)
         gump.Add(background)
 
         label = API.Gumps.CreateGumpLabel(self._config["text"], self._config["hue"])
@@ -1815,34 +1865,34 @@ class Hold(object):
             return False
 
         self._log("holding - %s" % self._config["text"])
-        why = None
 
-        # The click only arrives through ProcessCallbacks, and a stopped script's client calls all
-        # answer with nothing, so the stop flag is the one read that still means something then
-        while why is None:
-            if API.StopRequested:
-                why = "the run is being stopped"
-                break
+        def resolve():
+            return "the button was pressed" if pressed[0] else None
 
-            each()
-            API.ProcessCallbacks()
-
-            if pressed[0]:
-                why = "the button was pressed"
-            elif gump.IsDisposed:
-                why = "the gump was closed"
-            elif self._stop_reason() is not None:
-                why = "the run has a reason to stop"
-            else:
-                API.Pause(self._config["poll"])
-
-        if not gump.IsDisposed:
-            gump.Dispose()
+        why = wait_for_gump(gump, self._stop_reason, self._config["poll"], resolve, each=each)
 
         self._heartbeat.reset()
         self._log("%s, carrying on" % why)
 
         return why in ("the button was pressed", "the gump was closed")
+
+
+# src/uo/log.py
+def make_log(prefix):
+    stamp = prefix + ": "
+
+    def log(message):
+        API.SysMsg(stamp + message)
+
+    # The client puts a SysMsg in the journal beside the shard's own lines, so a script reading the
+    # journal back needs to know which lines it wrote itself - without this a report of an unreadable
+    # outcome quotes the last report of an unreadable outcome. Lowercase, because that is how the
+    # journal readers compare. Carried on the function itself rather than a module-level list: a
+    # bundle is one script and one prefix, and a shared list would leak between scripts sharing this
+    # process, such as the test suite.
+    log.stamp = stamp.lower()
+
+    return log
 
 
 # src/uo/loop.py
@@ -2263,10 +2313,24 @@ class SkillReader(object):
                 return value
 
             if waited >= timeout:
-                return None
+                return self._accept_zero()
 
             API.Pause(poll)
             waited += poll
+
+        return None
+
+    # A 0 the client still answers once the wait is over is a real 0, not an unsent skill list
+    def _accept_zero(self):
+        skill = API.GetSkill(self._name)
+
+        if skill is None:
+            return None
+
+        self._seen = True
+        self._last = skill.Value
+
+        return skill.Value
 
 
 # src/uo/alert.py
@@ -2576,6 +2640,48 @@ def is_bag(item):
     return not word_in(item.Name, NOT_BAG_NAMES)
 
 
+# A bag the client has not opened this session reads as empty, whatever is in it. extra_serial, a
+# spare bag outside the pack, joins the search if it is not open yet either. opened is mutated:
+# every bag this call sends a double-click to is remembered so a later call leaves it alone.
+def open_unopened_bags(noun, log, opened, extra_serial=None):
+    bags = [item for item in pack_contents() if is_bag(item)]
+
+    if extra_serial is not None:
+        spare = API.FindItem(extra_serial)
+
+        if spare is not None and not getattr(spare, "Opened", False):
+            bags.append(spare)
+
+    bags = [bag for bag in bags if bag.Serial not in opened]
+
+    if not bags:
+        return False
+
+    # A cursor left up would take the double-click as its answer
+    if API.HasTarget():
+        API.CancelTarget()
+
+    log("opening %d bag(s) to look inside for a %s" % (len(bags), noun))
+
+    for bag in bags:
+        opened.add(bag.Serial)
+        API.UseObject(bag.Serial)
+
+    return True
+
+
+# search is called fresh each time: opening the bags is asynchronous, so what it finds only
+# improves after settled() gives the pack a chance to catch up
+def find_after_opening_bags(search, noun, log, opened, timeout, poll, extra_serial=None):
+    found = search()
+
+    if found is None and open_unopened_bags(noun, log, opened, extra_serial):
+        settled(timeout, poll, lambda: search() is not None)
+        found = search()
+
+    return found
+
+
 class Tool(object):
     """Find it, learn its graphic, get it onto the hand, and notice when it breaks."""
 
@@ -2653,39 +2759,9 @@ class Tool(object):
 
         return None
 
-    # A bag the client has not opened this session reads as empty, whatever is in it
-    def _open_bags(self):
-        bags = [item for item in pack_contents() if is_bag(item)]
-
-        if self._spare_bag is not None:
-            spare = API.FindItem(self._spare_bag)
-
-            if spare is not None and not getattr(spare, "Opened", False):
-                bags.append(spare)
-
-        bags = [bag for bag in bags if bag.Serial not in self._opened]
-
-        if not bags:
-            return False
-
-        # A cursor left up would take the double-click as its answer
-        if API.HasTarget():
-            API.CancelTarget()
-
-        self._log("opening %d bag(s) to look inside for a %s" % (len(bags), self._noun))
-
-        for bag in bags:
-            self._opened.add(bag.Serial)
-            API.UseObject(bag.Serial)
-
-        return True
-
     def find(self):
-        found = self._search()
-
-        if found is None and self._open_bags():
-            settled(self._timeout, self._poll, lambda: self._search() is not None)
-            found = self._search()
+        found = find_after_opening_bags(self._search, self._noun, self._log, self._opened,
+                                        self._timeout, self._poll, self._spare_bag)
 
         if found is not None:
             self._reported_empty_pack = False

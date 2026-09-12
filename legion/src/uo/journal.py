@@ -1,6 +1,5 @@
 import API
 
-from uo.log import STAMPS
 from uo.text import any_in
 
 
@@ -18,7 +17,7 @@ SKILL_GAIN_TEXT = ["your skill in", "has changed by"]
 
 # matchingText is left off on purpose: the client only applies it as a regex, so a plain string
 # there filters everything out
-def journal_tail(seconds, limit):
+def journal_tail(seconds, limit, stamp=None):
     try:
         entries = API.GetJournalEntries(seconds)
     except Exception:
@@ -28,12 +27,13 @@ def journal_tail(seconds, limit):
         return []
 
     texts = []
+    stamps = [stamp] if stamp else []
 
     for entry in entries if entries else []:
         text = getattr(entry, "Text", None)
 
         if (text and text.strip() and not any_in(text, SKILL_GAIN_TEXT)
-                and not any_in(text, STAMPS)):
+                and not any_in(text, stamps)):
             texts.append(text.strip())
 
     return texts[-limit:]

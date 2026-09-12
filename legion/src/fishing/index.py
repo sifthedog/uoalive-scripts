@@ -111,7 +111,7 @@ def fish():
 
     recorder = attempt_log(DATA_PATH, skill_name, log)
     before = pack_counts() if recorder.recording() else {}
-    outcome, caught = Angler(OUTCOME_TEXT, CAST_CONFIG, log).cast_once(pole, tile)
+    outcome, caught = Angler(OUTCOME_TEXT, CAST_CONFIG, log, log.stamp).cast_once(pole, tile)
 
     if outcome in ("caught", "failed") and recorder.recording():
         record_cast(recorder, skill, start, outcome, caught, before)
@@ -120,7 +120,7 @@ def fish():
         return "caught %s" % (caught or "something the journal did not name")
 
     if outcome == "unknown":
-        for line in journal_tail(JOURNAL_TAIL_SECONDS, JOURNAL_TAIL_LINES):
+        for line in journal_tail(JOURNAL_TAIL_SECONDS, JOURNAL_TAIL_LINES, log.stamp):
             log("  " + line)
 
     return ENDINGS.get(outcome, outcome)

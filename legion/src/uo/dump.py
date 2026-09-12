@@ -2,6 +2,7 @@ import API
 
 from uo.entity import hex_of
 from uo.pack import amount_of, pack_contents
+from uo.target import request_one
 
 
 class Dump(object):
@@ -59,15 +60,9 @@ class Dump(object):
 
     # (the picked container's line, None), (None, why it was refused), or (None, None) for ESC
     def pick_line(self):
-        if API.HasTarget():
-            API.CancelTarget()
+        serial = request_one(self._config["pick_timeout"])
 
-        serial = API.RequestTarget(self._config["pick_timeout"])
-
-        if API.HasTarget():
-            API.CancelTarget()
-
-        if not serial:
+        if serial is None:
             return None, None
 
         refusal = self._refusal(serial)

@@ -136,8 +136,9 @@ OUTCOME_TEXT = [
 
 RESOLUTION_TEXT = [pair for pair in OUTCOME_TEXT if pair[0] != "starting"]
 
-# The outcomes no amount of retrying gets past, and what the run says about each
-STOP_REASON = {
+# The outcomes no amount of retrying gets past, and what the run says giving up on this animal -
+# the session itself carries on to the next one
+GIVE_UP_REASON = {
     "hopeless": "the shard says this creature cannot be tamed by you",
     "notAnimal": "that is not something Animal Taming works on",
     "alreadyTame": "that animal is already tame",

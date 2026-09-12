@@ -9,6 +9,11 @@ class NeverAnswers(object):
         return False
 
 
+class AlwaysAnswers(object):
+    def answer(self):
+        return True
+
+
 class Spends(object):
     """The reading taken before the cast, then the one the shard is left holding."""
 
@@ -141,3 +146,50 @@ class LateLookTest(unittest.TestCase):
 
         self.assertEqual(caster.cast_once({"spell": "Holy Light"}), "fizzled")
         self.assertEqual(self.paces(caster, {"spell": "Holy Light"}), [0.3])
+
+
+# The cursor a self row raises mid-cast: HasTarget() goes true, and the stub answers it
+class SelfCursorTest(unittest.TestCase):
+    def setUp(self):
+        self.api = install()
+        self.said = []
+
+    def caster(self, self_target):
+        return Caster([], lambda stage: False, self_target, False, 5.0, 0.1, 0.1, 0.2,
+                      self.said.append, Spends(10, 0))
+
+    # Cast timing: HasTarget appears after slice 1, the cast animation runs from slice 2 to just
+    # before slice 3, and the grace window after that is what the row waits out before reading
+    def pace_the_cast(self):
+        calls = [0]
+
+        def pause(seconds):
+            self.api.pauses.append(seconds)
+            calls[0] += 1
+
+            if calls[0] == 1:
+                self.api.has_target = True
+            elif calls[0] == 2:
+                self.api.Player.IsCasting = True
+            elif calls[0] == 3:
+                self.api.Player.IsCasting = False
+
+        self.api.Pause = pause
+
+    def test_the_cursor_is_answered_and_its_answer_unlocks_the_grace_window(self):
+        self_target = AlwaysAnswers()
+        caster = self.caster(self_target)
+        self.pace_the_cast()
+
+        outcome = caster.cast_once({"spell": "Stone Form", "target": "self"})
+
+        self.assertEqual(outcome, "fizzled")
+
+    def test_never_answering_waits_out_the_full_budget_instead(self):
+        caster = self.caster(NeverAnswers())
+        self.pace_the_cast()
+
+        outcome = caster.cast_once({"spell": "Stone Form", "target": "self"})
+
+        self.assertEqual(outcome, "fizzled")
+        self.assertGreater(len(self.api.pauses), 3)

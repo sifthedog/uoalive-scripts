@@ -1,9 +1,46 @@
 import unittest
 
-from uo.target import SelfTarget
+from uo.target import SelfTarget, request_one
 from test_support.uo import install
 
 ANSWERS = ["Target(player)", "TargetSelf", "Target(serial)"]
+
+
+class RequestOneTest(unittest.TestCase):
+    def setUp(self):
+        self.api = install()
+
+    def test_the_answered_serial_comes_back(self):
+        self.api.requested_target = 0x40001234
+
+        self.assertEqual(request_one(1.0), 0x40001234)
+
+    def test_esc_or_a_timeout_answers_none(self):
+        self.api.requested_target = 0
+
+        self.assertIsNone(request_one(1.0))
+
+    def test_a_stale_cursor_is_cancelled_before_the_request(self):
+        self.api.has_target = True
+
+        request_one(1.0)
+
+        self.assertEqual(self.api.cancelled_targets, 1)
+
+    def test_a_cursor_still_up_after_the_answer_is_cancelled_too(self):
+        real_request_target = self.api.RequestTarget
+
+        def request_target(timeout=None):
+            self.api.has_target = True
+
+            return real_request_target(timeout)
+
+        self.api.RequestTarget = request_target
+        self.api.requested_target = 0x40001234
+
+        request_one(1.0)
+
+        self.assertEqual(self.api.cancelled_targets, 1)
 
 
 class SelfTargetTest(unittest.TestCase):

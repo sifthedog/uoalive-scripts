@@ -8,13 +8,14 @@ from uo.text import any_in, clipped, phrase_in, untagged
 
 
 class Crafter(object):
-    def __init__(self, tools, menu, stock, buckets, config, log):
+    def __init__(self, tools, menu, stock, buckets, config, log, stamp=None):
         self._tools = tools
         self._menu = menu
         self._stock = stock
         self._buckets = buckets
         self._config = config
         self._log = log
+        self._stamp = stamp
         self._item_buttons = {}
         self._item_probes = {}
         self._make_last = False
@@ -89,7 +90,7 @@ class Crafter(object):
 
         text = (clipped(untagged(" ".join(self._menu.lines(gump))), self._config["text_limit"])
                 if gump else "")
-        lines = journal_tail(self._config["tail_seconds"], self._config["tail_lines"])
+        lines = journal_tail(self._config["tail_seconds"], self._config["tail_lines"], self._stamp)
 
         self._log("%s - the gump says '%s'" % (why, text or "(nothing)"))
         self._log("the journal says '%s'" % (" | ".join(lines) or "(nothing)"))

@@ -325,7 +325,20 @@ TOO_HEAVY_TEXT = ["That container cannot hold more weight"]
 MAX_SELL_MISSES = 3
 SELL_RETRY_AFTER = 25
 
-# The largest recipe in BANDS: under this there is nothing the run can make
+# Wood one craft of a product takes. A stock RunUO-family guess, unmeasured on this shard - correct
+# it after one run the way carpentry.py's WOOD_COST was. LOW_BAND_ITEM/HIGH_BAND_ITEM swap what
+# BANDS makes at the ends, so both are covered here regardless of which is in play.
+WOOD_COST = {
+    "bow": 7,
+    "yumi": 7,
+    "crossbow": 6,
+    "composite bow": 7,
+    "heavy crossbow": 7,
+    "repeating crossbow": 7,
+    "fukiya darts": 4,
+}
+
+# For a product WOOD_COST lacks
 MIN_CRAFT_WOOD = 10
 
 # Refusals for material while the pack holds wood a restock cannot add to: the wrong kind of wood
@@ -709,26 +722,6 @@ def total_of(counts):
     return sum(counts[kind] for kind in counts)
 
 
-# src/uo/log.py
-# Every stamp make_log has handed out. The client puts a SysMsg in the journal beside the shard's
-# own lines, so a script reading the journal back needs to know which of them it wrote itself -
-# without this a report of an unreadable outcome quotes the last report of an unreadable outcome.
-# Lowercase, because that is how the journal readers compare. One entry per script in practice.
-STAMPS = []
-
-
-def make_log(prefix):
-    stamp = prefix + ": "
-
-    if stamp.lower() not in STAMPS:
-        STAMPS.append(stamp.lower())
-
-    def log(message):
-        API.SysMsg(stamp + message)
-
-    return log
-
-
 # src/uo/journal.py
 def said(texts):
     for text in texts:
@@ -744,7 +737,7 @@ SKILL_GAIN_TEXT = ["your skill in", "has changed by"]
 
 # matchingText is left off on purpose: the client only applies it as a regex, so a plain string
 # there filters everything out
-def journal_tail(seconds, limit):
+def journal_tail(seconds, limit, stamp=None):
     try:
         entries = API.GetJournalEntries(seconds)
     except Exception:
@@ -754,12 +747,13 @@ def journal_tail(seconds, limit):
         return []
 
     texts = []
+    stamps = [stamp] if stamp else []
 
     for entry in entries if entries else []:
         text = getattr(entry, "Text", None)
 
         if (text and text.strip() and not any_in(text, SKILL_GAIN_TEXT)
-                and not any_in(text, STAMPS)):
+                and not any_in(text, stamps)):
             texts.append(text.strip())
 
     return texts[-limit:]
@@ -1260,6 +1254,21 @@ def settled(timeout, poll, landed):
     return False
 
 
+# src/uo/target.py
+# The serial one cursor answered, or None for ESC or a timeout. Clears a cursor left open from
+# before, and the one just answered too, so a target flag never survives past it.
+def request_one(timeout):
+    if API.HasTarget():
+        API.CancelTarget()
+
+    serial = API.RequestTarget(timeout)
+
+    if API.HasTarget():
+        API.CancelTarget()
+
+    return serial or None
+
+
 # src/uo/sources.py
 KIND_NOUNS = {"item": "container", "mobile": "pack animal", "box": "storage box"}
 
@@ -1387,15 +1396,9 @@ class Sources(object):
     # One cursor, one answer: (the picked entry's line, None), (None, why it was refused), or
     # (None, None) for ESC
     def pick_one(self, allowed=None):
-        if API.HasTarget():
-            API.CancelTarget()
+        serial = request_one(self._config["pick_timeout"])
 
-        serial = API.RequestTarget(self._config["pick_timeout"])
-
-        if API.HasTarget():
-            API.CancelTarget()
-
-        if not serial:
+        if serial is None:
             return None, None
 
         refusal = self._refusal(serial, allowed)
@@ -1588,15 +1591,25 @@ class Sources(object):
         return chebyshev(spot[0], spot[1], within + 1) <= within
 
 
+# src/uo/cost.py
+def cost_of(product, costs, fallback):
+    return costs.get(product, fallback)
+
+
+def short_by(product, held, costs, fallback):
+    return max(0, cost_of(product, costs, fallback) - held)
+
+
 # src/uo/craft.py
 class Crafter(object):
-    def __init__(self, tools, menu, stock, buckets, config, log):
+    def __init__(self, tools, menu, stock, buckets, config, log, stamp=None):
         self._tools = tools
         self._menu = menu
         self._stock = stock
         self._buckets = buckets
         self._config = config
         self._log = log
+        self._stamp = stamp
         self._item_buttons = {}
         self._item_probes = {}
         self._make_last = False
@@ -1671,7 +1684,7 @@ class Crafter(object):
 
         text = (clipped(untagged(" ".join(self._menu.lines(gump))), self._config["text_limit"])
                 if gump else "")
-        lines = journal_tail(self._config["tail_seconds"], self._config["tail_lines"])
+        lines = journal_tail(self._config["tail_seconds"], self._config["tail_lines"], self._stamp)
 
         self._log("%s - the gump says '%s'" % (why, text or "(nothing)"))
         self._log("the journal says '%s'" % (" | ".join(lines) or "(nothing)"))
@@ -2208,6 +2221,122 @@ class CraftMenu(object):
         return order if known is None else [button for button in order if button in known]
 
 
+# src/uo/craftrun.py
+"""The bookkeeping bowcraft, carpentry, tinkering and inscription all repeat: ending a cycle
+through the stall watch, running a sell or unload trip, recording a craft's materials, and freeing
+pack weight by selling or unloading when a restock is refused for it."""
+
+
+def end_cycle(stall, phase, cycle, tally, stop):
+    """Ends the cycle through the stall watch, keeping whichever stop reason came first: the
+    caller's own, or the stall's if the caller had none yet."""
+    stall.end_cycle(phase, cycle, tally)
+
+    return stop if stop is not None else stall.reason()
+
+
+class Unloader(object):
+    """One dump, and how many trips in a row moved nothing."""
+
+    def __init__(self, dump):
+        self._dump = dump
+        self.misses = 0
+
+    def run(self):
+        if self._dump.run() > 0:
+            self.misses = 0
+
+            return True
+
+        self.misses += 1
+
+        return False
+
+
+class Seller(object):
+    """One vendor, backed off and paused for a while once it buys nothing max_misses trips
+    running - or the crafting would never get a turn."""
+
+    def __init__(self, vendor, max_misses, retry_after, log):
+        self._vendor = vendor
+        self._max_misses = max_misses
+        self._retry_after = retry_after
+        self._log = log
+        self.misses = 0
+        self.paused_until = 0
+
+    def forget(self):
+        self.misses = 0
+        self.paused_until = 0
+
+    def due(self, cycle):
+        return cycle >= self.paused_until
+
+    def sell(self, titles, noun, cycle):
+        if self._vendor.sell_trip(titles, noun):
+            self.misses = 0
+
+            return True
+
+        self.misses += 1
+
+        # Retried, but not every cycle: otherwise the crafting never gets a turn
+        if self.misses >= self._max_misses:
+            self.misses = 0
+            self.paused_until = cycle + self._retry_after
+            self._log("%d sell trips bought nothing - crafting on, and asking again in %d cycles"
+                      % (self._max_misses, self._retry_after))
+
+        return False
+
+
+class CraftRecorder(object):
+    """Measured either side of the craft rather than read off the recipe: a failure refunds part
+    of it."""
+
+    def __init__(self, recorder, materials, refund_settle, refund_poll):
+        self._recorder = recorder
+        self._materials = materials
+        self._refund_settle = refund_settle
+        self._refund_poll = refund_poll
+
+    def record(self, outcome, skill_from, before, product):
+        if not self._recorder.recording():
+            return
+
+        after = self._materials.settled_snapshot(self._refund_settle, self._refund_poll)
+        self._recorder.record(skill_from, outcome, product, self._materials.spent(before, after))
+
+
+# A pack the shard will not load for weight is emptied first, the way the band's products leave.
+# sell and unload are each None, or (applies, held, run): zero-arg callables answering whether the
+# trip is on for this band right now, how much is held, and whether running it moved anything.
+# Tried in order, first one that applies and still holds something wins.
+def make_room(restock, log, noun, sell=None, unload=None):
+    if not restock.refused_for_weight():
+        return None
+
+    for phase, path in (("selling", sell), ("unloading", unload)):
+        if path is None:
+            continue
+
+        applies, held_of, run = path
+
+        if not applies():
+            continue
+
+        held = held_of()
+
+        if held == 0:
+            continue
+
+        log("%s %d before loading more%s" % (phase, held, " " + noun if noun else ""))
+
+        return phase if run() else None
+
+    return None
+
+
 # src/uo/tool.py
 # Books carry the client's container flag, so the flag alone opens every spellbook in the pack
 NOT_BAG_GRAPHICS = set([
@@ -2233,6 +2362,48 @@ def is_bag(item):
         return False
 
     return not word_in(item.Name, NOT_BAG_NAMES)
+
+
+# A bag the client has not opened this session reads as empty, whatever is in it. extra_serial, a
+# spare bag outside the pack, joins the search if it is not open yet either. opened is mutated:
+# every bag this call sends a double-click to is remembered so a later call leaves it alone.
+def open_unopened_bags(noun, log, opened, extra_serial=None):
+    bags = [item for item in pack_contents() if is_bag(item)]
+
+    if extra_serial is not None:
+        spare = API.FindItem(extra_serial)
+
+        if spare is not None and not getattr(spare, "Opened", False):
+            bags.append(spare)
+
+    bags = [bag for bag in bags if bag.Serial not in opened]
+
+    if not bags:
+        return False
+
+    # A cursor left up would take the double-click as its answer
+    if API.HasTarget():
+        API.CancelTarget()
+
+    log("opening %d bag(s) to look inside for a %s" % (len(bags), noun))
+
+    for bag in bags:
+        opened.add(bag.Serial)
+        API.UseObject(bag.Serial)
+
+    return True
+
+
+# search is called fresh each time: opening the bags is asynchronous, so what it finds only
+# improves after settled() gives the pack a chance to catch up
+def find_after_opening_bags(search, noun, log, opened, timeout, poll, extra_serial=None):
+    found = search()
+
+    if found is None and open_unopened_bags(noun, log, opened, extra_serial):
+        settled(timeout, poll, lambda: search() is not None)
+        found = search()
+
+    return found
 
 
 # src/uo/crafttool.py
@@ -2281,34 +2452,9 @@ class CraftTool(object):
 
         return found
 
-    # A bag the client has not opened this session reads as empty, whatever is in it
-    def open_bags(self):
-        bags = [item for item in pack_contents()
-                if is_bag(item) and item.Serial not in self._opened]
-
-        if not bags:
-            return False
-
-        # A cursor left up would take the double-click as its answer
-        if API.HasTarget():
-            API.CancelTarget()
-
-        self._log("opening %d bag(s) to look inside for a %s" % (len(bags), self._noun))
-
-        for bag in bags:
-            self._opened.add(bag.Serial)
-            API.UseObject(bag.Serial)
-
-        return True
-
     def find(self, timeout, poll):
-        found = self.serial()
-
-        if found is None and self.open_bags():
-            settled(timeout, poll, lambda: self.serial() is not None)
-            found = self.serial()
-
-        return found
+        return find_after_opening_bags(self.serial, self._noun, self._log, self._opened,
+                                       timeout, poll)
 
 
 # src/uo/dump.py
@@ -2367,15 +2513,9 @@ class Dump(object):
 
     # (the picked container's line, None), (None, why it was refused), or (None, None) for ESC
     def pick_line(self):
-        if API.HasTarget():
-            API.CancelTarget()
+        serial = request_one(self._config["pick_timeout"])
 
-        serial = API.RequestTarget(self._config["pick_timeout"])
-
-        if API.HasTarget():
-            API.CancelTarget()
-
-        if not serial:
+        if serial is None:
             return None, None
 
         refusal = self._refusal(serial)
@@ -2512,6 +2652,24 @@ class Heartbeat(object):
 
     def reset(self):
         self._last = now()
+
+
+# src/uo/log.py
+def make_log(prefix):
+    stamp = prefix + ": "
+
+    def log(message):
+        API.SysMsg(stamp + message)
+
+    # The client puts a SysMsg in the journal beside the shard's own lines, so a script reading the
+    # journal back needs to know which lines it wrote itself - without this a report of an unreadable
+    # outcome quotes the last report of an unreadable outcome. Lowercase, because that is how the
+    # journal readers compare. Carried on the function itself rather than a module-level list: a
+    # bundle is one script and one prefix, and a shared list would leak between scripts sharing this
+    # process, such as the test suite.
+    log.stamp = stamp.lower()
+
+    return log
 
 
 # src/uo/loop.py
@@ -2832,8 +2990,51 @@ class SaveWatch(object):
         self._heartbeat.reset()
 
 
+# src/uo/gumpwait.py
+# Waits behind a gump the script drew, one poll slice at a time, until resolve() answers a reason
+# to stop (checked first, so a click wins over the gump closing), the gump is disposed, stop_reason
+# gives one, or timeout seconds pass - timeout=None means no ceiling. each(), when given, runs once
+# a slice before resolve(), so an alarm or a heartbeat keeps going while the gump is up. Disposes
+# the gump before returning why. The click only arrives through ProcessCallbacks, and a stopped
+# script's client calls all answer with nothing, so the stop flag is the one read that still means
+# something then.
+def wait_for_gump(gump, stop_reason, poll, resolve, closed_message="the gump was closed",
+                  timeout=None, each=None):
+    waited = 0.0
+    why = None
+
+    while why is None:
+        if API.StopRequested:
+            why = "the run is being stopped"
+            break
+
+        if each is not None:
+            each()
+
+        API.ProcessCallbacks()
+
+        why = resolve()
+
+        if why is not None:
+            pass
+        elif gump.IsDisposed:
+            why = closed_message
+        elif stop_reason() is not None:
+            why = "the run has a reason to stop"
+        elif timeout is not None and waited >= timeout:
+            why = "nothing was pressed in %.0fs" % timeout
+        else:
+            API.Pause(poll)
+            waited += poll
+
+    if not gump.IsDisposed:
+        gump.Dispose()
+
+    return why
+
+
 # src/uo/setup.py
-WIDTH = 720
+SETUP_WIDTH = 720
 MARGIN = 16
 LABEL_X = 16
 FIELD_X = 160
@@ -2876,7 +3077,7 @@ class Setup(object):
 
     def _label(self, gump, text, x, y, color=TEXT, width=None):
         label = API.Gumps.CreateGumpTTFLabel(text, FONT, color)
-        label.SetRect(x, y, width if width is not None else WIDTH - x - MARGIN, LINE)
+        label.SetRect(x, y, width if width is not None else SETUP_WIDTH - x - MARGIN, LINE)
         gump.Add(label)
 
         return label
@@ -2899,12 +3100,12 @@ class Setup(object):
         if gump is None:
             return None
 
-        gump.SetRect(0, 0, WIDTH, height)
+        gump.SetRect(0, 0, SETUP_WIDTH, height)
         gump.CenterXInViewPort()
         gump.CenterYInViewPort()
 
         background = API.Gumps.CreateGumpColorBox(0.9, "#1E1E1E")
-        background.SetRect(0, 0, WIDTH, height)
+        background.SetRect(0, 0, SETUP_WIDTH, height)
         gump.Add(background)
 
         title = API.Gumps.CreateGumpLabel(self._config["title"], self._config["hue"])
@@ -2971,8 +3172,8 @@ class Setup(object):
         c["message"] = self._label(gump, "", LABEL_X, y, WARN)
         y += ROW
 
-        self._button(gump, "cancel", "Cancel", WIDTH - MARGIN - 96 - 8 - 96, y, 96)
-        self._button(gump, "ok", "OK", WIDTH - MARGIN - 96, y, 96)
+        self._button(gump, "cancel", "Cancel", SETUP_WIDTH - MARGIN - 96 - 8 - 96, y, 96)
+        self._button(gump, "ok", "OK", SETUP_WIDTH - MARGIN - 96, y, 96)
 
         API.Gumps.AddGump(gump)
 
@@ -3091,46 +3292,28 @@ class Setup(object):
 
         self._log("asking - the start-up form")
         self._refresh(actions)
-        waited = 0.0
-        why = None
-        answers = None
+        answers = [None]
 
-        # The click only arrives through ProcessCallbacks, and a stopped script's client calls all
-        # answer with nothing, so the stop flag is the one read that still means something then
-        while why is None:
-            if API.StopRequested:
-                why = "the run is being stopped"
-                break
-
-            API.ProcessCallbacks()
-
+        def resolve():
             pending, self._pending = self._pending, None
             done = self._run(pending, actions) if pending is not None else None
 
             self._refresh(actions)
 
             if done == "ok":
-                answers = {"tools": self._mode(), "output": self._output(),
-                           "sources": len(self._sources)}
-                why = "OK was pressed"
-            elif done == "cancel":
-                why = "Cancel was pressed"
-            elif gump.IsDisposed:
-                why = "the form was closed"
-            elif self._stop_reason() is not None:
-                why = "the run has a reason to stop"
-            elif waited >= self._config["timeout"]:
-                why = "nothing was pressed in %.0fs" % self._config["timeout"]
-            else:
-                API.Pause(self._config["poll"])
-                waited += self._config["poll"]
+                answers[0] = {"tools": self._mode(), "output": self._output(),
+                              "sources": len(self._sources)}
 
-        if not gump.IsDisposed:
-            gump.Dispose()
+                return "OK was pressed"
+
+            return "Cancel was pressed" if done == "cancel" else None
+
+        why = wait_for_gump(gump, self._stop_reason, self._config["poll"], resolve,
+                            closed_message="the form was closed", timeout=self._config["timeout"])
 
         self._log(why)
 
-        return answers
+        return answers[0]
 
 
 # src/uo/skill.py
@@ -3204,10 +3387,24 @@ class SkillReader(object):
                 return value
 
             if waited >= timeout:
-                return None
+                return self._accept_zero()
 
             API.Pause(poll)
             waited += poll
+
+        return None
+
+    # A 0 the client still answers once the wait is over is a real 0, not an unsent skill list
+    def _accept_zero(self):
+        skill = API.GetSkill(self._name)
+
+        if skill is None:
+            return None
+
+        self._seen = True
+        self._last = skill.Value
+
+        return skill.Value
 
 
 # src/uo/stages.py
@@ -3292,15 +3489,9 @@ class ToolStore(object):
     # (the container's line, None) or (line, why OK will refuse it), (None, why it was refused),
     # or (None, None) for ESC
     def pick(self):
-        if API.HasTarget():
-            API.CancelTarget()
+        serial = request_one(self._config["pick_timeout"])
 
-        serial = API.RequestTarget(self._config["pick_timeout"])
-
-        if API.HasTarget():
-            API.CancelTarget()
-
-        if not serial:
+        if serial is None:
             return None, None
 
         refusal = self._refusal(serial)
@@ -3538,6 +3729,14 @@ def stop_reason():
     return first_reason([stopped(STOPPED), dead(), skill_capped(skill_name)])
 
 
+def wood_cost(item):
+    return cost_of(item, WOOD_COST, MIN_CRAFT_WOOD)
+
+
+def wood_short(item):
+    return short_by(item, wood.in_pack(), WOOD_COST, MIN_CRAFT_WOOD)
+
+
 # The band's product only: a yumi left from the band before would send a bowyer trip every cycle
 def products_in_pack():
     return count_of(PRODUCTS[product] if product is not None else PRODUCT_GRAPHICS)
@@ -3617,7 +3816,7 @@ crafter = Crafter(tools, menu, wood, OUTCOME_TEXT, {
     "tail_seconds": JOURNAL_TAIL_SECONDS,
     "tail_lines": JOURNAL_TAIL_LINES,
     "material": WOOD_TYPE,
-}, log)
+}, log, log.stamp)
 vendor = Vendor(menu, {
     "serial": VENDOR_SERIAL,
     "scan_radius": VENDOR_SCAN_RADIUS,
@@ -3668,8 +3867,8 @@ cap = skill.cap()
 
 
 def training_rows():
-    heading = "%s %.1f%s" % (skill_name, start,
-                             " / %.1f" % cap if cap is not None and cap > 0 else "")
+    heading = "%s %s%s" % (skill_name, reading(start),
+                           " / %.1f" % cap if cap is not None and cap > 0 else "")
 
     return heading, band_rows(BANDS, start, lambda name: VENDORS[name][0] if VENDORS[name]
                               else "nobody buys it: unloaded", MIN_SKILL)
@@ -3709,8 +3908,8 @@ if (tools.find(FETCH_TIMEOUT, FETCH_POLL) is None
     log("no fletcher's tools in the pack")
     API.Stop()
 
-log("%s at %.1f%s, %s in the pack, %s"
-    % (skill_name, start, "/%.1f" % cap if cap is not None and cap > 0 else "",
+log("%s at %s%s, %s in the pack, %s"
+    % (skill_name, reading(start), "/%.1f" % cap if cap is not None and cap > 0 else "",
        wood.pack_report(), sources.stock_line()))
 
 if wood.in_pack() < RESTOCK_AT:
@@ -3718,6 +3917,9 @@ if wood.in_pack() < RESTOCK_AT:
 
 recorder = attempt_log(DATA_PATH, skill_name, log)
 materials = Materials(wood, MATERIAL_GRAPHICS)
+craft_recorder = CraftRecorder(recorder, materials, REFUND_SETTLE, REFUND_POLL)
+seller = Seller(vendor, MAX_SELL_MISSES, SELL_RETRY_AFTER, log)
+unloader = Unloader(dump)
 
 stop = None
 tally = 0
@@ -3728,56 +3930,9 @@ no_tool = 0
 no_material = 0
 throttle_tally = 0
 said_throttle = False
-sell_misses = 0
-sell_paused_until = 0
-dump_misses = 0
 reported = 0
 cycle = 0
 last_skill = start
-
-
-def end_cycle(phase):
-    global stop
-
-    stall.end_cycle(phase, cycle, tally)
-
-    if stop is None:
-        stop = stall.reason()
-
-
-def sell_now():
-    global sell_misses, sell_paused_until
-
-    noun, titles = VENDORS[product]
-
-    if vendor.sell_trip(titles, noun):
-        sell_misses = 0
-
-        return True
-
-    sell_misses += 1
-
-    # Retried, but not every cycle: otherwise the crafting never gets a turn
-    if sell_misses >= MAX_SELL_MISSES:
-        sell_misses = 0
-        sell_paused_until = cycle + SELL_RETRY_AFTER
-        log("%d sell trips bought nothing - crafting on, and asking again in %d cycles"
-            % (MAX_SELL_MISSES, SELL_RETRY_AFTER))
-
-    return False
-
-
-def unload_now():
-    global dump_misses
-
-    if dump.run() > 0:
-        dump_misses = 0
-
-        return True
-
-    dump_misses += 1
-
-    return False
 
 
 def sells_this_band():
@@ -3789,40 +3944,14 @@ def unloads_this_band():
 
 
 # A pack the shard will not load for weight is emptied first, the way the band's products leave
-def make_room():
-    if not restock.refused_for_weight():
-        return None
-
-    if sells_this_band():
-        held = products_in_pack()
-
-        if held == 0 or cycle < sell_paused_until:
-            return None
-
-        log("selling %d before loading more wood" % held)
-
-        return "selling" if sell_now() else None
-
-    if unloads_this_band():
-        held = dump.held()
-
-        if held == 0:
-            return None
-
-        log("unloading %d before loading more wood" % held)
-
-        return "unloading" if unload_now() else None
-
-    return None
-
-
-# Measured either side of the craft rather than read off the recipe: a failure refunds part of it
-def record_craft(outcome, skill_from, before):
-    if not recorder.recording():
-        return
-
-    after = materials.settled_snapshot(REFUND_SETTLE, REFUND_POLL)
-    recorder.record(skill_from, outcome, product, materials.spent(before, after))
+def try_make_room():
+    return make_room(
+        restock, log, "wood",
+        sell=(lambda: sells_this_band() and seller.due(cycle),
+              products_in_pack,
+              lambda: seller.sell(VENDORS[product][1], VENDORS[product][0], cycle)),
+        unload=(unloads_this_band, dump.held, unloader.run),
+    )
 
 
 try:
@@ -3840,7 +3969,7 @@ try:
             unknown = 0
             throttled = 0
             stall.progressed()
-            end_cycle("saving")
+            stop = end_cycle(stall, "saving", cycle, tally, stop)
             continue
 
         value = skill.read()
@@ -3860,37 +3989,37 @@ try:
             log("%s at %s, making %s" % (skill_name, reading(value), wanted))
             product = wanted
             crafter.forget_last()
-            sell_misses = 0
-            sell_paused_until = 0
+            seller.forget()
 
         held = dump.held()
 
         if output == "unload":
             if held >= DUMP_AT:
-                if unload_now():
-                    end_cycle("unloading")
+                if unloader.run():
+                    stop = end_cycle(stall, "unloading", cycle, tally, stop)
                     continue
 
-                if dump_misses >= MAX_DUMP_MISSES:
+                if unloader.misses >= MAX_DUMP_MISSES:
                     stop = ("%d unloads in a row moved nothing into '%s'"
-                            % (dump_misses, dump.name()))
+                            % (unloader.misses, dump.name()))
                     break
         elif output == "sell":
             if VENDORS[product] is None:
                 if held >= DUMP_AT and dump.picked():
-                    if unload_now():
-                        end_cycle("unloading")
+                    if unloader.run():
+                        stop = end_cycle(stall, "unloading", cycle, tally, stop)
                         continue
 
-                    if dump_misses >= MAX_DUMP_MISSES:
+                    if unloader.misses >= MAX_DUMP_MISSES:
                         stop = ("%d unloads in a row moved nothing into '%s'"
-                                % (dump_misses, dump.name()))
+                                % (unloader.misses, dump.name()))
                         break
                 elif held >= MAX_HELD and not dump.picked():
                     stop = "the pack holds %d unsold and nothing was picked to unload into" % held
                     break
-            elif products_in_pack() >= SELL_AT and cycle >= sell_paused_until and sell_now():
-                end_cycle("selling")
+            elif (products_in_pack() >= SELL_AT and seller.due(cycle)
+                  and seller.sell(VENDORS[product][1], VENDORS[product][0], cycle)):
+                stop = end_cycle(stall, "selling", cycle, tally, stop)
                 continue
         elif held >= MAX_HELD:
             stop = "the pack holds %d and nothing was picked to unload into" % held
@@ -3900,20 +4029,20 @@ try:
             # An unreachable container also pulls nothing, which the stall watch ends
             pulled = restock.run()
 
-            phase = make_room()
+            phase = try_make_room()
 
             if phase is not None:
-                end_cycle(phase)
+                stop = end_cycle(stall, phase, cycle, tally, stop)
                 continue
 
-            if pulled == 0 and sources.stock_left() == 0 and wood.in_pack() < MIN_CRAFT_WOOD:
-                stop = ("out of %s wood - %s in the pack, none left in what you picked"
-                        % (WOOD_TYPE, wood.pack_report()))
+            if pulled == 0 and sources.stock_left() == 0 and wood_short(product) > 0:
+                stop = ("out of %s wood - %s in the pack, none left in what you picked, and one "
+                        "%s takes %d" % (WOOD_TYPE, wood.pack_report(), product, wood_cost(product)))
                 break
 
             # A short pack that can still make something crafts
-            if wood.in_pack() < MIN_CRAFT_WOOD:
-                end_cycle("restocking")
+            if wood_short(product) > 0:
+                stop = end_cycle(stall, "restocking", cycle, tally, stop)
                 continue
 
         spent_before = materials.snapshot() if recorder.recording() else {}
@@ -3931,16 +4060,16 @@ try:
             else:
                 fails += 1
 
-            record_craft(outcome, value, spent_before)
+            craft_recorder.record(outcome, value, spent_before, product)
             no_material = 0
             stall.progressed()
         elif outcome == "noMaterial":
             pulled = restock.run()
 
-            phase = make_room()
+            phase = try_make_room()
 
             if phase is not None:
-                end_cycle(phase)
+                stop = end_cycle(stall, phase, cycle, tally, stop)
                 continue
 
             if pulled > 0:
@@ -4022,7 +4151,7 @@ try:
                    wood.report(wood.pack_stock()))
             )
 
-        end_cycle(outcome if outcome is not None else "unknown")
+        stop = end_cycle(stall, outcome if outcome is not None else "unknown", cycle, tally, stop)
         API.Pause(STEP_DELAY)
 except Exception as error:
     # The stop button lands here as well, and the client waits for it to unwind the thread

@@ -554,26 +554,6 @@ def gump_says(gump, texts):
     return False
 
 
-# src/uo/log.py
-# Every stamp make_log has handed out. The client puts a SysMsg in the journal beside the shard's
-# own lines, so a script reading the journal back needs to know which of them it wrote itself -
-# without this a report of an unreadable outcome quotes the last report of an unreadable outcome.
-# Lowercase, because that is how the journal readers compare. One entry per script in practice.
-STAMPS = []
-
-
-def make_log(prefix):
-    stamp = prefix + ": "
-
-    if stamp.lower() not in STAMPS:
-        STAMPS.append(stamp.lower())
-
-    def log(message):
-        API.SysMsg(stamp + message)
-
-    return log
-
-
 # src/uo/journal.py
 def said(texts):
     for text in texts:
@@ -589,7 +569,7 @@ SKILL_GAIN_TEXT = ["your skill in", "has changed by"]
 
 # matchingText is left off on purpose: the client only applies it as a regex, so a plain string
 # there filters everything out
-def journal_tail(seconds, limit):
+def journal_tail(seconds, limit, stamp=None):
     try:
         entries = API.GetJournalEntries(seconds)
     except Exception:
@@ -599,12 +579,13 @@ def journal_tail(seconds, limit):
         return []
 
     texts = []
+    stamps = [stamp] if stamp else []
 
     for entry in entries if entries else []:
         text = getattr(entry, "Text", None)
 
         if (text and text.strip() and not any_in(text, SKILL_GAIN_TEXT)
-                and not any_in(text, STAMPS)):
+                and not any_in(text, stamps)):
             texts.append(text.strip())
 
     return texts[-limit:]
@@ -630,12 +611,13 @@ def matched_bucket(buckets):
 class DeedCombiner(object):
     """The deed's 'combine with contained items', aimed at the bag the pieces are in."""
 
-    def __init__(self, deed, items, buckets, config, log):
+    def __init__(self, deed, items, buckets, config, log, stamp=None):
         self._deed = deed
         self._items = items
         self._buckets = buckets
         self._config = config
         self._log = log
+        self._stamp = stamp
         self._said_gump_text = False
         self._reported = 0
         self._gump = 0
@@ -673,7 +655,7 @@ class DeedCombiner(object):
 
         self._reported += 1
         text = clipped(" ".join(self._lines(gump)), self._config["text_limit"]) if gump else ""
-        lines = journal_tail(self._config["tail_seconds"], self._config["tail_lines"])
+        lines = journal_tail(self._config["tail_seconds"], self._config["tail_lines"], self._stamp)
 
         self._log("%s - the gump says '%s'" % (why, text or "(nothing)"))
         self._log("the journal says '%s'" % (" | ".join(lines) or "(nothing)"))
@@ -1089,7 +1071,7 @@ STOPPERS = ("noMaterial", "noAnvil", "skillTooLow", "toolWorn", "throttled", "sa
 class DeedCrafter(object):
     """One proving craft off the row, then MAKE NUMBER batches of it."""
 
-    def __init__(self, tool, menu, items, picker, buckets, config, log):
+    def __init__(self, tool, menu, items, picker, buckets, config, log, stamp=None):
         self._tool = tool
         self._menu = menu
         self._items = items
@@ -1097,6 +1079,7 @@ class DeedCrafter(object):
         self._buckets = buckets
         self._config = config
         self._log = log
+        self._stamp = stamp
         self._item_buttons = {}
         self._said_unreadable = 0
         self._said_unjudged = False
@@ -1150,7 +1133,7 @@ class DeedCrafter(object):
 
         text = (clipped(" ".join(self._menu.lines(gump)), self._config["text_limit"])
                 if gump else "")
-        lines = journal_tail(self._config["tail_seconds"], self._config["tail_lines"])
+        lines = journal_tail(self._config["tail_seconds"], self._config["tail_lines"], self._stamp)
 
         self._log("%s - the gump says '%s'" % (why, text or "(nothing)"))
         self._log("the journal says '%s'" % (" | ".join(lines) or "(nothing)"))
@@ -2348,6 +2331,48 @@ def is_bag(item):
     return not word_in(item.Name, NOT_BAG_NAMES)
 
 
+# A bag the client has not opened this session reads as empty, whatever is in it. extra_serial, a
+# spare bag outside the pack, joins the search if it is not open yet either. opened is mutated:
+# every bag this call sends a double-click to is remembered so a later call leaves it alone.
+def open_unopened_bags(noun, log, opened, extra_serial=None):
+    bags = [item for item in pack_contents() if is_bag(item)]
+
+    if extra_serial is not None:
+        spare = API.FindItem(extra_serial)
+
+        if spare is not None and not getattr(spare, "Opened", False):
+            bags.append(spare)
+
+    bags = [bag for bag in bags if bag.Serial not in opened]
+
+    if not bags:
+        return False
+
+    # A cursor left up would take the double-click as its answer
+    if API.HasTarget():
+        API.CancelTarget()
+
+    log("opening %d bag(s) to look inside for a %s" % (len(bags), noun))
+
+    for bag in bags:
+        opened.add(bag.Serial)
+        API.UseObject(bag.Serial)
+
+    return True
+
+
+# search is called fresh each time: opening the bags is asynchronous, so what it finds only
+# improves after settled() gives the pack a chance to catch up
+def find_after_opening_bags(search, noun, log, opened, timeout, poll, extra_serial=None):
+    found = search()
+
+    if found is None and open_unopened_bags(noun, log, opened, extra_serial):
+        settled(timeout, poll, lambda: search() is not None)
+        found = search()
+
+    return found
+
+
 # src/uo/crafttool.py
 class CraftTool(object):
     """A crafting tool, used out of the pack rather than equipped."""
@@ -2394,34 +2419,9 @@ class CraftTool(object):
 
         return found
 
-    # A bag the client has not opened this session reads as empty, whatever is in it
-    def open_bags(self):
-        bags = [item for item in pack_contents()
-                if is_bag(item) and item.Serial not in self._opened]
-
-        if not bags:
-            return False
-
-        # A cursor left up would take the double-click as its answer
-        if API.HasTarget():
-            API.CancelTarget()
-
-        self._log("opening %d bag(s) to look inside for a %s" % (len(bags), self._noun))
-
-        for bag in bags:
-            self._opened.add(bag.Serial)
-            API.UseObject(bag.Serial)
-
-        return True
-
     def find(self, timeout, poll):
-        found = self.serial()
-
-        if found is None and self.open_bags():
-            settled(timeout, poll, lambda: self.serial() is not None)
-            found = self.serial()
-
-        return found
+        return find_after_opening_bags(self.serial, self._noun, self._log, self._opened,
+                                       timeout, poll)
 
 
 # src/uo/guards.py
@@ -2485,6 +2485,24 @@ class Heartbeat(object):
 
     def reset(self):
         self._last = now()
+
+
+# src/uo/log.py
+def make_log(prefix):
+    stamp = prefix + ": "
+
+    def log(message):
+        API.SysMsg(stamp + message)
+
+    # The client puts a SysMsg in the journal beside the shard's own lines, so a script reading the
+    # journal back needs to know which lines it wrote itself - without this a report of an unreadable
+    # outcome quotes the last report of an unreadable outcome. Lowercase, because that is how the
+    # journal readers compare. Carried on the function itself rather than a module-level list: a
+    # bundle is one script and one prefix, and a shared list would leak between scripts sharing this
+    # process, such as the test suite.
+    log.stamp = stamp.lower()
+
+    return log
 
 
 # src/uo/save.py
@@ -2596,10 +2614,24 @@ class SkillReader(object):
                 return value
 
             if waited >= timeout:
-                return None
+                return self._accept_zero()
 
             API.Pause(poll)
             waited += poll
+
+        return None
+
+    # A 0 the client still answers once the wait is over is a real 0, not an unsent skill list
+    def _accept_zero(self):
+        skill = API.GetSkill(self._name)
+
+        if skill is None:
+            return None
+
+        self._seen = True
+        self._last = skill.Value
+
+        return skill.Value
 
 
 # src/uo/vitals.py
@@ -2817,8 +2849,9 @@ def fill_small(small):
         "text_limit": UNREADABLE_TEXT_LIMIT,
         "tail_seconds": JOURNAL_TAIL_SECONDS,
         "tail_lines": JOURNAL_TAIL_LINES,
-    }, log)
-    combiner = DeedCombiner(small, items, COMBINE_TEXT, combine_config(BOD_COMBINE_BUTTON), log)
+    }, log, log.stamp)
+    combiner = DeedCombiner(small, items, COMBINE_TEXT, combine_config(BOD_COMBINE_BUTTON), log,
+                            log.stamp)
     fill = SmallFill(small, items, crafter, picker, combiner, FILL, log, WATCH)
     fills.append(fill)
 
@@ -2926,7 +2959,7 @@ def run_large():
             return "still no small deed for %s after the box" % ", ".join(missing)
 
     large_combiner = DeedCombiner(deed, None, LARGE_COMBINE_TEXT,
-                                  combine_config(LARGE_COMBINE_BUTTON), log)
+                                  combine_config(LARGE_COMBINE_BUTTON), log, log.stamp)
     index = 0
 
     for item, _done in pending:

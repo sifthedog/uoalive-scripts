@@ -2,6 +2,7 @@ import API
 
 from uo.entity import hex_of
 from uo.retry import settled
+from uo.target import request_one
 
 
 class ToolStore(object):
@@ -54,15 +55,9 @@ class ToolStore(object):
     # (the container's line, None) or (line, why OK will refuse it), (None, why it was refused),
     # or (None, None) for ESC
     def pick(self):
-        if API.HasTarget():
-            API.CancelTarget()
+        serial = request_one(self._config["pick_timeout"])
 
-        serial = API.RequestTarget(self._config["pick_timeout"])
-
-        if API.HasTarget():
-            API.CancelTarget()
-
-        if not serial:
+        if serial is None:
             return None, None
 
         refusal = self._refusal(serial)

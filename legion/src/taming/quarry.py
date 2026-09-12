@@ -30,12 +30,12 @@ class Hunt(object):
         return first or hex(mobile.Serial)
 
     def next_quarry(self, graphic):
-        if self._radius <= 0:
-            return None
+        # 0 asks for every animal: GetAllMobiles already treats distance=None as unlimited
+        distance = self._radius if self._radius > 0 else None
 
         candidates = [
             mobile
-            for mobile in API.GetAllMobiles(graphic=graphic, distance=self._radius)
+            for mobile in API.GetAllMobiles(graphic=graphic, distance=distance)
             if not mobile.IsDestroyed
             and mobile.Serial not in self._skipped
             and not mobile.IsDead

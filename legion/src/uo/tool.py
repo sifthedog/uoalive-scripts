@@ -31,6 +31,48 @@ def is_bag(item):
     return not word_in(item.Name, NOT_BAG_NAMES)
 
 
+# A bag the client has not opened this session reads as empty, whatever is in it. extra_serial, a
+# spare bag outside the pack, joins the search if it is not open yet either. opened is mutated:
+# every bag this call sends a double-click to is remembered so a later call leaves it alone.
+def open_unopened_bags(noun, log, opened, extra_serial=None):
+    bags = [item for item in pack_contents() if is_bag(item)]
+
+    if extra_serial is not None:
+        spare = API.FindItem(extra_serial)
+
+        if spare is not None and not getattr(spare, "Opened", False):
+            bags.append(spare)
+
+    bags = [bag for bag in bags if bag.Serial not in opened]
+
+    if not bags:
+        return False
+
+    # A cursor left up would take the double-click as its answer
+    if API.HasTarget():
+        API.CancelTarget()
+
+    log("opening %d bag(s) to look inside for a %s" % (len(bags), noun))
+
+    for bag in bags:
+        opened.add(bag.Serial)
+        API.UseObject(bag.Serial)
+
+    return True
+
+
+# search is called fresh each time: opening the bags is asynchronous, so what it finds only
+# improves after settled() gives the pack a chance to catch up
+def find_after_opening_bags(search, noun, log, opened, timeout, poll, extra_serial=None):
+    found = search()
+
+    if found is None and open_unopened_bags(noun, log, opened, extra_serial):
+        settled(timeout, poll, lambda: search() is not None)
+        found = search()
+
+    return found
+
+
 class Tool(object):
     """Find it, learn its graphic, get it onto the hand, and notice when it breaks."""
 
@@ -108,39 +150,9 @@ class Tool(object):
 
         return None
 
-    # A bag the client has not opened this session reads as empty, whatever is in it
-    def _open_bags(self):
-        bags = [item for item in pack_contents() if is_bag(item)]
-
-        if self._spare_bag is not None:
-            spare = API.FindItem(self._spare_bag)
-
-            if spare is not None and not getattr(spare, "Opened", False):
-                bags.append(spare)
-
-        bags = [bag for bag in bags if bag.Serial not in self._opened]
-
-        if not bags:
-            return False
-
-        # A cursor left up would take the double-click as its answer
-        if API.HasTarget():
-            API.CancelTarget()
-
-        self._log("opening %d bag(s) to look inside for a %s" % (len(bags), self._noun))
-
-        for bag in bags:
-            self._opened.add(bag.Serial)
-            API.UseObject(bag.Serial)
-
-        return True
-
     def find(self):
-        found = self._search()
-
-        if found is None and self._open_bags():
-            settled(self._timeout, self._poll, lambda: self._search() is not None)
-            found = self._search()
+        found = find_after_opening_bags(self._search, self._noun, self._log, self._opened,
+                                        self._timeout, self._poll, self._spare_bag)
 
         if found is not None:
             self._reported_empty_pack = False

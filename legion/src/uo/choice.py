@@ -1,5 +1,7 @@
 import API
 
+from uo.gumpwait import wait_for_gump
+
 CHOICE_WIDTH = 340
 CHOICE_BUTTON_WIDTH = 96
 CHOICE_BUTTON_HEIGHT = 26
@@ -73,32 +75,12 @@ class Choice(object):
             return None
 
         self._log("asking - %s" % self._config["text"])
-        waited = 0.0
-        why = None
 
-        # The click only arrives through ProcessCallbacks, and a stopped script's client calls all
-        # answer with nothing, so the stop flag is the one read that still means something then
-        while why is None:
-            if API.StopRequested:
-                why = "the run is being stopped"
-                break
+        def resolve():
+            return "'%s' was pressed" % dict(options)[chosen[0]] if chosen[0] is not None else None
 
-            API.ProcessCallbacks()
-
-            if chosen[0] is not None:
-                why = "'%s' was pressed" % dict(options)[chosen[0]]
-            elif gump.IsDisposed:
-                why = "the gump was closed"
-            elif self._stop_reason() is not None:
-                why = "the run has a reason to stop"
-            elif waited >= self._config["timeout"]:
-                why = "nothing was pressed in %.0fs" % self._config["timeout"]
-            else:
-                API.Pause(self._config["poll"])
-                waited += self._config["poll"]
-
-        if not gump.IsDisposed:
-            gump.Dispose()
+        why = wait_for_gump(gump, self._stop_reason, self._config["poll"], resolve,
+                            timeout=self._config["timeout"])
 
         self._log(why)
 

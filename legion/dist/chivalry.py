@@ -316,26 +316,6 @@ class BuffBar(object):
         return False
 
 
-# src/uo/log.py
-# Every stamp make_log has handed out. The client puts a SysMsg in the journal beside the shard's
-# own lines, so a script reading the journal back needs to know which of them it wrote itself -
-# without this a report of an unreadable outcome quotes the last report of an unreadable outcome.
-# Lowercase, because that is how the journal readers compare. One entry per script in practice.
-STAMPS = []
-
-
-def make_log(prefix):
-    stamp = prefix + ": "
-
-    if stamp.lower() not in STAMPS:
-        STAMPS.append(stamp.lower())
-
-    def log(message):
-        API.SysMsg(stamp + message)
-
-    return log
-
-
 # src/uo/text.py
 def any_in(text, fragments):
     low = (text or "").lower()
@@ -362,7 +342,7 @@ SKILL_GAIN_TEXT = ["your skill in", "has changed by"]
 
 # matchingText is left off on purpose: the client only applies it as a regex, so a plain string
 # there filters everything out
-def journal_tail(seconds, limit):
+def journal_tail(seconds, limit, stamp=None):
     try:
         entries = API.GetJournalEntries(seconds)
     except Exception:
@@ -372,12 +352,13 @@ def journal_tail(seconds, limit):
         return []
 
     texts = []
+    stamps = [stamp] if stamp else []
 
     for entry in entries if entries else []:
         text = getattr(entry, "Text", None)
 
         if (text and text.strip() and not any_in(text, SKILL_GAIN_TEXT)
-                and not any_in(text, STAMPS)):
+                and not any_in(text, stamps)):
             texts.append(text.strip())
 
     return texts[-limit:]
@@ -872,6 +853,24 @@ class Heartbeat(object):
         self._last = now()
 
 
+# src/uo/log.py
+def make_log(prefix):
+    stamp = prefix + ": "
+
+    def log(message):
+        API.SysMsg(stamp + message)
+
+    # The client puts a SysMsg in the journal beside the shard's own lines, so a script reading the
+    # journal back needs to know which lines it wrote itself - without this a report of an unreadable
+    # outcome quotes the last report of an unreadable outcome. Lowercase, because that is how the
+    # journal readers compare. Carried on the function itself rather than a module-level list: a
+    # bundle is one script and one prefix, and a shared list would leak between scripts sharing this
+    # process, such as the test suite.
+    log.stamp = stamp.lower()
+
+    return log
+
+
 # src/uo/loop.py
 def backoff_for(count, step, cap):
     return min(step * count, cap)
@@ -1283,10 +1282,24 @@ class SkillReader(object):
                 return value
 
             if waited >= timeout:
-                return None
+                return self._accept_zero()
 
             API.Pause(poll)
             waited += poll
+
+        return None
+
+    # A 0 the client still answers once the wait is over is a real 0, not an unsent skill list
+    def _accept_zero(self):
+        skill = API.GetSkill(self._name)
+
+        if skill is None:
+            return None
+
+        self._seen = True
+        self._last = skill.Value
+
+        return skill.Value
 
 
 # src/uo/stages.py
@@ -1687,7 +1700,7 @@ try:
 
                 if unread_reports < MAX_UNREAD_REPORTS:
                     unread_reports += 1
-                    lines = journal_tail(JOURNAL_TAIL_SECONDS, JOURNAL_TAIL_LINES)
+                    lines = journal_tail(JOURNAL_TAIL_SECONDS, JOURNAL_TAIL_LINES, log.stamp)
 
                     for line in lines or ["(the journal said nothing)"]:
                         log("  " + line)

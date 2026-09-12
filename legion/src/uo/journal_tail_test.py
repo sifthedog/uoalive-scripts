@@ -37,7 +37,16 @@ class JournalTailTest(unittest.TestCase):
         self.api.hear(*self.api.messages)
         self.api.hear("Dark Elf: Augus Luminos")
 
-        self.assertEqual(journal_tail(20.0, 4), ["Dark Elf: Augus Luminos"])
+        self.assertEqual(journal_tail(20.0, 4, log.stamp), ["Dark Elf: Augus Luminos"])
+
+    def test_a_stamp_only_filters_its_own_script(self):
+        mining_log = make_log("mining")
+        mining_log("dug")
+        self.api.hear(*self.api.messages)
+        self.api.hear("Dark Elf: Augus Luminos")
+
+        self.assertEqual(journal_tail(20.0, 4, make_log("lumberjack").stamp),
+                          ["mining: dug", "Dark Elf: Augus Luminos"])
 
     def test_a_client_that_throws_reads_as_nothing(self):
         def throw(seconds=None):

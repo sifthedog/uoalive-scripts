@@ -1,6 +1,5 @@
-# One JSON object per item is appended here. "" turns recording off. A bare name lands in TazUO's
-# working directory rather than beside the script - set an absolute path to put it somewhere you
-# will find it.
+# One JSON object per item is appended here. "" turns recording off. A bare name lands beside the
+# script, in LegionScripts; a path with a folder in it is used as written.
 DATA_PATH = "bag-items.jsonl"
 
 # Whether a bag inside the bag is opened and read too

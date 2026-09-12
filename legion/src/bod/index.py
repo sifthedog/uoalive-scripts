@@ -240,8 +240,9 @@ def fill_small(small):
         "text_limit": UNREADABLE_TEXT_LIMIT,
         "tail_seconds": JOURNAL_TAIL_SECONDS,
         "tail_lines": JOURNAL_TAIL_LINES,
-    }, log)
-    combiner = DeedCombiner(small, items, COMBINE_TEXT, combine_config(BOD_COMBINE_BUTTON), log)
+    }, log, log.stamp)
+    combiner = DeedCombiner(small, items, COMBINE_TEXT, combine_config(BOD_COMBINE_BUTTON), log,
+                            log.stamp)
     fill = SmallFill(small, items, crafter, picker, combiner, FILL, log, WATCH)
     fills.append(fill)
 
@@ -349,7 +350,7 @@ def run_large():
             return "still no small deed for %s after the box" % ", ".join(missing)
 
     large_combiner = DeedCombiner(deed, None, LARGE_COMBINE_TEXT,
-                                  combine_config(LARGE_COMBINE_BUTTON), log)
+                                  combine_config(LARGE_COMBINE_BUTTON), log, log.stamp)
     index = 0
 
     for item, _done in pending:

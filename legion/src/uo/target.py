@@ -3,6 +3,20 @@ import API
 from uo.retry import settled
 
 
+# The serial one cursor answered, or None for ESC or a timeout. Clears a cursor left open from
+# before, and the one just answered too, so a target flag never survives past it.
+def request_one(timeout):
+    if API.HasTarget():
+        API.CancelTarget()
+
+    serial = API.RequestTarget(timeout)
+
+    if API.HasTarget():
+        API.CancelTarget()
+
+    return serial or None
+
+
 class SelfTarget(object):
     """The fallback for a cursor the pre-target did not take."""
 

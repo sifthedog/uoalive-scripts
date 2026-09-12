@@ -25,6 +25,7 @@ from uo.choice import Choice
 from uo.cost import cost_of, short_by
 from uo.craft import Crafter
 from uo.craftmenu import CraftMenu
+from uo.craftrun import CraftRecorder, Seller, Unloader, end_cycle
 from uo.crafttool import CraftTool
 from uo.dump import Dump
 from uo.guards import dead, first_reason, skill_capped, stopped
@@ -138,7 +139,7 @@ crafter = Crafter(tools, menu, stock, OUTCOME_TEXT, {
     "tail_seconds": JOURNAL_TAIL_SECONDS,
     "tail_lines": JOURNAL_TAIL_LINES,
     "material": IRON,
-}, log)
+}, log, log.stamp)
 vendor = Vendor(menu, {
     "serial": VENDOR_SERIAL,
     "scan_radius": VENDOR_SCAN_RADIUS,
@@ -179,7 +180,7 @@ stock.lift_from_bags()
 first = band_for(BANDS, start)
 
 if first is None:
-    log("%s reads %.1f and no band covers it" % (skill_name, start))
+    log("%s reads %s and no band covers it" % (skill_name, reading(start)))
     API.Stop()
 
 if ingots_short(first) > 0:
@@ -217,12 +218,15 @@ elif output != "unload":
 
 cap = skill.cap()
 
-log("%s at %.1f%s, %s in the pack"
-    % (skill_name, start, "/%.1f" % cap if cap is not None and cap > 0 else "",
+log("%s at %s%s, %s in the pack"
+    % (skill_name, reading(start), "/%.1f" % cap if cap is not None and cap > 0 else "",
        stock.pack_report()))
 
 recorder = attempt_log(DATA_PATH, skill_name, log)
 materials = Materials(stock, MATERIAL_GRAPHICS)
+craft_recorder = CraftRecorder(recorder, materials, REFUND_SETTLE, REFUND_POLL)
+seller = Seller(vendor, MAX_SELL_MISSES, SELL_RETRY_AFTER, log)
+unloader = Unloader(dump)
 
 stop = None
 tally = 0
@@ -233,70 +237,14 @@ no_tool = 0
 no_material = 0
 throttle_tally = 0
 said_throttle = False
-sell_misses = 0
-sell_paused_until = 0
-dump_misses = 0
 reported = 0
 cycle = 0
 last_skill = start
 
 
-def end_cycle(phase):
-    global stop
-
-    stall.end_cycle(phase, cycle, tally)
-
-    if stop is None:
-        stop = stall.reason()
-
-
-def sell_now():
-    global sell_misses, sell_paused_until
-
-    noun, titles = VENDORS[product]
-
-    if vendor.sell_trip(titles, noun):
-        sell_misses = 0
-
-        return True
-
-    sell_misses += 1
-
-    # Retried, but not every cycle: otherwise the crafting never gets a turn
-    if sell_misses >= MAX_SELL_MISSES:
-        sell_misses = 0
-        sell_paused_until = cycle + SELL_RETRY_AFTER
-        log("%d sell trips bought nothing - crafting on, and asking again in %d cycles"
-            % (MAX_SELL_MISSES, SELL_RETRY_AFTER))
-
-    return False
-
-
-def unload_now():
-    global dump_misses
-
-    if dump.run() > 0:
-        dump_misses = 0
-
-        return True
-
-    dump_misses += 1
-
-    return False
-
-
 def out_of_ingots():
     return ("out of %s ingots - %s in the pack, and one %s takes %d"
             % (IRON, stock.pack_report(), product, ingot_cost(product)))
-
-
-# Measured either side of the craft rather than read off the recipe: a failure refunds part of it
-def record_craft(outcome, skill_from, before):
-    if not recorder.recording():
-        return
-
-    after = materials.settled_snapshot(REFUND_SETTLE, REFUND_POLL)
-    recorder.record(skill_from, outcome, product, materials.spent(before, after))
 
 
 try:
@@ -314,7 +262,7 @@ try:
             unknown = 0
             throttled = 0
             stall.progressed()
-            end_cycle("saving")
+            stop = end_cycle(stall, "saving", cycle, tally, stop)
             continue
 
         value = skill.read()
@@ -334,37 +282,37 @@ try:
             log("%s at %s, making %s" % (skill_name, reading(value), wanted))
             product = wanted
             crafter.forget_last()
-            sell_misses = 0
-            sell_paused_until = 0
+            seller.forget()
 
         held = dump.held()
 
         if output == "unload":
             if held >= DUMP_AT:
-                if unload_now():
-                    end_cycle("unloading")
+                if unloader.run():
+                    stop = end_cycle(stall, "unloading", cycle, tally, stop)
                     continue
 
-                if dump_misses >= MAX_DUMP_MISSES:
+                if unloader.misses >= MAX_DUMP_MISSES:
                     stop = ("%d unloads in a row moved nothing into '%s'"
-                            % (dump_misses, dump.name()))
+                            % (unloader.misses, dump.name()))
                     break
         elif output == "sell":
             if VENDORS[product] is None:
                 if held >= DUMP_AT and dump.picked():
-                    if unload_now():
-                        end_cycle("unloading")
+                    if unloader.run():
+                        stop = end_cycle(stall, "unloading", cycle, tally, stop)
                         continue
 
-                    if dump_misses >= MAX_DUMP_MISSES:
+                    if unloader.misses >= MAX_DUMP_MISSES:
                         stop = ("%d unloads in a row moved nothing into '%s'"
-                                % (dump_misses, dump.name()))
+                                % (unloader.misses, dump.name()))
                         break
                 elif held >= MAX_HELD and not dump.picked():
                     stop = "the pack holds %d unsold and nothing was picked to unload into" % held
                     break
-            elif products_in_pack() >= SELL_AT and cycle >= sell_paused_until and sell_now():
-                end_cycle("selling")
+            elif (products_in_pack() >= SELL_AT and seller.due(cycle)
+                  and seller.sell(VENDORS[product][1], VENDORS[product][0], cycle)):
+                stop = end_cycle(stall, "selling", cycle, tally, stop)
                 continue
         elif held >= MAX_HELD:
             stop = "the pack holds %d and nothing was picked to unload into" % held
@@ -389,7 +337,7 @@ try:
             else:
                 fails += 1
 
-            record_craft(outcome, value, spent_before)
+            craft_recorder.record(outcome, value, spent_before, product)
             no_material = 0
             stall.progressed()
         elif outcome == "noMaterial":
@@ -468,7 +416,7 @@ try:
                    stock.report(stock.pack_stock()))
             )
 
-        end_cycle(outcome if outcome is not None else "unknown")
+        stop = end_cycle(stall, outcome if outcome is not None else "unknown", cycle, tally, stop)
         API.Pause(STEP_DELAY)
 except Exception as error:
     # The stop button lands here as well, and the client waits for it to unwind the thread

@@ -5,6 +5,7 @@ from uo.stock import total_of
 from uo.entity import chebyshev, hex_of, player
 from uo.pack import amount_of
 from uo.retry import settled
+from uo.target import request_one
 from uo.text import any_in
 
 
@@ -134,15 +135,9 @@ class Sources(object):
     # One cursor, one answer: (the picked entry's line, None), (None, why it was refused), or
     # (None, None) for ESC
     def pick_one(self, allowed=None):
-        if API.HasTarget():
-            API.CancelTarget()
+        serial = request_one(self._config["pick_timeout"])
 
-        serial = API.RequestTarget(self._config["pick_timeout"])
-
-        if API.HasTarget():
-            API.CancelTarget()
-
-        if not serial:
+        if serial is None:
             return None, None
 
         refusal = self._refusal(serial, allowed)

@@ -1,8 +1,9 @@
 import API
 
+from uo.gumpwait import wait_for_gump
 from uo.text import clipped
 
-WIDTH = 720
+SETUP_WIDTH = 720
 MARGIN = 16
 LABEL_X = 16
 FIELD_X = 160
@@ -45,7 +46,7 @@ class Setup(object):
 
     def _label(self, gump, text, x, y, color=TEXT, width=None):
         label = API.Gumps.CreateGumpTTFLabel(text, FONT, color)
-        label.SetRect(x, y, width if width is not None else WIDTH - x - MARGIN, LINE)
+        label.SetRect(x, y, width if width is not None else SETUP_WIDTH - x - MARGIN, LINE)
         gump.Add(label)
 
         return label
@@ -68,12 +69,12 @@ class Setup(object):
         if gump is None:
             return None
 
-        gump.SetRect(0, 0, WIDTH, height)
+        gump.SetRect(0, 0, SETUP_WIDTH, height)
         gump.CenterXInViewPort()
         gump.CenterYInViewPort()
 
         background = API.Gumps.CreateGumpColorBox(0.9, "#1E1E1E")
-        background.SetRect(0, 0, WIDTH, height)
+        background.SetRect(0, 0, SETUP_WIDTH, height)
         gump.Add(background)
 
         title = API.Gumps.CreateGumpLabel(self._config["title"], self._config["hue"])
@@ -140,8 +141,8 @@ class Setup(object):
         c["message"] = self._label(gump, "", LABEL_X, y, WARN)
         y += ROW
 
-        self._button(gump, "cancel", "Cancel", WIDTH - MARGIN - 96 - 8 - 96, y, 96)
-        self._button(gump, "ok", "OK", WIDTH - MARGIN - 96, y, 96)
+        self._button(gump, "cancel", "Cancel", SETUP_WIDTH - MARGIN - 96 - 8 - 96, y, 96)
+        self._button(gump, "ok", "OK", SETUP_WIDTH - MARGIN - 96, y, 96)
 
         API.Gumps.AddGump(gump)
 
@@ -260,43 +261,25 @@ class Setup(object):
 
         self._log("asking - the start-up form")
         self._refresh(actions)
-        waited = 0.0
-        why = None
-        answers = None
+        answers = [None]
 
-        # The click only arrives through ProcessCallbacks, and a stopped script's client calls all
-        # answer with nothing, so the stop flag is the one read that still means something then
-        while why is None:
-            if API.StopRequested:
-                why = "the run is being stopped"
-                break
-
-            API.ProcessCallbacks()
-
+        def resolve():
             pending, self._pending = self._pending, None
             done = self._run(pending, actions) if pending is not None else None
 
             self._refresh(actions)
 
             if done == "ok":
-                answers = {"tools": self._mode(), "output": self._output(),
-                           "sources": len(self._sources)}
-                why = "OK was pressed"
-            elif done == "cancel":
-                why = "Cancel was pressed"
-            elif gump.IsDisposed:
-                why = "the form was closed"
-            elif self._stop_reason() is not None:
-                why = "the run has a reason to stop"
-            elif waited >= self._config["timeout"]:
-                why = "nothing was pressed in %.0fs" % self._config["timeout"]
-            else:
-                API.Pause(self._config["poll"])
-                waited += self._config["poll"]
+                answers[0] = {"tools": self._mode(), "output": self._output(),
+                              "sources": len(self._sources)}
 
-        if not gump.IsDisposed:
-            gump.Dispose()
+                return "OK was pressed"
+
+            return "Cancel was pressed" if done == "cancel" else None
+
+        why = wait_for_gump(gump, self._stop_reason, self._config["poll"], resolve,
+                            closed_message="the form was closed", timeout=self._config["timeout"])
 
         self._log(why)
 
-        return answers
+        return answers[0]

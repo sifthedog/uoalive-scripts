@@ -15,10 +15,11 @@ def caught_name(lines, fragments):
 class Angler(object):
     """One cast: the pole, the cursor, the water tile, the shard's answer."""
 
-    def __init__(self, buckets, config, log):
+    def __init__(self, buckets, config, log, stamp=None):
         self._buckets = buckets
         self._config = config
         self._log = log
+        self._stamp = stamp
         self._caught_fragments = [phrase.lower() for phrase in config["caught_text"]]
 
     # HasTarget alone was not enough on the web client: the prompt was in the journal well before
@@ -37,7 +38,8 @@ class Angler(object):
 
     # Read off the tail rather than through InJournalAny: that clears the line, and the name is on it
     def _caught(self):
-        return caught_name(journal_tail(self._config["tail_seconds"], self._config["tail_lines"]),
+        return caught_name(journal_tail(self._config["tail_seconds"], self._config["tail_lines"],
+                                         self._stamp),
                            self._caught_fragments)
 
     # In declaration order, the way read_outcome does, with the catch bucket answered by the tail

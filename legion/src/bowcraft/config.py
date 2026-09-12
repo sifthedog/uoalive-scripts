@@ -252,7 +252,20 @@ TOO_HEAVY_TEXT = ["That container cannot hold more weight"]
 MAX_SELL_MISSES = 3
 SELL_RETRY_AFTER = 25
 
-# The largest recipe in BANDS: under this there is nothing the run can make
+# Wood one craft of a product takes. A stock RunUO-family guess, unmeasured on this shard - correct
+# it after one run the way carpentry.py's WOOD_COST was. LOW_BAND_ITEM/HIGH_BAND_ITEM swap what
+# BANDS makes at the ends, so both are covered here regardless of which is in play.
+WOOD_COST = {
+    "bow": 7,
+    "yumi": 7,
+    "crossbow": 6,
+    "composite bow": 7,
+    "heavy crossbow": 7,
+    "repeating crossbow": 7,
+    "fukiya darts": 4,
+}
+
+# For a product WOOD_COST lacks
 MIN_CRAFT_WOOD = 10
 
 # Refusals for material while the pack holds wood a restock cannot add to: the wrong kind of wood

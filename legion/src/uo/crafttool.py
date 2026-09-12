@@ -1,10 +1,7 @@
-import API
-
 from uo.entity import hex_of
 from uo.pack import pack_contents
-from uo.retry import settled
 from uo.text import word_in
-from uo.tool import is_bag
+from uo.tool import find_after_opening_bags
 
 
 class CraftTool(object):
@@ -52,31 +49,6 @@ class CraftTool(object):
 
         return found
 
-    # A bag the client has not opened this session reads as empty, whatever is in it
-    def open_bags(self):
-        bags = [item for item in pack_contents()
-                if is_bag(item) and item.Serial not in self._opened]
-
-        if not bags:
-            return False
-
-        # A cursor left up would take the double-click as its answer
-        if API.HasTarget():
-            API.CancelTarget()
-
-        self._log("opening %d bag(s) to look inside for a %s" % (len(bags), self._noun))
-
-        for bag in bags:
-            self._opened.add(bag.Serial)
-            API.UseObject(bag.Serial)
-
-        return True
-
     def find(self, timeout, poll):
-        found = self.serial()
-
-        if found is None and self.open_bags():
-            settled(timeout, poll, lambda: self.serial() is not None)
-            found = self.serial()
-
-        return found
+        return find_after_opening_bags(self.serial, self._noun, self._log, self._opened,
+                                       timeout, poll)

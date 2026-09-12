@@ -10,7 +10,7 @@ STOPPERS = ("noMaterial", "noAnvil", "skillTooLow", "toolWorn", "throttled", "sa
 class DeedCrafter(object):
     """One proving craft off the row, then MAKE NUMBER batches of it."""
 
-    def __init__(self, tool, menu, items, picker, buckets, config, log):
+    def __init__(self, tool, menu, items, picker, buckets, config, log, stamp=None):
         self._tool = tool
         self._menu = menu
         self._items = items
@@ -18,6 +18,7 @@ class DeedCrafter(object):
         self._buckets = buckets
         self._config = config
         self._log = log
+        self._stamp = stamp
         self._item_buttons = {}
         self._said_unreadable = 0
         self._said_unjudged = False
@@ -71,7 +72,7 @@ class DeedCrafter(object):
 
         text = (clipped(" ".join(self._menu.lines(gump)), self._config["text_limit"])
                 if gump else "")
-        lines = journal_tail(self._config["tail_seconds"], self._config["tail_lines"])
+        lines = journal_tail(self._config["tail_seconds"], self._config["tail_lines"], self._stamp)
 
         self._log("%s - the gump says '%s'" % (why, text or "(nothing)"))
         self._log("the journal says '%s'" % (" | ".join(lines) or "(nothing)"))

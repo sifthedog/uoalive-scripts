@@ -1,4 +1,5 @@
-from uo.phrases import SAVING_TEXT, THROTTLED_TEXT, UNSKILLED_TEXT
+from uo.phrases import SAVE_DONE_TEXT, SAVING_TEXT, STOPPED, THROTTLED_TEXT, UNSKILLED_TEXT
+from uo.timings import HEARTBEAT_EVERY, SAVE_POLL, SAVE_WAIT, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX
 
 # Every success and failure is appended here, one JSON object per line, for legion/skilldb.py to
 # turn into a table later. "" turns recording off. A bare name lands beside the script.
@@ -15,6 +16,9 @@ READ_TIMEOUT = 1.5
 READ_POLL = 0.1
 
 SKILL = "Arms Lore"
+
+# Refusals in a row before the run stops. The pace should get there first
+MAX_THROTTLED = 20
 
 # Polled in declaration order, first match wins - and the journal is cleared before every use, so
 # what is in it belongs to this reading and nothing older.

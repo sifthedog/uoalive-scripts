@@ -8,6 +8,7 @@ import time
 """The shard's own wordings, as far as they are the same whatever the script is doing."""
 
 SAVING_TEXT = ["The world is saving", "Saving world", "World save started"]
+SAVE_DONE_TEXT = ["World save complete", "Save complete", "World save is complete"]
 
 # Ends in a bare 'You must wait', which longer refusals contain - so a bucket that has to be told
 # apart from a throttle is ordered before this one
@@ -22,6 +23,19 @@ UNSKILLED_TEXT = [
     "You lack the required skill",
     "You do not have enough skill",
 ]
+
+STOPPED = "stopped from the script manager"
+
+
+# src/uo/timings.py
+"""The constants the scripts agreed on. Every one is in seconds - API.Pause takes seconds."""
+
+SAVE_WAIT = 60.0
+SAVE_POLL = 1.0
+
+THROTTLE_BACKOFF = 1.0
+THROTTLE_BACKOFF_MAX = 8.0
+HEARTBEAT_EVERY = 30.0
 
 
 # src/armslore/config.py
@@ -40,6 +54,9 @@ READ_TIMEOUT = 1.5
 READ_POLL = 0.1
 
 SKILL = "Arms Lore"
+
+# Refusals in a row before the run stops. The pace should get there first
+MAX_THROTTLED = 20
 
 # Polled in declaration order, first match wins - and the journal is cleared before every use, so
 # what is in it belongs to this reading and nothing older.
@@ -98,27 +115,104 @@ def hex_of(value):
     return "0x%x" % (value & 0xFFFFFFFF)
 
 
-# src/uo/log.py
-# Every stamp make_log has handed out. The client puts a SysMsg in the journal beside the shard's
-# own lines, so a script reading the journal back needs to know which of them it wrote itself -
-# without this a report of an unreadable outcome quotes the last report of an unreadable outcome.
-# Lowercase, because that is how the journal readers compare. One entry per script in practice.
-STAMPS = []
+# src/uo/guards.py
+def first_reason(clauses):
+    for clause in clauses:
+        reason = clause()
+
+        if reason is not None:
+            return reason
+
+    return None
 
 
-def make_log(prefix):
-    stamp = prefix + ": "
+def stopped(text):
+    def clause():
+        return text if API.StopRequested else None
 
-    if stamp.lower() not in STAMPS:
-        STAMPS.append(stamp.lower())
+    return clause
 
-    def log(message):
-        API.SysMsg(stamp + message)
 
-    return log
+def dead():
+    def clause():
+        me = player()
+
+        return "you are dead" if me is not None and me.IsDead else None
+
+    return clause
+
+
+# The base, not Value: jewelry lifts Value past the cap while the skill is still gaining
+def skill_capped(name):
+    def clause():
+        skill = API.GetSkill(name) if name is not None else None
+
+        if skill is None:
+            return None
+
+        base = getattr(skill, "Base", None)
+        value = base if base is not None else skill.Value
+
+        if value > 0 and value >= skill.Cap:
+            return "%s is capped at %.1f" % (name, value)
+
+        return None
+
+    return clause
+
+
+# src/uo/clock.py
+def now():
+    return time.time()
+
+
+# src/uo/heartbeat.py
+class Heartbeat(object):
+    """Proof of life: a loop standing still in silence looks exactly like a hung one."""
+
+    def __init__(self, every, log, noun, vitals):
+        self._every = every
+        self._log = log
+        self._noun = noun
+        self._vitals = vitals
+        self._last = None
+
+    # The clock, not the cycle counter: a cycle can be 300ms or 8s depending on which waits it hit
+    def beat(self, phase, cycle, tally):
+        moment = now()
+
+        # The first call sets the clock rather than logging: the run has just said what it is doing
+        if self._last is None:
+            self._last = moment
+            return
+
+        if moment - self._last < self._every:
+            return
+
+        self._last = moment
+        self._log("still here - %s, cycle %d, %s, %d %s"
+                  % (phase, cycle, self._vitals(), tally, self._noun))
+
+    def reset(self):
+        self._last = now()
 
 
 # src/uo/journal.py
+def said(texts):
+    for text in texts:
+        if API.InJournal(text, False):
+            return True
+
+    return False
+
+
+# Line by line rather than the whole journal: a wholesale clear before every swing wiped the ambush
+# warning before the threat watch got its once-a-cycle look at it
+def forget(phrases):
+    for text in phrases:
+        API.ClearJournal(text)
+
+
 def matched_bucket(buckets):
     for name, phrases in buckets:
         # clearMatches, or a line already read answers the next wait as well
@@ -148,6 +242,29 @@ def read_outcome(buckets, budget, poll, between=None):
         waited += poll
 
 
+# src/uo/log.py
+def make_log(prefix):
+    stamp = prefix + ": "
+
+    def log(message):
+        API.SysMsg(stamp + message)
+
+    # The client puts a SysMsg in the journal beside the shard's own lines, so a script reading the
+    # journal back needs to know which lines it wrote itself - without this a report of an unreadable
+    # outcome quotes the last report of an unreadable outcome. Lowercase, because that is how the
+    # journal readers compare. Carried on the function itself rather than a module-level list: a
+    # bundle is one script and one prefix, and a shared list would leak between scripts sharing this
+    # process, such as the test suite.
+    log.stamp = stamp.lower()
+
+    return log
+
+
+# src/uo/loop.py
+def backoff_for(count, step, cap):
+    return min(step * count, cap)
+
+
 # src/uo/paths.py
 # TazUO's working directory is its own folder, and the scripts live in this subfolder of it
 SCRIPTS_FOLDER = "LegionScripts"
@@ -167,11 +284,6 @@ def beside_script(name):
         return SCRIPTS_FOLDER + "/" + name
 
     return script[:cut + 1] + name
-
-
-# src/uo/clock.py
-def now():
-    return time.time()
 
 
 # src/uo/record.py
@@ -335,6 +447,44 @@ def attempt_log(path, skill, log):
     return AttemptLog(where, getattr(me, "Name", ""), getattr(me, "Serial", 0), skill, log)
 
 
+# src/uo/save.py
+class SaveWatch(object):
+    def __init__(self, saving_text, done_text, wait, poll, log, heartbeat, stop_reason):
+        self._saving_text = saving_text
+        self._done_text = done_text
+        self._wait = wait
+        self._poll = poll
+        self._log = log
+        self._heartbeat = heartbeat
+        self._stop_reason = stop_reason
+
+    def is_saving(self):
+        return said(self._saving_text)
+
+    def wait_out(self):
+        self._log("the world is saving, waiting it out")
+
+        # Read before the clear: a save can start and finish inside one cycle, and clearing first
+        # threw the completion away and then stood still for the whole of the wait
+        ended = "the shard had already finished" if said(self._done_text) else None
+
+        forget(self._saving_text + self._done_text)
+
+        waited = 0.0
+
+        while ended is None and waited < self._wait:
+            API.Pause(self._poll)
+            waited += self._poll
+
+            if said(self._done_text):
+                ended = "the shard says it is done"
+            elif self._stop_reason() is not None:
+                ended = "the run has a reason to stop"
+
+        self._log("%s, carrying on" % (ended or "nothing said in %ds" % int(self._wait)))
+        self._heartbeat.reset()
+
+
 # src/uo/skill.py
 def reading(value):
     return "unknown" if value is None else "%.1f" % value
@@ -391,15 +541,54 @@ class SkillReader(object):
                 return value
 
             if waited >= timeout:
-                return None
+                return self._accept_zero()
 
             API.Pause(poll)
             waited += poll
+
+        return None
+
+    # A 0 the client still answers once the wait is over is a real 0, not an unsent skill list
+    def _accept_zero(self):
+        skill = API.GetSkill(self._name)
+
+        if skill is None:
+            return None
+
+        self._seen = True
+        self._last = skill.Value
+
+        return skill.Value
+
+
+# src/uo/vitals.py
+def weight_reading():
+    me = player()
+
+    return "?/?" if me is None else "%d/%d" % (me.Weight, me.WeightMax)
+
+
+def where():
+    me = player()
+
+    return "somewhere" if me is None else "at %d,%d" % (me.X, me.Y)
+
+
+def position_and_weight():
+    return "%s, %s" % (where(), weight_reading())
 
 
 # src/armslore/index.py
 log = make_log("arms-lore")
 skill = SkillReader(SKILL)
+heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "reads", position_and_weight)
+
+
+def stop_reason():
+    return first_reason([stopped(STOPPED), dead(), skill_capped(SKILL)])
+
+
+saves = SaveWatch(SAVING_TEXT, SAVE_DONE_TEXT, SAVE_WAIT, SAVE_POLL, log, heartbeat, stop_reason)
 
 # A cursor left open by whatever ran last would swallow this query
 if API.HasTarget():
@@ -430,29 +619,41 @@ else:
 reads = 0
 missed = 0
 unread = 0
+throttled = 0
+cycle = 0
+stop = None
 
 try:
-    while not API.StopRequested:
-        value = skill.read()
+    while stop is None:
+        cycle += 1
+        stop = stop_reason()
 
-        cap = skill.cap()
-
-        if value is not None and cap is not None and cap > 0 and value >= cap:
-            log("%s is capped at %s" % (skill.name(), reading(value)))
+        if stop is not None:
             break
+
+        if saves.is_saving():
+            saves.wait_out()
+            throttled = 0
+            continue
 
         if API.FindItem(weapon) is None:
-            log("'%s' is gone - stopping" % name)
+            stop = "'%s' is gone" % name
             break
+
+        value = skill.read()
 
         API.ClearJournal()
         API.UseSkill(SKILL)
+        heartbeat.beat("reading", cycle, reads)
 
         # A refused use puts no cursor up, so this times out and the next pass simply asks again
         if API.WaitForTarget("any", TARGET_TIMEOUT):
             API.Target(weapon)
 
             outcome = read_outcome(OUTCOME_TEXT, READ_TIMEOUT, READ_POLL)
+
+            if outcome != "throttled":
+                throttled = 0
 
             if outcome == "read":
                 reads += 1
@@ -464,9 +665,25 @@ try:
                 missed += 1
                 recorder.record(value, outcome, name)
 
-            # Everything else - a refusal, a save, a wording OUTCOME_TEXT has not got - is left out
-            # of the record rather than guessed at, and reported at the end so a wrong table is
-            # obvious
+            elif outcome == "unskilled":
+                stop = "the shard says this character cannot use %s" % SKILL
+
+            # Caught here as well as by the proactive check above: a save can start between the
+            # clear and the read
+            elif outcome == "saving":
+                saves.wait_out()
+
+            elif outcome == "throttled":
+                throttled += 1
+                log("shard says wait (%d/%d), backing off" % (throttled, MAX_THROTTLED))
+                API.Pause(backoff_for(throttled, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX))
+
+                if throttled >= MAX_THROTTLED:
+                    stop = "the shard kept refusing the read"
+
+            # Everything else - a refusal this table has no bucket for, or a wording OUTCOME_TEXT
+            # has not got - is left out of the record rather than guessed at, and reported at the
+            # end so a wrong table is obvious
             else:
                 unread += 1
 
@@ -481,5 +698,8 @@ log("%d read, %d missed, %s %s -> %s"
 
 if unread > 0:
     log("%d outcome(s) went unread - add the shard's wording to OUTCOME_TEXT" % unread)
+
+if stop is not None:
+    log(stop)
 
 API.Stop()

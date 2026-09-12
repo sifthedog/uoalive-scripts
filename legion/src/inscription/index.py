@@ -30,6 +30,7 @@ from uo.choice import Choice
 from uo.components import affordable, short_of, shortfall_report
 from uo.craft import Crafter
 from uo.craftmenu import CraftMenu
+from uo.craftrun import CraftRecorder, Seller, Unloader, end_cycle, make_room
 from uo.crafttool import CraftTool
 from uo.dump import Dump
 from uo.gear import in_hand
@@ -176,7 +177,7 @@ crafter = Crafter(tools, menu, stock, OUTCOME_TEXT, {
     "tail_seconds": JOURNAL_TAIL_SECONDS,
     "tail_lines": JOURNAL_TAIL_LINES,
     "material": "blank scrolls and reagents",
-}, log)
+}, log, log.stamp)
 vendor = Vendor(menu, {
     "serial": VENDOR_SERIAL,
     "scan_radius": VENDOR_SCAN_RADIUS,
@@ -217,7 +218,7 @@ if tools.serial() is None:
 first = band_for(BANDS, start)
 
 if first is None:
-    log("%s reads %.1f and no band covers it" % (skill_name, start))
+    log("%s reads %s and no band covers it" % (skill_name, reading(start)))
     API.Stop()
 
 stock.lift_from_bags()
@@ -248,8 +249,8 @@ if in_hand() is not None:
 
 cap = skill.cap()
 
-log("%s at %.1f%s, %s in the pack, %s, %d/%d mana"
-    % (skill_name, start, "/%.1f" % cap if cap is not None and cap > 0 else "",
+log("%s at %s%s, %s in the pack, %s, %d/%d mana"
+    % (skill_name, reading(start), "/%.1f" % cap if cap is not None and cap > 0 else "",
        stock.pack_report(), sources.stock_line(), API.Player.Mana, API.Player.ManaMax))
 
 if crafts_left(first) < RESTOCK_AT:
@@ -257,6 +258,9 @@ if crafts_left(first) < RESTOCK_AT:
 
 recorder = attempt_log(DATA_PATH, skill_name, log)
 materials = Materials(stock, set())
+craft_recorder = CraftRecorder(recorder, materials, REFUND_SETTLE, REFUND_POLL)
+seller = Seller(vendor, MAX_SELL_MISSES, SELL_RETRY_AFTER, log)
+unloader = Unloader(dump)
 
 stop = None
 tally = 0
@@ -267,70 +271,31 @@ no_tool = 0
 no_material = 0
 throttle_tally = 0
 said_throttle = False
-sell_misses = 0
-sell_paused_until = 0
-dump_misses = 0
 dry = 0
 reported = 0
 cycle = 0
 last_skill = start
 
 
-def end_cycle(phase):
-    global stop
-
-    stall.end_cycle(phase, cycle, tally)
-
-    if stop is None:
-        stop = stall.reason()
+def sells_this_band():
+    return output == "sell"
 
 
-def sell_now():
-    global sell_misses, sell_paused_until
-
-    if vendor.sell_trip(VENDOR_TITLES, VENDOR_NOUN):
-        sell_misses = 0
-
-        return True
-
-    sell_misses += 1
-
-    # Retried, but not every cycle: otherwise the crafting never gets a turn
-    if sell_misses >= MAX_SELL_MISSES:
-        sell_misses = 0
-        sell_paused_until = cycle + SELL_RETRY_AFTER
-        log("%d sell trips bought nothing - crafting on, and asking again in %d cycles"
-            % (MAX_SELL_MISSES, SELL_RETRY_AFTER))
-
-    return False
+def unloads_this_band():
+    return output == "unload"
 
 
-def unload_now():
-    global dump_misses
-
-    if dump.run() > 0:
-        dump_misses = 0
-
-        return True
-
-    dump_misses += 1
-
-    return False
-
-
-# A pack the shard will not load for weight is unloaded first, when there is anything in it to move
-def unload_for_room():
-    if not restock.refused_for_weight() or not dump.picked():
-        return False
-
-    held = dump.held()
-
-    if held == 0:
-        return False
-
-    log("unloading %d before loading more" % held)
-
-    return unload_now()
+# A pack the shard will not load for weight is emptied first: sold if this is a sell run, unloaded
+# if this is an unload run - the same fallback bowcraft.py has, which inscription lacked before, and
+# ran the risk of restocking forever with no way to free weight in Sell mode
+def try_make_room():
+    return make_room(
+        restock, log, "",
+        sell=(lambda: sells_this_band() and seller.due(cycle),
+              products_in_pack,
+              lambda: seller.sell(VENDOR_TITLES, VENDOR_NOUN, cycle)),
+        unload=(unloads_this_band, dump.held, unloader.run),
+    )
 
 
 def out_of_stock():
@@ -348,15 +313,6 @@ def regain_mana(need):
     return arrived
 
 
-# Measured either side of the craft rather than read off the recipe: a failure refunds part of it
-def record_craft(outcome, skill_from, before):
-    if not recorder.recording():
-        return
-
-    after = materials.settled_snapshot(REFUND_SETTLE, REFUND_POLL)
-    recorder.record(skill_from, outcome, product, materials.spent(before, after))
-
-
 try:
     while stop is None and cycle < MAX_CYCLES:
         cycle += 1
@@ -372,7 +328,7 @@ try:
             unknown = 0
             throttled = 0
             stall.progressed()
-            end_cycle("saving")
+            stop = end_cycle(stall, "saving", cycle, tally, stop)
             continue
 
         value = skill.read()
@@ -392,24 +348,24 @@ try:
                 % (skill_name, reading(value), wanted, needs_report(wanted), MANA[wanted]))
             product = wanted
             crafter.forget_last()
-            sell_misses = 0
-            sell_paused_until = 0
+            seller.forget()
 
         held = dump.held()
 
         if output == "unload":
             if held >= DUMP_AT:
-                if unload_now():
-                    end_cycle("unloading")
+                if unloader.run():
+                    stop = end_cycle(stall, "unloading", cycle, tally, stop)
                     continue
 
-                if dump_misses >= MAX_DUMP_MISSES:
+                if unloader.misses >= MAX_DUMP_MISSES:
                     stop = ("%d unloads in a row moved nothing into '%s'"
-                            % (dump_misses, dump.name()))
+                            % (unloader.misses, dump.name()))
                     break
         elif output == "sell":
-            if products_in_pack() >= SELL_AT and cycle >= sell_paused_until and sell_now():
-                end_cycle("selling")
+            if (products_in_pack() >= SELL_AT and seller.due(cycle)
+                    and seller.sell(VENDOR_TITLES, VENDOR_NOUN, cycle)):
+                stop = end_cycle(stall, "selling", cycle, tally, stop)
                 continue
         elif held >= MAX_HELD:
             stop = "the pack holds %d scrolls and nothing was picked to unload into" % held
@@ -419,8 +375,10 @@ try:
             # An unreachable container also pulls nothing, which the stall watch ends
             pulled = restock.run(targets_for(product))
 
-            if unload_for_room():
-                end_cycle("unloading")
+            phase = try_make_room()
+
+            if phase is not None:
+                stop = end_cycle(stall, phase, cycle, tally, stop)
                 continue
 
             short = short_for(product)
@@ -431,7 +389,7 @@ try:
 
             # A short pack that can still make something crafts
             if len(short) > 0:
-                end_cycle("restocking")
+                stop = end_cycle(stall, "restocking", cycle, tally, stop)
                 continue
 
         if API.Player.Mana < MANA[product]:
@@ -444,7 +402,7 @@ try:
                         API.Player.Mana, API.Player.ManaMax, product, MANA[product])
                     break
 
-                end_cycle("meditating")
+                stop = end_cycle(stall, "meditating", cycle, tally, stop)
                 continue
 
             dry = 0
@@ -464,7 +422,7 @@ try:
             else:
                 fails += 1
 
-            record_craft(outcome, value, spent_before)
+            craft_recorder.record(outcome, value, spent_before, product)
             no_material = 0
             stall.progressed()
         elif outcome == "noMana":
@@ -475,8 +433,10 @@ try:
         elif outcome == "noMaterial":
             pulled = restock.run(targets_for(product))
 
-            if unload_for_room():
-                end_cycle("unloading")
+            phase = try_make_room()
+
+            if phase is not None:
+                stop = end_cycle(stall, phase, cycle, tally, stop)
                 continue
 
             short = short_for(product)
@@ -556,7 +516,7 @@ try:
                    stock.report(stock.pack_stock()), API.Player.Mana, API.Player.ManaMax)
             )
 
-        end_cycle(outcome if outcome is not None else "unknown")
+        stop = end_cycle(stall, outcome if outcome is not None else "unknown", cycle, tally, stop)
         API.Pause(STEP_DELAY)
 except Exception as error:
     # The stop button lands here as well, and the client waits for it to unwind the thread

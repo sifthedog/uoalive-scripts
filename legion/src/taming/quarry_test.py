@@ -14,10 +14,13 @@ class HuntTest(unittest.TestCase):
     def test_finds_nothing_when_nothing_is_in_sight(self):
         self.assertIsNone(self.hunt.next_quarry(GRAPHIC))
 
-    def test_a_radius_of_zero_turns_the_hunt_off(self):
-        self.api.see(mobile(serial=5, graphic=GRAPHIC, name="a llama"))
+    def test_a_radius_of_zero_asks_for_every_animal(self):
+        self.api.see(mobile(serial=5, graphic=GRAPHIC, name="a llama", distance=50))
 
-        self.assertIsNone(Hunt("sifinha", 0, 1).next_quarry(GRAPHIC))
+        quarry, in_sight = Hunt("sifinha", 0, 1).next_quarry(GRAPHIC)
+
+        self.assertEqual(quarry["serial"], 5)
+        self.assertEqual(in_sight, 1)
 
     def test_finds_an_animal_of_the_type(self):
         self.api.see(mobile(serial=5, graphic=GRAPHIC, name="a llama"))
