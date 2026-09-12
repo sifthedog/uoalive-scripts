@@ -273,12 +273,14 @@ alacrity's 0.2 to 0.5 jump be told from several ordinary gains.
 
 ```json
 {"v":1,"id":"0x40012345/1757030000123/17","t":1757030042.500,"char":"Kaldor",
- "serial":"0x40012345","skill":"Magery","used":"Bless","from":74.6,"to":74.7,
+ "serial":"0x40012345","skill":"Magery","gainPath":"Modern","used":"Bless","from":74.6,"to":74.7,
  "outcome":"cast",
  "consumed":[{"name":"oak boards","graphic":"0x1bd7","hue":2010,"qty":6}]}
 ```
 
-`id` is `serial/run-start-ms/sequence`. `used` is what the attempt was made with: the spell, the
+`id` is `serial/run-start-ms/sequence`. `gainPath` is read once per run, by typing `[SkillGainMode`
+and reading the client's reply for Modern, Legacy or Perilous; it is `null` where the client never
+answered. `used` is what the attempt was made with: the spell, the
 item made, the creature, the weapon read. `to` is `null` where no reading ever arrived.
 `consumed` appears only when something was measured, which the crafting scripts do; an
 `inscription.py` row carries one entry per kind spent, the blank scroll and each reagent. `gained`

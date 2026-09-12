@@ -83,9 +83,9 @@ class RecordingTest(unittest.TestCase):
     def tearDown(self):
         uo.record.now = self.saved
 
-    def make(self, path="attempts.jsonl"):
+    def make(self, path="attempts.jsonl", gain_path=None):
         return AttemptLog(path, "Kaldor", 0x40012345, "Magery", self.said.append,
-                          append=self.sink.append)
+                          append=self.sink.append, gain_path=gain_path)
 
     def test_a_recorded_attempt_is_not_written_until_the_next_one_or_the_close(self):
         log = self.make()
@@ -187,6 +187,20 @@ class RecordingTest(unittest.TestCase):
 
         self.assertEqual(self.sink.lines, [])
 
+    def test_the_row_carries_the_gain_path_when_known(self):
+        log = self.make(gain_path="Modern")
+        log.record(74.6, "cast", "Bless")
+        log.close(74.7)
+
+        self.assertIn('"gainPath":"Modern"', self.sink.lines[0][1])
+
+    def test_the_row_carries_no_gain_path_as_null(self):
+        log = self.make()
+        log.record(74.6, "cast", "Bless")
+        log.close(74.7)
+
+        self.assertIn('"gainPath":null', self.sink.lines[0][1])
+
 
 class ConsumedTest(unittest.TestCase):
     def setUp(self):
@@ -280,12 +294,35 @@ class AttemptLogFactoryTest(unittest.TestCase):
         self.api.Player = None
         log = attempt_log("attempts.jsonl", "Magery", self.said.append)
 
-        self.assertEqual(len(self.said), 2)
         self.assertIn("not reporting the character", self.said[0])
-        self.assertEqual(self.said[1], "recording to LegionScripts/attempts.jsonl")
+        self.assertIn("recording to LegionScripts/attempts.jsonl", self.said)
 
     def test_it_stays_quiet_when_recording_is_off(self):
         self.api.Player = None
         attempt_log("", "Magery", self.said.append)
 
         self.assertEqual(self.said, [])
+        self.assertEqual(self.api.said_aloud, [])
+
+    def test_it_asks_for_the_skill_gain_path_once_and_stamps_every_row(self):
+        self.api.Player = FakePlayer(name="Kaldor", serial=0x40012345)
+        self.api.hear("Your skill gain path is Modern. This character's gains are unaffected.")
+        sink = Sink()
+        log = attempt_log("attempts.jsonl", "Magery", self.said.append)
+        log._append = sink.append
+        log.record(74.6, "cast", "Bless")
+        log.close(74.7)
+
+        self.assertEqual(self.api.said_aloud, ["[SkillGainMode"])
+        self.assertIn('"gainPath":"Modern"', sink.lines[0][1])
+
+    def test_a_gain_path_that_never_arrives_records_without_one(self):
+        self.api.Player = FakePlayer(name="Kaldor", serial=0x40012345)
+        sink = Sink()
+        log = attempt_log("attempts.jsonl", "Magery", self.said.append)
+        log._append = sink.append
+        log.record(74.6, "cast", "Bless")
+        log.close(74.7)
+
+        self.assertIn("no skill gain path reported - recording without one", self.said)
+        self.assertIn('"gainPath":null', sink.lines[0][1])

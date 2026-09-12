@@ -14,5 +14,8 @@ STALL_STOP = 300
 
 STEP_DELAY = 0.3
 
+GAIN_PATH_TIMEOUT = 5.0
+GAIN_PATH_POLL = 0.25
+
 # The item cap is per container
 PACK_LIMIT = 120

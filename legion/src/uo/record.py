@@ -1,6 +1,8 @@
 from uo.paths import beside_script
 from uo.clock import now
 from uo.entity import hex_of, player
+from uo.gainpath import read_gain_path
+from uo.timings import GAIN_PATH_POLL, GAIN_PATH_TIMEOUT
 
 
 # Written by hand rather than with json.dumps, so the key order stays the one the README shows
@@ -78,11 +80,12 @@ class AttemptLog(object):
     file that under-reports every gain it exists to measure.
     """
 
-    def __init__(self, path, character, serial, skill, log, append=None):
+    def __init__(self, path, character, serial, skill, log, append=None, gain_path=None):
         self._path = path or ""
         self._character = character or ""
         self._serial = serial
         self._skill = skill
+        self._gain_path = gain_path
         self._log = log
         self._append = append if append is not None else append_line
         self._off = not self._path
@@ -140,6 +143,7 @@ class AttemptLog(object):
             '"char":%s' % quoted(self._character),
             '"serial":%s' % quoted(hex_of(self._serial)),
             '"skill":%s' % quoted(self._skill),
+            '"gainPath":%s' % (quoted(self._gain_path) if self._gain_path else "null"),
             '"used":%s' % quoted(row["used"]),
             '"from":%s' % skill_json(row["from"]),
             '"to":%s' % skill_json(skill_to),
@@ -183,4 +187,7 @@ def attempt_log(path, skill, log):
     if where:
         log("recording to %s" % where)
 
-    return AttemptLog(where, getattr(me, "Name", ""), getattr(me, "Serial", 0), skill, log)
+    gain_path = read_gain_path(GAIN_PATH_TIMEOUT, GAIN_PATH_POLL, log) if where else None
+
+    return AttemptLog(where, getattr(me, "Name", ""), getattr(me, "Serial", 0), skill, log,
+                       gain_path=gain_path)
