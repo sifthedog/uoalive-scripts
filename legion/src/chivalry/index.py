@@ -4,8 +4,9 @@ from chivalry.config import (BANDAGE, BANDAGE_ATTEMPTS, BANDAGE_CURSOR_TIMEOUT, 
                              BANDAGE_TIMEOUT, BUFF_WAIT, CAST_DELAY, CAST_TIMEOUT, CAST_WAIT_SLICE,
                              CASTING_WAIT, DATA_PATH, DISABLED_IS_PROGRESS, EQUIP_ATTEMPTS,
                              EQUIP_POLL, EQUIP_TIMEOUT, FIRST_BAND, HAND_LAYERS, HEAL_OUTCOME_TEXT,
-                             HEARTBEAT_EVERY, HURT_FLOOR, LOG_EVERY, MANA_LOG_EVERY, MANA_POLL,
-                             MAX_BLIND_READS, MAX_CYCLES, MAX_STALE, MAX_THROTTLED, MEDITATE,
+                             HEARTBEAT_EVERY, HURT_FLOOR, JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS,
+                             LOG_EVERY, MANA_LOG_EVERY, MANA_POLL, MAX_BLIND_READS, MAX_CYCLES,
+                             MAX_STALE, MAX_THROTTLED, MAX_UNREAD_REPORTS, MEDITATE,
                              MEDITATE_ATTEMPTS, MEDITATE_OUTCOME_TEXT, MEDITATE_START_TIMEOUT,
                              MEDITATE_TIMEOUT, MEDITATE_TO_FULL, MEDITATION, MEDITATION_BUFF,
                              OUTCOME_TEXT, PROOF_GRACE, REGEN_TIMEOUT, SAVE_DONE_TEXT, SAVE_POLL,
@@ -19,6 +20,7 @@ from uo.hands import Hands, describe_item
 from uo.guards import dead, first_reason, hurt, skill_capped, stopped
 from uo.heal import Bandager
 from uo.heartbeat import Heartbeat
+from uo.journal import journal_tail
 from uo.log import make_log
 from uo.loop import backoff_for
 from uo.mana import ManaWatch
@@ -57,9 +59,13 @@ mana = ManaWatch(MEDITATE_TO_FULL, MANA_POLL, MANA_LOG_EVERY, log, stop_reason, 
 trance = Meditation(MEDITATION, MEDITATE_OUTCOME_TEXT, mana, meditating, log, saves,
                     MEDITATE_ATTEMPTS, MEDITATE_TIMEOUT, MEDITATE_START_TIMEOUT, CAST_WAIT_SLICE,
                     REGEN_TIMEOUT)
+# Tithing is the last argument: a paladin's spells say nothing when they fail, and mana only leaves
+# the pool when one lands, so the point the shard takes for the roll is all that separates a fizzle
+# from a cast that never went off
 caster = Caster(OUTCOME_TEXT, standing, SelfTarget(SELF_ANSWERS, SELF_TARGET_TIMEOUT,
                                                    SELF_TARGET_POLL, log),
-                SKIP_WHEN_BUFFED, CAST_TIMEOUT, CAST_DELAY, CAST_WAIT_SLICE, PROOF_GRACE, log)
+                SKIP_WHEN_BUFFED, CAST_TIMEOUT, CAST_DELAY, CAST_WAIT_SLICE, PROOF_GRACE, log,
+                lambda: API.Player.TithingPoints)
 bandager = Bandager(BANDAGE_GRAPHIC, HEAL_OUTCOME_TEXT, BANDAGE_TIMEOUT, BANDAGE_CURSOR_TIMEOUT,
                     CAST_WAIT_SLICE, BANDAGE_ATTEMPTS, lambda: floor() is None, saves, log)
 
@@ -110,6 +116,10 @@ unread_pending = 0
 
 # Said once per stretch rather than once per cast
 unread_said = False
+
+# How many of those stretches showed the journal with it, since the words that name the missing
+# bucket are the same words on the tenth report as on the first
+unread_reports = 0
 
 since_progress = 0
 reported = 0
@@ -323,16 +333,26 @@ try:
             if throttled >= MAX_THROTTLED:
                 stop = "the shard kept refusing the cast"
 
-        # The commonest cause is a cast that worked with its buff already standing, leaving only
-        # the mana to prove it. The skill moving is what settles it, above.
+        # Whatever is left once the journal, the buff, the mana and the tithing have all said
+        # nothing. Recorded anyway, and shown the shard's own words the first few times: an attempt
+        # nobody can name is still an attempt, and a file without it reads as a run that never
+        # failed. The skill moving is what credits it to the tally, above.
         else:
             unread += 1
             unread_pending += 1
             since_progress += 1
+            recorder.record(value, "unknown", stage["spell"])
 
             if not unread_said:
                 unread_said = True
                 log("outcome unreadable - carrying on; check OUTCOME_TEXT if this run stalls")
+
+                if unread_reports < MAX_UNREAD_REPORTS:
+                    unread_reports += 1
+                    lines = journal_tail(JOURNAL_TAIL_SECONDS, JOURNAL_TAIL_LINES)
+
+                    for line in lines or ["(the journal said nothing)"]:
+                        log("  " + line)
 
         stop = stop or stalled(since_progress)
 

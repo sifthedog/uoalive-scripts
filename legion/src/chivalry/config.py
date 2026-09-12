@@ -118,8 +118,15 @@ SELF_TARGET_POLL = 0.1
 SELF_ANSWERS = ["Target(player)", "TargetSelf", "Target(serial)"]
 
 # The mana leaves the pool a beat after the incantation ends, so IsCasting falling is not the end of
-# the read - it was measured landing 0.2s behind the flag
+# the read - it was measured landing 0.2s behind the flag. The tithing point the fizzle proof reads
+# arrives on the same packets, so this covers both.
 PROOF_GRACE = 0.6
+
+# What an outcome neither the journal nor the two currencies could name reports before it goes quiet,
+# and how much of the journal it shows. A run's worth of these means OUTCOME_TEXT is missing a line.
+MAX_UNREAD_REPORTS = 5
+JOURNAL_TAIL_SECONDS = 20.0
+JOURNAL_TAIL_LINES = 10
 
 # What a cast issued before the last one finished costs. Flat, and never counted towards a stop.
 CASTING_WAIT = 0.5

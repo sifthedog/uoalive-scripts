@@ -218,12 +218,15 @@ carries on.
 
 Only what the shard clearly called a success or a failure is written. Throttles, dry mana, saves and
 unread outcomes write nothing; a missing row shows in the closing tally, a guessed one never would.
+`chivalry.py` is the exception: a paladin's spell fails without a word, so an attempt it could not
+name is written as `unknown` rather than dropped - a file of nothing but `cast` would read as a
+paladin who never once failed.
 
 | Script | success | failure | Left out |
 | --- | --- | --- | --- |
 | `magery.py` | `cast`, and `disabled` where `DISABLED_IS_PROGRESS` | `fizzled` | the mana wait, the buff already standing, everything unread |
 | `mysticism.py` | the same | `fizzled` | the same, plus the health floor |
-| `chivalry.py` | the same | `fizzled` | the same, plus the health floor, the tithing gate and the weapon moves |
+| `chivalry.py` | the same | `fizzled`, and `unknown` for an attempt it could not name | the mana wait, the buff already standing, the health floor, the tithing gate and the weapon moves |
 | `tame.py` | `tamed` | `failed` | `pending` |
 | `arms-lore.py` | `read` | `missed` | a use that raised no cursor, unread wordings |
 | `bowcraft.py` | `made` | `failed` | `noMaterial`, `wrongRow`, a worn tool, the sell trips |
@@ -1065,6 +1068,13 @@ transitioning from down to up or mana strictly decreasing proves it; a standing 
 The poll gives up once `IsCasting` has gone up and come back down, plus `PROOF_GRACE` because the
 mana lands after the flag. `cast_timeout` is the ceiling, not the timer.
 
+**One late look**, and only for the attempt that needs it. An outcome nothing proved inside the
+window is not an outcome that never arrived - the shard's answer was measured landing a beat behind
+the incantation. So before giving up, the cast stands through the `cast_delay` it owes anyway and
+reads all three proofs once more. A proved cast never reaches it and never pays for it; `pace` knows
+the delay has already been spent. Raising `cast_timeout` would buy the same second look and charge
+every attempt in the run for it.
+
 **Nothing waits out the recovery.** `pace` is the row's `cast_delay` only. Waiting on `IsRecovering`
 made a Bless cycle several seconds of standing still; a cast issued too early is refused in words
 and costs one flat `CASTING_WAIT`. One or two a band is the pacing finding the shard's real cast
@@ -1252,6 +1262,20 @@ The outcomes are `magery.py`'s minus `noReagents`, plus:
 | `noWeapon` | Draws the weapon again, and stops only if that fails or nothing was ever held |
 | `disabled` | Tallied: Enemy of One coming off is a cast the shard charged for |
 | `unskilled` | Stops - including the karma refusals, which mean the same thing |
+| `unknown` | Recorded as a row rather than dropped, and the journal is shown with the first few |
+
+**How a fizzle is read**, and the one place this loop differs from `magery.py`'s reading: a paladin's
+spell fails in silence - a sound, and nothing said at all - so `OUTCOME_TEXT` has nothing to match
+and the buff and the mana both stay where they were. What separates that from a cast the shard never
+started is the tithing point, which is taken for the roll rather than for the result: read before
+the cast, read again once the two proofs of a success have had their whole window, and a drop with
+no mana behind it is written down as `fizzled`. Chivalry is the only school handed that reader, so
+`magery.py` and `mysticism.py` read exactly as they did.
+
+That reading rests on the shard charging tithing for a failed roll, which it does: a Holy Light band
+at 74.0 read 52 attempts as 35 `fizzled`, 14 `cast` and 3 `unknown`, where every one of those
+failures had been going unread. The journal printed under the `unknown` ones is empty of anything
+but the mantra, which is the silence this is working around.
 
 **The weapon.** Meditation is refused with anything in hand, and Consecrate Weapon wants one. What
 is in either hand at start-up is remembered by serial, moved to the pack before every trance, and
@@ -1294,6 +1318,8 @@ Everything below `STAGES` is `magery.py`'s block with the same defaults. These a
 | `BANDAGE_GRAPHIC` | `0x0E21` | Clean bandages; the bloodied ones are a different item |
 | `BANDAGE_ATTEMPTS` / `_TIMEOUT` / `_CURSOR_TIMEOUT` | `4` / `8.0` / `1.0` | Applications per stretch, how long one has to finish, how long the cursor has to come |
 | `HEAL_OUTCOME_TEXT` | guesses | Only explain the failures; the hits are the proof |
+| `MAX_UNREAD_REPORTS` | `5` | How many unreadable stretches show the journal before it goes quiet |
+| `JOURNAL_TAIL_SECONDS` / `_LINES` | `20.0` / `10` | How much of it they show |
 | `DATA_PATH` | `skill-attempts.jsonl` | Where each cast is appended. `""` records nothing |
 
 ### When it goes wrong
@@ -1307,8 +1333,12 @@ Everything below `STAGES` is `magery.py`'s block with the same defaults. These a
 - **`hurt (N/M)`** after `bandaging`: the bandages could not keep up, or ran out. Stand further from
   anything Noble Sacrifice can find.
 - **`no cursor for the bandage`**: the use raised nothing inside `BANDAGE_CURSOR_TIMEOUT`.
-- **`outcome unreadable - carrying on`**: the row's `cast_timeout`, as in `magery.py`, or a buff
-  already standing leaving only the mana to prove the cast.
+- **`outcome unreadable - carrying on`**: an attempt where the journal, the buff, the mana and the
+  tithing all said nothing, and still said nothing at the late look. The first `MAX_UNREAD_REPORTS`
+  of them print the journal underneath - if a line there names the outcome, put it in
+  `OUTCOME_TEXT`. These are not the recovery refusals, which the journal names and which are never
+  recorded: 43 of them across 1056 rows gained skill at 18.6%, against 18.2% for `fizzled` and 40.7%
+  for `cast`, so they are rolls that happened and were read too late, not casts that never went off.
 
 ### Unverified
 

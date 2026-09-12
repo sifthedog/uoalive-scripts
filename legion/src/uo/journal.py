@@ -1,5 +1,6 @@
 import API
 
+from uo.log import STAMPS
 from uo.text import any_in
 
 
@@ -31,7 +32,8 @@ def journal_tail(seconds, limit):
     for entry in entries if entries else []:
         text = getattr(entry, "Text", None)
 
-        if text and text.strip() and not any_in(text, SKILL_GAIN_TEXT):
+        if (text and text.strip() and not any_in(text, SKILL_GAIN_TEXT)
+                and not any_in(text, STAMPS)):
             texts.append(text.strip())
 
     return texts[-limit:]

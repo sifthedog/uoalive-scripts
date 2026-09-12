@@ -2,6 +2,7 @@ import unittest
 
 from test_support.uo import install
 from uo.journal import journal_tail
+from uo.log import make_log
 
 
 class JournalTailTest(unittest.TestCase):
@@ -26,6 +27,17 @@ class JournalTailTest(unittest.TestCase):
         self.api.hear("one", "   ", "two")
 
         self.assertEqual(journal_tail(20.0, 4), ["one", "two"])
+
+    # Or a report of an unreadable outcome quotes the last report of an unreadable outcome, and
+    # every one after it quotes the one before
+    def test_leaves_out_what_the_script_said_itself(self):
+        log = make_log("chiv")
+
+        log("outcome unreadable - carrying on")
+        self.api.hear(*self.api.messages)
+        self.api.hear("Dark Elf: Augus Luminos")
+
+        self.assertEqual(journal_tail(20.0, 4), ["Dark Elf: Augus Luminos"])
 
     def test_a_client_that_throws_reads_as_nothing(self):
         def throw(seconds=None):
