@@ -107,6 +107,10 @@ def beside_script(name):
     return script[:cut + 1] + name
 
 
+# src/uo/timings.py
+"""The constants the scripts agreed on. Every one is in seconds - API.Pause takes seconds."""
+
+
 # src/uo/record.py
 # Written by hand rather than with json.dumps, so the key order stays the one the README shows
 def quoted(text):

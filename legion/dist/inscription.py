@@ -44,6 +44,9 @@ STALL_STOP = 300
 
 STEP_DELAY = 0.3
 
+GAIN_PATH_TIMEOUT = 5.0
+GAIN_PATH_POLL = 0.25
+
 
 # src/inscription/config.py
 # One JSON object per attempt, for legion/skilldb.py. "" turns recording off. A bare name lands
@@ -1811,8 +1814,11 @@ class Dump(object):
         self._config = config
         self._log = log
         self._entry = None
-        # Carpentry keeps: the deed art is also a house deed's
-        self._kept = (set(item.Serial for item in self._products())
+        keep_graphics = config.get("keep_graphics", graphics)
+        # Carpentry narrows this to the deed art, which doubles as a house deed's - keeping every
+        # matching graphic locked out leftover, un-dumped stock from a previous run for good
+        self._kept = (set(item.Serial for item in pack_contents()
+                           if item.Graphic in keep_graphics)
                       if config["keep_existing"] else set())
 
     def _products(self):
@@ -2283,6 +2289,53 @@ def beside_script(name):
     return script[:cut + 1] + name
 
 
+# src/uo/gainpath.py
+COMMAND = "[SkillGainMode"
+PROMPT = "skill gain path is"
+PATHS = ("Modern", "Legacy", "Perilous")
+
+
+def _named(text):
+    low = (text or "").lower()
+    at = low.find(PROMPT)
+
+    if at < 0:
+        return None
+
+    words = words_of(text[at + len(PROMPT):])
+
+    for path in PATHS:
+        if path.lower() in words:
+            return path
+
+    return None
+
+
+# Sent once per run, ahead of the loop that records attempts: the client answers "Your skill gain
+# path is Modern. This character's ..." and every recorded row carries whichever of Modern, Legacy
+# or Perilous follows.
+def read_gain_path(budget, poll, log):
+    API.Msg(COMMAND)
+
+    waited = 0.0
+
+    while not API.StopRequested:
+        for entry in API.GetJournalEntries(budget + poll) or []:
+            path = _named(getattr(entry, "Text", None))
+
+            if path is not None:
+                return path
+
+        if waited >= budget:
+            log("no skill gain path reported - recording without one")
+            return None
+
+        API.Pause(poll)
+        waited += poll
+
+    return None
+
+
 # src/uo/record.py
 # Written by hand rather than with json.dumps, so the key order stays the one the README shows
 def quoted(text):
@@ -2336,11 +2389,12 @@ class AttemptLog(object):
     file that under-reports every gain it exists to measure.
     """
 
-    def __init__(self, path, character, serial, skill, log, append=None):
+    def __init__(self, path, character, serial, skill, log, append=None, gain_path=None):
         self._path = path or ""
         self._character = character or ""
         self._serial = serial
         self._skill = skill
+        self._gain_path = gain_path
         self._log = log
         self._append = append if append is not None else append_line
         self._off = not self._path
@@ -2398,6 +2452,7 @@ class AttemptLog(object):
             '"char":%s' % quoted(self._character),
             '"serial":%s' % quoted(hex_of(self._serial)),
             '"skill":%s' % quoted(self._skill),
+            '"gainPath":%s' % (quoted(self._gain_path) if self._gain_path else "null"),
             '"used":%s' % quoted(row["used"]),
             '"from":%s' % skill_json(row["from"]),
             '"to":%s' % skill_json(skill_to),
@@ -2441,7 +2496,10 @@ def attempt_log(path, skill, log):
     if where:
         log("recording to %s" % where)
 
-    return AttemptLog(where, getattr(me, "Name", ""), getattr(me, "Serial", 0), skill, log)
+    gain_path = read_gain_path(GAIN_PATH_TIMEOUT, GAIN_PATH_POLL, log) if where else None
+
+    return AttemptLog(where, getattr(me, "Name", ""), getattr(me, "Serial", 0), skill, log,
+                       gain_path=gain_path)
 
 
 # src/uo/stock.py
