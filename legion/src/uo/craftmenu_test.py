@@ -1,7 +1,7 @@
 import unittest
 
 from uo.craftmenu import CraftMenu
-from test_support.uo import install
+from test_support.uo import FakeButton, FakeHtml, install
 
 CONFIG = {
     "stride": 20,
@@ -99,6 +99,61 @@ class ItemRowsTest(unittest.TestCase):
         self.menu.candidate_buttons("crossbow", 88)
 
         self.assertEqual(len([line for line in self.said if "walking the rows" in line]), 1)
+
+    def test_page_turn_labels_are_not_rows_in_the_text(self):
+        self._gump("Weapons", "bow", "NEXT PAGE", "PREV PAGE", "crossbow")
+
+        self.assertEqual(self.menu.item_rows(88), ["bow", "crossbow"])
+        self.assertEqual(self.menu.named_row("crossbow", 88), 22)
+
+
+# UOAlive's menu: one line of text for every page, and each row drawn as its button, its name, then
+# its details button, with the page turns between
+class ControlRowsTest(unittest.TestCase):
+    def setUp(self):
+        self.api = install()
+        self.said = []
+        self.menu = CraftMenu(FakeTool(), CONFIG, self.said.append)
+        self.api.gump = 88
+        self.api.gump_contents[88] = ("BOWCRAFT AND FLETCHING Materials Ammunition Weapons "
+                                      "bow crossbow bolt NEXT PAGE PREV PAGE heavy crossbow crossbow")
+        self.api.gump_controls[88] = [
+            FakeButton(0), FakeButton(1), FakeHtml("Materials"), FakeButton(21),
+            FakeHtml("Ammunition"), FakeButton(41), FakeHtml("Weapons"), FakeButton(47),
+            FakeHtml("MAKE LAST"),
+            FakeButton(2), FakeHtml("bow"), FakeButton(3),
+            FakeButton(22), FakeHtml("crossbow bolt"), FakeButton(23),
+            FakeButton(0), FakeHtml("NEXT PAGE"), FakeButton(0), FakeHtml("PREV PAGE"),
+            FakeButton(202), FakeHtml("heavy crossbow"), FakeButton(203),
+            FakeButton(222), FakeHtml("crossbow"), FakeButton(223),
+        ]
+
+    def test_rows_are_read_off_the_controls_across_the_pages(self):
+        self.assertEqual(self.menu.rows_of(88), [("bow", 2), ("crossbow bolt", 22),
+                                                 ("heavy crossbow", 202), ("crossbow", 222)])
+        self.assertEqual(self.menu.item_rows(88),
+                         ["bow", "crossbow bolt", "heavy crossbow", "crossbow"])
+
+    def test_a_row_past_the_first_page_is_named_by_its_own_button(self):
+        self.assertEqual(self.menu.named_row("crossbow", 88), 222)
+        self.assertEqual(self.menu.named_row("heavy crossbow", 88), 202)
+        self.assertIsNone(self.menu.named_row("yumi", 88))
+
+    def test_the_category_is_matched_whole_row_not_by_the_one_line_text(self):
+        self.assertTrue(self.menu.page_has("crossbow", 88))
+        self.assertTrue(self.menu.page_has("heavy crossbow", 88))
+        self.assertFalse(self.menu.page_has("bolt", 88))
+
+    def test_candidates_are_the_named_row_then_the_rows_carrying_the_name_then_the_rest(self):
+        self.assertEqual(self.menu.candidate_buttons("crossbow", 88)[:4], [222, 22, 202, 2])
+        self.assertEqual(self.menu.candidate_buttons("bow", 88)[:2], [2, 22])
+
+    def test_unreadable_controls_leave_the_text_to_answer(self):
+        del self.api.gump_controls[88]
+
+        self.assertEqual(self.menu.rows_of(88), [])
+        self.assertEqual(self.menu.item_rows(88), [])
+        self.assertTrue(self.menu.page_has("crossbow", 88))
 
 
 class IsCraftGumpTest(unittest.TestCase):
@@ -404,3 +459,32 @@ class FindRowTest(unittest.TestCase):
 
     def test_a_product_whose_category_is_unknown_goes_to_the_walk(self):
         self.assertIsNone(self.menu.find_row("yumi", 88))
+
+    def _controls(self, *rows):
+        found = [FakeButton(0), FakeButton(41), FakeHtml("Weapons")]
+
+        for index, label in enumerate(rows):
+            button = 2 + index * 20
+            found += [FakeButton(button), FakeHtml(label), FakeButton(button + 1)]
+
+            if index % 10 == 9:
+                found += [FakeButton(0), FakeHtml("NEXT PAGE"), FakeButton(0), FakeHtml("PREV PAGE")]
+
+        self.api.gump_controls[88] = found
+
+    def test_a_row_the_controls_name_is_taken_without_its_details_page(self):
+        self._controls(*(["bow"] * 18 + ["crossbow"]))
+
+        self.assertEqual(self.menu.find_row("crossbow", 88), (88, 362))
+        self.assertEqual(self.pressed(), [])
+        self.assertEqual(self.said, ["'crossbow' is the row on button 362 - the menu names it there"])
+
+    def test_the_rows_carrying_the_name_have_their_details_opened_first(self):
+        self._controls("bow", "yumi", "heavy crossbow")
+        self.details = {3: "ITEM bow BACK", 23: "ITEM yumi BACK", 43: "ITEM heavy crossbow BACK"}
+
+        self.assertEqual(self.menu.find_row("crossbow", 88), (88, 42))
+        self.assertEqual(self.pressed(), [43, 41])
+        self.assertEqual(self.said[0], "no SELECTIONS row reads 'crossbow', opening each row's "
+                                       "details page instead")
+        self.assertEqual(self.said[1], "rows seen: bow, yumi, heavy crossbow")

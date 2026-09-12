@@ -106,7 +106,7 @@ class Crafter(object):
         self._item_probes[product] = self._item_probes.get(product, 0) + 1
 
     # The button to press, or an outcome when there is none. MAKE LAST is the only path that skips
-    # the category: an item button indexes whichever SELECTIONS page is showing.
+    # the category: a row button is only in the gump once its category is showing.
     def _choose_button(self, product, gump):
         known = None if product in self._walked else self._config["recipes"].get(product)
 

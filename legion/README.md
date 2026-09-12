@@ -177,7 +177,8 @@ What the typings do not say, learned on UOAlive. Script-specific notes sit under
   text is chat lines) takes that slot, so nothing waits on "any gump". `WaitForGump(id, secs)`,
   `GumpContains(text, id)`, `GetGumpContents(id)`, `ReplyGump(button, id)` and `CloseGump(id)` address
   a gump by id whichever was last; `GetAllGumps()` lists the open ones and `GetGump(id).Children`
-  carries each button's `ButtonID`. `ReplyGump` disposes the gump before the next page arrives.
+  carries each button's `ButtonID` and each `HtmlControl`'s `Text`, in layout order and for every
+  page at once, whichever page shows. `ReplyGump` disposes the gump before the next page arrives.
 - **A reply naming a button the gump does not have disconnects you.** ServUO's
   `DisplayGumpResponse` drops the socket for it ("Connection lost: Socket Error"); button 0 is
   always taken. Every press goes through `CraftMenu.reply`, which sends only to the menu's own id
@@ -1546,11 +1547,13 @@ material by hand.
 **Finding the row.** Buttons are `1 + type + index * 20`: categories are type 0 (**1** Materials,
 **21** Ammunition, **41** Weapons), the arrow on a `SELECTIONS` row is type 1, and `MAKE LAST` is
 **47**, read off this shard's menu. `RECIPES` names the buttons for known rows; it is a shortcut, and
-the pack is still what proves a craft. Anything else walks the categories: each is pressed until a
-page lists the product, then each row's details page (its button plus one, which spends nothing) is
-opened until one names the product, and the pack proves the craft. Rows carry on across the pages
-the client splits a long category into, so `MAX_ITEM_ROWS` counts the category, not a page. A menu
-with no details pages falls back to reading the row off `GetGumpContents` as the text past the last
+the pack is still what proves a craft. Anything else walks the categories: each is pressed until
+its rows name the product, and the row's button is read off the gump's controls, which draw each
+`SELECTIONS` row as its button, its name, then its details button, every page at once (UOAlive's
+Misc. Add-Ons is 59 rows over six pages, and `GetGumpContents` hands them back as one line). A row
+the controls do not name has each row's details page (its button plus one, which spends nothing)
+opened until one names the product, the rows whose names carry it first, so `MAX_ITEM_ROWS` counts
+the category, not a page. A menu with no readable controls falls back to the text past the last
 category name, and a craft that added none of the product's graphics tries the next candidate, up
 to `MAX_ITEM_PROBES`, then the next category. Matches are whole-row: `crossbow` is inside `crossbow
 bolt`, and a substring match finds Ammunition first. Once a row has made the item,
@@ -1705,8 +1708,6 @@ when `DATA_PATH` is set.
 
 ### Unverified
 
-- Whether the item rows are everything past the last category name. The pack diff covers it.
-- Whether a row index is per-page or absolute once the list pages. Nothing here pages.
 - Whether `GetGumpContents` resolves localized row names or hands back cliloc numbers. If the
   latter, every run walks the rows.
 - Whether `API.RequestTarget` returning falsy is ESC, which ends the multi-pick.
@@ -1863,7 +1864,7 @@ destroys it; a chest keeps it.
 | `TOOL_GRAPHICS` / `TOOL_NAME_WORDS` | stock / `saw`, … | An art learned by name joins the set |
 | `CATEGORY_NAMES` | the wiki's groups | Where the group rows end and the item rows begin |
 | `RECIPES` | wind chimes | `(category button, row button)`. Copy the `is the row on button` lines in |
-| `MAX_CATEGORIES` / `MAX_ITEM_ROWS` | `12` / `48` | How far the walk goes; Furniture and the add-ons run to forty rows |
+| `MAX_CATEGORIES` / `MAX_ITEM_ROWS` | `12` / `80` | How far the walk goes; UOAlive's Misc. Add-Ons runs to 59 rows over six pages |
 | `DUMP_AT` / `MAX_HELD` | `10` / `60` | Products before an unload, and the most kept with nowhere to put them |
 | `MAX_DUMP_MISSES` | `3` | Unloads in a row that moved nothing before the run ends |
 | `BATCH_SIZE` / `RESTOCK_AT` | `300` / `40` | What a restock fills to, and what triggers one |
@@ -1876,9 +1877,10 @@ destroys it; a chest keeps it.
 
 ### When it goes wrong
 
-- **`the gump text does not name 'dartboard (south)' on a row of its own`**: the row is spelled
-  differently on this shard. `rows seen` lists what it read; fix `BANDS`, `PRODUCTS` and
-  `WOOD_COST` to match. The addon rows are the likeliest: the wiki names them without the facing.
+- **`no SELECTIONS row reads 'display case (south)'`** (or `the gump text does not name … on a
+  row of its own`): the row is spelled differently on this shard. `rows seen` lists what it read;
+  fix `BANDS`, `PRODUCTS` and `WOOD_COST` to match. UOAlive's Misc. Add-Ons has `Small Display
+  Case (South)` and no plain display case, and the wiki names addons without the facing.
 - **`no category lists 'dark wooden sign hanger'`**: the shard may not have the item. Put a
   Trinsic-style chair (15 wood, 42.1) in its place, and the ballot box from 47.3.
 - **`the shard refused 300 boards in the pack 3 times`**: the menu's material is not `WOOD_TYPE`.

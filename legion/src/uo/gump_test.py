@@ -1,7 +1,7 @@
 import unittest
 
-from test_support.uo import install
-from uo.gump import (await_changed, await_gump, await_recognised, button_ids, gump_says,
+from test_support.uo import FakeButton, FakeHtml, install
+from uo.gump import (await_changed, await_gump, await_recognised, button_ids, controls, gump_says,
                      is_open, open_ids)
 
 
@@ -112,6 +112,24 @@ class ButtonIdsTest(unittest.TestCase):
         self.api.GetGump = boom
 
         self.assertIsNone(button_ids(77))
+
+    def test_controls_come_back_in_order_with_their_button_or_text(self):
+        self.api.gump_controls[77] = [FakeButton(2), FakeHtml("bow"), FakeButton(3), FakeHtml("")]
+
+        self.assertEqual(controls(77), [(2, None), (None, "bow"), (3, None), (None, None)])
+        self.assertEqual(button_ids(77), set([2, 3]))
+
+    def test_a_getter_that_throws_is_that_field_alone(self):
+        class Sulky(object):
+            ButtonID = 5
+
+            @property
+            def Text(self):
+                raise ValueError("no text here")
+
+        self.api.gump_controls[77] = [Sulky()]
+
+        self.assertEqual(controls(77), [(5, None)])
 
 
 class AwaitRecognisedTest(unittest.TestCase):

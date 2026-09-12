@@ -208,8 +208,8 @@ RECIPES = {}
 
 MAX_CATEGORIES = 12
 
-# Furniture and the add-ons run to forty rows, and the item buttons count across the pages
-MAX_ITEM_ROWS = 48
+# The item buttons count across the pages: UOAlive's Misc. Add-Ons runs to 59 rows over six pages
+MAX_ITEM_ROWS = 80
 
 # Each miss costs one item's worth of wood, which is why the gump text is read first
 MAX_ITEM_PROBES = 8

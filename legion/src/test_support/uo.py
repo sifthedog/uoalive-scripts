@@ -117,6 +117,11 @@ class FakeButton(object):
         self.ButtonID = button
 
 
+class FakeHtml(object):
+    def __init__(self, text):
+        self.Text = text
+
+
 class FakeGump(object):
     def __init__(self, children, layout=None):
         self.Children = children
@@ -304,6 +309,8 @@ class FakeAPI(object):
         self.gump = 0
         self.open_gumps = set()
         self.gump_buttons = {}
+        # Controls handed back as given, in order: FakeButton and FakeHtml, for a menu read whole
+        self.gump_controls = {}
         self.gump_layouts = {}
         self.gump_text = []
         self.gump_contents = {}
@@ -534,6 +541,9 @@ class FakeAPI(object):
         return [FakeGui(serial) for serial in sorted(self._open_gumps())]
 
     def GetGump(self, ID=None):
+        if ID in self.gump_controls:
+            return FakeGump(self.gump_controls[ID], self.gump_layouts.get(ID))
+
         if ID not in self.gump_buttons and ID not in self.gump_layouts:
             return None
 

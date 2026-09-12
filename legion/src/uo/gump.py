@@ -34,9 +34,22 @@ def await_gump(ident, timeout):
     return ident if API.WaitForGump(ident, timeout) else 0
 
 
-# None is "could not read them", which no caller treats as "none": the shard drops the connection
-# for a button the gump does not have, so an unreadable list must not be mistaken for an empty one
-def button_ids(ident):
+# A getter can throw on its own (Control.X does), which is not the whole gump being unreadable
+def _field(control, name):
+    try:
+        return getattr(control, name, None)
+    except Exception:
+        if API.StopRequested:
+            raise
+
+        return None
+
+
+# The controls in the order the layout drew them, every page at once, as (button id, text) with
+# None for whichever a control lacks. None for the list is "could not read them", which no caller
+# treats as "none": the shard drops the connection for a button the gump does not have, so an
+# unreadable gump must not be mistaken for an empty one
+def controls(ident):
     if not ident:
         return None
 
@@ -46,13 +59,13 @@ def button_ids(ident):
         if gump is None:
             return None
 
-        found = set()
+        found = []
 
         for control in gump.Children or []:
-            button = getattr(control, "ButtonID", None)
+            button = _field(control, "ButtonID")
+            text = _field(control, "Text")
 
-            if button is not None:
-                found.add(int(button))
+            found.append((None if button is None else int(button), text or None))
 
         return found
     except Exception:
@@ -60,6 +73,15 @@ def button_ids(ident):
             raise
 
         return None
+
+
+def button_ids(ident):
+    read = controls(ident)
+
+    if read is None:
+        return None
+
+    return set(button for button, _text in read if button is not None)
 
 
 # A recognised gump wins; failing that, one that was not up before the use. Returns (id, recognised)

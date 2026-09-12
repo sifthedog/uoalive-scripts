@@ -940,7 +940,7 @@ class Crafter(object):
         self._item_probes[product] = self._item_probes.get(product, 0) + 1
 
     # The button to press, or an outcome when there is none. MAKE LAST is the only path that skips
-    # the category: an item button indexes whichever SELECTIONS page is showing.
+    # the category: a row button is only in the gump once its category is showing.
     def _choose_button(self, product, gump):
         known = None if product in self._walked else self._config["recipes"].get(product)
 
@@ -1170,9 +1170,22 @@ def await_gump(ident, timeout):
     return ident if API.WaitForGump(ident, timeout) else 0
 
 
-# None is "could not read them", which no caller treats as "none": the shard drops the connection
-# for a button the gump does not have, so an unreadable list must not be mistaken for an empty one
-def button_ids(ident):
+# A getter can throw on its own (Control.X does), which is not the whole gump being unreadable
+def _field(control, name):
+    try:
+        return getattr(control, name, None)
+    except Exception:
+        if API.StopRequested:
+            raise
+
+        return None
+
+
+# The controls in the order the layout drew them, every page at once, as (button id, text) with
+# None for whichever a control lacks. None for the list is "could not read them", which no caller
+# treats as "none": the shard drops the connection for a button the gump does not have, so an
+# unreadable gump must not be mistaken for an empty one
+def controls(ident):
     if not ident:
         return None
 
@@ -1182,13 +1195,13 @@ def button_ids(ident):
         if gump is None:
             return None
 
-        found = set()
+        found = []
 
         for control in gump.Children or []:
-            button = getattr(control, "ButtonID", None)
+            button = _field(control, "ButtonID")
+            text = _field(control, "Text")
 
-            if button is not None:
-                found.add(int(button))
+            found.append((None if button is None else int(button), text or None))
 
         return found
     except Exception:
@@ -1196,6 +1209,15 @@ def button_ids(ident):
             raise
 
         return None
+
+
+def button_ids(ident):
+    read = controls(ident)
+
+    if read is None:
+        return None
+
+    return set(button for button, _text in read if button is not None)
 
 
 # A recognised gump wins; failing that, one that was not up before the use. Returns (id, recognised)
@@ -1229,6 +1251,10 @@ def gump_says(gump, texts):
 
 
 # src/uo/craftmenu.py
+# The client's own page-turn labels, drawn between the pages of a long category
+PAGE_LABELS = ["NEXT PAGE", "PREV PAGE"]
+
+
 class CraftMenu(object):
     """A craft gump: opening it, finding the category, and finding the row."""
 
@@ -1242,6 +1268,7 @@ class CraftMenu(object):
         self._said_gump_text = False
         self._said_no_category = False
         self._said_no_row = set()
+        self._said_no_named = set()
         self._said_no_details = False
         self._said_no_button = set()
         self._said_not_menu = False
@@ -1384,8 +1411,39 @@ class CraftMenu(object):
 
         return found
 
-    # The stock gump emits the group rows before the item rows
-    def item_rows(self, gump):
+    def _is_item_button(self, button):
+        return (button is not None and button > 0
+                and (button - 1 - self._config["item_type"]) % self._config["stride"] == 0)
+
+    # The stock layout draws a SELECTIONS row as its button, its name, then its details button, and
+    # every page's rows are in the gump at once: the pairs are read off the controls whichever page
+    # shows. A page-turn label follows a page button, so it never pairs.
+    def rows_of(self, gump):
+        read = controls(gump)
+
+        if read is None:
+            return []
+
+        rows = []
+        pending = None
+
+        for button, text in read:
+            if text is None:
+                pending = button if self._is_item_button(button) else None
+                continue
+
+            label = text.strip()
+
+            if pending is not None and label:
+                rows.append((label, pending))
+
+            pending = None
+
+        return rows
+
+    # The text as a last resort: the stock gump emits the group rows before the item rows, and a
+    # build that hands the menu back as one line has no rows in it
+    def _text_rows(self, gump):
         lines = self.lines(gump)
         start = None
 
@@ -1394,7 +1452,15 @@ class CraftMenu(object):
                     or lines[index].upper() == self._config["last_ten_label"]):
                 start = index + 1
 
-        return [] if start is None else lines[start:]
+        if start is None:
+            return []
+
+        return [line for line in lines[start:] if line.upper() not in PAGE_LABELS]
+
+    def item_rows(self, gump):
+        rows = [label for label, _button in self.rows_of(gump)]
+
+        return rows if rows else self._text_rows(gump)
 
     # Whole row, never a substring: "crossbow" is inside "crossbow bolt", in another category.
     # A menu that reads as one line has no rows, and GumpContains is case-sensitive
@@ -1468,18 +1534,32 @@ class CraftMenu(object):
 
         return self.press(category, menu, self._config["gump_timeout"])
 
-    # A row's details page is its button plus one and costs nothing to open, and the rows carry on
-    # across the pages the client splits a long category into. None sends the caller to the walk;
-    # (gump, None) is a category that has no such row.
+    # A row the menu names is taken on its name. Otherwise each row's details page (its button plus
+    # one, which costs nothing to open) is opened until one names the product, the rows whose names
+    # carry it first. None sends the caller to the walk; (gump, None) is a category that has no
+    # such row.
     def find_row(self, product, gump):
         category = self._category_buttons.get(product)
 
         if category is None or button_ids(gump) is None:
             return None
 
-        for index in range(self._config["max_item_rows"]):
-            button = self.button_id(self._config["item_type"], index)
+        rows = self.rows_of(gump)
 
+        for label, button in rows:
+            if label.lower() == product:
+                self._log("'%s' is the row on button %d - the menu names it there"
+                          % (product, button))
+
+                return (gump, button)
+
+        if rows and product not in self._said_no_named:
+            self._said_no_named.add(product)
+            self._log("no SELECTIONS row reads '%s', opening each row's details page instead"
+                      % product)
+            self._log("rows seen: %s" % ", ".join(label for label, _button in rows))
+
+        for button in self._walk_order(product, rows):
             if not self.has_button(button, gump):
                 continue
 
@@ -1517,36 +1597,58 @@ class CraftMenu(object):
 
         return (gump, None)
 
-    # Text only: the row's button, or None when this page does not name it
+    # The row's button by its name, or None when the menu does not name it. With no controls to
+    # read, the row's place in the text stands in for its index
     def named_row(self, product, gump):
-        rows = self.item_rows(gump)
+        rows = self.rows_of(gump)
 
-        for index in range(len(rows)):
-            if rows[index].lower() == product:
+        if rows:
+            for label, button in rows:
+                if label.lower() == product:
+                    return button
+
+            return None
+
+        text = self._text_rows(gump)
+
+        for index in range(len(text)):
+            if text[index].lower() == product:
                 return self.button_id(self._config["item_type"], index)
 
         return None
 
-    # The text first: unlike a category, a wrong row crafts the wrong item and spends the wood
-    def candidate_buttons(self, product, gump):
-        rows = self.item_rows(gump)
-        order = []
+    # The rows named for the product, then the rows whose names carry it, then every row in order
+    def _walk_order(self, product, rows):
+        order = [button for label, button in rows if label.lower() == product]
 
-        for index in range(len(rows)):
-            if rows[index].lower() == product:
-                order.append(self.button_id(self._config["item_type"], index))
-
-        if len(order) == 0 and product not in self._said_no_row:
-            self._said_no_row.add(product)
-            self._log("the gump text does not name '%s' on a row of its own, walking the rows"
-                      % product)
-            self._log("rows seen: %s" % (", ".join(rows) if rows else "none"))
+        for label, button in rows:
+            if button not in order and phrase_in(label, product):
+                order.append(button)
 
         for index in range(self._config["max_item_rows"]):
             button = self.button_id(self._config["item_type"], index)
 
             if button not in order:
                 order.append(button)
+
+        return order
+
+    # The named rows first: unlike a category, a wrong row crafts the wrong item and spends the wood
+    def candidate_buttons(self, product, gump):
+        rows = self.rows_of(gump)
+        order = self._walk_order(product, rows)
+        named = self.named_row(product, gump)
+
+        if named is not None and named in order:
+            order.remove(named)
+            order.insert(0, named)
+
+        if named is None and product not in self._said_no_row:
+            self._said_no_row.add(product)
+            self._log("the gump text does not name '%s' on a row of its own, walking the rows"
+                      % product)
+            seen = self.item_rows(gump)
+            self._log("rows seen: %s" % (", ".join(seen) if seen else "none"))
 
         known = button_ids(gump)
 
