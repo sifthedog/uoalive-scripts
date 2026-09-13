@@ -46,12 +46,12 @@ class Menu(object):
         self.names = {}
         self.props = {}
         self.named = {}
+        self.labels = {}
         self.missing = set()
+        self.found = None
 
     def open(self):
         return 88
-
-        self.found = None
 
     def current_id(self):
         return 88
@@ -96,6 +96,9 @@ class Menu(object):
     def named_button(self, product):
         return self.named.get(product)
 
+    def label_of(self, button, gump):
+        return self.labels.get(button)
+
     def lines(self, gump):
         return []
 
@@ -105,8 +108,11 @@ class MakeLastTest(unittest.TestCase):
         self.api = install()
         self.menu = Menu(self.api)
         self.said = []
+        # A learned art is rebound into the product table, so each test gets its own
+        config = dict(CONFIG)
+        config["products"] = {"bow": set([BOW])}
         self.crafter = Crafter(Tools(), self.menu, Stock(), [("made", ["You create the item"])],
-                               CONFIG, self.said.append)
+                               config, self.said.append)
 
     def test_a_proven_row_is_pressed_as_make_last_from_then_on(self):
         self.menu.makes = {2: BOW, MAKE_LAST: BOW}
@@ -140,6 +146,32 @@ class MakeLastTest(unittest.TestCase):
         self.assertEqual(self.crafter.craft_once("bow"), "wrongRow")
         self.assertEqual(self.menu.presses, [41])
         self.assertEqual(self.crafter._walked, set(["bow"]))
+
+    def test_a_recipe_row_whose_label_reads_otherwise_is_walked_for_not_pressed(self):
+        self.menu.labels = {2: "crossbow"}
+
+        self.assertEqual(self.crafter.craft_once("bow"), "wrongRow")
+        self.assertEqual(self.menu.presses, [41])
+        self.assertEqual(self.crafter._walked, set(["bow"]))
+        self.assertEqual(self.said[0], "button 2 reads 'crossbow', not 'bow'")
+
+    def test_a_recipe_row_whose_label_agrees_is_trusted_like_a_named_row(self):
+        self.menu.labels = {2: "Bow"}
+        self.menu.makes = {2: SIGNPOST, MAKE_LAST: SIGNPOST}
+        self.menu.names = {SIGNPOST: "Wooden Signpost"}
+
+        self.assertEqual(self.crafter.craft_once("bow"), "made")
+        self.assertEqual(self.crafter.craft_once("bow"), "made")
+        self.assertEqual(self.menu.presses, [41, 2, MAKE_LAST])
+        self.assertEqual(self.crafter._walked, set())
+        self.assertEqual(len([line for line in self.said if "product table" in line]), 1)
+
+    def test_a_recipe_row_on_a_menu_with_no_labels_is_pressed_as_before(self):
+        self.menu.makes = {2: SIGNPOST}
+        self.menu.names = {SIGNPOST: "Wooden Signpost"}
+
+        self.assertEqual(self.crafter.craft_once("bow"), "wrongRow")
+        self.assertEqual(self.menu.presses, [41, 2])
 
 
 class DetailsRowTest(unittest.TestCase):

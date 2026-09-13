@@ -93,6 +93,15 @@ class ControlRowsTest(unittest.TestCase):
         self.assertEqual(self.menu.item_rows(88),
                          ["bow", "crossbow bolt", "heavy crossbow", "crossbow"])
 
+    def test_the_categories_pair_the_same_way(self):
+        self.assertEqual(self.menu.categories_of(88),
+                         [("Materials", 1), ("Ammunition", 21), ("Weapons", 41)])
+
+    def test_a_button_reads_as_its_label_or_nothing(self):
+        self.assertEqual(self.menu.label_of(222, 88), "crossbow")
+        self.assertIsNone(self.menu.label_of(223, 88))
+        self.assertIsNone(self.menu.label_of(41, 88))
+
     def test_a_row_past_the_first_page_is_named_by_its_own_button(self):
         self.assertEqual(self.menu.named_row("crossbow", 88), 222)
         self.assertEqual(self.menu.named_row("heavy crossbow", 88), 202)

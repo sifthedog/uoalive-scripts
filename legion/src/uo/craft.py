@@ -20,6 +20,8 @@ class Crafter(object):
         self._item_probes = {}
         # Products whose art the table has wrong, proven made on a row the menu named
         self._trusted = set()
+        # RECIPES rows whose label on the menu read as the product, as good as a row the walk found
+        self._labelled = {}
         self._make_last = False
         self._said_unreadable = 0
         self._said_no_make_last = False
@@ -101,6 +103,7 @@ class Crafter(object):
 
     def _forget_row(self, product):
         self._make_last = False
+        self._labelled.pop(product, None)
 
         if product in self._item_buttons:
             del self._item_buttons[product]
@@ -141,6 +144,19 @@ class Crafter(object):
                 self._log("the menu has no row button %d for '%s'" % (known[1], product))
 
                 return None, self._walk_instead(product)
+
+            # The table is checked against the row's own label when the menu shows one: a row
+            # that reads as the product is as good as one the walk found, and one that reads
+            # otherwise is a shard that reordered the menu, not a row to press blind
+            label = self._menu.label_of(known[1], page)
+
+            if label is not None and label.lower() != product:
+                self._log("button %d reads '%s', not '%s'" % (known[1], label, product))
+
+                return None, self._walk_instead(product)
+
+            if label is not None:
+                self._labelled[product] = known[1]
 
             return known[1], None
 
@@ -234,11 +250,12 @@ class Crafter(object):
 
         self._make_last = True
 
-    # A row the menu named by its exact label is proof the pack cannot overrule: the shard said made
-    # and no art in the table landed, so the table is what is wrong
+    # A row the menu named by its exact label, found by the walk or checked off RECIPES, is proof
+    # the pack cannot overrule: the shard said made and no art in the table landed, so the table is
+    # what is wrong
     def _trust_named(self, product, button, held):
         if product not in self._trusted:
-            if self._menu.named_button(product) != button:
+            if button not in (self._menu.named_button(product), self._labelled.get(product)):
                 return False
 
             self._trusted.add(product)

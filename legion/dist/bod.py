@@ -2158,14 +2158,14 @@ class CraftMenu(object):
 
         return found
 
-    def _is_item_button(self, button):
+    def _is_button_of(self, kind, button):
         return (button is not None and button > 0
-                and (button - 1 - self._config["item_type"]) % self._config["stride"] == 0)
+                and (button - 1 - kind) % self._config["stride"] == 0)
 
-    # The stock layout draws a SELECTIONS row as its button, its name, then its details button, and
-    # every page's rows are in the gump at once: the pairs are read off the controls whichever page
-    # shows. A page-turn label follows a page button, so it never pairs.
-    def rows_of(self, gump):
+    # The stock layout draws a row as its button then its name (a SELECTIONS row's details button
+    # follows), and every page's rows are in the gump at once: the pairs are read off the controls
+    # whichever page shows. A page-turn label follows a page button, so it never pairs.
+    def _labelled(self, gump, kind):
         read = controls(gump)
 
         if read is None:
@@ -2176,7 +2176,7 @@ class CraftMenu(object):
 
         for button, text in read:
             if text is None:
-                pending = button if self._is_item_button(button) else None
+                pending = button if self._is_button_of(kind, button) else None
                 continue
 
             label = text.strip()
@@ -2187,6 +2187,20 @@ class CraftMenu(object):
             pending = None
 
         return rows
+
+    def rows_of(self, gump):
+        return self._labelled(gump, self._config["item_type"])
+
+    def categories_of(self, gump):
+        return self._labelled(gump, self._config["category_type"])
+
+    # None when the menu names no row on that button, which is also how unreadable controls read
+    def label_of(self, button, gump):
+        for label, found in self.rows_of(gump):
+            if found == button:
+                return label
+
+        return None
 
     def item_rows(self, gump):
         return [label for label, _button in self.rows_of(gump)]

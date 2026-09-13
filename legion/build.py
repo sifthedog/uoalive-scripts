@@ -29,6 +29,7 @@ ENTRIES = [
     {"in": "src/carpentry/index.py", "out": "carpentry"},
     {"in": "src/inscription/index.py", "out": "inscription"},
     {"in": "src/bod/index.py", "out": "bod"},
+    {"in": "src/craftmap/index.py", "out": "craft-map"},
     {"in": "src/inventory/index.py", "out": "inventory"},
 ]
 

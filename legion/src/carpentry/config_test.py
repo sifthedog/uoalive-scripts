@@ -14,8 +14,8 @@ class BandsTest(unittest.TestCase):
         self.assertEqual(band_for(BANDS, 98.5), "quarter staff")
         self.assertEqual(band_for(BANDS, 98.6), "gnarled staff")
         self.assertEqual(band_for(BANDS, 119.6), "rustic bench (south)")
-        self.assertEqual(band_for(BANDS, 119.7), "display case (south)")
-        self.assertEqual(band_for(BANDS, 120.0), "display case (south)")
+        self.assertEqual(band_for(BANDS, 119.7), "small display case (south)")
+        self.assertEqual(band_for(BANDS, 120.0), "small display case (south)")
 
     def test_every_band_has_a_product_and_a_cost(self):
         for _ceiling, product in BANDS:

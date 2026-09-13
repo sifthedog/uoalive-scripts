@@ -1547,7 +1547,10 @@ material by hand.
 **Finding the row.** Buttons are `1 + type + index * 20`: categories are type 0 (**1** Materials,
 **21** Ammunition, **41** Weapons), the arrow on a `SELECTIONS` row is type 1, and `MAKE LAST` is
 **47**, read off this shard's menu. `RECIPES` names the buttons for known rows; it is a shortcut, and
-the pack is still what proves a craft. Anything else walks the categories: each is pressed until
+the pack is still what proves a craft. A table row is checked against the label the menu draws on
+that button: one that reads as the product is trusted like a row the walk found, one that reads
+otherwise is walked for instead of pressed. `craft-map.py` writes the table off the live menu.
+Anything else walks the categories: each is pressed until
 its rows name the product, and the row's button is read off the gump's controls, which draw each
 `SELECTIONS` row as its button, its name, then its details button, every page at once (UOAlive's
 Misc. Add-Ons is 59 rows over six pages, and `GetGumpContents` hands them back as one line). A row
@@ -1668,8 +1671,10 @@ when `DATA_PATH` is set.
 - **`ignoring gump 0x… - it is not the craft menu`**: a gump the shard keeps up beside the menu.
   Harmless; the line says what it starts with. **`gump 0x… has no button 47`**: `MAKE_LAST_BUTTON`
   or a `RECIPES` entry is wrong for this menu, and the row is walked for instead of pressed blind.
-- **`the button table is out of date for 'crossbow'`**: the `RECIPES` button made something else.
-  The walk corrects it; fix the entry to save the crafts.
+- **`the button table is out of date for 'crossbow'`**: the `RECIPES` button made something else,
+  or, after **`button N reads 'x', not 'crossbow'`**, the menu's own label on that button is another
+  item's, so it was not pressed. The walk corrects it; run `craft-map.py` and paste the table it
+  writes to save the crafts.
 - **`unreadable outcome (n/5), check OUTCOME_TEXT`**: a success needs no wording; a refusal does.
 - **`refused for materials - the gump says '…'`** with **`the pack holds 300 boards hue 0x7d1`**:
   the menu spends only the wood type it is set to. `0x0` is plain; anything else is a special wood.
@@ -1826,7 +1831,7 @@ which is where the craft menu, the row walk and the outcomes are described.
 | 106.5 – 111.8 | easel (south) | 20 |
 | 111.8 – 115 | plain wooden chest | 30 |
 | 115 – 119.7 | rustic bench (south) | 35 |
-| 119.7 – cap | display case (south) | 40, and 10 ingots |
+| 119.7 – cap | small display case (south) | 40, and 10 ingots |
 
 Each ceiling is the row's minimum skill plus 25, where the stock recipe reaches 100% and stops
 gaining, or earlier where a cheaper row opens: the barrel lid at 11.0, the sign hanger at 42.1.
@@ -1863,8 +1868,8 @@ destroys it; a chest keeps it.
 | `WOOD_COST` / `MIN_CRAFT_WOOD` | table / `5` | When the pack is too short to try |
 | `DEED_GRAPHICS` | `0x14F0` | What the addon products land as. The sign hanger is not one of them |
 | `TOOL_GRAPHICS` / `TOOL_NAME_WORDS` | stock / `saw`, … | An art learned by name joins the set |
-| `CATEGORY_NAMES` | the wiki's groups | Where the group rows end and the item rows begin |
-| `RECIPES` | empty | `(category button, row button)`. Copy the `is the row on button` lines in |
+| `CATEGORY_NAMES` | UOAlive's ten groups | Where the group rows end and the item rows begin |
+| `RECIPES` | every row on UOAlive | `(category button, row button)`. Run `craft-map.py` with the menu open and paste the block it writes |
 | `MAX_CATEGORIES` / `MAX_ITEM_ROWS` | `12` / `80` | How far the walk goes; UOAlive's Misc. Add-Ons runs to 59 rows over six pages |
 | `DUMP_AT` / `MAX_HELD` | `10` / `60` | Products before an unload, and the most kept with nowhere to put them |
 | `MAX_DUMP_MISSES` | `3` | Unloads in a row that moved nothing before the run ends |
@@ -1878,10 +1883,10 @@ destroys it; a chest keeps it.
 
 ### When it goes wrong
 
-- **`no SELECTIONS row reads 'display case (south)' - walking the rows`**: the row is spelled
-  differently on this shard. `rows seen` lists what it read;
-  fix `BANDS`, `PRODUCTS` and `WOOD_COST` to match. UOAlive's Misc. Add-Ons has `Small Display
-  Case (South)` and no plain display case, and the wiki names addons without the facing.
+- **`no SELECTIONS row reads 'dark wooden sign hanger' - walking the rows`**: the row is spelled
+  differently on this shard. `rows seen` lists what it read; fix `BANDS`, `PRODUCTS` and
+  `WOOD_COST` to match, and run `craft-map.py` for the table. UOAlive's display case is
+  `small display case (south)`, and the wiki names addons without the facing.
 - **`no category lists 'dark wooden sign hanger'`**: the shard may not have the item. Put a
   Trinsic-style chair (15 wood, 42.1) in its place, and the ballot box from 47.3.
 - **`the shard refused 300 boards in the pack 3 times`**: the menu's material is not `WOOD_TYPE`.
@@ -2208,6 +2213,21 @@ small; the small leaving the pack is the proof. The run stops when every entry r
   `API.PromptResponse` are seen working on a live run.
 - The large flow, all of it: that `API.MoveItem` into the box is accepted, that `0x2258` is the
   deed art here, that button 2 on the large gump is the combine, and the stock ServUO wordings.
+
+## craft-map.py
+
+Writes the `RECIPES` and `CATEGORY_NAMES` blocks for a craft script's `config.py` off the live
+menu. Open the menu by hand with its tool, run the script, and it presses each `CATEGORIES`
+button in turn, which spends nothing, reads every row's label where its button is, all pages at
+once, and writes `craft-map.txt` beside itself (TazUO has put that one folder up, in its own
+directory). Keys are the labels lowercased, which is how the crafters look products up; an item
+the menu lists twice keeps the first button and comments the second. It maps whichever craft menu
+is open: carpentry, tinkering, bowcraft or inscription alike.
+
+- **`no craft menu is open`**: nothing among the open gumps pairs a category button with a
+  label. Open the menu first.
+- **`the menu did not come back after pressing '…'`**: the shard did not redraw within
+  `GUMP_TIMEOUT`; the rows read so far are still written.
 
 ## inventory.py
 

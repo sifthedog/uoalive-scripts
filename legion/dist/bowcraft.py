@@ -1640,6 +1640,8 @@ class Crafter(object):
         self._item_probes = {}
         # Products whose art the table has wrong, proven made on a row the menu named
         self._trusted = set()
+        # RECIPES rows whose label on the menu read as the product, as good as a row the walk found
+        self._labelled = {}
         self._make_last = False
         self._said_unreadable = 0
         self._said_no_make_last = False
@@ -1721,6 +1723,7 @@ class Crafter(object):
 
     def _forget_row(self, product):
         self._make_last = False
+        self._labelled.pop(product, None)
 
         if product in self._item_buttons:
             del self._item_buttons[product]
@@ -1761,6 +1764,19 @@ class Crafter(object):
                 self._log("the menu has no row button %d for '%s'" % (known[1], product))
 
                 return None, self._walk_instead(product)
+
+            # The table is checked against the row's own label when the menu shows one: a row
+            # that reads as the product is as good as one the walk found, and one that reads
+            # otherwise is a shard that reordered the menu, not a row to press blind
+            label = self._menu.label_of(known[1], page)
+
+            if label is not None and label.lower() != product:
+                self._log("button %d reads '%s', not '%s'" % (known[1], label, product))
+
+                return None, self._walk_instead(product)
+
+            if label is not None:
+                self._labelled[product] = known[1]
 
             return known[1], None
 
@@ -1854,11 +1870,12 @@ class Crafter(object):
 
         self._make_last = True
 
-    # A row the menu named by its exact label is proof the pack cannot overrule: the shard said made
-    # and no art in the table landed, so the table is what is wrong
+    # A row the menu named by its exact label, found by the walk or checked off RECIPES, is proof
+    # the pack cannot overrule: the shard said made and no art in the table landed, so the table is
+    # what is wrong
     def _trust_named(self, product, button, held):
         if product not in self._trusted:
-            if self._menu.named_button(product) != button:
+            if button not in (self._menu.named_button(product), self._labelled.get(product)):
                 return False
 
             self._trusted.add(product)
@@ -2108,14 +2125,14 @@ class CraftMenu(object):
 
         return found
 
-    def _is_item_button(self, button):
+    def _is_button_of(self, kind, button):
         return (button is not None and button > 0
-                and (button - 1 - self._config["item_type"]) % self._config["stride"] == 0)
+                and (button - 1 - kind) % self._config["stride"] == 0)
 
-    # The stock layout draws a SELECTIONS row as its button, its name, then its details button, and
-    # every page's rows are in the gump at once: the pairs are read off the controls whichever page
-    # shows. A page-turn label follows a page button, so it never pairs.
-    def rows_of(self, gump):
+    # The stock layout draws a row as its button then its name (a SELECTIONS row's details button
+    # follows), and every page's rows are in the gump at once: the pairs are read off the controls
+    # whichever page shows. A page-turn label follows a page button, so it never pairs.
+    def _labelled(self, gump, kind):
         read = controls(gump)
 
         if read is None:
@@ -2126,7 +2143,7 @@ class CraftMenu(object):
 
         for button, text in read:
             if text is None:
-                pending = button if self._is_item_button(button) else None
+                pending = button if self._is_button_of(kind, button) else None
                 continue
 
             label = text.strip()
@@ -2137,6 +2154,20 @@ class CraftMenu(object):
             pending = None
 
         return rows
+
+    def rows_of(self, gump):
+        return self._labelled(gump, self._config["item_type"])
+
+    def categories_of(self, gump):
+        return self._labelled(gump, self._config["category_type"])
+
+    # None when the menu names no row on that button, which is also how unreadable controls read
+    def label_of(self, button, gump):
+        for label, found in self.rows_of(gump):
+            if found == button:
+                return label
+
+        return None
 
     def item_rows(self, gump):
         return [label for label, _button in self.rows_of(gump)]

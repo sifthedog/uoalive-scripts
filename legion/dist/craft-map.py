@@ -1,10 +1,198 @@
+# Built from src/craftmap/index.py by build.py - do not edit.
+
 import API
-
-from uo.entity import hex_of
-from uo.gump import await_gump, await_recognised, button_ids, controls, is_open, open_ids
-from uo.text import any_in, phrase_in
+import time
 
 
+# src/craftmap/table.py
+# The block a craft script's config.py pastes in: the shard's group names, then every row under
+# its group, keyed the way Crafter looks a product up
+def recipes_block(title, stamp, categories, rows):
+    lines = ["# %s, read off the menu on %s" % (title, stamp), "CATEGORY_NAMES = ["]
+
+    for label, _button in categories:
+        lines.append('    "%s",' % label.lower())
+
+    lines += ["]", "", "RECIPES = {"]
+    seen = set()
+
+    for label, category in categories:
+        lines.append("    # %s (button %d)" % (label, category))
+
+        for name, button in rows.get(category, []):
+            key = name.lower()
+            entry = '"%s": (%d, %d),' % (key, category, button)
+
+            # The menu lists an item twice (bulletin board, east and south); the first is the table's
+            if key in seen:
+                lines.append("    # %s  listed again, the first kept" % entry)
+            else:
+                seen.add(key)
+                lines.append("    " + entry)
+
+    lines.append("}")
+
+    return "\n".join(lines) + "\n"
+
+
+# src/uo/entity.py
+def hex_of(value):
+    return "0x%x" % (value & 0xFFFFFFFF)
+
+
+# src/uo/gump.py
+# HasGump() only ever answers the last gump the shard sent, and a gump the shard re-sends on its own
+# steals that slot: the id-addressed calls below do not go through it
+def open_ids():
+    found = []
+    last = API.HasGump()
+
+    if last:
+        found.append(last)
+
+    try:
+        for gump in API.GetAllGumps() or []:
+            serial = getattr(gump, "ServerSerial", 0)
+
+            if serial and serial not in found:
+                found.append(serial)
+    except Exception:
+        if API.StopRequested:
+            raise
+
+    return found
+
+
+def is_open(ident):
+    return bool(ident) and bool(API.WaitForGump(ident, 0))
+
+
+def await_gump(ident, timeout):
+    if not ident:
+        return 0
+
+    return ident if API.WaitForGump(ident, timeout) else 0
+
+
+# A getter can throw on its own (Control.X does), which is not the whole gump being unreadable
+def _field(control, name):
+    try:
+        return getattr(control, name, None)
+    except Exception:
+        if API.StopRequested:
+            raise
+
+        return None
+
+
+# The controls in the order the layout drew them, every page at once, as (button id, text) with
+# None for whichever a control lacks. None for the list is "could not read them", which no caller
+# treats as "none": the shard drops the connection for a button the gump does not have, so an
+# unreadable gump must not be mistaken for an empty one
+def controls(ident):
+    if not ident:
+        return None
+
+    try:
+        gump = API.GetGump(ident)
+
+        if gump is None:
+            return None
+
+        found = []
+
+        for control in gump.Children or []:
+            button = _field(control, "ButtonID")
+            text = _field(control, "Text")
+
+            found.append((None if button is None else int(button), text or None))
+
+        return found
+    except Exception:
+        if API.StopRequested:
+            raise
+
+        return None
+
+
+def button_ids(ident):
+    read = controls(ident)
+
+    if read is None:
+        return None
+
+    return set(button for button, _text in read if button is not None)
+
+
+# A recognised gump wins; failing that, one that was not up before the use. Returns (id, recognised)
+def await_recognised(known, before, timeout, poll):
+    waited = 0.0
+    newcomer = 0
+
+    while waited < timeout:
+        for ident in open_ids():
+            if known(ident):
+                return ident, True
+
+            if not newcomer and ident not in before:
+                newcomer = ident
+
+        if newcomer:
+            return newcomer, False
+
+        API.Pause(poll)
+        waited += poll
+
+    return 0, False
+
+
+# src/uo/text.py
+def words_of(text):
+    letters = []
+
+    for char in (text or "").lower():
+        letters.append(char if char.isalnum() else " ")
+
+    return "".join(letters).split()
+
+
+def phrase_in(text, phrase):
+    found = words_of(text)
+    wanted = words_of(phrase)
+
+    for start in range(len(found) - len(wanted) + 1):
+        if found[start:start + len(wanted)] == wanted:
+            return True
+
+    return len(wanted) == 0
+
+
+def any_in(text, fragments):
+    low = (text or "").lower()
+
+    for fragment in fragments:
+        if fragment in low:
+            return True
+
+    return False
+
+
+def untagged(text):
+    kept = []
+    inside = False
+
+    for char in text or "":
+        if char == "<":
+            inside = True
+        elif char == ">":
+            inside = False
+        elif not inside:
+            kept.append(char)
+
+    return "".join(kept)
+
+
+# src/uo/craftmenu.py
 class CraftMenu(object):
     """A craft gump: opening it, finding the category, and finding the row."""
 
@@ -393,3 +581,122 @@ class CraftMenu(object):
         known = button_ids(gump)
 
         return order if known is None else [button for button in order if button in known]
+
+
+# src/uo/log.py
+def make_log(prefix):
+    stamp = prefix + ": "
+
+    def log(message):
+        if log.enabled:
+            API.SysMsg(stamp + message)
+
+    # The client puts a SysMsg in the journal beside the shard's own lines, so a script reading the
+    # journal back needs to know which lines it wrote itself - without this a report of an unreadable
+    # outcome quotes the last report of an unreadable outcome. Lowercase, because that is how the
+    # journal readers compare. Carried on the function itself rather than a module-level list: a
+    # bundle is one script and one prefix, and a shared list would leak between scripts sharing this
+    # process, such as the test suite.
+    log.stamp = stamp.lower()
+    log.enabled = True
+
+    return log
+
+
+# src/uo/paths.py
+# TazUO's working directory is its own folder, and the scripts live in this subfolder of it
+SCRIPTS_FOLDER = "LegionScripts"
+
+
+# A bare name lands in TazUO's working directory; beside the script is where anyone looks for it.
+# A name with a folder in it, relative or absolute, is left as written.
+def beside_script(name):
+    if not name or "/" in name or "\\" in name:
+        return name
+
+    script = getattr(API, "ScriptPath", None) or ""
+    cut = max(script.rfind("/"), script.rfind("\\"))
+
+    # A client that does not say where the script is still runs it out of the standard folder
+    if cut < 0:
+        return SCRIPTS_FOLDER + "/" + name
+
+    return script[:cut + 1] + name
+
+
+# src/craftmap/index.py
+OUT = "craft-map.txt"
+
+# Buttons are 1 + type + index * 20 on this shard's menus, as every craft script's config says
+BUTTON_STRIDE = 20
+CATEGORY_BUTTON_TYPE = 0
+ITEM_BUTTON_TYPE = 1
+
+GUMP_TIMEOUT = 5.0
+
+# The redraw lands a moment after WaitForGump answers
+REDRAW_DELAY = 0.4
+
+log = make_log("craft-map")
+
+
+class NoTool(object):
+    def serial(self):
+        return None
+
+
+menu = CraftMenu(NoTool(), {
+    "stride": BUTTON_STRIDE,
+    "category_type": CATEGORY_BUTTON_TYPE,
+    "item_type": ITEM_BUTTON_TYPE,
+}, log)
+
+
+def title_of(gump):
+    for _button, text in controls(gump) or []:
+        if text and "MENU" in text.upper():
+            return untagged(text).strip()
+
+    return "CRAFT MENU"
+
+
+found = None
+categories = []
+
+for ident in open_ids():
+    categories = menu.categories_of(ident)
+
+    if categories:
+        found = ident
+        break
+
+if found is None:
+    log("no craft menu is open - open one with its tool, then run this again")
+    API.Stop()
+
+title = title_of(found)
+log("%s on gump %s, %d categories" % (title, hex_of(found), len(categories)))
+
+rows = {}
+
+for label, button in categories:
+    if not menu.has_button(button, found):
+        log("gump %s has no button %d for '%s' - skipping it" % (hex_of(found), button, label))
+        continue
+
+    API.ReplyGump(button, found)
+
+    if not API.WaitForGump(found, GUMP_TIMEOUT):
+        log("the menu did not come back after pressing '%s' (button %d) - stopping" % (label, button))
+        break
+
+    API.Pause(REDRAW_DELAY)
+    rows[button] = menu.rows_of(found)
+    log("%s (button %d): %d rows" % (label, button, len(rows[button])))
+
+path = beside_script(OUT)
+handle = open(path, "w")
+handle.write(recipes_block(title, time.strftime("%Y-%m-%d"), categories, rows))
+handle.close()
+
+log("wrote %s - paste its RECIPES and CATEGORY_NAMES into the script's config.py" % path)
