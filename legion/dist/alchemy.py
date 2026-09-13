@@ -12,6 +12,33 @@ STOPPED = "stopped from the script manager"
 # src/alchemy/config.py
 SKILL_NAMES = ["Alchemy"]
 
+MIN_SKILL = 0.0
+
+# Ceilings are exclusive, in the client's float percentage. The wiki's path on stock RunUO floors
+# (lesser poison -5, poison 15, greater agility 35, greater strength 45, greater poison 55, greater
+# cure 65, deadly poison 90; success is (skill - floor) / 50). A failure keeps the bottle and loses
+# half the reagents, never fewer than one.
+BANDS = [
+    (15.0, "lesser poison"),
+    (35.0, "poison"),
+    (45.0, "greater agility"),
+    (55.0, "greater strength"),
+    (75.0, "greater poison"),
+    (90.0, "greater cure"),
+    (None, "deadly poison"),
+]
+
+# Reagents one craft of a band's row takes
+REAGENT_COST = {
+    "lesser poison": (1, "nightshade"),
+    "poison": (2, "nightshade"),
+    "greater agility": (3, "blood moss"),
+    "greater strength": (5, "mandrake root"),
+    "greater cure": (6, "garlic"),
+    "greater poison": (4, "nightshade"),
+    "deadly poison": (8, "nightshade"),
+}
+
 # Mortar and pestle, 3739
 TOOL_GRAPHICS = set([0x0E9B])
 TOOL_NAME_WORDS = ["mortar"]
@@ -1837,6 +1864,37 @@ class Sources(object):
         return chebyshev(spot[0], spot[1], within + 1) <= within
 
 
+# src/uo/stages.py
+# Ceilings are exclusive; None catches everything above the last one
+def band_for(bands, value):
+    if value is None:
+        return None
+
+    for ceiling, product in bands:
+        if ceiling is None or value < ceiling:
+            return product
+
+    return None
+
+
+def _edge(value):
+    return ("%.1f" % value).replace(".0", "") if value is not None else "cap"
+
+
+# One row per band for the form: the range, the product, a third column, and which is current.
+# The first row starts where the script starts, which the table itself does not say.
+def band_rows(bands, value, describe, floor):
+    rows = []
+    current = band_for(bands, value)
+
+    for ceiling, product in bands:
+        span = "%s - %s" % (_edge(floor), _edge(ceiling))
+        rows.append(("%s  %s  %s" % (span, product, describe(product)), product == current))
+        floor = ceiling
+
+    return rows
+
+
 # src/uo/toolstore.py
 class ToolStore(object):
     """The container the craft tools are fetched from, one at a time, once the pack runs out."""
@@ -2003,8 +2061,13 @@ if start is None:
     log("%s is not reading yet - start it again once the skill list has arrived" % skill_name)
     API.Stop()
 
+def training_rows():
+    return ("%s %s" % (skill_name, reading(start)),
+            band_rows(BANDS, start, lambda row: "%d %s" % REAGENT_COST[row], MIN_SKILL))
+
+
 answers = setup.ask({
-    "table": lambda: ("%s %s" % (skill_name, reading(start)), []),
+    "table": training_rows,
     "tools": tool_store.pick,
     "tools_ready": lambda: tool_store.count() > 0,
     "source": sources.pick_one,

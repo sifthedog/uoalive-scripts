@@ -2,6 +2,33 @@ from uo.phrases import STOPPED
 
 SKILL_NAMES = ["Alchemy"]
 
+MIN_SKILL = 0.0
+
+# Ceilings are exclusive, in the client's float percentage. The wiki's path on stock RunUO floors
+# (lesser poison -5, poison 15, greater agility 35, greater strength 45, greater poison 55, greater
+# cure 65, deadly poison 90; success is (skill - floor) / 50). A failure keeps the bottle and loses
+# half the reagents, never fewer than one.
+BANDS = [
+    (15.0, "lesser poison"),
+    (35.0, "poison"),
+    (45.0, "greater agility"),
+    (55.0, "greater strength"),
+    (75.0, "greater poison"),
+    (90.0, "greater cure"),
+    (None, "deadly poison"),
+]
+
+# Reagents one craft of a band's row takes
+REAGENT_COST = {
+    "lesser poison": (1, "nightshade"),
+    "poison": (2, "nightshade"),
+    "greater agility": (3, "blood moss"),
+    "greater strength": (5, "mandrake root"),
+    "greater cure": (6, "garlic"),
+    "greater poison": (4, "nightshade"),
+    "deadly poison": (8, "nightshade"),
+}
+
 # Mortar and pestle, 3739
 TOOL_GRAPHICS = set([0x0E9B])
 TOOL_NAME_WORDS = ["mortar"]

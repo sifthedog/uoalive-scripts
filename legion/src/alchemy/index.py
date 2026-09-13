@@ -1,9 +1,9 @@
 import API
 
-from alchemy.config import (CONTAINER_RANGE, FETCH_POLL, FETCH_TIMEOUT, MAX_PICKS, MOVE_DELAY,
-                            OPEN_DELAY, PATHFIND_TIMEOUT, PICK_TIMEOUT, PRODUCTS, SETUP,
-                            SKILL_NAMES, SKILL_POLL, SKILL_TIMEOUT, STOPPED, TOOL_GRAPHICS,
-                            TOOL_NAME_WORDS)
+from alchemy.config import (BANDS, CONTAINER_RANGE, FETCH_POLL, FETCH_TIMEOUT, MAX_PICKS,
+                            MIN_SKILL, MOVE_DELAY, OPEN_DELAY, PATHFIND_TIMEOUT, PICK_TIMEOUT,
+                            PRODUCTS, REAGENT_COST, SETUP, SKILL_NAMES, SKILL_POLL, SKILL_TIMEOUT,
+                            STOPPED, TOOL_GRAPHICS, TOOL_NAME_WORDS)
 from uo.crafttool import CraftTool
 from uo.dump import Dump
 from uo.guards import dead, first_reason, skill_capped, stopped
@@ -11,6 +11,7 @@ from uo.log import make_log
 from uo.setup import Setup
 from uo.skill import SkillReader, find_skill_name, reading
 from uo.sources import Sources
+from uo.stages import band_rows
 from uo.stock import StockBook
 from uo.toolstore import ToolStore
 
@@ -71,8 +72,13 @@ if start is None:
     log("%s is not reading yet - start it again once the skill list has arrived" % skill_name)
     API.Stop()
 
+def training_rows():
+    return ("%s %s" % (skill_name, reading(start)),
+            band_rows(BANDS, start, lambda row: "%d %s" % REAGENT_COST[row], MIN_SKILL))
+
+
 answers = setup.ask({
-    "table": lambda: ("%s %s" % (skill_name, reading(start)), []),
+    "table": training_rows,
     "tools": tool_store.pick,
     "tools_ready": lambda: tool_store.count() > 0,
     "source": sources.pick_one,
