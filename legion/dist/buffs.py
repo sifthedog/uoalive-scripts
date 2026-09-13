@@ -4,6 +4,19 @@ import API
 import time
 
 
+# src/uo/entity.py
+# API.Player is None whenever the client is between world states - a recall, a server line change,
+# the moment around a death - and reading through it threw a live restock away
+def player():
+    try:
+        return API.Player
+    except Exception:
+        if API.StopRequested:
+            raise
+
+        return None
+
+
 # src/uo/journal.py
 def said(texts):
     for text in texts:
@@ -275,19 +288,6 @@ class BuffBar(object):
 # anything at all is held
 def in_hand():
     return API.FindLayer("onehanded") or API.FindLayer("twohanded")
-
-
-# src/uo/entity.py
-# API.Player is None whenever the client is between world states - a recall, a server line change,
-# the moment around a death - and reading through it threw a live restock away
-def player():
-    try:
-        return API.Player
-    except Exception:
-        if API.StopRequested:
-            raise
-
-        return None
 
 
 # src/uo/guards.py

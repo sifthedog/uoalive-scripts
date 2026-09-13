@@ -57,3 +57,15 @@ def clipped(text, limit):
     flat = " ".join((text or "").split())
 
     return flat if len(flat) <= limit else flat[:limit] + "..."
+
+
+# A craft gump is a header, then a notice, then every row it can make: the sentence talking to you
+# sits in the middle, where neither end of a clip reaches it
+def spoken(text, word, limit):
+    flat = " ".join((text or "").split())
+    at = flat.lower().find(word.lower())
+
+    if at <= 0:
+        return clipped(flat, limit)
+
+    return "..." + clipped(flat[at:], limit)

@@ -102,7 +102,8 @@ heal        bandaging the character it runs on, proved by the hits rising
 guards      the stop conditions, composed per script
 heartbeat   'still here', on the clock rather than per cycle
 hold        standing still behind a gump the script drew, until its button is pressed
-journal     the phrase table, the reverse lookup off it, and the tail of what was said
+journal     the phrase table, the reverse lookup off it, and the tail of what was said,
+            with the shard's own lines preferred over whoever is talking nearby
 log         the script's own prefix
 loop        the throttle backoff and the stall watchdog
 mana        the pool, watched in slices so the guards get a look in
@@ -111,6 +112,7 @@ materials   what a craft spent, measured either side of it
 meditate    filling the pool, and retiring the skill when the shard refuses it
 menu        a context menu entry, matched by its text
 mount       getting off the mount, proved by the flag
+notes       a report's whole gump and journal, appended to a file beside the script
 notoriety   the values the threat scans are handed
 pace        the shard's skill timer, learned from its refusals rather than configured
 pack        counting and diffing what the backpack holds
@@ -301,6 +303,18 @@ skill, used, skill_from, skill_to, gain, outcome`; `consumed.csv` is `id, name, 
 hue, quantity`, one row per material. `gain` is rounded to a tenth because `74.7 - 74.6` is not `0.1` in
 binary. `src/skilldb/` is host CPython, not in `build.py`'s `ENTRIES`, and lives under `src/` only so
 `run-tests.py` finds `convert_test.py`.
+
+### The notes file
+
+A craft the run could not read says two lines in the game window and appends the whole of it to
+`NOTES_PATH`, resolved the way `DATA_PATH` is: the untruncated gump text, every journal line of the
+last `NOTES_TAIL_SECONDS` with the speaker on each, and the pack. The window is capped at
+`MAX_UNREADABLE_REPORTS` and quotes only the *end* of the gump - a craft menu's first 160 characters
+are the same boilerplate every time, and the NOTICES panel a report exists for is last. The file is
+capped at nothing. `NOTES_PATH = ""` turns it off.
+
+TazUO writes a raw journal of its own under **Options -> Journal -> Save journal to file**; that
+carries every line but never a gump's NOTICES panel, which is why this file exists.
 
 ## tame.py
 

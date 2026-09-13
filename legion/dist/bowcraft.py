@@ -369,6 +369,11 @@ UNREADABLE_TEXT_LIMIT = 160
 JOURNAL_TAIL_SECONDS = 20.0
 JOURNAL_TAIL_LINES = 4
 
+# The whole gump and journal behind a report, appended here so the game window stays quiet. "" turns
+# it off; a bare name lands beside the script.
+NOTES_PATH = "bowcraft-notes.log"
+NOTES_TAIL_SECONDS = 60.0
+
 # Ordered: 'failed' before 'made' because "You failed to create the item" contains "create the item"
 OUTCOME_TEXT = [
     (
@@ -384,6 +389,7 @@ OUTCOME_TEXT = [
         "made",
         [
             "You create the item",
+            "You create an exceptional",
             "You put the",
             "You have worked the wood",
         ],
@@ -545,6 +551,18 @@ def clipped(text, limit):
     flat = " ".join((text or "").split())
 
     return flat if len(flat) <= limit else flat[:limit] + "..."
+
+
+# A craft gump is a header, then a notice, then every row it can make: the sentence talking to you
+# sits in the middle, where neither end of a clip reaches it
+def spoken(text, word, limit):
+    flat = " ".join((text or "").split())
+    at = flat.lower().find(word.lower())
+
+    if at <= 0:
+        return clipped(flat, limit)
+
+    return "..." + clipped(flat[at:], limit)
 
 
 # src/uo/stock.py
@@ -743,9 +761,13 @@ def said(texts):
 SKILL_GAIN_TEXT = ["your skill in", "has changed by"]
 
 
+# What the shard itself speaks under - anything else in the journal is a mobile in earshot
+SHARD_SPEAKERS = ["", "system"]
+
+
 # matchingText is left off on purpose: the client only applies it as a regex, so a plain string
 # there filters everything out
-def journal_tail(seconds, limit, stamp=None):
+def journal_entries(seconds, stamp=None):
     try:
         entries = API.GetJournalEntries(seconds)
     except Exception:
@@ -754,7 +776,7 @@ def journal_tail(seconds, limit, stamp=None):
 
         return []
 
-    texts = []
+    kept = []
     stamps = [stamp] if stamp else []
 
     for entry in entries if entries else []:
@@ -762,9 +784,26 @@ def journal_tail(seconds, limit, stamp=None):
 
         if (text and text.strip() and not any_in(text, SKILL_GAIN_TEXT)
                 and not any_in(text, stamps)):
-            texts.append(text.strip())
+            kept.append(((getattr(entry, "Name", None) or "").strip(), text.strip()))
 
-    return texts[-limit:]
+    return kept
+
+
+# What the shard said is preferred rather than kept alone: a chatty NPC used to fill the whole tail
+# and evict the line a craft was reported on, but a shard answering under some other name still has
+# to reach the report. shard_first off keeps every speaker, which is what the notes file wants.
+def journal_report(seconds, limit, stamp=None, shard_first=True):
+    entries = journal_entries(seconds, stamp)
+    me = player()
+    speakers = SHARD_SPEAKERS + [(getattr(me, "Name", "") or "").strip().lower()]
+    theirs = [pair for pair in entries if pair[0].lower() in speakers]
+    shown = (theirs or entries) if shard_first else entries
+
+    if limit is not None:
+        shown = shown[-limit:]
+
+    return [text if name.lower() in speakers else "%s: %s" % (name, text)
+            for name, text in shown]
 
 
 # Line by line rather than the whole journal: a wholesale clear before every swing wiped the ambush
@@ -1630,22 +1669,170 @@ def short_by(product, held, costs, fallback):
     return max(0, cost_of(product, costs, fallback) - held)
 
 
+# src/uo/clock.py
+def now():
+    return time.time()
+
+
+def time_text():
+    return time.strftime("%Y-%m-%d %H:%M:%S")
+
+
+# src/uo/paths.py
+# TazUO's working directory is its own folder, and the scripts live in this subfolder of it
+SCRIPTS_FOLDER = "LegionScripts"
+
+
+# A bare name lands in TazUO's working directory; beside the script is where anyone looks for it.
+# A name with a folder in it, relative or absolute, is left as written.
+def beside_script(name):
+    if not name or "/" in name or "\\" in name:
+        return name
+
+    script = getattr(API, "ScriptPath", None) or ""
+    cut = max(script.rfind("/"), script.rfind("\\"))
+
+    # A client that does not say where the script is still runs it out of the standard folder
+    if cut < 0:
+        return SCRIPTS_FOLDER + "/" + name
+
+    return script[:cut + 1] + name
+
+
+def append_line(path, line):
+    handle = open(path, "a")
+
+    try:
+        handle.write(line + "\n")
+    finally:
+        handle.close()
+
+
+# src/uo/notes.py
+class NoteLog(object):
+    """One block per report, appended to a file beside the script."""
+
+    def __init__(self, path, log, append=None):
+        self._path = path or ""
+        self._log = log
+        self._append = append if append is not None else append_line
+        self._off = not self._path
+        self._said = False
+
+    def writing(self):
+        return not self._off
+
+    def where(self):
+        return self._path
+
+    def write(self, heading, rows):
+        if self._off:
+            return
+
+        out = ["[%s] %s" % (time_text(), heading)]
+
+        for label, values in rows:
+            out.append("  %s:" % label)
+
+            for value in values or ["(nothing)"]:
+                out.append("    %s" % value)
+
+        self._put("\n".join(out))
+
+    # A run that cannot write its notes is still a run: the sink retires itself and says so once
+    def _put(self, block):
+        try:
+            self._append(self._path, block)
+        except Exception as error:
+            self._off = True
+
+            if not self._said:
+                self._said = True
+                self._log("cannot write %s (%s) - not writing notes this run"
+                          % (self._path, error))
+
+
+def note_log(path, log):
+    return NoteLog(beside_script(path), log)
+
+
+class Reporter(object):
+    """What a craft could not read: a short line in the window, the whole of it in the notes.
+
+    The window quotes the gump from the shard's own sentence on: the header before it and the rows
+    after it are the same boilerplate every time.
+    """
+
+    def __init__(self, lines_of, config, log, notes=None, stamp=None):
+        self._lines_of = lines_of
+        self._config = config
+        self._log = log
+        self._notes = notes
+        self._stamp = stamp
+        self._said = 0
+        self._said_where = False
+
+    def forget(self):
+        self._said = 0
+
+    # extra is (label, sentence) pairs: the window says the sentence, the notes file labels it
+    def say(self, why, gump, extra=None):
+        text = untagged(" ".join(self._lines_of(gump))) if gump else ""
+        rest = list(extra or [])
+
+        self._write(why, text, rest)
+
+        if self._said >= self._config["max_reports"]:
+            return
+
+        self._said += 1
+        lines = journal_report(self._config["tail_seconds"], self._config["tail_lines"],
+                               self._stamp)
+
+        self._log("%s - the gump says '%s'"
+                  % (why, spoken(text, "you", self._config["text_limit"]) or "(nothing)"))
+        self._log("the journal says '%s'" % (" | ".join(lines) or "(nothing)"))
+
+        for _label, sentence in rest:
+            self._log(sentence)
+
+        self._say_where()
+
+    # Said when there is something to read rather than at startup, where the form has not yet told
+    # the run whether it wants any logs at all
+    def _say_where(self):
+        if self._notes is None or not self._notes.writing() or self._said_where:
+            return
+
+        self._said_where = True
+        self._log("the whole of it is in %s" % self._notes.where())
+
+    # Uncapped, and untruncated: the window's two reports are a pointer, the file is the evidence
+    def _write(self, why, text, rest):
+        if self._notes is None or not self._notes.writing():
+            return
+
+        rows = [("gump", [text] if text else []),
+                ("journal", journal_report(self._config["notes_seconds"], None, self._stamp,
+                                           False))]
+
+        self._notes.write(why, rows + [(label, [sentence]) for label, sentence in rest])
+
+
 # src/uo/craft.py
 class Crafter(object):
     """Presses the RECIPES row as written and reads only the shard's words for the outcome."""
 
-    def __init__(self, tools, menu, stock, buckets, config, log, stamp=None):
+    def __init__(self, tools, menu, stock, buckets, config, log, stamp=None, notes=None):
         self._tools = tools
         self._menu = menu
         self._stock = stock
         self._buckets = buckets
         self._config = config
         self._log = log
-        self._stamp = stamp
+        self._report = Reporter(menu.lines, config, log, notes, stamp)
         self._make_last = False
-        self._said_unreadable = 0
         self._said_no_make_last = False
-        self._heard = ""
 
     def forget_last(self):
         self._make_last = False
@@ -1655,8 +1842,6 @@ class Crafter(object):
             for phrase in phrases:
                 # clearMatches, or a line already read answers the next wait as well
                 if API.InJournalAny([phrase], True):
-                    self._heard = "the journal said '%s'" % phrase
-
                     return name
 
         return None
@@ -1670,8 +1855,6 @@ class Crafter(object):
         for name, phrases in self._buckets:
             for phrase in phrases:
                 if any_in(text, [phrase.lower()]) or API.GumpContains(phrase, gump):
-                    self._heard = "the gump said '%s'" % phrase
-
                     return name
 
         return None
@@ -1696,19 +1879,8 @@ class Crafter(object):
             waited += self._config["craft_poll"]
 
     def _report_outcome(self, why, gump):
-        if self._said_unreadable >= self._config["max_reports"]:
-            return
-
-        self._said_unreadable += 1
-
-        text = (clipped(untagged(" ".join(self._menu.lines(gump))), self._config["text_limit"])
-                if gump else "")
-        lines = journal_tail(self._config["tail_seconds"], self._config["tail_lines"], self._stamp)
-
-        self._log("%s - the gump says '%s'" % (why, text or "(nothing)"))
-        self._log("the journal says '%s'" % (" | ".join(lines) or "(nothing)"))
-        self._log("the pack holds %s, and the menu is set to %s here"
-                  % (self._stock.hue_report(), self._config["material"]))
+        self._report.say(why, gump, [("pack", "the pack holds %s, and the menu is set to %s here"
+                                      % (self._stock.hue_report(), self._config["material"]))])
 
     # MAKE LAST is the only path that skips the category: a row button is only in the gump once
     # its category is showing
@@ -1758,7 +1930,7 @@ class Crafter(object):
 
         if outcome == "made":
             self._make_last = True
-            self._said_unreadable = 0
+            self._report.forget()
         elif outcome == "noMaterial":
             self._report_outcome("refused for materials", opened)
         elif outcome is None:
@@ -2379,11 +2551,6 @@ def skill_capped(name):
     return clause
 
 
-# src/uo/clock.py
-def now():
-    return time.time()
-
-
 # src/uo/heartbeat.py
 class Heartbeat(object):
     """Proof of life: a loop standing still in silence looks exactly like a hung one."""
@@ -2533,27 +2700,6 @@ class Materials(object):
         return rows
 
 
-# src/uo/paths.py
-# TazUO's working directory is its own folder, and the scripts live in this subfolder of it
-SCRIPTS_FOLDER = "LegionScripts"
-
-
-# A bare name lands in TazUO's working directory; beside the script is where anyone looks for it.
-# A name with a folder in it, relative or absolute, is left as written.
-def beside_script(name):
-    if not name or "/" in name or "\\" in name:
-        return name
-
-    script = getattr(API, "ScriptPath", None) or ""
-    cut = max(script.rfind("/"), script.rfind("\\"))
-
-    # A client that does not say where the script is still runs it out of the standard folder
-    if cut < 0:
-        return SCRIPTS_FOLDER + "/" + name
-
-    return script[:cut + 1] + name
-
-
 # src/uo/gainpath.py
 COMMAND = "[SkillGainMode"
 PROMPT = "skill gain path is"
@@ -2632,15 +2778,6 @@ def quoted(text):
 
 def skill_json(value):
     return "null" if value is None else "%.1f" % value
-
-
-def append_line(path, line):
-    handle = open(path, "a")
-
-    try:
-        handle.write(line + "\n")
-    finally:
-        handle.close()
 
 
 class AttemptLog(object):
@@ -3648,6 +3785,7 @@ menu = CraftMenu(tools, {
     "gump_timeout": GUMP_TIMEOUT,
     "gump_poll": GUMP_POLL,
 }, log)
+notes = note_log(NOTES_PATH, log)
 crafter = Crafter(tools, menu, wood, OUTCOME_TEXT, {
     "recipes": RECIPES,
     "make_last_button": MAKE_LAST_BUTTON,
@@ -3658,8 +3796,9 @@ crafter = Crafter(tools, menu, wood, OUTCOME_TEXT, {
     "text_limit": UNREADABLE_TEXT_LIMIT,
     "tail_seconds": JOURNAL_TAIL_SECONDS,
     "tail_lines": JOURNAL_TAIL_LINES,
+    "notes_seconds": NOTES_TAIL_SECONDS,
     "material": WOOD_TYPE,
-}, log, log.stamp)
+}, log, log.stamp, notes)
 vendor = Vendor(menu, {
     "serial": VENDOR_SERIAL,
     "scan_radius": VENDOR_SCAN_RADIUS,

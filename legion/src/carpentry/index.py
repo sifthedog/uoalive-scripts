@@ -10,13 +10,15 @@ from carpentry.config import (BANDS, BATCH_SIZE, BOX, BOX_PRESS_POLL, BOX_PRESS_
                               MAX_CYCLES, MAX_DUMP_MISSES, MAX_EMPTY_MOVES, MAX_HELD,
                               MAX_NO_MATERIAL, MAX_NO_TOOL, MAX_PICKS, MAX_THROTTLED, MAX_UNKNOWN,
                               MAX_UNREADABLE_REPORTS, MIN_CRAFT_WOOD, MIN_SKILL, MOVE_DELAY,
-                              OPEN_DELAY, OUTCOME_TEXT, PATHFIND_TIMEOUT, PICK_TIMEOUT, PRODUCTS,
-                              RECIPES, REFUND_POLL, REFUND_SETTLE, REGULAR_WOOD, RESTOCK_AT,
-                              RETURN_WRONG_WOOD, SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT, SAVING_TEXT,
-                              SETUP, SKILL_NAMES, SKILL_POLL, SKILL_TIMEOUT, STALL_STOP, STALL_WARN,
+                              NOTES_PATH, NOTES_TAIL_SECONDS, OPEN_DELAY, OUTCOME_TEXT,
+                              PATHFIND_TIMEOUT, PICK_TIMEOUT, PRODUCTS, RECIPES, REFUND_POLL,
+                              REFUND_SETTLE, REGULAR_WOOD, RESTOCK_AT, RETURN_WRONG_WOOD,
+                              SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT, SAVING_TEXT, SETUP,
+                              SKILL_NAMES, SKILL_POLL, SKILL_TIMEOUT, STALL_STOP, STALL_WARN,
                               STEP_DELAY, STOPPED, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX,
-                              TOOL_GRAPHICS, TOOL_NAME_WORDS, TOO_HEAVY_TEXT, UNREADABLE_TEXT_LIMIT,
-                              WOOD_COST, WOOD_HUES, WOOD_KINDS, WOOD_TYPE, WOOD_TYPES)
+                              TOOL_GRAPHICS, TOOL_NAME_WORDS, TOO_HEAVY_TEXT,
+                              UNREADABLE_TEXT_LIMIT, WOOD_COST, WOOD_HUES, WOOD_KINDS, WOOD_TYPE,
+                              WOOD_TYPES)
 from uo.dump import Dump
 from uo.cost import cost_of, short_by
 from uo.craft import Crafter
@@ -28,6 +30,7 @@ from uo.heartbeat import Heartbeat
 from uo.log import make_log
 from uo.loop import StallWatch, backoff_for
 from uo.materials import Materials
+from uo.notes import note_log
 from uo.record import attempt_log
 from uo.restock import Restock
 from uo.save import SaveWatch
@@ -127,6 +130,7 @@ menu = CraftMenu(tools, {
     "gump_timeout": GUMP_TIMEOUT,
     "gump_poll": GUMP_POLL,
 }, log)
+notes = note_log(NOTES_PATH, log)
 crafter = Crafter(tools, menu, wood, OUTCOME_TEXT, {
     "recipes": RECIPES,
     "make_last_button": MAKE_LAST_BUTTON,
@@ -137,8 +141,9 @@ crafter = Crafter(tools, menu, wood, OUTCOME_TEXT, {
     "text_limit": UNREADABLE_TEXT_LIMIT,
     "tail_seconds": JOURNAL_TAIL_SECONDS,
     "tail_lines": JOURNAL_TAIL_LINES,
+    "notes_seconds": NOTES_TAIL_SECONDS,
     "material": WOOD_TYPE,
-}, log, log.stamp)
+}, log, log.stamp, notes)
 
 start = skill.wait(SKILL_TIMEOUT, SKILL_POLL)
 

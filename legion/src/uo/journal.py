@@ -1,5 +1,6 @@
 import API
 
+from uo.entity import player
 from uo.text import any_in
 
 
@@ -15,9 +16,13 @@ def said(texts):
 SKILL_GAIN_TEXT = ["your skill in", "has changed by"]
 
 
+# What the shard itself speaks under - anything else in the journal is a mobile in earshot
+SHARD_SPEAKERS = ["", "system"]
+
+
 # matchingText is left off on purpose: the client only applies it as a regex, so a plain string
 # there filters everything out
-def journal_tail(seconds, limit, stamp=None):
+def journal_entries(seconds, stamp=None):
     try:
         entries = API.GetJournalEntries(seconds)
     except Exception:
@@ -26,7 +31,7 @@ def journal_tail(seconds, limit, stamp=None):
 
         return []
 
-    texts = []
+    kept = []
     stamps = [stamp] if stamp else []
 
     for entry in entries if entries else []:
@@ -34,9 +39,31 @@ def journal_tail(seconds, limit, stamp=None):
 
         if (text and text.strip() and not any_in(text, SKILL_GAIN_TEXT)
                 and not any_in(text, stamps)):
-            texts.append(text.strip())
+            kept.append(((getattr(entry, "Name", None) or "").strip(), text.strip()))
 
-    return texts[-limit:]
+    return kept
+
+
+# The text alone: fishing reads the catch off the end of the line it returns
+def journal_tail(seconds, limit, stamp=None):
+    return [text for _name, text in journal_entries(seconds, stamp)][-limit:]
+
+
+# What the shard said is preferred rather than kept alone: a chatty NPC used to fill the whole tail
+# and evict the line a craft was reported on, but a shard answering under some other name still has
+# to reach the report. shard_first off keeps every speaker, which is what the notes file wants.
+def journal_report(seconds, limit, stamp=None, shard_first=True):
+    entries = journal_entries(seconds, stamp)
+    me = player()
+    speakers = SHARD_SPEAKERS + [(getattr(me, "Name", "") or "").strip().lower()]
+    theirs = [pair for pair in entries if pair[0].lower() in speakers]
+    shown = (theirs or entries) if shard_first else entries
+
+    if limit is not None:
+        shown = shown[-limit:]
+
+    return [text if name.lower() in speakers else "%s: %s" % (name, text)
+            for name, text in shown]
 
 
 # Line by line rather than the whole journal: a wholesale clear before every swing wiped the ambush

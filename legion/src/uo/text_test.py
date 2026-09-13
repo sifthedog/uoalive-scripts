@@ -1,7 +1,7 @@
 import unittest
 
 from test_support.uo import install
-from uo.text import any_in, clipped, phrase_in, untagged, word_in, words_of
+from uo.text import any_in, clipped, phrase_in, spoken, untagged, word_in, words_of
 
 
 class WordsOfTest(unittest.TestCase):
@@ -48,6 +48,22 @@ class ClippedTest(unittest.TestCase):
 
     def test_leaves_a_short_string_alone(self):
         self.assertEqual(clipped("abcd", 4), "abcd")
+
+
+class SpokenTest(unittest.TestCase):
+    def test_starts_at_the_word_and_marks_what_it_cut(self):
+        self.assertEqual(spoken("MAKE LAST COMPLETED You create an item. Other Furniture",
+                                "you", 19),
+                         "...You create an item....")
+
+    def test_a_text_that_opens_with_the_word_is_not_marked(self):
+        self.assertEqual(spoken("You create an item.", "you", 19), "You create an item.")
+
+    def test_a_text_without_the_word_is_clipped_from_the_front(self):
+        self.assertEqual(spoken("MAKE LAST COMPLETED Other", "you", 9), "MAKE LAST...")
+
+    def test_collapses_whitespace(self):
+        self.assertEqual(spoken("a\n  b\tc", "you", 40), "a b c")
 
 
 class PhraseInTest(unittest.TestCase):

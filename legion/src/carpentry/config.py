@@ -497,6 +497,11 @@ UNREADABLE_TEXT_LIMIT = 160
 JOURNAL_TAIL_SECONDS = 20.0
 JOURNAL_TAIL_LINES = 4
 
+# The whole gump and journal behind a report, appended here so the game window stays quiet. "" turns
+# it off; a bare name lands beside the script.
+NOTES_PATH = "carpentry-notes.log"
+NOTES_TAIL_SECONDS = 60.0
+
 # Ordered: 'failed' before 'made' because "You failed to create the item" contains "create the item"
 OUTCOME_TEXT = [
     (
@@ -512,6 +517,9 @@ OUTCOME_TEXT = [
         "made",
         [
             "You create the item",
+            # Read off UOAlive's NOTICES panel at Carpentry 42.4 - an exceptional craft says
+            # nothing else, and went unread as a result
+            "You create an exceptional",
             "You put the",
         ],
     ),

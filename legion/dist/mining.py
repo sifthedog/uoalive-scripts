@@ -2346,6 +2346,15 @@ def beside_script(name):
     return script[:cut + 1] + name
 
 
+def append_line(path, line):
+    handle = open(path, "a")
+
+    try:
+        handle.write(line + "\n")
+    finally:
+        handle.close()
+
+
 # src/uo/gainpath.py
 COMMAND = "[SkillGainMode"
 PROMPT = "skill gain path is"
@@ -2424,15 +2433,6 @@ def quoted(text):
 
 def skill_json(value):
     return "null" if value is None else "%.1f" % value
-
-
-def append_line(path, line):
-    handle = open(path, "a")
-
-    try:
-        handle.write(line + "\n")
-    finally:
-        handle.close()
 
 
 class AttemptLog(object):

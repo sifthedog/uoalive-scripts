@@ -1,7 +1,7 @@
 import unittest
 
 from test_support.uo import install
-from uo.journal import journal_tail
+from uo.journal import journal_report, journal_tail
 from uo.log import make_log
 
 
@@ -55,3 +55,40 @@ class JournalTailTest(unittest.TestCase):
         self.api.GetJournalEntries = throw
 
         self.assertEqual(journal_tail(20.0, 4), [])
+
+
+class JournalReportTest(unittest.TestCase):
+    def setUp(self):
+        self.api = install()
+
+    def test_a_chatty_npc_does_not_evict_the_shard(self):
+        self.api.hear("You create the item")
+        self.api.overhear("Lurid Halo the Necromancer", "Hey buddy. Looking for work?",
+                          "I want to make you an offer", "Know yourself", "a wren")
+
+        self.assertEqual(journal_report(20.0, 4), ["You create the item"])
+
+    def test_names_who_spoke_when_only_chatter_is_left(self):
+        self.api.overhear("Lurid Halo the Necromancer", "Hey buddy. Looking for work?")
+
+        self.assertEqual(journal_report(20.0, 4),
+                         ["Lurid Halo the Necromancer: Hey buddy. Looking for work?"])
+
+    def test_your_own_character_counts_as_the_shard(self):
+        self.api.overhear("tester", "You have been ambushed!")
+        self.api.overhear("Doggess Sif", "woof")
+
+        self.assertEqual(journal_report(20.0, 4), ["You have been ambushed!"])
+
+    def test_no_limit_writes_the_lot(self):
+        self.api.hear("one", "two", "three", "four", "five")
+
+        self.assertEqual(len(journal_report(20.0, None)), 5)
+
+    def test_the_notes_file_keeps_every_speaker(self):
+        self.api.hear("You create the item")
+        self.api.overhear("Lurid Halo the Necromancer", "Hey buddy. Looking for work?")
+
+        self.assertEqual(journal_report(20.0, None, None, False),
+                         ["You create the item",
+                          "Lurid Halo the Necromancer: Hey buddy. Looking for work?"])

@@ -18,3 +18,12 @@ def beside_script(name):
         return SCRIPTS_FOLDER + "/" + name
 
     return script[:cut + 1] + name
+
+
+def append_line(path, line):
+    handle = open(path, "a")
+
+    try:
+        handle.write(line + "\n")
+    finally:
+        handle.close()

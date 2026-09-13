@@ -435,6 +435,11 @@ UNREADABLE_TEXT_LIMIT = 160
 JOURNAL_TAIL_SECONDS = 20.0
 JOURNAL_TAIL_LINES = 4
 
+# The whole gump and journal behind a report, appended here so the game window stays quiet. "" turns
+# it off; a bare name lands beside the script.
+NOTES_PATH = "tinkering-notes.log"
+NOTES_TAIL_SECONDS = 60.0
+
 # Ordered: 'failed' before 'made' because "You failed to create the item" contains "create the item"
 OUTCOME_TEXT = [
     (
@@ -450,6 +455,7 @@ OUTCOME_TEXT = [
         "made",
         [
             "You create the item",
+            "You create an exceptional",
             "You put the",
         ],
     ),

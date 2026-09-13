@@ -11,8 +11,14 @@ import types
 
 
 class FakeEntry(object):
-    def __init__(self, text):
+    def __init__(self, text, name="System"):
         self.Text = text
+        self.Name = name
+
+
+# A test that puts a plain string in the journal is the shard talking; overhear() names anyone else
+def _heard(entry):
+    return entry if isinstance(entry, tuple) else ("System", entry)
 
 
 class FakeSkill(object):
@@ -353,19 +359,22 @@ class FakeAPI(object):
 
         if matching:
             self.forgotten.append(matching)
-            self.journal = [line for line in self.journal if matching not in line]
+            self.journal = [entry for entry in self.journal
+                            if matching not in _heard(entry)[1]]
         else:
             self.journal = []
 
     def GetJournalEntries(self, seconds=None):
-        return [FakeEntry(line) for line in self.journal]
+        return [FakeEntry(text, name)
+                for name, text in (_heard(entry) for entry in self.journal)]
 
     def InJournal(self, text, clear_matches=False):
         low = text.lower()
-        hits = [line for line in self.journal if low in line.lower()]
+        hits = [entry for entry in self.journal if low in _heard(entry)[1].lower()]
 
         if hits and clear_matches:
-            self.journal = [line for line in self.journal if low not in line.lower()]
+            self.journal = [entry for entry in self.journal
+                            if low not in _heard(entry)[1].lower()]
 
         return bool(hits)
 
@@ -644,6 +653,9 @@ class FakeAPI(object):
 
     def hear(self, *lines):
         self.journal.extend(lines)
+
+    def overhear(self, name, *lines):
+        self.journal.extend((name, line) for line in lines)
 
     def hold(self, *items):
         self.containers[self.Backpack] = list(items)

@@ -107,6 +107,15 @@ def beside_script(name):
     return script[:cut + 1] + name
 
 
+def append_line(path, line):
+    handle = open(path, "a")
+
+    try:
+        handle.write(line + "\n")
+    finally:
+        handle.close()
+
+
 # src/uo/timings.py
 """The constants the scripts agreed on. Every one is in seconds - API.Pause takes seconds."""
 
@@ -161,15 +170,6 @@ def json_value(value):
 
 def json_object(pairs):
     return "{%s}" % ",".join("%s:%s" % (quoted(key), json_value(value)) for key, value in pairs)
-
-
-def append_line(path, line):
-    handle = open(path, "a")
-
-    try:
-        handle.write(line + "\n")
-    finally:
-        handle.close()
 
 
 # src/uo/tooltip.py

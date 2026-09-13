@@ -2,27 +2,27 @@ import API
 
 from inscription.config import (BANDS, BATCH_SIZE, BUTTON_STRIDE, CATEGORY_BUTTON_TYPE,
                                 CATEGORY_NAMES, CONTAINER_RANGE, CONTEXT_TIMEOUT, CRAFT_POLL,
-                                CRAFT_TIMEOUT, CRAFT_TITLE, CRAFT_TITLE_FRAGMENTS, CRAFT_TITLE_TEXT,
-                                DATA_PATH, DUMP_AT, GUMP_POLL, GUMP_TIMEOUT, HEARTBEAT_EVERY,
-                                ITEM_BUTTON_TYPE, JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS,
-                                KIND_ORDER, LAST_TEN_LABEL, LOG_EVERY, MAKE_LAST_BUTTON, MANA,
-                                MANA_LOG_EVERY, MANA_POLL, MANA_WAIT_SLICE, MAX_CYCLES, MAX_DRY,
-                                MAX_DUMP_MISSES, MAX_EMPTY_MOVES, MAX_HELD, MAX_NO_MATERIAL,
-                                MAX_NO_TOOL, MAX_PICKS, MAX_SELL_MISSES, MAX_THROTTLED, MAX_UNKNOWN,
-                                MAX_UNREADABLE_REPORTS, MEDITATE, MEDITATE_ATTEMPTS,
-                                MEDITATE_OUTCOME_TEXT, MEDITATE_START_TIMEOUT, MEDITATE_TIMEOUT,
-                                MEDITATE_TO_FULL, MEDITATION, MEDITATION_BUFF, MIN_SKILL,
-                                MOVE_DELAY, NEEDS, OPEN_DELAY, OPL_WAIT, OUTCOME_TEXT,
-                                OUTPUT_CHOICE, OUTPUT_OPTIONS, PATHFIND_TIMEOUT, PICK_TIMEOUT,
-                                PRODUCT_GRAPHICS, PRODUCTS, RECIPES, REFUND_POLL, REFUND_SETTLE,
-                                REGEN_TIMEOUT, RESTOCK_AT, SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT,
-                                SAVING_TEXT, SELL_AT, SELL_ENTRY, SELL_PHRASE, SELL_POLL,
-                                SELL_RETRY_AFTER, SELL_TIMEOUT, SKILL_NAMES, SKILL_POLL,
-                                SKILL_TIMEOUT, STALL_STOP, STALL_WARN, STEP_DELAY, STOCK_KINDS,
-                                STOPPED, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX, TOO_HEAVY_TEXT,
-                                TOOL_GRAPHICS, TOOL_NAME_WORDS, UNREADABLE_TEXT_LIMIT, VENDOR_NOUN,
-                                VENDOR_RANGE, VENDOR_SCAN_RADIUS, VENDOR_SERIAL, VENDOR_STEPS,
-                                VENDOR_TITLES)
+                                CRAFT_TIMEOUT, CRAFT_TITLE, CRAFT_TITLE_FRAGMENTS,
+                                CRAFT_TITLE_TEXT, DATA_PATH, DUMP_AT, GUMP_POLL, GUMP_TIMEOUT,
+                                HEARTBEAT_EVERY, ITEM_BUTTON_TYPE, JOURNAL_TAIL_LINES,
+                                JOURNAL_TAIL_SECONDS, KIND_ORDER, LAST_TEN_LABEL, LOG_EVERY,
+                                MAKE_LAST_BUTTON, MANA, MANA_LOG_EVERY, MANA_POLL, MANA_WAIT_SLICE,
+                                MAX_CYCLES, MAX_DRY, MAX_DUMP_MISSES, MAX_EMPTY_MOVES, MAX_HELD,
+                                MAX_NO_MATERIAL, MAX_NO_TOOL, MAX_PICKS, MAX_SELL_MISSES,
+                                MAX_THROTTLED, MAX_UNKNOWN, MAX_UNREADABLE_REPORTS, MEDITATE,
+                                MEDITATE_ATTEMPTS, MEDITATE_OUTCOME_TEXT, MEDITATE_START_TIMEOUT,
+                                MEDITATE_TIMEOUT, MEDITATE_TO_FULL, MEDITATION, MEDITATION_BUFF,
+                                MIN_SKILL, MOVE_DELAY, NEEDS, NOTES_PATH, NOTES_TAIL_SECONDS,
+                                OPEN_DELAY, OPL_WAIT, OUTCOME_TEXT, OUTPUT_CHOICE, OUTPUT_OPTIONS,
+                                PATHFIND_TIMEOUT, PICK_TIMEOUT, PRODUCTS, PRODUCT_GRAPHICS,
+                                RECIPES, REFUND_POLL, REFUND_SETTLE, REGEN_TIMEOUT, RESTOCK_AT,
+                                SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT, SAVING_TEXT, SELL_AT,
+                                SELL_ENTRY, SELL_PHRASE, SELL_POLL, SELL_RETRY_AFTER, SELL_TIMEOUT,
+                                SKILL_NAMES, SKILL_POLL, SKILL_TIMEOUT, STALL_STOP, STALL_WARN,
+                                STEP_DELAY, STOCK_KINDS, STOPPED, THROTTLE_BACKOFF,
+                                THROTTLE_BACKOFF_MAX, TOOL_GRAPHICS, TOOL_NAME_WORDS,
+                                TOO_HEAVY_TEXT, UNREADABLE_TEXT_LIMIT, VENDOR_NOUN, VENDOR_RANGE,
+                                VENDOR_SCAN_RADIUS, VENDOR_SERIAL, VENDOR_STEPS, VENDOR_TITLES)
 from uo.buffbar import BuffBar
 from uo.choice import Choice
 from uo.components import affordable, short_of, shortfall_report
@@ -40,6 +40,7 @@ from uo.mana import ManaWatch
 from uo.materials import Materials
 from uo.meditate import Meditation
 from uo.pack import count_of
+from uo.notes import note_log
 from uo.record import attempt_log
 from uo.restock import Restock
 from uo.save import SaveWatch
@@ -158,6 +159,7 @@ menu = CraftMenu(tools, {
     "gump_timeout": GUMP_TIMEOUT,
     "gump_poll": GUMP_POLL,
 }, log)
+notes = note_log(NOTES_PATH, log)
 crafter = Crafter(tools, menu, stock, OUTCOME_TEXT, {
     "recipes": RECIPES,
     "make_last_button": MAKE_LAST_BUTTON,
@@ -168,8 +170,9 @@ crafter = Crafter(tools, menu, stock, OUTCOME_TEXT, {
     "text_limit": UNREADABLE_TEXT_LIMIT,
     "tail_seconds": JOURNAL_TAIL_SECONDS,
     "tail_lines": JOURNAL_TAIL_LINES,
+    "notes_seconds": NOTES_TAIL_SECONDS,
     "material": "blank scrolls and reagents",
-}, log, log.stamp)
+}, log, log.stamp, notes)
 vendor = Vendor(menu, {
     "serial": VENDOR_SERIAL,
     "scan_radius": VENDOR_SCAN_RADIUS,

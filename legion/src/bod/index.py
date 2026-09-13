@@ -15,13 +15,14 @@ from bod.config import (ARTICLES, BATCH_IDLE, BOD_COMBINE_BUTTON, BOD_GUMP_TEXT,
                         LAST_TEN_LABEL, MAKE_NUMBER_BUTTON, MATERIAL_ALIASES, MATERIAL_BUTTON_TYPE,
                         MATERIAL_ORDER, MATERIAL_ROWS_AFTER, MATERIAL_ROW_TYPE, MAX_CYCLES,
                         MAX_MATERIAL_ROWS, MAX_NO_CURSOR, MAX_NO_TOOL, MAX_THROTTLED, MAX_UNKNOWN,
-                        MAX_UNREADABLE_REPORTS, MOVE_DELAY, OPEN_DELAY, OPL_ASKS, OPL_SETTLE,
-                        OPL_TIMEOUT, OUTCOME_TEXT, PICK_TIMEOUT, PLAIN_MATERIAL, PROMPT_DELAY,
-                        RECIPES, REREAD_POLL, REREAD_SETTLE, SALVAGE_AT_END, SALVAGE_ENTRIES,
-                        SALVAGE_SETTLE, SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT, SAVING_TEXT,
-                        SKILL_NAMES, STALL_STOP, STALL_WARN, STEP_DELAY, STOPPED, TARGET_TIMEOUT,
-                        THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX, TOOL_BAG_NAMES, TOOL_GRAPHICS,
-                        TOOL_NAME_WORDS, TOOL_PREFERENCE, UNREADABLE_TEXT_LIMIT, USES_TEXT)
+                        MAX_UNREADABLE_REPORTS, MOVE_DELAY, NOTES_PATH, NOTES_TAIL_SECONDS,
+                        OPEN_DELAY, OPL_ASKS, OPL_SETTLE, OPL_TIMEOUT, OUTCOME_TEXT, PICK_TIMEOUT,
+                        PLAIN_MATERIAL, PROMPT_DELAY, RECIPES, REREAD_POLL, REREAD_SETTLE,
+                        SALVAGE_AT_END, SALVAGE_ENTRIES, SALVAGE_SETTLE, SAVE_DONE_TEXT, SAVE_POLL,
+                        SAVE_WAIT, SAVING_TEXT, SKILL_NAMES, STALL_STOP, STALL_WARN, STEP_DELAY,
+                        STOPPED, TARGET_TIMEOUT, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX,
+                        TOOL_BAG_NAMES, TOOL_GRAPHICS, TOOL_NAME_WORDS, TOOL_PREFERENCE,
+                        UNREADABLE_TEXT_LIMIT, USES_TEXT)
 from bod.craft import DeedCrafter
 from bod.deed import Deed, entry_request
 from bod.fill import SmallFill
@@ -35,6 +36,7 @@ from uo.entity import hex_of, player
 from uo.guards import dead, first_reason, stopped
 from uo.heartbeat import Heartbeat
 from uo.log import make_log
+from uo.notes import note_log
 from uo.loop import StallWatch
 from uo.pack import pack_contents
 from uo.save import SaveWatch
@@ -43,6 +45,7 @@ from uo.text import any_in
 from uo.vitals import position_and_weight
 
 log = make_log("bod")
+note_file = note_log(NOTES_PATH, log)
 DEED_FULL = "the deed is full"
 LARGE_COMPLETE = "the large deed is complete"
 heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "combined", position_and_weight)
@@ -97,6 +100,7 @@ COMBINES = {
     "text_limit": UNREADABLE_TEXT_LIMIT,
     "tail_seconds": JOURNAL_TAIL_SECONDS,
     "tail_lines": JOURNAL_TAIL_LINES,
+    "notes_seconds": NOTES_TAIL_SECONDS,
 }
 
 
@@ -231,13 +235,14 @@ def fill_small(small):
         "craft_timeout": CRAFT_TIMEOUT,
         "craft_poll": CRAFT_POLL,
         "recipes": RECIPES,
-            "max_reports": MAX_UNREADABLE_REPORTS,
+        "max_reports": MAX_UNREADABLE_REPORTS,
         "text_limit": UNREADABLE_TEXT_LIMIT,
         "tail_seconds": JOURNAL_TAIL_SECONDS,
         "tail_lines": JOURNAL_TAIL_LINES,
-    }, log, log.stamp)
+        "notes_seconds": NOTES_TAIL_SECONDS,
+    }, log, log.stamp, note_file)
     combiner = DeedCombiner(small, items, COMBINE_TEXT, combine_config(BOD_COMBINE_BUTTON), log,
-                            log.stamp)
+                            log.stamp, note_file)
     fill = SmallFill(small, items, crafter, picker, combiner, FILL, log, WATCH)
     fills.append(fill)
 
@@ -345,7 +350,7 @@ def run_large():
             return "still no small deed for %s after the box" % ", ".join(missing)
 
     large_combiner = DeedCombiner(deed, None, LARGE_COMBINE_TEXT,
-                                  combine_config(LARGE_COMBINE_BUTTON), log, log.stamp)
+                                  combine_config(LARGE_COMBINE_BUTTON), log, log.stamp, note_file)
     index = 0
 
     for item, _done in pending:

@@ -1,4 +1,4 @@
-from uo.paths import beside_script
+from uo.paths import append_line, beside_script
 from uo.clock import now
 from uo.entity import hex_of, player
 from uo.gainpath import read_gain_path
@@ -58,15 +58,6 @@ def json_object(pairs):
 
 def skill_json(value):
     return "null" if value is None else "%.1f" % value
-
-
-def append_line(path, line):
-    handle = open(path, "a")
-
-    try:
-        handle.write(line + "\n")
-    finally:
-        handle.close()
 
 
 class AttemptLog(object):

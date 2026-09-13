@@ -1,23 +1,22 @@
 import API
 
 from uo.gump import await_recognised, button_ids, gump_says, open_ids
-from uo.journal import journal_tail, matched_bucket
+from uo.journal import matched_bucket
+from uo.notes import Reporter
 from uo.pack import pack_contents
-from uo.text import clipped
 
 
 class DeedCombiner(object):
     """The deed's 'combine with contained items', aimed at the bag the pieces are in."""
 
-    def __init__(self, deed, items, buckets, config, log, stamp=None):
+    def __init__(self, deed, items, buckets, config, log, stamp=None, notes=None):
         self._deed = deed
         self._items = items
         self._buckets = buckets
         self._config = config
         self._log = log
-        self._stamp = stamp
+        self._report = Reporter(self._lines, config, log, notes, stamp)
         self._said_gump_text = False
-        self._reported = 0
         self._gump = 0
 
     def _lines(self, gump):
@@ -46,17 +45,6 @@ class DeedCombiner(object):
         self._gump = found
 
         return found
-
-    def _report(self, why, gump):
-        if self._reported >= self._config["max_reports"]:
-            return
-
-        self._reported += 1
-        text = clipped(" ".join(self._lines(gump)), self._config["text_limit"]) if gump else ""
-        lines = journal_tail(self._config["tail_seconds"], self._config["tail_lines"], self._stamp)
-
-        self._log("%s - the gump says '%s'" % (why, text or "(nothing)"))
-        self._log("the journal says '%s'" % (" | ".join(lines) or "(nothing)"))
 
     # Without a book the pack itself is read, which is what the large flow watches
     def _serials(self):
@@ -112,7 +100,7 @@ class DeedCombiner(object):
         known = button_ids(gump)
 
         if known is not None and self._config["combine_button"] not in known:
-            self._report("the deed gump has no button %d" % self._config["combine_button"], gump)
+            self._report.say("the deed gump has no button %d" % self._config["combine_button"], gump)
 
             return "noGump", []
 
@@ -122,7 +110,7 @@ class DeedCombiner(object):
             return "noGump", []
 
         if not API.WaitForTarget("any", self._config["target_timeout"]):
-            self._report("no cursor came up for the combine", gump)
+            self._report.say("no cursor came up for the combine", gump)
             self._close()
 
             return "noCursor", []
@@ -132,7 +120,7 @@ class DeedCombiner(object):
         outcome, taken = self._read_outcome(offered)
 
         if outcome is None:
-            self._report("nothing readable came back from the combine", gump)
+            self._report.say("nothing readable came back from the combine", gump)
 
         self._close()
 

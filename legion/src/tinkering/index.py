@@ -9,15 +9,16 @@ from tinkering.config import (BANDS, BUTTON_STRIDE, CATEGORY_BUTTON_TYPE, CATEGO
                               MATERIAL_GRAPHICS, MAX_CYCLES, MAX_DUMP_MISSES, MAX_HELD,
                               MAX_NO_MATERIAL, MAX_NO_TOOL, MAX_SELL_MISSES, MAX_THROTTLED,
                               MAX_UNKNOWN, MAX_UNREADABLE_REPORTS, MIN_CRAFT_INGOTS, MIN_SKILL,
-                              MOVE_DELAY, OPEN_DELAY, OPL_WAIT, OUTCOME_TEXT, OUTPUT_CHOICE,
-                              OUTPUT_OPTIONS, PATHFIND_TIMEOUT, PICK_TIMEOUT, PRODUCT_GRAPHICS,
-                              PRODUCTS, RECIPES, REFUND_POLL, REFUND_SETTLE, SAVE_DONE_TEXT,
-                              SAVE_POLL, SAVE_WAIT, SAVING_TEXT, SELL_AT, SELL_ENTRY, SELL_PHRASE,
-                              SELL_POLL, SELL_RETRY_AFTER, SELL_TIMEOUT, SKILL_NAMES, SKILL_POLL,
-                              SKILL_TIMEOUT, STALL_STOP, STALL_WARN, STEP_DELAY, STOCK_KINDS,
-                              STOPPED, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX, TOOL_GRAPHICS,
-                              TOOL_NAME_WORDS, UNREADABLE_TEXT_LIMIT, VENDOR_RANGE,
-                              VENDOR_SCAN_RADIUS, VENDOR_SERIAL, VENDOR_STEPS, VENDORS)
+                              MOVE_DELAY, NOTES_PATH, NOTES_TAIL_SECONDS, OPEN_DELAY, OPL_WAIT,
+                              OUTCOME_TEXT, OUTPUT_CHOICE, OUTPUT_OPTIONS, PATHFIND_TIMEOUT,
+                              PICK_TIMEOUT, PRODUCTS, PRODUCT_GRAPHICS, RECIPES, REFUND_POLL,
+                              REFUND_SETTLE, SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT, SAVING_TEXT,
+                              SELL_AT, SELL_ENTRY, SELL_PHRASE, SELL_POLL, SELL_RETRY_AFTER,
+                              SELL_TIMEOUT, SKILL_NAMES, SKILL_POLL, SKILL_TIMEOUT, STALL_STOP,
+                              STALL_WARN, STEP_DELAY, STOCK_KINDS, STOPPED, THROTTLE_BACKOFF,
+                              THROTTLE_BACKOFF_MAX, TOOL_GRAPHICS, TOOL_NAME_WORDS,
+                              UNREADABLE_TEXT_LIMIT, VENDORS, VENDOR_RANGE, VENDOR_SCAN_RADIUS,
+                              VENDOR_SERIAL, VENDOR_STEPS)
 from uo.choice import Choice
 from uo.cost import cost_of, short_by
 from uo.craft import Crafter
@@ -31,6 +32,7 @@ from uo.log import make_log
 from uo.loop import StallWatch, backoff_for
 from uo.materials import Materials
 from uo.pack import count_of
+from uo.notes import note_log
 from uo.record import attempt_log
 from uo.save import SaveWatch
 from uo.skill import SkillReader, find_skill_name, reading
@@ -119,6 +121,7 @@ sources = Sources(stock, {
     "pathfind_timeout": PATHFIND_TIMEOUT,
     "box": None,
 }, log)
+notes = note_log(NOTES_PATH, log)
 crafter = Crafter(tools, menu, stock, OUTCOME_TEXT, {
     "recipes": RECIPES,
     "make_last_button": MAKE_LAST_BUTTON,
@@ -129,8 +132,9 @@ crafter = Crafter(tools, menu, stock, OUTCOME_TEXT, {
     "text_limit": UNREADABLE_TEXT_LIMIT,
     "tail_seconds": JOURNAL_TAIL_SECONDS,
     "tail_lines": JOURNAL_TAIL_LINES,
+    "notes_seconds": NOTES_TAIL_SECONDS,
     "material": IRON,
-}, log, log.stamp)
+}, log, log.stamp, notes)
 vendor = Vendor(menu, {
     "serial": VENDOR_SERIAL,
     "scan_radius": VENDOR_SCAN_RADIUS,

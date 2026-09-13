@@ -6,6 +6,23 @@ import clr
 import System
 
 
+# src/uo/entity.py
+# API.Player is None whenever the client is between world states - a recall, a server line change,
+# the moment around a death - and reading through it threw a live restock away
+def player():
+    try:
+        return API.Player
+    except Exception:
+        if API.StopRequested:
+            raise
+
+        return None
+
+
+def hex_of(value):
+    return "0x%x" % (value & 0xFFFFFFFF)
+
+
 # src/uo/text.py
 def words_of(text):
     letters = []
@@ -51,7 +68,7 @@ SKILL_GAIN_TEXT = ["your skill in", "has changed by"]
 
 # matchingText is left off on purpose: the client only applies it as a regex, so a plain string
 # there filters everything out
-def journal_tail(seconds, limit, stamp=None):
+def journal_entries(seconds, stamp=None):
     try:
         entries = API.GetJournalEntries(seconds)
     except Exception:
@@ -60,7 +77,7 @@ def journal_tail(seconds, limit, stamp=None):
 
         return []
 
-    texts = []
+    kept = []
     stamps = [stamp] if stamp else []
 
     for entry in entries if entries else []:
@@ -68,9 +85,14 @@ def journal_tail(seconds, limit, stamp=None):
 
         if (text and text.strip() and not any_in(text, SKILL_GAIN_TEXT)
                 and not any_in(text, stamps)):
-            texts.append(text.strip())
+            kept.append(((getattr(entry, "Name", None) or "").strip(), text.strip()))
 
-    return texts[-limit:]
+    return kept
+
+
+# The text alone: fishing reads the catch off the end of the line it returns
+def journal_tail(seconds, limit, stamp=None):
+    return [text for _name, text in journal_entries(seconds, stamp)][-limit:]
 
 
 # Line by line rather than the whole journal: a wholesale clear before every swing wiped the ambush
@@ -475,23 +497,6 @@ def turn_toward_water(tiles_ahead, land_graphics, static_graphics, turn_delay):
         API.Pause(turn_delay)
 
     return direction
-
-
-# src/uo/entity.py
-# API.Player is None whenever the client is between world states - a recall, a server line change,
-# the moment around a death - and reading through it threw a live restock away
-def player():
-    try:
-        return API.Player
-    except Exception:
-        if API.StopRequested:
-            raise
-
-        return None
-
-
-def hex_of(value):
-    return "0x%x" % (value & 0xFFFFFFFF)
 
 
 # src/uo/pack.py
@@ -1117,6 +1122,15 @@ def beside_script(name):
     return script[:cut + 1] + name
 
 
+def append_line(path, line):
+    handle = open(path, "a")
+
+    try:
+        handle.write(line + "\n")
+    finally:
+        handle.close()
+
+
 # src/uo/gainpath.py
 COMMAND = "[SkillGainMode"
 PROMPT = "skill gain path is"
@@ -1195,15 +1209,6 @@ def quoted(text):
 
 def skill_json(value):
     return "null" if value is None else "%.1f" % value
-
-
-def append_line(path, line):
-    handle = open(path, "a")
-
-    try:
-        handle.write(line + "\n")
-    finally:
-        handle.close()
 
 
 class AttemptLog(object):

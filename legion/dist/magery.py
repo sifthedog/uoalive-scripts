@@ -254,6 +254,23 @@ class BuffBar(object):
         return False
 
 
+# src/uo/entity.py
+# API.Player is None whenever the client is between world states - a recall, a server line change,
+# the moment around a death - and reading through it threw a live restock away
+def player():
+    try:
+        return API.Player
+    except Exception:
+        if API.StopRequested:
+            raise
+
+        return None
+
+
+def hex_of(value):
+    return "0x%x" % (value & 0xFFFFFFFF)
+
+
 # src/uo/text.py
 def words_of(text):
     letters = []
@@ -454,23 +471,6 @@ class Caster(object):
 # anything at all is held
 def in_hand():
     return API.FindLayer("onehanded") or API.FindLayer("twohanded")
-
-
-# src/uo/entity.py
-# API.Player is None whenever the client is between world states - a recall, a server line change,
-# the moment around a death - and reading through it threw a live restock away
-def player():
-    try:
-        return API.Player
-    except Exception:
-        if API.StopRequested:
-            raise
-
-        return None
-
-
-def hex_of(value):
-    return "0x%x" % (value & 0xFFFFFFFF)
 
 
 # src/uo/guards.py
@@ -766,6 +766,15 @@ def beside_script(name):
     return script[:cut + 1] + name
 
 
+def append_line(path, line):
+    handle = open(path, "a")
+
+    try:
+        handle.write(line + "\n")
+    finally:
+        handle.close()
+
+
 # src/uo/gainpath.py
 COMMAND = "[SkillGainMode"
 PROMPT = "skill gain path is"
@@ -844,15 +853,6 @@ def quoted(text):
 
 def skill_json(value):
     return "null" if value is None else "%.1f" % value
-
-
-def append_line(path, line):
-    handle = open(path, "a")
-
-    try:
-        handle.write(line + "\n")
-    finally:
-        handle.close()
 
 
 class AttemptLog(object):

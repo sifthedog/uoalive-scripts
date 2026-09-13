@@ -1,7 +1,7 @@
 import API
 
-from uo.journal import journal_tail, matched_bucket
-from uo.text import clipped
+from uo.journal import matched_bucket
+from uo.notes import Reporter
 
 STOPPERS = ("noMaterial", "noAnvil", "skillTooLow", "toolWorn", "throttled", "saving")
 
@@ -9,7 +9,8 @@ STOPPERS = ("noMaterial", "noAnvil", "skillTooLow", "toolWorn", "throttled", "sa
 class DeedCrafter(object):
     """MAKE NUMBER batches off the RECIPES row, pressed as written."""
 
-    def __init__(self, tool, menu, items, picker, buckets, config, log, stamp=None):
+    def __init__(self, tool, menu, items, picker, buckets, config, log, stamp=None,
+                 notes=None):
         self._tool = tool
         self._menu = menu
         self._items = items
@@ -17,8 +18,7 @@ class DeedCrafter(object):
         self._buckets = buckets
         self._config = config
         self._log = log
-        self._stamp = stamp
-        self._said_unreadable = 0
+        self._report = Reporter(menu.lines, config, log, notes, stamp)
 
     def _notice_bucket(self, gump):
         if not gump:
@@ -32,17 +32,7 @@ class DeedCrafter(object):
         return None
 
     def _report_outcome(self, why, gump):
-        if self._said_unreadable >= self._config["max_reports"]:
-            return
-
-        self._said_unreadable += 1
-
-        text = (clipped(" ".join(self._menu.lines(gump)), self._config["text_limit"])
-                if gump else "")
-        lines = journal_tail(self._config["tail_seconds"], self._config["tail_lines"], self._stamp)
-
-        self._log("%s - the gump says '%s'" % (why, text or "(nothing)"))
-        self._log("the journal says '%s'" % (" | ".join(lines) or "(nothing)"))
+        self._report.say(why, gump)
 
     def _choose_button(self, product, gump):
         known = self._config["recipes"].get(product)

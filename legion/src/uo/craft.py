@@ -1,24 +1,22 @@
 import API
 
-from uo.journal import journal_tail
-from uo.text import any_in, clipped, untagged
+from uo.notes import Reporter
+from uo.text import any_in
 
 
 class Crafter(object):
     """Presses the RECIPES row as written and reads only the shard's words for the outcome."""
 
-    def __init__(self, tools, menu, stock, buckets, config, log, stamp=None):
+    def __init__(self, tools, menu, stock, buckets, config, log, stamp=None, notes=None):
         self._tools = tools
         self._menu = menu
         self._stock = stock
         self._buckets = buckets
         self._config = config
         self._log = log
-        self._stamp = stamp
+        self._report = Reporter(menu.lines, config, log, notes, stamp)
         self._make_last = False
-        self._said_unreadable = 0
         self._said_no_make_last = False
-        self._heard = ""
 
     def forget_last(self):
         self._make_last = False
@@ -28,8 +26,6 @@ class Crafter(object):
             for phrase in phrases:
                 # clearMatches, or a line already read answers the next wait as well
                 if API.InJournalAny([phrase], True):
-                    self._heard = "the journal said '%s'" % phrase
-
                     return name
 
         return None
@@ -43,8 +39,6 @@ class Crafter(object):
         for name, phrases in self._buckets:
             for phrase in phrases:
                 if any_in(text, [phrase.lower()]) or API.GumpContains(phrase, gump):
-                    self._heard = "the gump said '%s'" % phrase
-
                     return name
 
         return None
@@ -69,19 +63,8 @@ class Crafter(object):
             waited += self._config["craft_poll"]
 
     def _report_outcome(self, why, gump):
-        if self._said_unreadable >= self._config["max_reports"]:
-            return
-
-        self._said_unreadable += 1
-
-        text = (clipped(untagged(" ".join(self._menu.lines(gump))), self._config["text_limit"])
-                if gump else "")
-        lines = journal_tail(self._config["tail_seconds"], self._config["tail_lines"], self._stamp)
-
-        self._log("%s - the gump says '%s'" % (why, text or "(nothing)"))
-        self._log("the journal says '%s'" % (" | ".join(lines) or "(nothing)"))
-        self._log("the pack holds %s, and the menu is set to %s here"
-                  % (self._stock.hue_report(), self._config["material"]))
+        self._report.say(why, gump, [("pack", "the pack holds %s, and the menu is set to %s here"
+                                      % (self._stock.hue_report(), self._config["material"]))])
 
     # MAKE LAST is the only path that skips the category: a row button is only in the gump once
     # its category is showing
@@ -131,7 +114,7 @@ class Crafter(object):
 
         if outcome == "made":
             self._make_last = True
-            self._said_unreadable = 0
+            self._report.forget()
         elif outcome == "noMaterial":
             self._report_outcome("refused for materials", opened)
         elif outcome is None:
