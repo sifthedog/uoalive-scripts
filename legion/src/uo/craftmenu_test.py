@@ -205,13 +205,17 @@ class PressTest(unittest.TestCase):
         self.assertEqual(self.api.replies, [])
         self.assertEqual(len([line for line in self.said if "not the craft menu" in line]), 1)
 
-    def test_a_button_the_menu_lacks_is_never_pressed(self):
+    def test_a_button_the_menu_lacks_is_never_pressed_and_the_gump_is_let_go(self):
         self.api.gump_buttons[88] = set([1, 21, 41, 2])
 
         self.assertEqual(self.menu.press(47, 88, 1.0), 0)
-        self.assertEqual(self.menu.press(47, 88, 1.0), 0)
         self.assertEqual(self.api.replies, [])
         self.assertEqual(len([line for line in self.said if "no button 47" in line]), 1)
+        # Closed and forgotten, so the next open uses the tools rather than retrying the same gump
+        self.assertEqual(self.api.closed_gumps, 1)
+        self.assertEqual(self.menu.current_id(), 0)
+        self.assertEqual(self.menu.press(47, 88, 1.0), 0)
+        self.assertEqual(self.api.replies, [])
         self.assertTrue(self.menu.has_button(41, 88))
         self.assertFalse(self.menu.has_button(61, 88))
 

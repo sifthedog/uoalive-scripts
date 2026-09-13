@@ -1253,7 +1253,20 @@ class CraftMenu(object):
 
             return False
 
-        return self._send(button, gump)
+        if self.has_button(button, gump):
+            return self._send(button, gump)
+
+        self._send(button, gump)
+
+        # Up under the menu's id without the table's button, it is not the menu the table was read
+        # off: a popup the recogniser took for it, or a redraw the client reads empty. Left open it
+        # answers every retry the same, so it is closed and the tool opens a fresh one.
+        if is_open(gump):
+            API.CloseGump(gump)
+
+        self._id = 0
+
+        return False
 
     def press(self, button, gump, timeout):
         if not self.reply(button, gump):
