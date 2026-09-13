@@ -1,4 +1,10 @@
-from uo.phrases import STOPPED
+from uo.phrases import SAVE_DONE_TEXT, SAVING_TEXT, STOPPED, THROTTLED_TEXT
+from uo.timings import (HEARTBEAT_EVERY, LOG_EVERY, SAVE_POLL, SAVE_WAIT, STALL_STOP, STALL_WARN,
+                        STEP_DELAY, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX)
+
+# One JSON object per attempt, for legion/skilldb.py. "" turns recording off. A bare name lands
+# beside the script, in LegionScripts.
+DATA_PATH = "skill-attempts.jsonl"
 
 SKILL_NAMES = ["Alchemy"]
 
@@ -18,16 +24,49 @@ BANDS = [
     (None, "deadly poison"),
 ]
 
-# Reagents one craft of a band's row takes
-REAGENT_COST = {
-    "lesser poison": (1, "nightshade"),
-    "poison": (2, "nightshade"),
-    "greater agility": (3, "blood moss"),
-    "greater strength": (5, "mandrake root"),
-    "greater cure": (6, "garlic"),
-    "greater poison": (4, "nightshade"),
-    "deadly poison": (8, "nightshade"),
+BOTTLE = "empty bottles"
+NIGHTSHADE = "nightshade"
+BLOODMOSS = "blood moss"
+MANDRAKE = "mandrake root"
+GARLIC = "garlic"
+
+# Stock art, unverified on UOAlive; an art learned by name joins its set
+STOCK_KINDS = [
+    (BOTTLE, set([0x0F0E]), ["bottle", "bottles"]),
+    (NIGHTSHADE, set([0x0F88]), ["nightshade"]),
+    (BLOODMOSS, set([0x0F7B]), ["bloodmoss", "blood moss"]),
+    (MANDRAKE, set([0x0F86]), ["mandrake"]),
+    (GARLIC, set([0x0F84]), ["garlic"]),
+]
+
+KIND_ORDER = [kind for kind, _graphics, _words in STOCK_KINDS]
+
+# Row name as the SELECTIONS row spells it: the potion's art, its reagent and how many. Stock RunUO:
+# every poison lands as 0x0F0A, and every potion takes one bottle besides.
+POTIONS = {
+    "lesser poison": (0x0F0A, NIGHTSHADE, 1),
+    "poison": (0x0F0A, NIGHTSHADE, 2),
+    "greater agility": (0x0F08, BLOODMOSS, 3),
+    "greater strength": (0x0F09, MANDRAKE, 5),
+    "greater poison": (0x0F0A, NIGHTSHADE, 4),
+    "greater cure": (0x0F07, GARLIC, 6),
+    "deadly poison": (0x0F0A, NIGHTSHADE, 8),
 }
+
+PRODUCTS = dict((name, set([POTIONS[name][0]])) for name in POTIONS)
+PRODUCT_GRAPHICS = set().union(*PRODUCTS.values())
+NEEDS = dict((name, {BOTTLE: 1, POTIONS[name][1]: POTIONS[name][2]}) for name in POTIONS)
+
+# Every restock fills each kind the band spends to this many crafts' worth: a flat count per kind
+# would sit under RESTOCK_AT for deadly poison's eight nightshade and restock every cycle. Bottles
+# weigh a stone each, which bounds it.
+BATCH_CRAFTS = 30
+
+# Crafts the pack can still pay for before a restock
+RESTOCK_AT = 5
+
+# The shard refusing a move for weight. With potions in the pack the run unloads before it loads.
+TOO_HEAVY_TEXT = ["That container cannot hold more weight"]
 
 # Mortar and pestle, 3739
 TOOL_GRAPHICS = set([0x0E9B])
@@ -39,8 +78,11 @@ OUTPUT_OPTIONS = [("unload", "Unload into a container"), ("keep", "Keep")]
 # Products in the pack, counted as amounts, before they are unloaded
 DUMP_AT = 10
 
-# name -> graphics, filled in once the run crafts
-PRODUCTS = {}
+# With nothing picked to unload into, the run ends once the pack holds this many products
+MAX_HELD = 60
+
+# Unloads in a row that moved nothing before the run ends
+MAX_DUMP_MISSES = 3
 
 # The form the run is set up on. Closing it, Cancel, or no OK in the timeout ends the run.
 SETUP = {
@@ -76,6 +118,107 @@ MOVE_DELAY = 0.7
 
 SKILL_TIMEOUT = 5.0
 SKILL_POLL = 0.25
+
+GUMP_TIMEOUT = 5.0
+GUMP_POLL = 0.15
+
+# Has to outlast the craft animation, which plays before the shard answers
+CRAFT_TIMEOUT = 10.0
+CRAFT_POLL = 0.2
+
+# A failed craft's refund arrives after the journal line; the consumed row waits this long for it
+REFUND_SETTLE = 1.5
+REFUND_POLL = 0.25
+
+MAX_CYCLES = 20000
+MAX_UNKNOWN = 5
+MAX_THROTTLED = 20
+MAX_NO_TOOL = 10
+MAX_EMPTY_MOVES = 3
+
+# Refusals for material while the pack holds what the recipe takes: the row is not the potion
+MAX_NO_MATERIAL = 3
+
+# What an unreadable outcome reports before it goes quiet, and how much of it
+MAX_UNREADABLE_REPORTS = 2
+UNREADABLE_TEXT_LIMIT = 160
+JOURNAL_TAIL_SECONDS = 20.0
+JOURNAL_TAIL_LINES = 4
+
+# The whole gump and journal behind a report, appended here so the game window stays quiet. "" turns
+# it off; a bare name lands beside the script.
+NOTES_PATH = "alchemy-notes.log"
+NOTES_TAIL_SECONDS = 60.0
+
+CRAFT_TITLE = "ALCHEMY"
+
+# Only ever to *recognise* a gump, never to refuse one: the header is a cliloc, and a build whose
+# GetGumpContents answers nothing for it made every craft read as 'no craft menu'
+CRAFT_TITLE_TEXT = [CRAFT_TITLE, "ALCHEMIST"]
+CRAFT_TITLE_FRAGMENTS = [phrase.lower() for phrase in CRAFT_TITLE_TEXT]
+
+# Its own button rather than a group, so it does not count toward the category index
+LAST_TEN_LABEL = "LAST TEN"
+
+# Buttons are 1 + type + index * 20, as bowcraft found on this shard's menu; MAKE LAST is assumed to
+# sit where it does there
+BUTTON_STRIDE = 20
+CATEGORY_BUTTON_TYPE = 0
+ITEM_BUTTON_TYPE = 1
+MAKE_LAST_BUTTON = 47
+
+# Stock DefAlchemy wordings, unverified on UOAlive. Ordered: 'failed' before 'made' because "You
+# failed to create the item" contains "create the item". noMaterial names each resource rather than
+# a bare "You do not have enough", which skillTooLow's "You do not have enough skill" contains.
+OUTCOME_TEXT = [
+    (
+        "failed",
+        [
+            "You fail to create a useful potion",
+            "You failed to create the item",
+            "You fail to create",
+            "You have failed to create",
+            "lost some of the raw material",
+        ],
+    ),
+    (
+        "made",
+        [
+            "You pour the potion into a bottle",
+            "You create the item",
+            "You create an exceptional",
+            "You put the",
+        ],
+    ),
+    # Said in the gump's NOTICES panel, which the journal may never carry
+    (
+        "noMaterial",
+        [
+            "You don't have the components",
+            "You do not have the components",
+            "You don't have the resources",
+            "You do not have the resources",
+            "enough empty bottles",
+            "enough nightshade",
+            "enough blood moss",
+            "enough bloodmoss",
+            "enough mandrake",
+            "enough garlic",
+        ],
+    ),
+    (
+        "skillTooLow",
+        [
+            "You have no idea how to make that",
+            "You do not have enough skill",
+            "You are not skilled enough",
+            "lack the skill",
+        ],
+    ),
+    ("toolWorn", ["You have worn out your tool", "worn out your tool"]),
+    ("saving", SAVING_TEXT),
+    ("throttled", THROTTLED_TEXT),
+]
 
 # ALCHEMY MENU, read off the menu on 2026-09-13
 CATEGORY_NAMES = [

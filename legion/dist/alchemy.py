@@ -1,15 +1,52 @@
 # Built from src/alchemy/index.py by build.py - do not edit.
 
 import API
+import time
 
 
 # src/uo/phrases.py
 """The shard's own wordings, as far as they are the same whatever the script is doing."""
 
+SAVING_TEXT = ["The world is saving", "Saving world", "World save started"]
+SAVE_DONE_TEXT = ["World save complete", "Save complete", "World save is complete"]
+
+# Ends in a bare 'You must wait', which longer refusals contain - so a bucket that has to be told
+# apart from a throttle is ordered before this one
+THROTTLED_TEXT = [
+    "You must wait to perform another action",
+    "You must wait a moment",
+    "You must wait",
+]
+
 STOPPED = "stopped from the script manager"
 
 
+# src/uo/timings.py
+"""The constants the scripts agreed on. Every one is in seconds - API.Pause takes seconds."""
+
+SAVE_WAIT = 60.0
+SAVE_POLL = 1.0
+
+THROTTLE_BACKOFF = 1.0
+THROTTLE_BACKOFF_MAX = 8.0
+
+LOG_EVERY = 25
+HEARTBEAT_EVERY = 30.0
+
+STALL_WARN = 60
+STALL_STOP = 300
+
+STEP_DELAY = 0.3
+
+GAIN_PATH_TIMEOUT = 5.0
+GAIN_PATH_POLL = 0.25
+
+
 # src/alchemy/config.py
+# One JSON object per attempt, for legion/skilldb.py. "" turns recording off. A bare name lands
+# beside the script, in LegionScripts.
+DATA_PATH = "skill-attempts.jsonl"
+
 SKILL_NAMES = ["Alchemy"]
 
 MIN_SKILL = 0.0
@@ -28,16 +65,48 @@ BANDS = [
     (None, "deadly poison"),
 ]
 
-# Reagents one craft of a band's row takes
-REAGENT_COST = {
-    "lesser poison": (1, "nightshade"),
-    "poison": (2, "nightshade"),
-    "greater agility": (3, "blood moss"),
-    "greater strength": (5, "mandrake root"),
-    "greater cure": (6, "garlic"),
-    "greater poison": (4, "nightshade"),
-    "deadly poison": (8, "nightshade"),
+BOTTLE = "empty bottles"
+NIGHTSHADE = "nightshade"
+BLOODMOSS = "blood moss"
+MANDRAKE = "mandrake root"
+GARLIC = "garlic"
+
+# Stock art, unverified on UOAlive; an art learned by name joins its set
+STOCK_KINDS = [
+    (BOTTLE, set([0x0F0E]), ["bottle", "bottles"]),
+    (NIGHTSHADE, set([0x0F88]), ["nightshade"]),
+    (BLOODMOSS, set([0x0F7B]), ["bloodmoss", "blood moss"]),
+    (MANDRAKE, set([0x0F86]), ["mandrake"]),
+    (GARLIC, set([0x0F84]), ["garlic"]),
+]
+
+KIND_ORDER = [kind for kind, _graphics, _words in STOCK_KINDS]
+
+# Row name as the SELECTIONS row spells it: the potion's art, its reagent and how many. Stock RunUO:
+# every poison lands as 0x0F0A, and every potion takes one bottle besides.
+POTIONS = {
+    "lesser poison": (0x0F0A, NIGHTSHADE, 1),
+    "poison": (0x0F0A, NIGHTSHADE, 2),
+    "greater agility": (0x0F08, BLOODMOSS, 3),
+    "greater strength": (0x0F09, MANDRAKE, 5),
+    "greater poison": (0x0F0A, NIGHTSHADE, 4),
+    "greater cure": (0x0F07, GARLIC, 6),
+    "deadly poison": (0x0F0A, NIGHTSHADE, 8),
 }
+
+PRODUCTS = dict((name, set([POTIONS[name][0]])) for name in POTIONS)
+NEEDS = dict((name, {BOTTLE: 1, POTIONS[name][1]: POTIONS[name][2]}) for name in POTIONS)
+
+# Every restock fills each kind the band spends to this many crafts' worth: a flat count per kind
+# would sit under RESTOCK_AT for deadly poison's eight nightshade and restock every cycle. Bottles
+# weigh a stone each, which bounds it.
+BATCH_CRAFTS = 30
+
+# Crafts the pack can still pay for before a restock
+RESTOCK_AT = 5
+
+# The shard refusing a move for weight. With potions in the pack the run unloads before it loads.
+TOO_HEAVY_TEXT = ["That container cannot hold more weight"]
 
 # Mortar and pestle, 3739
 TOOL_GRAPHICS = set([0x0E9B])
@@ -49,8 +118,11 @@ OUTPUT_OPTIONS = [("unload", "Unload into a container"), ("keep", "Keep")]
 # Products in the pack, counted as amounts, before they are unloaded
 DUMP_AT = 10
 
-# name -> graphics, filled in once the run crafts
-PRODUCTS = {}
+# With nothing picked to unload into, the run ends once the pack holds this many products
+MAX_HELD = 60
+
+# Unloads in a row that moved nothing before the run ends
+MAX_DUMP_MISSES = 3
 
 # The form the run is set up on. Closing it, Cancel, or no OK in the timeout ends the run.
 SETUP = {
@@ -87,6 +159,223 @@ MOVE_DELAY = 0.7
 SKILL_TIMEOUT = 5.0
 SKILL_POLL = 0.25
 
+GUMP_TIMEOUT = 5.0
+GUMP_POLL = 0.15
+
+# Has to outlast the craft animation, which plays before the shard answers
+CRAFT_TIMEOUT = 10.0
+CRAFT_POLL = 0.2
+
+# A failed craft's refund arrives after the journal line; the consumed row waits this long for it
+REFUND_SETTLE = 1.5
+REFUND_POLL = 0.25
+
+MAX_CYCLES = 20000
+MAX_UNKNOWN = 5
+MAX_THROTTLED = 20
+MAX_NO_TOOL = 10
+MAX_EMPTY_MOVES = 3
+
+# Refusals for material while the pack holds what the recipe takes: the row is not the potion
+MAX_NO_MATERIAL = 3
+
+# What an unreadable outcome reports before it goes quiet, and how much of it
+MAX_UNREADABLE_REPORTS = 2
+UNREADABLE_TEXT_LIMIT = 160
+JOURNAL_TAIL_SECONDS = 20.0
+JOURNAL_TAIL_LINES = 4
+
+# The whole gump and journal behind a report, appended here so the game window stays quiet. "" turns
+# it off; a bare name lands beside the script.
+NOTES_PATH = "alchemy-notes.log"
+NOTES_TAIL_SECONDS = 60.0
+
+CRAFT_TITLE = "ALCHEMY"
+
+# Only ever to *recognise* a gump, never to refuse one: the header is a cliloc, and a build whose
+# GetGumpContents answers nothing for it made every craft read as 'no craft menu'
+CRAFT_TITLE_TEXT = [CRAFT_TITLE, "ALCHEMIST"]
+CRAFT_TITLE_FRAGMENTS = [phrase.lower() for phrase in CRAFT_TITLE_TEXT]
+
+# Its own button rather than a group, so it does not count toward the category index
+LAST_TEN_LABEL = "LAST TEN"
+
+# Buttons are 1 + type + index * 20, as bowcraft found on this shard's menu; MAKE LAST is assumed to
+# sit where it does there
+BUTTON_STRIDE = 20
+CATEGORY_BUTTON_TYPE = 0
+ITEM_BUTTON_TYPE = 1
+MAKE_LAST_BUTTON = 47
+
+# Stock DefAlchemy wordings, unverified on UOAlive. Ordered: 'failed' before 'made' because "You
+# failed to create the item" contains "create the item". noMaterial names each resource rather than
+# a bare "You do not have enough", which skillTooLow's "You do not have enough skill" contains.
+OUTCOME_TEXT = [
+    (
+        "failed",
+        [
+            "You fail to create a useful potion",
+            "You failed to create the item",
+            "You fail to create",
+            "You have failed to create",
+            "lost some of the raw material",
+        ],
+    ),
+    (
+        "made",
+        [
+            "You pour the potion into a bottle",
+            "You create the item",
+            "You create an exceptional",
+            "You put the",
+        ],
+    ),
+    # Said in the gump's NOTICES panel, which the journal may never carry
+    (
+        "noMaterial",
+        [
+            "You don't have the components",
+            "You do not have the components",
+            "You don't have the resources",
+            "You do not have the resources",
+            "enough empty bottles",
+            "enough nightshade",
+            "enough blood moss",
+            "enough bloodmoss",
+            "enough mandrake",
+            "enough garlic",
+        ],
+    ),
+    (
+        "skillTooLow",
+        [
+            "You have no idea how to make that",
+            "You do not have enough skill",
+            "You are not skilled enough",
+            "lack the skill",
+        ],
+    ),
+    ("toolWorn", ["You have worn out your tool", "worn out your tool"]),
+    ("saving", SAVING_TEXT),
+    ("throttled", THROTTLED_TEXT),
+]
+
+# ALCHEMY MENU, read off the menu on 2026-09-13
+CATEGORY_NAMES = [
+    "healing and curative",
+    "enhancement",
+    "toxic",
+    "explosive",
+    "strange brew",
+    "ingredients",
+    "skill tinctures",
+]
+
+RECIPES = {
+    # Healing and Curative (button 1)
+    "refresh": (1, 2),
+    "greater refreshment": (1, 22),
+    "lesser heal": (1, 42),
+    "heal": (1, 62),
+    "greater heal": (1, 82),
+    "lesser cure": (1, 102),
+    "cure": (1, 122),
+    "greater cure": (1, 142),
+    "elixir of rebirth": (1, 162),
+    "barrab hemolymph concentrate": (1, 182),
+    # Enhancement (button 21)
+    "agility": (21, 2),
+    "greater agility": (21, 22),
+    "night sight": (21, 42),
+    "strength": (21, 62),
+    "greater strength": (21, 82),
+    "invisibility": (21, 102),
+    "jukari burn poultice": (21, 122),
+    "kurak ambusher's essence": (21, 142),
+    "barako draft of might": (21, 162),
+    "urali trance tonic": (21, 182),
+    "sakkhra prophylaxis potion": (21, 202),
+    # Toxic (button 41)
+    "lesser poison": (41, 2),
+    "poison": (41, 22),
+    "greater poison": (41, 42),
+    "deadly poison": (41, 62),
+    "parasitic": (41, 82),
+    "darkglow": (41, 102),
+    "scouring toxin": (41, 122),
+    # Explosive (button 61)
+    "lesser explosion": (61, 2),
+    "explosion": (61, 22),
+    "greater explosion": (61, 42),
+    "conflagration": (61, 62),
+    "greater conflagration": (61, 82),
+    "confusion blast": (61, 102),
+    "greater confusion blast": (61, 122),
+    "black powder": (61, 142),
+    "fuse cord": (61, 162),
+    # Strange Brew (button 81)
+    "smoke bomb": (81, 2),
+    "hovering wisp": (81, 22),
+    "natural dye": (81, 42),
+    "nexus core": (81, 62),
+    # Ingredients (button 101)
+    "plant pigment": (101, 2),
+    "color fixative": (101, 22),
+    "crystal granules": (101, 42),
+    "crystal dust": (101, 62),
+    "softened reeds": (101, 82),
+    "vial of vitriol": (101, 102),
+    "bottle of ichor": (101, 122),
+    "potash": (101, 142),
+    "gold dust": (101, 162),
+    # Skill Tinctures (button 121)
+    "tincture of shadows": (121, 2),
+    "tincture of the minstrel": (121, 22),
+}
+
+
+# src/uo/components.py
+def short_of(needs, counts):
+    short = {}
+
+    for kind in needs:
+        missing = needs[kind] - counts.get(kind, 0)
+
+        if missing > 0:
+            short[kind] = missing
+
+    return short
+
+
+def affordable(needs, counts):
+    crafts = None
+
+    for kind in needs:
+        if needs[kind] <= 0:
+            continue
+
+        can = counts.get(kind, 0) // needs[kind]
+        crafts = can if crafts is None else min(crafts, can)
+
+    return 0 if crafts is None else crafts
+
+
+# In the caller's kind order, so the line reads the same each time
+def shortfall_report(short, order):
+    parts = ["%d %s" % (short[kind], kind) for kind in order if kind in short]
+    parts += ["%d %s" % (short[kind], kind) for kind in sorted(short) if kind not in order]
+
+    return ", ".join(parts)
+
+
+# src/uo/clock.py
+def now():
+    return time.time()
+
+
+def time_text():
+    return time.strftime("%Y-%m-%d %H:%M:%S")
+
 
 # src/uo/entity.py
 # API.Player is None whenever the client is between world states - a recall, a server line change,
@@ -114,32 +403,6 @@ def chebyshev(x, y, unknown):
         return unknown
 
     return max(abs(me.X - x), abs(me.Y - y))
-
-
-# src/uo/pack.py
-def pack_contents():
-    items = API.ItemsInContainer(API.Backpack, True)
-
-    return items if items else []
-
-
-# The item cap is per container, so the guard and the combine both count the top level only
-def pack_top_level():
-    items = API.ItemsInContainer(API.Backpack, False)
-
-    return items if items else []
-
-
-# None is an unreported stack, not an empty one: counted as 0 it would hide the ore a swing just
-# delivered, which is the proof that the swing landed
-def amount_of(item):
-    amount = getattr(item, "Amount", None)
-
-    return amount if amount is not None else 1
-
-
-def hue_of(item):
-    return getattr(item, "Hue", 0) or 0
 
 
 # src/uo/text.py
@@ -191,6 +454,792 @@ def clipped(text, limit):
     flat = " ".join((text or "").split())
 
     return flat if len(flat) <= limit else flat[:limit] + "..."
+
+
+# A craft gump is a header, then a notice, then every row it can make: the sentence talking to you
+# sits in the middle, where neither end of a clip reaches it
+def spoken(text, word, limit):
+    flat = " ".join((text or "").split())
+    at = flat.lower().find(word.lower())
+
+    if at <= 0:
+        return clipped(flat, limit)
+
+    return "..." + clipped(flat[at:], limit)
+
+
+# src/uo/journal.py
+def said(texts):
+    for text in texts:
+        if API.InJournal(text, False):
+            return True
+
+    return False
+
+
+# A craft's mana coming back gains Meditation and Focus, which buries the one line that matters
+SKILL_GAIN_TEXT = ["your skill in", "has changed by"]
+
+
+# What the shard itself speaks under - anything else in the journal is a mobile in earshot
+SHARD_SPEAKERS = ["", "system"]
+
+
+# matchingText is left off on purpose: the client only applies it as a regex, so a plain string
+# there filters everything out
+def journal_entries(seconds, stamp=None):
+    try:
+        entries = API.GetJournalEntries(seconds)
+    except Exception:
+        if API.StopRequested:
+            raise
+
+        return []
+
+    kept = []
+    stamps = [stamp] if stamp else []
+
+    for entry in entries if entries else []:
+        text = getattr(entry, "Text", None)
+
+        if (text and text.strip() and not any_in(text, SKILL_GAIN_TEXT)
+                and not any_in(text, stamps)):
+            kept.append(((getattr(entry, "Name", None) or "").strip(), text.strip()))
+
+    return kept
+
+
+# What the shard said is preferred rather than kept alone: a chatty NPC used to fill the whole tail
+# and evict the line a craft was reported on, but a shard answering under some other name still has
+# to reach the report. shard_first off keeps every speaker, which is what the notes file wants.
+def journal_report(seconds, limit, stamp=None, shard_first=True):
+    entries = journal_entries(seconds, stamp)
+    me = player()
+    speakers = SHARD_SPEAKERS + [(getattr(me, "Name", "") or "").strip().lower()]
+    theirs = [pair for pair in entries if pair[0].lower() in speakers]
+    shown = (theirs or entries) if shard_first else entries
+
+    if limit is not None:
+        shown = shown[-limit:]
+
+    return [text if name.lower() in speakers else "%s: %s" % (name, text)
+            for name, text in shown]
+
+
+# Line by line rather than the whole journal: a wholesale clear before every swing wiped the ambush
+# warning before the threat watch got its once-a-cycle look at it
+def forget(phrases):
+    for text in phrases:
+        API.ClearJournal(text)
+
+
+def matched_bucket(buckets):
+    for name, phrases in buckets:
+        # clearMatches, or a line already read answers the next wait as well
+        if API.InJournalAny(phrases, True):
+            return name
+
+    return None
+
+
+# src/uo/paths.py
+# TazUO's working directory is its own folder, and the scripts live in this subfolder of it
+SCRIPTS_FOLDER = "LegionScripts"
+
+
+# A bare name lands in TazUO's working directory; beside the script is where anyone looks for it.
+# A name with a folder in it, relative or absolute, is left as written.
+def beside_script(name):
+    if not name or "/" in name or "\\" in name:
+        return name
+
+    script = getattr(API, "ScriptPath", None) or ""
+    cut = max(script.rfind("/"), script.rfind("\\"))
+
+    # A client that does not say where the script is still runs it out of the standard folder
+    if cut < 0:
+        return SCRIPTS_FOLDER + "/" + name
+
+    return script[:cut + 1] + name
+
+
+def append_line(path, line):
+    handle = open(path, "a")
+
+    try:
+        handle.write(line + "\n")
+    finally:
+        handle.close()
+
+
+# src/uo/notes.py
+class NoteLog(object):
+    """One block per report, appended to a file beside the script."""
+
+    def __init__(self, path, log, append=None):
+        self._path = path or ""
+        self._log = log
+        self._append = append if append is not None else append_line
+        self._off = not self._path
+        self._said = False
+
+    def writing(self):
+        return not self._off
+
+    def where(self):
+        return self._path
+
+    def write(self, heading, rows):
+        if self._off:
+            return
+
+        out = ["[%s] %s" % (time_text(), heading)]
+
+        for label, values in rows:
+            out.append("  %s:" % label)
+
+            for value in values or ["(nothing)"]:
+                out.append("    %s" % value)
+
+        self._put("\n".join(out))
+
+    # A run that cannot write its notes is still a run: the sink retires itself and says so once
+    def _put(self, block):
+        try:
+            self._append(self._path, block)
+        except Exception as error:
+            self._off = True
+
+            if not self._said:
+                self._said = True
+                self._log("cannot write %s (%s) - not writing notes this run"
+                          % (self._path, error))
+
+
+def note_log(path, log):
+    return NoteLog(beside_script(path), log)
+
+
+class Reporter(object):
+    """What a craft could not read: a short line in the window, the whole of it in the notes.
+
+    The window quotes the gump from the shard's own sentence on: the header before it and the rows
+    after it are the same boilerplate every time.
+    """
+
+    def __init__(self, lines_of, config, log, notes=None, stamp=None):
+        self._lines_of = lines_of
+        self._config = config
+        self._log = log
+        self._notes = notes
+        self._stamp = stamp
+        self._said = 0
+        self._said_where = False
+
+    def forget(self):
+        self._said = 0
+
+    # extra is (label, sentence) pairs: the window says the sentence, the notes file labels it
+    def say(self, why, gump, extra=None):
+        text = untagged(" ".join(self._lines_of(gump))) if gump else ""
+        rest = list(extra or [])
+
+        self._write(why, text, rest)
+
+        if self._said >= self._config["max_reports"]:
+            return
+
+        self._said += 1
+        lines = journal_report(self._config["tail_seconds"], self._config["tail_lines"],
+                               self._stamp)
+
+        self._log("%s - the gump says '%s'"
+                  % (why, spoken(text, "you", self._config["text_limit"]) or "(nothing)"))
+        self._log("the journal says '%s'" % (" | ".join(lines) or "(nothing)"))
+
+        for _label, sentence in rest:
+            self._log(sentence)
+
+        self._say_where()
+
+    # Said when there is something to read rather than at startup, where the form has not yet told
+    # the run whether it wants any logs at all
+    def _say_where(self):
+        if self._notes is None or not self._notes.writing() or self._said_where:
+            return
+
+        self._said_where = True
+        self._log("the whole of it is in %s" % self._notes.where())
+
+    # Uncapped, and untruncated: the window's two reports are a pointer, the file is the evidence
+    def _write(self, why, text, rest):
+        if self._notes is None or not self._notes.writing():
+            return
+
+        rows = [("gump", [text] if text else []),
+                ("journal", journal_report(self._config["notes_seconds"], None, self._stamp,
+                                           False))]
+
+        self._notes.write(why, rows + [(label, [sentence]) for label, sentence in rest])
+
+
+# src/uo/craft.py
+class Crafter(object):
+    """Presses the RECIPES row as written and reads only the shard's words for the outcome."""
+
+    def __init__(self, tools, menu, stock, buckets, config, log, stamp=None, notes=None):
+        self._tools = tools
+        self._menu = menu
+        self._stock = stock
+        self._buckets = buckets
+        self._config = config
+        self._log = log
+        self._report = Reporter(menu.lines, config, log, notes, stamp)
+        self._make_last = False
+        self._said_no_make_last = False
+
+    def forget_last(self):
+        self._make_last = False
+
+    def _journal_bucket(self):
+        for name, phrases in self._buckets:
+            for phrase in phrases:
+                # clearMatches, or a line already read answers the next wait as well
+                if API.InJournalAny([phrase], True):
+                    return name
+
+        return None
+
+    def _notice_bucket(self, gump):
+        if not gump:
+            return None
+
+        text = API.GetGumpContents(gump)
+
+        for name, phrases in self._buckets:
+            for phrase in phrases:
+                if any_in(text, [phrase.lower()]) or API.GumpContains(phrase, gump):
+                    return name
+
+        return None
+
+    # The gump's NOTICES panel is read too because the shard writes refusals there, not the journal
+    def _read_outcome(self, opened):
+        waited = 0.0
+
+        while not API.StopRequested:
+            hit = self._journal_bucket()
+
+            if hit is None:
+                hit = self._notice_bucket(opened)
+
+            if hit is not None:
+                return hit
+
+            if waited >= self._config["craft_timeout"]:
+                return None
+
+            API.Pause(self._config["craft_poll"])
+            waited += self._config["craft_poll"]
+
+    def _report_outcome(self, why, gump):
+        self._report.say(why, gump, [("pack", "the pack holds %s, and the menu is set to %s here"
+                                      % (self._stock.hue_report(), self._config["material"]))])
+
+    # MAKE LAST is the only path that skips the category: a row button is only in the gump once
+    # its category is showing
+    def _choose_button(self, product, gump):
+        known = self._config["recipes"].get(product)
+
+        if known is None:
+            return None, "noRow"
+
+        if self._make_last:
+            if self._menu.has_button(self._config["make_last_button"], gump):
+                return self._config["make_last_button"], None
+
+            self._make_last = False
+
+            if not self._said_no_make_last:
+                self._said_no_make_last = True
+                self._log("the menu has no MAKE LAST on button %d, pressing the row itself"
+                          % self._config["make_last_button"])
+
+        if not self._menu.press(known[0], gump, self._config["gump_timeout"]):
+            return None, "noGump"
+
+        return known[1], None
+
+    def craft_once(self, product):
+        # Asked apart from the gump, so an empty pack and a menu that will not open read differently
+        if self._tools.serial() is None:
+            return "noTool"
+
+        gump = self._menu.open()
+
+        if gump is None:
+            return "noGump"
+
+        button, outcome = self._choose_button(product, gump)
+
+        if button is None:
+            return outcome
+
+        gump = self._menu.current_id() or gump
+
+        API.ClearJournal()
+
+        opened = self._menu.press(button, gump, self._config["craft_timeout"])
+        outcome = self._read_outcome(opened)
+
+        if outcome == "made":
+            self._make_last = True
+            self._report.forget()
+        elif outcome == "noMaterial":
+            self._report_outcome("refused for materials", opened)
+        elif outcome is None:
+            self._report_outcome("nothing readable came back", opened)
+
+            if button == self._config["make_last_button"]:
+                self._make_last = False
+                self._log("MAKE LAST made nothing, pressing the row itself next time")
+
+        return outcome
+
+
+# src/uo/gump.py
+# HasGump() only ever answers the last gump the shard sent, and a gump the shard re-sends on its own
+# steals that slot: the id-addressed calls below do not go through it
+def open_ids():
+    found = []
+    last = API.HasGump()
+
+    if last:
+        found.append(last)
+
+    try:
+        for gump in API.GetAllGumps() or []:
+            serial = getattr(gump, "ServerSerial", 0)
+
+            if serial and serial not in found:
+                found.append(serial)
+    except Exception:
+        if API.StopRequested:
+            raise
+
+    return found
+
+
+def is_open(ident):
+    return bool(ident) and bool(API.WaitForGump(ident, 0))
+
+
+def await_gump(ident, timeout):
+    if not ident:
+        return 0
+
+    return ident if API.WaitForGump(ident, timeout) else 0
+
+
+# A getter can throw on its own (Control.X does), which is not the whole gump being unreadable
+def _field(control, name):
+    try:
+        return getattr(control, name, None)
+    except Exception:
+        if API.StopRequested:
+            raise
+
+        return None
+
+
+# The controls in the order the layout drew them, every page at once, as (button id, text) with
+# None for whichever a control lacks. None for the list is "could not read them", which no caller
+# treats as "none": the shard drops the connection for a button the gump does not have, so an
+# unreadable gump must not be mistaken for an empty one
+def controls(ident):
+    if not ident:
+        return None
+
+    try:
+        gump = API.GetGump(ident)
+
+        if gump is None:
+            return None
+
+        found = []
+
+        for control in gump.Children or []:
+            button = _field(control, "ButtonID")
+            text = _field(control, "Text")
+
+            found.append((None if button is None else int(button), text or None))
+
+        return found
+    except Exception:
+        if API.StopRequested:
+            raise
+
+        return None
+
+
+def button_ids(ident):
+    read = controls(ident)
+
+    if read is None:
+        return None
+
+    return set(button for button, _text in read if button is not None)
+
+
+# A recognised gump wins; failing that, one that was not up before the use. Returns (id, recognised)
+def await_recognised(known, before, timeout, poll):
+    waited = 0.0
+    newcomer = 0
+
+    while waited < timeout:
+        for ident in open_ids():
+            if known(ident):
+                return ident, True
+
+            if not newcomer and ident not in before:
+                newcomer = ident
+
+        if newcomer:
+            return newcomer, False
+
+        API.Pause(poll)
+        waited += poll
+
+    return 0, False
+
+
+def gump_says(gump, texts):
+    for text in texts:
+        if API.GumpContains(text, gump):
+            return True
+
+    return False
+
+
+# src/uo/craftmenu.py
+class CraftMenu(object):
+    """A craft gump: opening it, finding the category, and finding the row."""
+
+    def __init__(self, tools, config, log):
+        self._tools = tools
+        self._config = config
+        self._log = log
+        self._id = 0
+        self._page = 0
+        self._ignored = set()
+        self._said_gump_text = False
+        self._said_no_button = set()
+        self._said_not_menu = False
+
+    def current_id(self):
+        return self._id
+
+    def button_id(self, kind, index):
+        return 1 + kind + index * self._config["stride"]
+
+    def has_button(self, button, gump):
+        known = button_ids(gump)
+
+        return known is None or button in known
+
+    # The shard drops the connection for a button the gump does not have, so nothing is sent blind
+    def _send(self, button, gump):
+        if not self.has_button(button, gump):
+            if button not in self._said_no_button:
+                self._said_no_button.add(button)
+                self._log("gump %s has no button %d - not pressing it" % (hex_of(gump), button))
+
+            return False
+
+        return bool(API.ReplyGump(button, gump))
+
+    def reply(self, button, gump):
+        if not gump or gump != self._id:
+            if not self._said_not_menu:
+                self._said_not_menu = True
+                self._log("not pressing button %d on %s - it is not the craft menu"
+                          % (button, hex_of(gump)))
+
+            return False
+
+        return self._send(button, gump)
+
+    def press(self, button, gump, timeout):
+        if not self.reply(button, gump):
+            return 0
+
+        return await_gump(self._id, timeout)
+
+    # For a button that opens another gump: the one that was not up before answers, else the menu
+    def press_page(self, button, gump, timeout):
+        before = open_ids() + list(self._ignored)
+
+        if not self.reply(button, gump):
+            return 0
+
+        found, _recognised = await_recognised(lambda ident: False, before, timeout,
+                                              self._config["gump_poll"])
+
+        if not found:
+            found = await_gump(self._id, 0)
+
+        self._page = found
+
+        return found
+
+    def reply_page(self, button, page):
+        if not page or page != self._page:
+            return False
+
+        return self._send(button, page)
+
+    def is_craft_gump(self, ident):
+        if not ident:
+            return False
+
+        if any_in(API.GetGumpContents(ident) or "", self._config["title_fragments"]):
+            return True
+
+        # GumpContains reads controls GetGumpContents may not put in text
+        for phrase in self._config["title_text"]:
+            if API.GumpContains(phrase, ident):
+                return True
+
+        # The title is a cliloc that may not render; the group rows are read here regardless
+        for line in self.lines(ident):
+            if (line.lower() in self._config["category_names"]
+                    or line.upper() == self._config["last_ten_label"]):
+                return True
+
+        return False
+
+    def lines(self, gump):
+        text = API.GetGumpContents(gump)
+
+        return [line.strip() for line in (text or "").split("\n") if line.strip()]
+
+    def _ignore(self, ident):
+        if ident in self._ignored:
+            return
+
+        self._ignored.add(ident)
+        lines = self.lines(ident)
+        self._log("ignoring gump %s - it is not the craft menu, it starts '%s'"
+                  % (hex_of(ident), lines[0] if lines else "(no text)"))
+
+    def open(self):
+        if self._id and is_open(self._id):
+            return self._id
+
+        before = open_ids()
+
+        for ident in before:
+            if self.is_craft_gump(ident):
+                self._id = ident
+
+                return ident
+
+            self._ignore(ident)
+
+        serial = self._tools.serial()
+
+        if serial is None:
+            return None
+
+        API.UseObject(serial)
+
+        # A foreign gump the shard re-sends during the wait is not what the tools opened
+        found, recognised = await_recognised(self.is_craft_gump, before + list(self._ignored),
+                                             self._config["gump_timeout"],
+                                             self._config["gump_poll"])
+
+        if not found:
+            return None
+
+        if not recognised and not self._said_gump_text:
+            self._said_gump_text = True
+            lines = self.lines(found)
+            self._log("the %s opened a gump that does not name %s - it starts '%s'"
+                      % (self._config["tool_noun"], self._config["title"],
+                         lines[0] if lines else "(no text)"))
+
+        self._id = found
+
+        return found
+
+    def _is_button_of(self, kind, button):
+        return (button is not None and button > 0
+                and (button - 1 - kind) % self._config["stride"] == 0)
+
+    # The stock layout draws a row as its button then its name (a SELECTIONS row's details button
+    # follows), and every page's rows are in the gump at once: the pairs are read off the controls
+    # whichever page shows. A page-turn label follows a page button, so it never pairs.
+    def _labelled(self, gump, kind):
+        read = controls(gump)
+
+        if read is None:
+            return []
+
+        rows = []
+        pending = None
+
+        for button, text in read:
+            if text is None:
+                pending = button if self._is_button_of(kind, button) else None
+                continue
+
+            label = text.strip()
+
+            if pending is not None and label:
+                rows.append((label, pending))
+
+            pending = None
+
+        return rows
+
+    def rows_of(self, gump):
+        return self._labelled(gump, self._config["item_type"])
+
+    def categories_of(self, gump):
+        return self._labelled(gump, self._config["category_type"])
+
+    def item_rows(self, gump):
+        return [label for label, _button in self.rows_of(gump)]
+
+
+# src/uo/craftrun.py
+"""The bookkeeping bowcraft, carpentry, tinkering and inscription all repeat: ending a cycle
+through the stall watch, running a sell or unload trip, recording a craft's materials, and freeing
+pack weight by selling or unloading when a restock is refused for it."""
+
+
+def end_cycle(stall, phase, cycle, tally, stop):
+    """Ends the cycle through the stall watch, keeping whichever stop reason came first: the
+    caller's own, or the stall's if the caller had none yet."""
+    stall.end_cycle(phase, cycle, tally)
+
+    return stop if stop is not None else stall.reason()
+
+
+class Unloader(object):
+    """One dump, and how many trips in a row moved nothing."""
+
+    def __init__(self, dump):
+        self._dump = dump
+        self.misses = 0
+
+    def run(self):
+        if self._dump.run() > 0:
+            self.misses = 0
+
+            return True
+
+        self.misses += 1
+
+        return False
+
+
+class CraftRecorder(object):
+    """Measured either side of the craft rather than read off the recipe: a failure refunds part
+    of it."""
+
+    def __init__(self, recorder, materials, refund_settle, refund_poll):
+        self._recorder = recorder
+        self._materials = materials
+        self._refund_settle = refund_settle
+        self._refund_poll = refund_poll
+
+    def record(self, outcome, skill_from, before, product):
+        if not self._recorder.recording():
+            return
+
+        after = self._materials.settled_snapshot(self._refund_settle, self._refund_poll)
+        self._recorder.record(skill_from, outcome, product, self._materials.spent(before, after))
+
+
+# A pack the shard will not load for weight is emptied first, the way the band's products leave.
+# sell and unload are each None, or (applies, held, run): zero-arg callables answering whether the
+# trip is on for this band right now, how much is held, and whether running it moved anything.
+# Tried in order, first one that applies and still holds something wins.
+def make_room(restock, log, noun, sell=None, unload=None):
+    if not restock.refused_for_weight():
+        return None
+
+    for phase, path in (("selling", sell), ("unloading", unload)):
+        if path is None:
+            continue
+
+        applies, held_of, run = path
+
+        if not applies():
+            continue
+
+        held = held_of()
+
+        if held == 0:
+            continue
+
+        log("%s %d before loading more%s" % (phase, held, " " + noun if noun else ""))
+
+        return phase if run() else None
+
+    return None
+
+
+# src/uo/pack.py
+def pack_contents():
+    items = API.ItemsInContainer(API.Backpack, True)
+
+    return items if items else []
+
+
+# The item cap is per container, so the guard and the combine both count the top level only
+def pack_top_level():
+    items = API.ItemsInContainer(API.Backpack, False)
+
+    return items if items else []
+
+
+# None is an unreported stack, not an empty one: counted as 0 it would hide the ore a swing just
+# delivered, which is the proof that the swing landed
+def amount_of(item):
+    amount = getattr(item, "Amount", None)
+
+    return amount if amount is not None else 1
+
+
+def hue_of(item):
+    return getattr(item, "Hue", 0) or 0
+
+
+def counts_by_graphic(items):
+    counts = {}
+
+    for item in items:
+        key = (item.Graphic, hue_of(item))
+        counts[key] = counts.get(key, 0) + amount_of(item)
+
+    return counts
+
+
+def diff_counts(before, after):
+    gained = {}
+    lost = {}
+
+    for key in set(list(before.keys()) + list(after.keys())):
+        change = after.get(key, 0) - before.get(key, 0)
+
+        if change > 0:
+            gained[key] = change
+        elif change < 0:
+            lost[key] = -change
+
+    return gained, lost
 
 
 # src/uo/retry.py
@@ -523,6 +1572,37 @@ def skill_capped(name):
     return clause
 
 
+# src/uo/heartbeat.py
+class Heartbeat(object):
+    """Proof of life: a loop standing still in silence looks exactly like a hung one."""
+
+    def __init__(self, every, log, noun, vitals):
+        self._every = every
+        self._log = log
+        self._noun = noun
+        self._vitals = vitals
+        self._last = None
+
+    # The clock, not the cycle counter: a cycle can be 300ms or 8s depending on which waits it hit
+    def beat(self, phase, cycle, tally):
+        moment = now()
+
+        # The first call sets the clock rather than logging: the run has just said what it is doing
+        if self._last is None:
+            self._last = moment
+            return
+
+        if moment - self._last < self._every:
+            return
+
+        self._last = moment
+        self._log("still here - %s, cycle %d, %s, %d %s"
+                  % (phase, cycle, self._vitals(), tally, self._noun))
+
+    def reset(self):
+        self._last = now()
+
+
 # src/uo/log.py
 def make_log(prefix):
     stamp = prefix + ": "
@@ -541,6 +1621,648 @@ def make_log(prefix):
     log.enabled = True
 
     return log
+
+
+# src/uo/loop.py
+def backoff_for(count, step, cap):
+    return min(step * count, cap)
+
+
+class StallWatch(object):
+    def __init__(self, without, warn_at, stop_at, heartbeat, log):
+        self._without = without
+        self._warn_at = warn_at
+        self._stop_at = stop_at
+        self._heartbeat = heartbeat
+        self._log = log
+        self._since = 0
+        self._reason = None
+
+    def end_cycle(self, phase, cycle, tally):
+        self._heartbeat.beat(phase, cycle, tally)
+        self._since += 1
+
+        if self._since == self._warn_at:
+            self._log("%d %s, last was '%s'" % (self._warn_at, self._without, phase))
+
+        if self._since >= self._stop_at:
+            self._reason = "no progress in %d cycles, last was '%s'" % (self._stop_at, phase)
+
+    def progressed(self):
+        self._since = 0
+
+    def reason(self):
+        return self._reason
+
+
+# src/uo/materials.py
+class Materials(object):
+    """What a craft spent, measured either side of it. Whitelisted: a potion drunk is not a cost."""
+
+    def __init__(self, stock, extra_graphics):
+        self._stock = stock
+        self._extra = extra_graphics
+        # Learned while the stack is there: the one that paid for a craft is often gone by the diff
+        self._names = {}
+
+    def _counted(self, item):
+        return self._stock.is_stock(item) or item.Graphic in self._extra
+
+    def _name_of(self, item):
+        kind = self._stock.kind_of(item)
+
+        if kind is not None:
+            name = self._stock.type_of(item)
+
+            return kind if name is None else "%s %s" % (name, kind)
+
+        return (getattr(item, "Name", "") or "").strip() or hex_of(item.Graphic)
+
+    def snapshot(self):
+        wanted = [item for item in pack_contents() if self._counted(item)]
+
+        for item in wanted:
+            key = (item.Graphic, hue_of(item))
+
+            if key not in self._names:
+                self._names[key] = self._name_of(item)
+
+        return counts_by_graphic(wanted)
+
+    # The failure line lands before the deduction and refund, so a pack that has not moved yet is
+    # not settled: only one that moved and then held still for a poll is
+    def settled_snapshot(self, timeout, poll):
+        last = self.snapshot()
+        waited = 0.0
+        moved = False
+
+        while waited < timeout:
+            API.Pause(poll)
+            waited += poll
+            now = self.snapshot()
+
+            if now != last:
+                moved = True
+                last = now
+            elif moved:
+                return now
+
+        return last
+
+    # The lost side only: the product lands in the same pack and is not a cost
+    def spent(self, before, after):
+        _gained, lost = diff_counts(before, after)
+        rows = []
+
+        for key in sorted(lost):
+            graphic, hue = key
+            rows.append((self._names.get(key) or hex_of(graphic), graphic, hue, lost[key]))
+
+        return rows
+
+
+# src/uo/gainpath.py
+COMMAND = "[SkillGainMode"
+PROMPT = "skill gain path is"
+PATHS = ("Modern", "Legacy", "Perilous")
+
+
+def _named(text):
+    low = (text or "").lower()
+    at = low.find(PROMPT)
+
+    if at < 0:
+        return None
+
+    words = words_of(text[at + len(PROMPT):])
+
+    for path in PATHS:
+        if path.lower() in words:
+            return path
+
+    return None
+
+
+# Sent once per run, ahead of the loop that records attempts: the client answers "Your skill gain
+# path is Modern. This character's ..." and every recorded row carries whichever of Modern, Legacy
+# or Perilous follows.
+def read_gain_path(budget, poll, log):
+    API.Msg(COMMAND)
+
+    waited = 0.0
+
+    while not API.StopRequested:
+        for entry in API.GetJournalEntries(budget + poll) or []:
+            path = _named(getattr(entry, "Text", None))
+
+            if path is not None:
+                return path
+
+        if waited >= budget:
+            log("no skill gain path reported - recording without one")
+            return None
+
+        API.Pause(poll)
+        waited += poll
+
+    return None
+
+
+# src/uo/record.py
+# Written by hand rather than with json.dumps, so the key order stays the one the README shows
+def quoted(text):
+    out = ['"']
+
+    for character in text:
+        code = ord(character)
+
+        if character == '"' or character == "\\":
+            out.append("\\" + character)
+        elif character == "\n":
+            out.append("\\n")
+        elif character == "\r":
+            out.append("\\r")
+        elif character == "\t":
+            out.append("\\t")
+        # Non-ASCII escaped rather than written through: a character name carrying an accent is
+        # ordinary here, and what encoding the runtime picked for the file is not knowable from in
+        # here
+        elif code < 0x20 or code > 0x7E:
+            out.append("\\u%04x" % code)
+        else:
+            out.append(character)
+
+    out.append('"')
+
+    return "".join(out)
+
+
+def skill_json(value):
+    return "null" if value is None else "%.1f" % value
+
+
+class AttemptLog(object):
+    """One JSON object per attempt, appended as it happens.
+
+    A row is buffered when the attempt resolves and written when the *next* attempt is recorded,
+    carrying that attempt's starting value as its own end: the client applies a gain some time after
+    the outcome, and a value read on the next cycle still misses one that lands during a pause,
+    where the next attempt's read cannot. close() writes the last row at the end of the run. The
+    cost is one row in the air at any moment, which a killed script loses; the alternative is a
+    file that under-reports every gain it exists to measure.
+    """
+
+    def __init__(self, path, character, serial, skill, log, append=None, gain_path=None):
+        self._path = path or ""
+        self._character = character or ""
+        self._serial = serial
+        self._skill = skill
+        self._gain_path = gain_path
+        self._log = log
+        self._append = append if append is not None else append_line
+        self._off = not self._path
+        # Milliseconds, not seconds: two runs started inside the same second would mint the
+        # same ids, and the converter reads a repeated id as the same row arriving twice
+        self._run = int(now() * 1000)
+        self._seq = 0
+        self._pending = None
+        self._said = False
+
+    # Asked before an attempt so a caller can skip the work of measuring what it spent
+    def recording(self):
+        return not self._off
+
+    # used is what the attempt was made with: the spell, the product, the creature, the weapon.
+    # consumed and gained are lists of (name, graphic, hue, quantity) - measured, so an attempt that
+    # spent nothing passes nothing rather than a guess at what the recipe charges
+    def record(self, skill_from, outcome, used, consumed=None, gained=None):
+        if self._off or skill_from is None:
+            return
+
+        # The previous row ends where this attempt starts: the latest read there is
+        self._flush(skill_from)
+
+        self._seq += 1
+        self._pending = {
+            "id": "%s/%d/%d" % (hex_of(self._serial), self._run, self._seq),
+            "at": now(),
+            "from": skill_from,
+            "used": used,
+            "outcome": outcome,
+            "consumed": list(consumed) if consumed else [],
+            "gained": list(gained) if gained else [],
+        }
+
+    # The end of the run. skill_to is None only where no reading ever arrived, and the row is
+    # written all the same with its end unknown rather than lost with the run
+    def close(self, skill_to):
+        self._flush(skill_to)
+
+    def _flush(self, skill_to):
+        pending = self._pending
+        self._pending = None
+
+        if pending is None or self._off:
+            return
+
+        self._write(pending, skill_to)
+
+    def _line(self, row, skill_to):
+        fields = [
+            '"v":1',
+            '"id":%s' % quoted(row["id"]),
+            '"t":%.3f' % row["at"],
+            '"char":%s' % quoted(self._character),
+            '"serial":%s' % quoted(hex_of(self._serial)),
+            '"skill":%s' % quoted(self._skill),
+            '"gainPath":%s' % (quoted(self._gain_path) if self._gain_path else "null"),
+            '"used":%s' % quoted(row["used"]),
+            '"from":%s' % skill_json(row["from"]),
+            '"to":%s' % skill_json(skill_to),
+            '"outcome":%s' % quoted(row["outcome"]),
+        ]
+
+        for key in ("consumed", "gained"):
+            if row[key]:
+                fields.append('"%s":[%s]' % (key, ",".join(
+                    '{"name":%s,"graphic":%s,"hue":%d,"qty":%d}'
+                    % (quoted(name), quoted(hex_of(graphic)), hue, quantity)
+                    for name, graphic, hue, quantity in row[key]
+                )))
+
+        return "{%s}" % ",".join(fields)
+
+    # A run that cannot write its log is still a run: the recorder retires itself and says so once,
+    # rather than ending the training over a file
+    def _write(self, row, skill_to):
+        try:
+            self._append(self._path, self._line(row, skill_to))
+        except Exception as error:
+            self._off = True
+
+            if not self._said:
+                self._said = True
+                self._log("cannot write %s (%s) - not recording this run" % (self._path, error))
+
+
+# The character is read once, here, rather than on every row: it cannot change under a running
+# script, and a client between world states answers None for the player without that meaning the
+# run should stop recording.
+def attempt_log(path, skill, log):
+    me = player()
+
+    if me is None and path:
+        log("the client is not reporting the character - rows will not name it")
+
+    where = beside_script(path)
+
+    if where:
+        log("recording to %s" % where)
+
+    gain_path = read_gain_path(GAIN_PATH_TIMEOUT, GAIN_PATH_POLL, log) if where else None
+
+    return AttemptLog(where, getattr(me, "Name", ""), getattr(me, "Serial", 0), skill, log,
+                       gain_path=gain_path)
+
+
+# src/uo/stock.py
+class StockBook(object):
+    """What in the pack is the craft's material, which type it is, and how much the menu will spend."""
+
+    def __init__(self, config, log):
+        self._noun = config["noun"]
+        self._kinds = config["kinds"]
+        # Longest first: 'copper' would otherwise take 'dull copper'
+        self._types = sorted(config["types"], key=lambda name: -len(words_of(name)))
+        self._hues = config["hues"]
+        self._wanted = config["wanted"]
+        self._move_delay = config["move_delay"]
+        self._log = log
+
+    def noun(self):
+        return self._noun
+
+    def wanted(self):
+        return self._wanted
+
+    # For a snapshot key, which has no item left to read a name off
+    def is_stock_graphic(self, graphic):
+        for _kind, graphics, _words in self._kinds:
+            if graphic in graphics:
+                return True
+
+        return False
+
+    # Names are empty until the tooltip arrives, so the graphic is tried first across every kind
+    def kind_of(self, item):
+        if item is None:
+            return None
+
+        for kind, graphics, _words in self._kinds:
+            if item.Graphic in graphics:
+                return kind
+
+        for kind, graphics, words in self._kinds:
+            if word_in(item.Name, words):
+                graphics.add(item.Graphic)
+                self._log("%s '%s' counts as %s, remembering the art"
+                          % (hex_of(item.Graphic), item.Name, kind))
+
+                return kind
+
+        return None
+
+    def is_stock(self, item):
+        return self.kind_of(item) is not None
+
+    # The name is where the shard writes it; a hue in neither table is not guessed at
+    def type_of(self, item):
+        words = words_of(item.Name)
+
+        for name in self._types:
+            wanted = words_of(name)
+
+            for start in range(len(words) - len(wanted) + 1):
+                if words[start:start + len(wanted)] == wanted:
+                    return name
+
+        return self._hues.get(hue_of(item))
+
+    def usable(self, item):
+        return self.is_stock(item) and self.type_of(item) == self._wanted
+
+    def wrong(self, item):
+        return self.is_stock(item) and self.type_of(item) != self._wanted
+
+    def usable_kind(self, item, kind):
+        return self.usable(item) and self.kind_of(item) == kind
+
+    # Only what the menu will spend: counting oak let a run sit on a full pack and craft none
+    def counts(self, items):
+        counts = {}
+
+        for item in items:
+            if not self.usable(item):
+                continue
+
+            kind = self.kind_of(item)
+            counts[kind] = counts.get(kind, 0) + amount_of(item)
+
+        return counts
+
+    # The rest, by type, so a pack that reads as empty says why
+    def other_counts(self, items):
+        counts = {}
+
+        for item in items:
+            if not self.wrong(item):
+                continue
+
+            name = self.type_of(item) or "unknown"
+            counts[name] = counts.get(name, 0) + amount_of(item)
+
+        return counts
+
+    def other_report(self, counts):
+        parts = ["%d %s" % (counts[name], name)
+                 for name in sorted(counts, key=lambda name: -counts[name])]
+
+        return ", ".join(parts)
+
+    # In kind order, so it reads the same each time
+    def report(self, counts):
+        parts = []
+
+        for kind, _graphics, _words in self._kinds:
+            if counts.get(kind, 0) > 0:
+                parts.append("%d %s" % (counts[kind], kind))
+
+        return ", ".join(parts) if parts else "no %s" % self._noun
+
+    def pack_stock(self):
+        return self.counts(pack_contents())
+
+    def pack_other(self):
+        return self.other_counts(pack_contents())
+
+    def in_pack(self):
+        return total_of(self.pack_stock())
+
+    def pack_report(self):
+        text = self.report(self.pack_stock())
+        other = self.other_report(self.pack_other())
+
+        return text if not other else "%s (%s set aside)" % (text, other)
+
+    # By hue: oak, ash and yew are all 'boards' by graphic. Missing hue rows come from here.
+    def hue_report(self):
+        counts = {}
+
+        for item in pack_contents():
+            kind = self.kind_of(item)
+
+            if kind is None:
+                continue
+
+            key = (kind, hue_of(item), self.type_of(item) or "unknown")
+            counts[key] = counts.get(key, 0) + amount_of(item)
+
+        parts = ["%d %s %s hue %s" % (counts[key], key[2], key[0], hex_of(key[1]))
+                 for key in sorted(counts, key=lambda pair: -counts[pair])]
+
+        return ", ".join(parts) if parts else "no %s" % self._noun
+
+    def wrong_piles(self):
+        return [item for item in pack_contents() if self.wrong(item)]
+
+    # The craft may not reach into a bag inside the pack
+    def _nested(self):
+        top = set(item.Serial for item in pack_top_level())
+        piles = [item for item in pack_contents()
+                 if item.Serial not in top and self.usable(item)]
+        piles.sort(key=amount_of, reverse=True)
+
+        return piles
+
+    def lift_from_bags(self):
+        moved = 0
+
+        for pile in self._nested():
+            before = total_of(self.counts(pack_top_level()))
+
+            API.MoveItem(pile.Serial, API.Backpack, amount_of(pile))
+            API.Pause(self._move_delay)
+
+            gained = total_of(self.counts(pack_top_level())) - before
+
+            if gained > 0:
+                moved += gained
+
+        if moved > 0:
+            self._log("brought %d %s up out of the bags in your pack" % (moved, self._noun))
+
+        return moved
+
+
+def total_of(counts):
+    return sum(counts[kind] for kind in counts)
+
+
+# src/uo/vitals.py
+def weight_reading():
+    me = player()
+
+    return "?/?" if me is None else "%d/%d" % (me.Weight, me.WeightMax)
+
+
+def where():
+    me = player()
+
+    return "somewhere" if me is None else "at %d,%d" % (me.X, me.Y)
+
+
+def position_and_weight():
+    return "%s, %s" % (where(), weight_reading())
+
+
+# src/uo/restock.py
+class Restock(object):
+    def __init__(self, wood, sources, config, log):
+        self._wood = wood
+        self._sources = sources
+        self._config = config
+        self._log = log
+        self._heavy = False
+
+    def refused_for_weight(self):
+        return self._heavy
+
+    # One pool by default; a table of kind -> fill-to pulls each kind on its own, so a craft that
+    # spends several things does not fill the pack with whichever pile the container lists first
+    def _targets(self, targets):
+        if targets is None:
+            return [(None, self._config["batch"] - self._wood.in_pack())]
+
+        held = self._wood.pack_stock()
+
+        return [(kind, targets[kind] - held.get(kind, 0)) for kind in sorted(targets)]
+
+    def _grew(self, before, after):
+        return ", ".join(sorted(name for name in after if after[name] > before.get(name, 0)))
+
+    def _pull(self, entry, kind, wanted):
+        moved = 0
+        stalled = 0
+        cap = self._sources.cap(entry)
+
+        if cap is not None:
+            wanted = min(wanted, cap)
+
+        while moved < wanted and stalled < self._config["max_empty_moves"]:
+            if not self._sources.has_stock(entry, kind):
+                break
+
+            before = self._wood.in_pack()
+            others = self._wood.pack_other()
+            token = self._sources.take(entry, kind, wanted - moved)
+            gained = self._wood.in_pack() - before
+
+            # Every container answers the same, so the first refusal ends the whole pull
+            if gained <= 0 and matched_bucket([("heavy", self._config["heavy_text"])]):
+                self._heavy = True
+                self._log("the shard will not load more %s - too heavy at %s"
+                          % (self._wood.noun(), weight_reading()))
+                break
+
+            if gained <= 0:
+                gave = self._grew(others, self._wood.pack_other())
+
+                if gave:
+                    self._sources.took_wrong(entry, token, gave)
+
+                stalled += 1
+            else:
+                stalled = 0
+                moved += gained
+
+        return moved
+
+    # Moves are asynchronous: the pack is re-counted after each rather than a return value read
+    def run(self, targets=None):
+        self._heavy = False
+        lifted = self._wood.lift_from_bags()
+
+        # After the lift: in_pack reads bags too, and counting the lift twice left it short
+        wanted = dict(self._targets(targets))
+        moved = 0
+
+        for entry in self._sources.picked():
+            if max(wanted.values()) <= 0 or self._heavy:
+                break
+
+            if not self._sources.reach(entry):
+                self._log("cannot reach '%s', trying the next" % self._sources.name_of(entry))
+                continue
+
+            if self._sources.open(entry) is None:
+                self._log("'%s' did not open" % self._sources.name_of(entry))
+                continue
+
+            if self._config["return_wrong_wood"]:
+                self._sources.put_back(entry)
+
+            for kind in sorted(wanted, key=lambda name: name or ""):
+                if wanted[kind] <= 0 or self._heavy:
+                    continue
+
+                pulled = self._pull(entry, kind, wanted[kind])
+                wanted[kind] -= pulled
+                moved += pulled
+
+        if moved > 0:
+            self._log("pulled %d %s, %s in the pack, %d left in what you picked"
+                      % (moved, self._wood.noun(), self._wood.pack_report(),
+                         self._sources.stock_left()))
+
+        return lifted + moved
+
+
+# src/uo/save.py
+class SaveWatch(object):
+    def __init__(self, saving_text, done_text, wait, poll, log, heartbeat, stop_reason):
+        self._saving_text = saving_text
+        self._done_text = done_text
+        self._wait = wait
+        self._poll = poll
+        self._log = log
+        self._heartbeat = heartbeat
+        self._stop_reason = stop_reason
+
+    def is_saving(self):
+        return said(self._saving_text)
+
+    def wait_out(self):
+        self._log("the world is saving, waiting it out")
+
+        # Read before the clear: a save can start and finish inside one cycle, and clearing first
+        # threw the completion away and then stood still for the whole of the wait
+        ended = "the shard had already finished" if said(self._done_text) else None
+
+        forget(self._saving_text + self._done_text)
+
+        waited = 0.0
+
+        while ended is None and waited < self._wait:
+            API.Pause(self._poll)
+            waited += self._poll
+
+            if said(self._done_text):
+                ended = "the shard says it is done"
+            elif self._stop_reason() is not None:
+                ended = "the run has a reason to stop"
+
+        self._log("%s, carrying on" % (ended or "nothing said in %ds" % int(self._wait)))
+        self._heartbeat.reset()
 
 
 # src/uo/gumpwait.py
@@ -998,113 +2720,6 @@ class SkillReader(object):
         return skill.Value
 
 
-# src/uo/gump.py
-# HasGump() only ever answers the last gump the shard sent, and a gump the shard re-sends on its own
-# steals that slot: the id-addressed calls below do not go through it
-def open_ids():
-    found = []
-    last = API.HasGump()
-
-    if last:
-        found.append(last)
-
-    try:
-        for gump in API.GetAllGumps() or []:
-            serial = getattr(gump, "ServerSerial", 0)
-
-            if serial and serial not in found:
-                found.append(serial)
-    except Exception:
-        if API.StopRequested:
-            raise
-
-    return found
-
-
-def is_open(ident):
-    return bool(ident) and bool(API.WaitForGump(ident, 0))
-
-
-# A getter can throw on its own (Control.X does), which is not the whole gump being unreadable
-def _field(control, name):
-    try:
-        return getattr(control, name, None)
-    except Exception:
-        if API.StopRequested:
-            raise
-
-        return None
-
-
-# The controls in the order the layout drew them, every page at once, as (button id, text) with
-# None for whichever a control lacks. None for the list is "could not read them", which no caller
-# treats as "none": the shard drops the connection for a button the gump does not have, so an
-# unreadable gump must not be mistaken for an empty one
-def controls(ident):
-    if not ident:
-        return None
-
-    try:
-        gump = API.GetGump(ident)
-
-        if gump is None:
-            return None
-
-        found = []
-
-        for control in gump.Children or []:
-            button = _field(control, "ButtonID")
-            text = _field(control, "Text")
-
-            found.append((None if button is None else int(button), text or None))
-
-        return found
-    except Exception:
-        if API.StopRequested:
-            raise
-
-        return None
-
-
-def button_ids(ident):
-    read = controls(ident)
-
-    if read is None:
-        return None
-
-    return set(button for button, _text in read if button is not None)
-
-
-# A recognised gump wins; failing that, one that was not up before the use. Returns (id, recognised)
-def await_recognised(known, before, timeout, poll):
-    waited = 0.0
-    newcomer = 0
-
-    while waited < timeout:
-        for ident in open_ids():
-            if known(ident):
-                return ident, True
-
-            if not newcomer and ident not in before:
-                newcomer = ident
-
-        if newcomer:
-            return newcomer, False
-
-        API.Pause(poll)
-        waited += poll
-
-    return 0, False
-
-
-def gump_says(gump, texts):
-    for text in texts:
-        if API.GumpContains(text, gump):
-            return True
-
-    return False
-
-
 # src/uo/box.py
 def _is_int(token):
     return token.lstrip("-").isdigit()
@@ -1357,189 +2972,6 @@ class StorageBox(object):
     def wrong_row(self, label, gave):
         self._skipped.add(label)
         self._log("the button table is out of date for '%s' - it gave %s" % (label, gave))
-
-
-# src/uo/stock.py
-class StockBook(object):
-    """What in the pack is the craft's material, which type it is, and how much the menu will spend."""
-
-    def __init__(self, config, log):
-        self._noun = config["noun"]
-        self._kinds = config["kinds"]
-        # Longest first: 'copper' would otherwise take 'dull copper'
-        self._types = sorted(config["types"], key=lambda name: -len(words_of(name)))
-        self._hues = config["hues"]
-        self._wanted = config["wanted"]
-        self._move_delay = config["move_delay"]
-        self._log = log
-
-    def noun(self):
-        return self._noun
-
-    def wanted(self):
-        return self._wanted
-
-    # For a snapshot key, which has no item left to read a name off
-    def is_stock_graphic(self, graphic):
-        for _kind, graphics, _words in self._kinds:
-            if graphic in graphics:
-                return True
-
-        return False
-
-    # Names are empty until the tooltip arrives, so the graphic is tried first across every kind
-    def kind_of(self, item):
-        if item is None:
-            return None
-
-        for kind, graphics, _words in self._kinds:
-            if item.Graphic in graphics:
-                return kind
-
-        for kind, graphics, words in self._kinds:
-            if word_in(item.Name, words):
-                graphics.add(item.Graphic)
-                self._log("%s '%s' counts as %s, remembering the art"
-                          % (hex_of(item.Graphic), item.Name, kind))
-
-                return kind
-
-        return None
-
-    def is_stock(self, item):
-        return self.kind_of(item) is not None
-
-    # The name is where the shard writes it; a hue in neither table is not guessed at
-    def type_of(self, item):
-        words = words_of(item.Name)
-
-        for name in self._types:
-            wanted = words_of(name)
-
-            for start in range(len(words) - len(wanted) + 1):
-                if words[start:start + len(wanted)] == wanted:
-                    return name
-
-        return self._hues.get(hue_of(item))
-
-    def usable(self, item):
-        return self.is_stock(item) and self.type_of(item) == self._wanted
-
-    def wrong(self, item):
-        return self.is_stock(item) and self.type_of(item) != self._wanted
-
-    def usable_kind(self, item, kind):
-        return self.usable(item) and self.kind_of(item) == kind
-
-    # Only what the menu will spend: counting oak let a run sit on a full pack and craft none
-    def counts(self, items):
-        counts = {}
-
-        for item in items:
-            if not self.usable(item):
-                continue
-
-            kind = self.kind_of(item)
-            counts[kind] = counts.get(kind, 0) + amount_of(item)
-
-        return counts
-
-    # The rest, by type, so a pack that reads as empty says why
-    def other_counts(self, items):
-        counts = {}
-
-        for item in items:
-            if not self.wrong(item):
-                continue
-
-            name = self.type_of(item) or "unknown"
-            counts[name] = counts.get(name, 0) + amount_of(item)
-
-        return counts
-
-    def other_report(self, counts):
-        parts = ["%d %s" % (counts[name], name)
-                 for name in sorted(counts, key=lambda name: -counts[name])]
-
-        return ", ".join(parts)
-
-    # In kind order, so it reads the same each time
-    def report(self, counts):
-        parts = []
-
-        for kind, _graphics, _words in self._kinds:
-            if counts.get(kind, 0) > 0:
-                parts.append("%d %s" % (counts[kind], kind))
-
-        return ", ".join(parts) if parts else "no %s" % self._noun
-
-    def pack_stock(self):
-        return self.counts(pack_contents())
-
-    def pack_other(self):
-        return self.other_counts(pack_contents())
-
-    def in_pack(self):
-        return total_of(self.pack_stock())
-
-    def pack_report(self):
-        text = self.report(self.pack_stock())
-        other = self.other_report(self.pack_other())
-
-        return text if not other else "%s (%s set aside)" % (text, other)
-
-    # By hue: oak, ash and yew are all 'boards' by graphic. Missing hue rows come from here.
-    def hue_report(self):
-        counts = {}
-
-        for item in pack_contents():
-            kind = self.kind_of(item)
-
-            if kind is None:
-                continue
-
-            key = (kind, hue_of(item), self.type_of(item) or "unknown")
-            counts[key] = counts.get(key, 0) + amount_of(item)
-
-        parts = ["%d %s %s hue %s" % (counts[key], key[2], key[0], hex_of(key[1]))
-                 for key in sorted(counts, key=lambda pair: -counts[pair])]
-
-        return ", ".join(parts) if parts else "no %s" % self._noun
-
-    def wrong_piles(self):
-        return [item for item in pack_contents() if self.wrong(item)]
-
-    # The craft may not reach into a bag inside the pack
-    def _nested(self):
-        top = set(item.Serial for item in pack_top_level())
-        piles = [item for item in pack_contents()
-                 if item.Serial not in top and self.usable(item)]
-        piles.sort(key=amount_of, reverse=True)
-
-        return piles
-
-    def lift_from_bags(self):
-        moved = 0
-
-        for pile in self._nested():
-            before = total_of(self.counts(pack_top_level()))
-
-            API.MoveItem(pile.Serial, API.Backpack, amount_of(pile))
-            API.Pause(self._move_delay)
-
-            gained = total_of(self.counts(pack_top_level())) - before
-
-            if gained > 0:
-                moved += gained
-
-        if moved > 0:
-            self._log("brought %d %s up out of the bags in your pack" % (moved, self._noun))
-
-        return moved
-
-
-def total_of(counts):
-    return sum(counts[kind] for kind in counts)
 
 
 # src/uo/sources.py
@@ -2005,6 +3437,8 @@ class ToolStore(object):
 
 # src/alchemy/index.py
 log = make_log("alchemy")
+heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "made", position_and_weight)
+stall = StallWatch("cycles without a craft", STALL_WARN, STALL_STOP, heartbeat, log)
 
 if API.HasTarget():
     API.CancelTarget()
@@ -2022,11 +3456,39 @@ def stop_reason():
     return first_reason([stopped(STOPPED), dead(), skill_capped(skill_name)])
 
 
+def short_for(item):
+    return short_of(NEEDS[item], stock.pack_stock())
+
+
+def crafts_left(item):
+    return affordable(NEEDS[item], stock.pack_stock())
+
+
+# Only the kinds the band spends, enough for BATCH_CRAFTS of it
+def targets_for(item):
+    return dict((kind, BATCH_CRAFTS * NEEDS[item][kind]) for kind in NEEDS[item])
+
+
+def needs_report(item):
+    return shortfall_report(NEEDS[item], KIND_ORDER)
+
+
+def left_in_sources(kinds):
+    total = 0
+
+    for entry in sources.picked():
+        counts = sources.counts(entry)
+        total += sum(counts.get(kind, 0) for kind in kinds)
+
+    return total
+
+
+saves = SaveWatch(SAVING_TEXT, SAVE_DONE_TEXT, SAVE_WAIT, SAVE_POLL, log, heartbeat, stop_reason)
+
 tools = CraftTool("mortar and pestle", TOOL_GRAPHICS, TOOL_NAME_WORDS, log)
-# No reagent table yet: the form only needs the pickers this book backs
 stock = StockBook({
-    "noun": "reagents",
-    "kinds": [],
+    "noun": "bottles and reagents",
+    "kinds": STOCK_KINDS,
     "types": [],
     "hues": {},
     "wanted": None,
@@ -2041,6 +3503,15 @@ sources = Sources(stock, {
     "pathfind_timeout": PATHFIND_TIMEOUT,
     "box": None,
 }, log)
+# batch is unread: every run hands the restock a per-kind target
+restock = Restock(stock, sources, {
+    "batch": 0,
+    "move_delay": MOVE_DELAY,
+    "max_empty_moves": MAX_EMPTY_MOVES,
+    "return_wrong_wood": False,
+    "heavy_text": TOO_HEAVY_TEXT,
+}, log)
+# Kept: a potion carried in is not the run's
 dump = Dump(sources, PRODUCTS, {
     "pick_timeout": PICK_TIMEOUT,
     "move_delay": MOVE_DELAY,
@@ -2054,16 +3525,63 @@ tool_store = ToolStore(tools, sources, {
     "fetch_poll": FETCH_POLL,
 }, log)
 setup = Setup(SETUP, log, stop_reason)
+menu = CraftMenu(tools, {
+    "stride": BUTTON_STRIDE,
+    "category_type": CATEGORY_BUTTON_TYPE,
+    "item_type": ITEM_BUTTON_TYPE,
+    "category_names": CATEGORY_NAMES,
+    "last_ten_label": LAST_TEN_LABEL,
+    "title": CRAFT_TITLE,
+    "title_text": CRAFT_TITLE_TEXT,
+    "title_fragments": CRAFT_TITLE_FRAGMENTS,
+    "tool_noun": "mortars and pestles",
+    "gump_timeout": GUMP_TIMEOUT,
+    "gump_poll": GUMP_POLL,
+}, log)
+notes = note_log(NOTES_PATH, log)
+crafter = Crafter(tools, menu, stock, OUTCOME_TEXT, {
+    "recipes": RECIPES,
+    "make_last_button": MAKE_LAST_BUTTON,
+    "gump_timeout": GUMP_TIMEOUT,
+    "craft_timeout": CRAFT_TIMEOUT,
+    "craft_poll": CRAFT_POLL,
+    "max_reports": MAX_UNREADABLE_REPORTS,
+    "text_limit": UNREADABLE_TEXT_LIMIT,
+    "tail_seconds": JOURNAL_TAIL_SECONDS,
+    "tail_lines": JOURNAL_TAIL_LINES,
+    "notes_seconds": NOTES_TAIL_SECONDS,
+    "material": "empty bottles and reagents",
+}, log, log.stamp, notes)
 
 start = skill.wait(SKILL_TIMEOUT, SKILL_POLL)
+
+# Before the cursor: a capped character has nothing to pick containers for
+capped = skill_capped(skill_name)()
 
 if start is None:
     log("%s is not reading yet - start it again once the skill list has arrived" % skill_name)
     API.Stop()
+elif start < MIN_SKILL:
+    log("%s is at %.1f and the table starts at %.1f - train it up by hand first"
+        % (skill_name, start, MIN_SKILL))
+    API.Stop()
+elif capped is not None:
+    log(capped)
+    API.Stop()
+
+cap = skill.cap()
+first = band_for(BANDS, start)
+
+if first is None:
+    log("%s reads %s and no band covers it" % (skill_name, reading(start)))
+    API.Stop()
+
 
 def training_rows():
-    return ("%s %s" % (skill_name, reading(start)),
-            band_rows(BANDS, start, lambda row: "%d %s" % REAGENT_COST[row], MIN_SKILL))
+    heading = "%s %s%s" % (skill_name, reading(start),
+                           " / %.1f" % cap if cap is not None and cap > 0 else "")
+
+    return heading, band_rows(BANDS, start, needs_report, MIN_SKILL)
 
 
 answers = setup.ask({
@@ -2074,19 +3592,274 @@ answers = setup.ask({
     "clear": sources.clear,
     "unload": dump.pick_line,
     "unload_ready": dump.picked,
-    "has_wood": lambda: True,
+    "has_wood": lambda: stock.in_pack() > 0,
     "unsold_ahead": None,
 })
+
+# The stop lands at the next Pause, so the lines until then read a form that was never answered
+output = answers["output"] if answers is not None else "keep"
+dump_at = answers["dump_at"] if answers is not None else DUMP_AT
+log.enabled = answers["debug_logs"] if answers is not None else False
 
 if answers is None:
     API.Stop()
 
-log.enabled = answers["debug_logs"] if answers is not None else False
+# The radio, not the cursor: a container picked before switching to Keep stays unused
+unloading = output == "unload"
 
-if answers is not None:
-    log("%s, tools: %s, %d sources, unloading into %s every %d"
-        % (answers["output"], answers["tools"], answers["sources"],
-           dump.name() if answers["output"] == "unload" else "nothing", answers["dump_at"]))
+if unloading:
+    log("unloading every %d potions" % dump_at)
+else:
+    log("keeping what is made - the run ends once the pack holds %d potions" % MAX_HELD)
 
-log("stopping - the form is all this run does yet")
+# A picked tool container fills an empty pack before the first craft
+if (tools.find(FETCH_TIMEOUT, FETCH_POLL) is None
+        and not (tool_store.picked() and tool_store.fetch())):
+    log("no mortar and pestle in the pack")
+    API.Stop()
+
+log("%s at %s%s, %s in the pack, %s"
+    % (skill_name, reading(start), "/%.1f" % cap if cap is not None and cap > 0 else "",
+       stock.pack_report(), sources.stock_line()))
+
+stock.lift_from_bags()
+
+if crafts_left(first) < RESTOCK_AT:
+    restock.run(targets_for(first))
+
+recorder = attempt_log(DATA_PATH, skill_name, log)
+materials = Materials(stock, set())
+craft_recorder = CraftRecorder(recorder, materials, REFUND_SETTLE, REFUND_POLL)
+unloader = Unloader(dump)
+
+stop = None
+tally = 0
+fails = 0
+unknown = 0
+throttled = 0
+no_tool = 0
+no_material = 0
+throttle_tally = 0
+said_throttle = False
+reported = 0
+cycle = 0
+product = None
+last_skill = start
+
+
+# A pack the shard will not load for weight is unloaded first, when there is anything in it to move
+def try_make_room():
+    return make_room(restock, log, "", unload=(lambda: unloading, dump.held, unloader.run))
+
+
+def out_of_stock():
+    return ("out of %s - %s in the pack, none left in what you picked, and one %s takes %s"
+            % (shortfall_report(short_for(product), KIND_ORDER), stock.pack_report(), product,
+               needs_report(product)))
+
+
+try:
+    while stop is None and cycle < MAX_CYCLES:
+        cycle += 1
+
+        stop = stop_reason()
+
+        if stop is not None:
+            break
+
+        # A frozen shard reads as every failure below, so it is waited out before any of them
+        if saves.is_saving():
+            saves.wait_out()
+            unknown = 0
+            throttled = 0
+            stall.progressed()
+            stop = end_cycle(stall, "saving", cycle, tally, stop)
+            continue
+
+        value = skill.read()
+
+        if value is not None and value != last_skill:
+            last_skill = value
+            stall.progressed()
+
+        wanted = band_for(BANDS, value if value is not None else last_skill)
+
+        if wanted is None:
+            stop = "%s reads %s and no band covers it" % (skill_name, reading(value))
+            break
+
+        if wanted != product:
+            log("%s at %s, making %s (%s)"
+                % (skill_name, reading(value), wanted, needs_report(wanted)))
+            product = wanted
+            crafter.forget_last()
+
+        held = dump.held()
+
+        if unloading and held >= dump_at:
+            if unloader.run():
+                stop = end_cycle(stall, "unloading", cycle, tally, stop)
+                continue
+
+            if unloader.misses >= MAX_DUMP_MISSES:
+                stop = ("%d unloads in a row moved nothing into '%s'"
+                        % (unloader.misses, dump.name()))
+                break
+        elif not unloading and held >= MAX_HELD:
+            stop = "the pack holds %d potions and nothing was picked to unload into" % held
+            break
+
+        if crafts_left(product) < RESTOCK_AT:
+            # An unreachable container also pulls nothing, which the stall watch ends
+            pulled = restock.run(targets_for(product))
+
+            phase = try_make_room()
+
+            if phase is not None:
+                stop = end_cycle(stall, phase, cycle, tally, stop)
+                continue
+
+            short = short_for(product)
+
+            if pulled == 0 and len(short) > 0 and left_in_sources(short) == 0:
+                stop = out_of_stock()
+                break
+
+            # A short pack that can still make something crafts
+            if len(short) > 0:
+                stop = end_cycle(stall, "restocking", cycle, tally, stop)
+                continue
+
+        spent_before = materials.snapshot() if recorder.recording() else {}
+        outcome = crafter.craft_once(product)
+
+        if outcome != "throttled":
+            throttled = 0
+
+        if outcome is not None:
+            unknown = 0
+
+        if outcome in ("made", "failed"):
+            if outcome == "made":
+                tally += 1
+            else:
+                fails += 1
+
+            craft_recorder.record(outcome, value, spent_before, product)
+            no_material = 0
+            stall.progressed()
+        elif outcome == "noMaterial":
+            pulled = restock.run(targets_for(product))
+
+            phase = try_make_room()
+
+            if phase is not None:
+                stop = end_cycle(stall, phase, cycle, tally, stop)
+                continue
+
+            short = short_for(product)
+
+            if pulled > 0:
+                no_material = 0
+                stall.progressed()
+            elif len(short) > 0 and left_in_sources(short) == 0:
+                stop = out_of_stock()
+                break
+            else:
+                # Everything the recipe takes is in the pack and refused: the row is another potion
+                no_material += 1
+
+                if no_material >= MAX_NO_MATERIAL:
+                    stop = ("the shard refused %s in the pack %d times - read the gump's own words "
+                            "above; the row pressed may not be %s" % (stock.pack_report(),
+                                                                      no_material, product))
+                    break
+        elif outcome == "saving":
+            stall.progressed()
+        elif outcome == "toolWorn":
+            crafter.forget_last()
+            stall.progressed()
+            log("the mortar wore out, looking for another")
+        elif outcome == "skillTooLow":
+            stop = "the shard says you cannot make a %s at %s" % (product, reading(value))
+            break
+        elif outcome == "noRow":
+            stop = "'%s' is not in RECIPES" % product
+            break
+        elif outcome == "noTool" and tool_store.picked() and tool_store.fetch():
+            crafter.forget_last()
+            stall.progressed()
+            log("the mortars ran out - fetched another")
+        elif outcome in ("noTool", "noGump"):
+            no_tool += 1
+
+            if no_tool >= MAX_NO_TOOL:
+                stop = ("no mortar and pestle left" if outcome == "noTool"
+                        else "the craft menu will not open")
+                break
+
+            log("%s (%d/%d), trying again"
+                % ("no mortar and pestle in the pack" if outcome == "noTool"
+                   else "the mortar opened no craft menu", no_tool, MAX_NO_TOOL))
+            API.Pause(backoff_for(no_tool, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX))
+        elif outcome == "throttled":
+            throttled += 1
+            throttle_tally += 1
+
+            if throttled >= MAX_THROTTLED:
+                stop = "%d throttled crafts in a row" % MAX_THROTTLED
+                break
+
+            waiting = backoff_for(throttled, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX)
+
+            # Said once, then only tallied: the pause is the shard's, and it is normal
+            if not said_throttle:
+                said_throttle = True
+                log("the shard is pacing the crafts - waiting %.1fs, and counting these from here on"
+                    % waiting)
+
+            API.Pause(waiting)
+        else:
+            unknown += 1
+            log("unreadable outcome (%d/%d), check OUTCOME_TEXT" % (unknown, MAX_UNKNOWN))
+
+        if outcome not in ("noTool", "noGump"):
+            no_tool = 0
+
+        if unknown >= MAX_UNKNOWN:
+            stop = "%d unreadable outcomes in a row" % MAX_UNKNOWN
+            break
+
+        if tally >= reported + LOG_EVERY:
+            reported = tally
+            log(
+                "%d made, %d failed, %d throttled, %s at %s, %s left"
+                % (tally, fails, throttle_tally, skill_name, reading(value),
+                   stock.report(stock.pack_stock()))
+            )
+
+        stop = end_cycle(stall, outcome if outcome is not None else "unknown", cycle, tally, stop)
+        API.Pause(STEP_DELAY)
+except Exception as error:
+    # The stop button lands here as well, and the client waits for it to unwind the thread
+    if API.StopRequested:
+        raise
+
+    # Nothing else catches: a throw out of a client call used to end the run with no line at all
+    if stop is None:
+        stop = "threw - %s" % error
+finally:
+    recorder.close(skill.last())
+
+if API.Pathfinding():
+    API.CancelPathfinding()
+
+reason = stop or "hit the %d cycle backstop" % MAX_CYCLES
+ended = skill.read()
+
+log(
+    "%d made, %d failed, %d throttled, %s %.1f -> %s"
+    % (tally, fails, throttle_tally, skill_name, start, reading(ended))
+)
+log("stopping - %s" % reason)
 API.Stop()

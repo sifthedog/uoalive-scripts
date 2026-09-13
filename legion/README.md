@@ -17,6 +17,7 @@ repo targets the ClassicUO web client; nothing is shared between the two.
 | `tinkering.py` | Trains Tinkering from 20 to cap on the iron ingots you carry: makes whatever the band still gains on, and sells it to the vendor that buys it, unloads it or keeps it as a gump at the start decides |
 | `carpentry.py` | Trains Carpentry from 0 to cap on the cheapest recipe each band still gains on, restocks wood the way `bowcraft.py` does, and unloads what it made into the container you pick |
 | `inscription.py` | Trains Inscription from 30 to cap on the spell scroll with the fewest reagents each circle gains on, meditating when the pool is short, restocking scrolls and reagents the way `carpentry.py` does, and selling or unloading the scrolls as a gump at the start decides |
+| `alchemy.py` | Trains Alchemy from 0 to cap on the potion each band gains on, restocks bottles and reagents the way `carpentry.py` does, and unloads what it made into the container you pick or keeps it |
 | `magery.py` | Trains Magery on the four spells that gain without a victim, meditating when the pool runs dry |
 | `mysticism.py` | Trains Mysticism on the five spells that gain without a victim, meditating when the pool runs dry |
 | `chivalry.py` | Trains Chivalry on its five spells, gating each cast on tithing points, putting the weapon away for every trance and drawing it again after, and bandaging itself under the health floor |
@@ -29,8 +30,8 @@ repo targets the ClassicUO web client; nothing is shared between the two.
 2. Open **Legion Script** from the top menu and run it from the Script Manager.
 3. Answer the cursor. `tame.py` wants an animal, and another after each tame; `mining.py` and
    `mine-here.py` want your fire beetle; `lumberjack.py` wants your pack animals, one after another;
-   `arms-lore.py` wants the weapon; `bowcraft.py` and `carpentry.py` draw a form: what happens when
-   the tools run out, the chests, storage box and pack animals holding wood, added one cursor at a
+   `arms-lore.py` wants the weapon; `bowcraft.py`, `carpentry.py` and `alchemy.py` draw a form: what happens when
+   the tools run out, the chests, storage box and pack animals holding the material, added one cursor at a
    time, whether what is made is sold, unloaded or kept, with a cursor for each container the
    choices need, and how many products pile up before each unload, then OK; `tinkering.py` draws a gump asking whether what it makes is sold,
    unloaded or kept, and wants the unload container if you press Unload;
@@ -237,7 +238,7 @@ reports everything as unread is also crawling; fix the wording, not the timeout.
 
 ## The attempt log
 
-Thirteen scripts append one JSON line per attempt to `DATA_PATH`; `skilldb.py` turns them into two CSV
+Fourteen scripts append one JSON line per attempt to `DATA_PATH`; `skilldb.py` turns them into two CSV
 tables. A bare filename lands beside the running script, in the `LegionScripts` folder, read off
 `API.ScriptPath` or assumed when the client does not say; the run logs `recording to …` at the start.
 A path with a folder in it is used as written. `DATA_PATH = ""` records nothing. The file is opened and closed per row; a run that cannot write says so once and
@@ -260,6 +261,7 @@ paladin who never once failed.
 | `tinkering.py` | `made` | `failed` | the same, and the unloading |
 | `carpentry.py` | `made` | `failed` | the same, and the unloading |
 | `inscription.py` | `made` | `failed` | the same, the mana waits, and the sell trips or unloading |
+| `alchemy.py` | `made` | `failed` | `noMaterial`, a worn mortar, and the unloading |
 | `fishing.py` | `caught` | `failed` | no cursor, not biting, out of reach, throttles, unread wordings |
 | `mining.py`, `mine-here.py` | `dug`, `smelted` | `failed`, for a swing or a smelt | everything else, and every row once Mining is at its cap |
 | `lumberjack.py` | `chopped`, `converted` | `failed`, for a chop or a conversion | everything else, and every row once Lumberjacking is at its cap |
@@ -2011,6 +2013,87 @@ counts the band's scroll by art, so it does count one you carried in.
 - `MAKE_LAST_BUTTON` and the button stride are assumed to be `bowcraft.py`'s, as the same gump.
 - Whether a mage buys scrolls on this shard, and which. Unload is the safe answer.
 - Whether the craft menu survives the meditation trance being used behind it.
+
+## alchemy.py
+
+Trains Alchemy from 0 to cap on the potion each band gains on. Every potion spends an empty bottle
+and one kind of reagent, so the run pulls bottles and the band's reagent from what you add on the
+form the way `carpentry.py` does, and unloads what it makes into the container you pick or keeps
+it. The form is `carpentry.py`'s, and everything under the loop is shared with `bowcraft.py`, which
+is where the craft menu, the row and the outcomes are described.
+
+| Alchemy | Makes | Takes |
+| --- | --- | --- |
+| 0 – 15 | lesser poison | a bottle, 1 nightshade |
+| 15 – 35 | poison | a bottle, 2 nightshade |
+| 35 – 45 | greater agility | a bottle, 3 blood moss |
+| 45 – 55 | greater strength | a bottle, 5 mandrake root |
+| 55 – 75 | greater poison | a bottle, 4 nightshade |
+| 75 – 90 | greater cure | a bottle, 6 garlic |
+| 90 – cap | deadly poison | a bottle, 8 nightshade |
+
+The wiki's path on stock RunUO floors, where success is `(skill - floor) / 50`. Ceilings are
+exclusive; the first row the value is under wins. A failure keeps the bottle and loses half the
+reagents. Each cycle:
+
+1. Read the skill. An uncovered band ends the run; a band change re-selects the row and says what it
+   takes.
+2. Unload once the pack holds the form's `Unload every` potions the run made. Keeping them, the run
+   ends at `MAX_HELD`.
+3. Restock when the pack pays for fewer than `RESTOCK_AT` crafts: only the kinds the band spends,
+   each filled to `BATCH_CRAFTS` crafts' worth. A move the shard refuses as too heavy unloads first.
+   Short of a kind with none of it left in what you picked ends the run, naming the kind.
+4. Open the menu with the mortar and pestle, press the `RECIPES` row or `MAKE LAST`, and read the
+   outcome off the journal and the NOTICES panel.
+
+**The consumed rows** measure the pack either side of the craft, so a row lists the bottle and the
+reagent by kind, and a failure lists what the shard kept.
+
+**What is unloaded** is only what the run made: `keep_existing` remembers the potions in the pack at
+the start, so one you carried in is neither moved nor counted. Every poison potion lands as the one
+art, so a poison carried in from an earlier run is told apart by serial only.
+
+### Before you run it
+
+- **Alchemy below the cap.**
+- **A mortar and pestle in your pack**, and spares, or a container holding them picked on the form.
+- **Empty bottles and the band's reagent in your pack or in what you pick.** Bottles weigh a stone
+  each, which is what bounds `BATCH_CRAFTS`.
+- **Something to unload into**, in reach: a trash barrel destroys the potions, a chest keeps them.
+- **No potion keg of the band's type in the pack**: the shard pours into it, and the unload never
+  sees the potion.
+
+### What to set
+
+| Setting | Default | What it is for |
+| --- | --- | --- |
+| `BANDS` | see above | Ceiling and potion. Any `POTIONS` row |
+| `POTIONS` | seven rows | Row name as the gump spells it: the potion's art, its reagent and how many |
+| `STOCK_KINDS` | five rows | Bottles and the four reagents, by art and name words |
+| `BATCH_CRAFTS` / `RESTOCK_AT` | `30` / `5` | Crafts' worth each kind is filled to, and the crafts left that trigger it |
+| `DUMP_AT` / `MAX_HELD` | `10` / `60` | The form's default for potions before an unload, and the most kept with nowhere to put them |
+| `MAX_DUMP_MISSES` | `3` | Unloads in a row that moved nothing before the run ends |
+| `TOOL_GRAPHICS` / `TOOL_NAME_WORDS` | `0x0E9B` / `mortar` | An art learned by name joins the set |
+| `CATEGORY_NAMES` | UOAlive's seven groups | Where the group rows end and the item rows begin |
+| `RECIPES` | every row on UOAlive | `(category button, row button)`, pressed as written. Run `craft-map.py` with the menu open and paste the block it writes |
+| `DATA_PATH` | `skill-attempts.jsonl` | Where each craft is appended, with what it spent. `""` records nothing |
+
+### When it goes wrong
+
+- **`out of 2 nightshade - ...`**: the pack and everything you picked are out of that kind.
+- **`the shard refused ... in the pack 3 times`**: everything the recipe takes is there and the shard
+  still refuses, so the row pressed is another potion. Run `craft-map.py` and paste the table again.
+- **`'greater cure' is not in RECIPES`**: the band names a row the table lacks. Run `craft-map.py`
+  and paste its block; fix `BANDS` and `POTIONS` to the label it read.
+- **Every craft unreadable**: an `OUTCOME_TEXT` wording is off. `alchemy-notes.log` holds the gump
+  and journal behind each report; fix the phrase, not the timeout.
+
+### Unverified
+
+- Every wording in `OUTCOME_TEXT`, and every art: the mortar, the bottle, the reagents and the
+  potions are stock RunUO, none read off UOAlive. Stock DefAlchemy says `You pour the potion into a
+  bottle` for a success and `You fail to create a useful potion` for a failure.
+- `MAKE_LAST_BUTTON` and the button stride are assumed to be `bowcraft.py`'s, as the same gump.
 
 ## bod.py
 
