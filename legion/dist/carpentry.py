@@ -87,8 +87,9 @@ SKILL_NAMES = ["Carpentry"]
 
 MIN_SKILL = 0.0
 
-# Ceilings are exclusive, in the client's float percentage. Each is the row's minimum plus 25,
-# where the stock recipe stops gaining; the cheapest recipe still under that is the row.
+# Ceilings are exclusive, in the client's float percentage. Each is the row's minimum plus 25, where
+# the stock recipe stops gaining, or earlier where a cheaper row opens: barrel lid at 11.0, the sign
+# hanger at 42.1.
 BANDS = [
     (11.0, "barrel staves"),
     (36.0, "barrel lid"),
@@ -134,8 +135,6 @@ PRODUCTS = {
     "rustic bench (south)": DEED_GRAPHICS,
     "display case (south)": DEED_GRAPHICS,
 }
-
-PRODUCT_GRAPHICS = set().union(*PRODUCTS.values())
 
 # Wood per craft, from the stock recipes. The pack is measured either side of a craft regardless;
 # this only decides when the pack is too short to try and when to restock.
@@ -256,7 +255,7 @@ SETUP = {
     "timeout": 600.0,
 }
 
-# A backstop only - the selection ends when you press ESC
+# Bounds Sources.pick only; the form adds sources one cursor at a time and never calls it
 MAX_PICKS = 8
 
 CONTAINER_RANGE = 2
@@ -271,8 +270,8 @@ CRAFT_TITLE_FRAGMENTS = [phrase.lower() for phrase in CRAFT_TITLE_TEXT]
 # Its own button rather than a group, so it does not count toward the category index
 LAST_TEN_LABEL = "LAST TEN"
 
-# Buttons are 1 + type + index * 20, as bowcraft found on this shard's menu; MAKE LAST is assumed to
-# sit where it does there
+# Buttons are 1 + type + index * 20, as bowcraft found on this shard's menu. MAKE LAST is the stock
+# GetButtonID(6, 2): 1 + 6 + 2 * 20
 BUTTON_STRIDE = 20
 CATEGORY_BUTTON_TYPE = 0
 ITEM_BUTTON_TYPE = 1
@@ -494,21 +493,31 @@ def request_one(timeout):
 class Dump(object):
     """The container the products are unloaded into: a trash barrel, or a chest."""
 
-    def __init__(self, sources, graphics, config, log):
+    # products is the script's name -> graphics table, read live: an art the crafter learns lands
+    # in it after this, and a frozen union of it would never see the item to unload
+    def __init__(self, sources, products, config, log):
         self._sources = sources
-        self._graphics = graphics
+        self._products_of = products
+        self._names = None
         self._config = config
         self._log = log
         self._entry = None
-        keep_graphics = config.get("keep_graphics", graphics)
+        keep_graphics = config.get("keep_graphics", self._graphics())
         # Carpentry narrows this to the deed art, which doubles as a house deed's - keeping every
         # matching graphic locked out leftover, un-dumped stock from a previous run for good
         self._kept = (set(item.Serial for item in pack_contents()
                            if item.Graphic in keep_graphics)
                       if config["keep_existing"] else set())
 
+    def _graphics(self):
+        names = self._names if self._names is not None else self._products_of
+
+        return set().union(*[self._products_of[name] for name in names])
+
     def _products(self):
-        return [item for item in pack_contents() if item.Graphic in self._graphics]
+        graphics = self._graphics()
+
+        return [item for item in pack_contents() if item.Graphic in graphics]
 
     def items(self):
         return [item for item in self._products() if item.Serial not in self._kept]
@@ -523,8 +532,8 @@ class Dump(object):
         return self._sources.name_of(self._entry) if self._entry is not None else "nothing"
 
     # Sell watches only what nobody buys; the kept set was read against every product, a superset
-    def limit_to(self, graphics):
-        self._graphics = graphics
+    def limit_to(self, names):
+        self._names = list(names)
 
     def line(self):
         return "'%s' %s" % (self.name(), hex_of(self._entry["serial"]))
@@ -1561,6 +1570,35 @@ class CraftRecorder(object):
 
         after = self._materials.settled_snapshot(self._refund_settle, self._refund_poll)
         self._recorder.record(skill_from, outcome, product, self._materials.spent(before, after))
+
+
+# A pack the shard will not load for weight is emptied first, the way the band's products leave.
+# sell and unload are each None, or (applies, held, run): zero-arg callables answering whether the
+# trip is on for this band right now, how much is held, and whether running it moved anything.
+# Tried in order, first one that applies and still holds something wins.
+def make_room(restock, log, noun, sell=None, unload=None):
+    if not restock.refused_for_weight():
+        return None
+
+    for phase, path in (("selling", sell), ("unloading", unload)):
+        if path is None:
+            continue
+
+        applies, held_of, run = path
+
+        if not applies():
+            continue
+
+        held = held_of()
+
+        if held == 0:
+            continue
+
+        log("%s %d before loading more%s" % (phase, held, " " + noun if noun else ""))
+
+        return phase if run() else None
+
+    return None
 
 
 # src/uo/tool.py
@@ -3692,7 +3730,7 @@ restock = Restock(wood, sources, {
     "return_wrong_wood": RETURN_WRONG_WOOD,
     "heavy_text": TOO_HEAVY_TEXT,
 }, log)
-dump = Dump(sources, PRODUCT_GRAPHICS, {
+dump = Dump(sources, PRODUCTS, {
     "pick_timeout": PICK_TIMEOUT,
     "move_delay": MOVE_DELAY,
     "keep_existing": True,
@@ -3776,16 +3814,21 @@ answers = setup.ask({
     "unsold_ahead": None,
 })
 
+# The stop lands at the next Pause, so the lines until then read a form that was never answered
+output = answers["output"] if answers is not None else "keep"
 dump_at = answers["dump_at"] if answers is not None else DUMP_AT
 log.enabled = answers["debug_logs"] if answers is not None else False
 
 if answers is None:
     API.Stop()
 
-if dump.picked():
+# The radio, not the cursor: a container picked before switching to Keep stays unused
+unloading = output == "unload"
+
+if unloading:
     log("unloading every %d products" % dump_at)
 else:
-    log("nothing picked to unload into - the run ends once the pack holds %d products" % MAX_HELD)
+    log("keeping what is made - the run ends once the pack holds %d products" % MAX_HELD)
 
 # A picked tool container fills an empty pack before the first craft
 if (tools.find(FETCH_TIMEOUT, FETCH_POLL) is None
@@ -3821,18 +3864,8 @@ last_skill = start
 
 
 # A pack the shard will not load for weight is unloaded first, when there is anything in it to move
-def unload_for_room():
-    if not restock.refused_for_weight() or not dump.picked():
-        return False
-
-    held = dump.held()
-
-    if held == 0:
-        return False
-
-    log("unloading %d before loading more wood" % held)
-
-    return unloader.run()
+def try_make_room():
+    return make_room(restock, log, "wood", unload=(lambda: unloading, dump.held, unloader.run))
 
 
 def out_of_wood():
@@ -3877,7 +3910,7 @@ try:
 
         held = dump.held()
 
-        if held >= dump_at and dump.picked():
+        if unloading and held >= dump_at:
             if unloader.run():
                 stop = end_cycle(stall, "unloading", cycle, tally, stop)
                 continue
@@ -3886,7 +3919,7 @@ try:
                 stop = ("%d unloads in a row moved nothing into '%s'"
                         % (unloader.misses, dump.name()))
                 break
-        elif held >= MAX_HELD and not dump.picked():
+        elif not unloading and held >= MAX_HELD:
             stop = "the pack holds %d products and nothing was picked to unload into" % held
             break
 
@@ -3894,8 +3927,10 @@ try:
             # An unreachable container also pulls nothing, which the stall watch ends
             pulled = restock.run()
 
-            if unload_for_room():
-                stop = end_cycle(stall, "unloading", cycle, tally, stop)
+            phase = try_make_room()
+
+            if phase is not None:
+                stop = end_cycle(stall, phase, cycle, tally, stop)
                 continue
 
             if pulled == 0 and sources.stock_left() == 0 and wood_short(product) > 0:
@@ -3928,8 +3963,10 @@ try:
         elif outcome == "noMaterial":
             pulled = restock.run()
 
-            if unload_for_room():
-                stop = end_cycle(stall, "unloading", cycle, tally, stop)
+            phase = try_make_room()
+
+            if phase is not None:
+                stop = end_cycle(stall, phase, cycle, tally, stop)
                 continue
 
             if pulled > 0:

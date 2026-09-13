@@ -87,7 +87,7 @@ def unsold_ahead(value):
     return False
 
 
-UNSOLD_GRAPHICS = set().union(*[PRODUCTS[name] for name in VENDORS if VENDORS[name] is None])
+UNSOLD = [name for name in VENDORS if VENDORS[name] is None]
 
 
 saves = SaveWatch(SAVING_TEXT, SAVE_DONE_TEXT, SAVE_WAIT, SAVE_POLL, log, heartbeat, stop_reason)
@@ -177,7 +177,7 @@ tool_store = ToolStore(tools, sources, {
     "fetch_poll": FETCH_POLL,
 }, log)
 # Kept: a bow carried in is the character's own, and it is never unloaded into a barrel
-dump = Dump(sources, PRODUCT_GRAPHICS, {
+dump = Dump(sources, PRODUCTS, {
     "pick_timeout": PICK_TIMEOUT,
     "move_delay": MOVE_DELAY,
     "keep_existing": True,
@@ -232,7 +232,7 @@ if answers is None:
     API.Stop()
 
 if output == "sell":
-    dump.limit_to(UNSOLD_GRAPHICS)
+    dump.limit_to(UNSOLD)
     log("selling every %d to the bowyer" % SELL_AT)
 
     if unsold_ahead(start) and not dump.picked():

@@ -86,7 +86,7 @@ def unsold_ahead(value):
     return False
 
 
-UNSOLD_GRAPHICS = set().union(*[PRODUCTS[name] for name in VENDORS if VENDORS[name] is None])
+UNSOLD = [name for name in VENDORS if VENDORS[name] is None]
 
 
 saves = SaveWatch(SAVING_TEXT, SAVE_DONE_TEXT, SAVE_WAIT, SAVE_POLL, log, heartbeat, stop_reason)
@@ -191,11 +191,14 @@ if ingots_short(first) > 0:
 output = choice.ask(OUTPUT_OPTIONS)
 
 # Kept: a key carried in is a house key, not the run's, and it is never unloaded into a barrel
-dump = Dump(sources, UNSOLD_GRAPHICS if output == "sell" else PRODUCT_GRAPHICS, {
+dump = Dump(sources, PRODUCTS, {
     "pick_timeout": PICK_TIMEOUT,
     "move_delay": MOVE_DELAY,
     "keep_existing": True,
 }, log)
+
+if output == "sell":
+    dump.limit_to(UNSOLD)
 
 if output == "unload":
     dump.pick()

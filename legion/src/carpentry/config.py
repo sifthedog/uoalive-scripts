@@ -11,8 +11,9 @@ SKILL_NAMES = ["Carpentry"]
 
 MIN_SKILL = 0.0
 
-# Ceilings are exclusive, in the client's float percentage. Each is the row's minimum plus 25,
-# where the stock recipe stops gaining; the cheapest recipe still under that is the row.
+# Ceilings are exclusive, in the client's float percentage. Each is the row's minimum plus 25, where
+# the stock recipe stops gaining, or earlier where a cheaper row opens: barrel lid at 11.0, the sign
+# hanger at 42.1.
 BANDS = [
     (11.0, "barrel staves"),
     (36.0, "barrel lid"),
@@ -180,7 +181,7 @@ SETUP = {
     "timeout": 600.0,
 }
 
-# A backstop only - the selection ends when you press ESC
+# Bounds Sources.pick only; the form adds sources one cursor at a time and never calls it
 MAX_PICKS = 8
 
 CONTAINER_RANGE = 2
@@ -195,8 +196,8 @@ CRAFT_TITLE_FRAGMENTS = [phrase.lower() for phrase in CRAFT_TITLE_TEXT]
 # Its own button rather than a group, so it does not count toward the category index
 LAST_TEN_LABEL = "LAST TEN"
 
-# Buttons are 1 + type + index * 20, as bowcraft found on this shard's menu; MAKE LAST is assumed to
-# sit where it does there
+# Buttons are 1 + type + index * 20, as bowcraft found on this shard's menu. MAKE LAST is the stock
+# GetButtonID(6, 2): 1 + 6 + 2 * 20
 BUTTON_STRIDE = 20
 CATEGORY_BUTTON_TYPE = 0
 ITEM_BUTTON_TYPE = 1

@@ -11,6 +11,10 @@ BOX = 0x40003000
 CONFIG = {"pick_timeout": 1.0, "move_delay": 0.0, "keep_existing": True}
 
 
+def products(*graphics):
+    return dict((hex(graphic), set([graphic])) for graphic in graphics)
+
+
 class BarrelSources(object):
     def __init__(self, reachable=True):
         self.reachable = reachable
@@ -47,7 +51,8 @@ class DumpTest(unittest.TestCase):
         self.house = item(serial=1, graphic=DEED, name="a house deed")
         self.api.hold(self.house)
         self.sources = BarrelSources()
-        self.dump = Dump(self.sources, set([DEED, STAFF]), CONFIG, self.api.SysMsg)
+        self.products = products(DEED, STAFF)
+        self.dump = Dump(self.sources, self.products, CONFIG, self.api.SysMsg)
 
     def test_what_the_pack_held_at_the_start_is_never_a_product(self):
         self.assertEqual(self.dump.held(), 0)
@@ -59,7 +64,8 @@ class DumpTest(unittest.TestCase):
         self.assertEqual([held.Serial for held in self.dump.items()], [2])
 
     def test_keep_existing_off_counts_what_the_pack_already_held(self):
-        dump = Dump(self.sources, set([DEED]), dict(CONFIG, keep_existing=False), self.api.SysMsg)
+        dump = Dump(self.sources, products(DEED), dict(CONFIG, keep_existing=False),
+                    self.api.SysMsg)
 
         self.assertEqual(dump.held(), 1)
         self.assertEqual([held.Serial for held in dump.items()], [1])
@@ -70,10 +76,21 @@ class DumpTest(unittest.TestCase):
         leftover = item(serial=2, graphic=STAFF, name="a quarter staff")
         self.api.hold(self.house, leftover)
         config = dict(CONFIG, keep_graphics=set([DEED]))
-        dump = Dump(self.sources, set([DEED, STAFF]), config, self.api.SysMsg)
+        dump = Dump(self.sources, products(DEED, STAFF), config, self.api.SysMsg)
 
         self.assertEqual(dump.held(), 1)
         self.assertEqual([held.Serial for held in dump.items()], [2])
+
+    # The crafter adds a shard's own art to the table mid-run, and the dump reads the table live
+    def test_an_art_learned_after_the_start_counts(self):
+        learned = item(serial=2, graphic=0x1234, name="a quarter staff")
+        self.api.hold(self.house, learned)
+
+        self.assertEqual(self.dump.held(), 0)
+
+        self.products[hex(STAFF)].add(0x1234)
+
+        self.assertEqual([held.Serial for held in self.dump.items()], [2])
 
     def test_pick_takes_the_container_and_opens_it(self):
         self.api.requested_target = BARREL
@@ -136,7 +153,7 @@ class DumpTest(unittest.TestCase):
 
         self.assertEqual(self.dump.held(), 2)
 
-        self.dump.limit_to(set([STAFF]))
+        self.dump.limit_to([hex(STAFF)])
 
         self.assertEqual([held.Serial for held in self.dump.items()], [2])
 

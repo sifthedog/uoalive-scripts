@@ -1829,7 +1829,8 @@ which is where the craft menu, the row walk and the outcomes are described.
 | 119.7 – cap | display case (south) | 40, and 10 ingots |
 
 Each ceiling is the row's minimum skill plus 25, where the stock recipe reaches 100% and stops
-gaining. Ceilings are exclusive; the first row the value is under wins. Each cycle:
+gaining, or earlier where a cheaper row opens: the barrel lid at 11.0, the sign hanger at 42.1.
+Ceilings are exclusive; the first row the value is under wins. Each cycle:
 
 1. Read the skill. An uncovered band ends the run; a band change re-selects the row.
 2. Unload once the pack holds `DUMP_AT` products. With nothing picked to unload into, the run ends
@@ -1863,7 +1864,7 @@ destroys it; a chest keeps it.
 | `DEED_GRAPHICS` | `0x14F0` | What every addon lands as |
 | `TOOL_GRAPHICS` / `TOOL_NAME_WORDS` | stock / `saw`, … | An art learned by name joins the set |
 | `CATEGORY_NAMES` | the wiki's groups | Where the group rows end and the item rows begin |
-| `RECIPES` | wind chimes | `(category button, row button)`. Copy the `is the row on button` lines in |
+| `RECIPES` | empty | `(category button, row button)`. Copy the `is the row on button` lines in |
 | `MAX_CATEGORIES` / `MAX_ITEM_ROWS` | `12` / `80` | How far the walk goes; UOAlive's Misc. Add-Ons runs to 59 rows over six pages |
 | `DUMP_AT` / `MAX_HELD` | `10` / `60` | Products before an unload, and the most kept with nowhere to put them |
 | `MAX_DUMP_MISSES` | `3` | Unloads in a row that moved nothing before the run ends |

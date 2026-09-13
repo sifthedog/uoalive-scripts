@@ -13,7 +13,7 @@ from carpentry.config import (BANDS, BATCH_SIZE, BOX, BOX_PRESS_POLL, BOX_PRESS_
                               MAX_NO_TOOL, MAX_PICKS, MAX_THROTTLED, MAX_UNKNOWN,
                               MAX_UNREADABLE_REPORTS, MIN_CRAFT_WOOD, MIN_SKILL, MOVE_DELAY,
                               OPEN_DELAY, OUTCOME_TEXT, PATHFIND_TIMEOUT, PICK_TIMEOUT, PRODUCTS,
-                              PRODUCT_GRAPHICS, RECIPES, REFUND_POLL, REFUND_SETTLE, REGULAR_WOOD,
+                              RECIPES, REFUND_POLL, REFUND_SETTLE, REGULAR_WOOD,
                               RESTOCK_AT, RETURN_WRONG_WOOD, SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT,
                               SAVING_TEXT, SETUP, SKILL_NAMES, SKILL_POLL, SKILL_TIMEOUT,
                               STALL_STOP, STALL_WARN, STEP_DELAY, STOPPED, THROTTLE_BACKOFF,
@@ -24,7 +24,7 @@ from uo.dump import Dump
 from uo.cost import cost_of, short_by
 from uo.craft import Crafter
 from uo.craftmenu import CraftMenu
-from uo.craftrun import CraftRecorder, Unloader, end_cycle
+from uo.craftrun import CraftRecorder, Unloader, end_cycle, make_room
 from uo.crafttool import CraftTool
 from uo.guards import dead, first_reason, skill_capped, stopped
 from uo.heartbeat import Heartbeat
@@ -103,7 +103,7 @@ restock = Restock(wood, sources, {
     "return_wrong_wood": RETURN_WRONG_WOOD,
     "heavy_text": TOO_HEAVY_TEXT,
 }, log)
-dump = Dump(sources, PRODUCT_GRAPHICS, {
+dump = Dump(sources, PRODUCTS, {
     "pick_timeout": PICK_TIMEOUT,
     "move_delay": MOVE_DELAY,
     "keep_existing": True,
@@ -187,16 +187,21 @@ answers = setup.ask({
     "unsold_ahead": None,
 })
 
+# The stop lands at the next Pause, so the lines until then read a form that was never answered
+output = answers["output"] if answers is not None else "keep"
 dump_at = answers["dump_at"] if answers is not None else DUMP_AT
 log.enabled = answers["debug_logs"] if answers is not None else False
 
 if answers is None:
     API.Stop()
 
-if dump.picked():
+# The radio, not the cursor: a container picked before switching to Keep stays unused
+unloading = output == "unload"
+
+if unloading:
     log("unloading every %d products" % dump_at)
 else:
-    log("nothing picked to unload into - the run ends once the pack holds %d products" % MAX_HELD)
+    log("keeping what is made - the run ends once the pack holds %d products" % MAX_HELD)
 
 # A picked tool container fills an empty pack before the first craft
 if (tools.find(FETCH_TIMEOUT, FETCH_POLL) is None
@@ -232,18 +237,8 @@ last_skill = start
 
 
 # A pack the shard will not load for weight is unloaded first, when there is anything in it to move
-def unload_for_room():
-    if not restock.refused_for_weight() or not dump.picked():
-        return False
-
-    held = dump.held()
-
-    if held == 0:
-        return False
-
-    log("unloading %d before loading more wood" % held)
-
-    return unloader.run()
+def try_make_room():
+    return make_room(restock, log, "wood", unload=(lambda: unloading, dump.held, unloader.run))
 
 
 def out_of_wood():
@@ -288,7 +283,7 @@ try:
 
         held = dump.held()
 
-        if held >= dump_at and dump.picked():
+        if unloading and held >= dump_at:
             if unloader.run():
                 stop = end_cycle(stall, "unloading", cycle, tally, stop)
                 continue
@@ -297,7 +292,7 @@ try:
                 stop = ("%d unloads in a row moved nothing into '%s'"
                         % (unloader.misses, dump.name()))
                 break
-        elif held >= MAX_HELD and not dump.picked():
+        elif not unloading and held >= MAX_HELD:
             stop = "the pack holds %d products and nothing was picked to unload into" % held
             break
 
@@ -305,8 +300,10 @@ try:
             # An unreachable container also pulls nothing, which the stall watch ends
             pulled = restock.run()
 
-            if unload_for_room():
-                stop = end_cycle(stall, "unloading", cycle, tally, stop)
+            phase = try_make_room()
+
+            if phase is not None:
+                stop = end_cycle(stall, phase, cycle, tally, stop)
                 continue
 
             if pulled == 0 and sources.stock_left() == 0 and wood_short(product) > 0:
@@ -339,8 +336,10 @@ try:
         elif outcome == "noMaterial":
             pulled = restock.run()
 
-            if unload_for_room():
-                stop = end_cycle(stall, "unloading", cycle, tally, stop)
+            phase = try_make_room()
+
+            if phase is not None:
+                stop = end_cycle(stall, phase, cycle, tally, stop)
                 continue
 
             if pulled > 0:

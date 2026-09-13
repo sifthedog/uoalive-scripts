@@ -2533,21 +2533,31 @@ class CraftTool(object):
 class Dump(object):
     """The container the products are unloaded into: a trash barrel, or a chest."""
 
-    def __init__(self, sources, graphics, config, log):
+    # products is the script's name -> graphics table, read live: an art the crafter learns lands
+    # in it after this, and a frozen union of it would never see the item to unload
+    def __init__(self, sources, products, config, log):
         self._sources = sources
-        self._graphics = graphics
+        self._products_of = products
+        self._names = None
         self._config = config
         self._log = log
         self._entry = None
-        keep_graphics = config.get("keep_graphics", graphics)
+        keep_graphics = config.get("keep_graphics", self._graphics())
         # Carpentry narrows this to the deed art, which doubles as a house deed's - keeping every
         # matching graphic locked out leftover, un-dumped stock from a previous run for good
         self._kept = (set(item.Serial for item in pack_contents()
                            if item.Graphic in keep_graphics)
                       if config["keep_existing"] else set())
 
+    def _graphics(self):
+        names = self._names if self._names is not None else self._products_of
+
+        return set().union(*[self._products_of[name] for name in names])
+
     def _products(self):
-        return [item for item in pack_contents() if item.Graphic in self._graphics]
+        graphics = self._graphics()
+
+        return [item for item in pack_contents() if item.Graphic in graphics]
 
     def items(self):
         return [item for item in self._products() if item.Serial not in self._kept]
@@ -2562,8 +2572,8 @@ class Dump(object):
         return self._sources.name_of(self._entry) if self._entry is not None else "nothing"
 
     # Sell watches only what nobody buys; the kept set was read against every product, a superset
-    def limit_to(self, graphics):
-        self._graphics = graphics
+    def limit_to(self, names):
+        self._names = list(names)
 
     def line(self):
         return "'%s' %s" % (self.name(), hex_of(self._entry["serial"]))
@@ -3920,7 +3930,7 @@ def unsold_ahead(value):
     return False
 
 
-UNSOLD_GRAPHICS = set().union(*[PRODUCTS[name] for name in VENDORS if VENDORS[name] is None])
+UNSOLD = [name for name in VENDORS if VENDORS[name] is None]
 
 
 saves = SaveWatch(SAVING_TEXT, SAVE_DONE_TEXT, SAVE_WAIT, SAVE_POLL, log, heartbeat, stop_reason)
@@ -4010,7 +4020,7 @@ tool_store = ToolStore(tools, sources, {
     "fetch_poll": FETCH_POLL,
 }, log)
 # Kept: a bow carried in is the character's own, and it is never unloaded into a barrel
-dump = Dump(sources, PRODUCT_GRAPHICS, {
+dump = Dump(sources, PRODUCTS, {
     "pick_timeout": PICK_TIMEOUT,
     "move_delay": MOVE_DELAY,
     "keep_existing": True,
@@ -4065,7 +4075,7 @@ if answers is None:
     API.Stop()
 
 if output == "sell":
-    dump.limit_to(UNSOLD_GRAPHICS)
+    dump.limit_to(UNSOLD)
     log("selling every %d to the bowyer" % SELL_AT)
 
     if unsold_ahead(start) and not dump.picked():

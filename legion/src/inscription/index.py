@@ -142,7 +142,7 @@ restock = Restock(stock, sources, {
     "heavy_text": TOO_HEAVY_TEXT,
 }, log)
 # Kept: a scroll carried in is not the run's, and a sold or unloaded recall would be missed
-dump = Dump(sources, PRODUCT_GRAPHICS, {
+dump = Dump(sources, PRODUCTS, {
     "pick_timeout": PICK_TIMEOUT,
     "move_delay": MOVE_DELAY,
     "keep_existing": True,
