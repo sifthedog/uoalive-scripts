@@ -588,6 +588,16 @@ def backoff_for(count, step, cap):
 
 
 # src/uo/mana.py
+LMC_CAP = 40  # OSI caps Lower Mana Cost at 40%; raise on shards that don't
+
+
+# ceil(base * (100 - lmc) / 100), the server's Spell.ScaleMana. `or 0`: the field is None between
+# world states and 0 while the client refreshes stats
+def cost(base):
+    lmc = min(API.Player.LowerManaCost or 0, LMC_CAP)
+    return -(-base * (100 - lmc) // 100)
+
+
 class ManaWatch(object):
     def __init__(self, to_full, poll, log_every, log, stop_reason, meditating):
         self._to_full = to_full
@@ -1307,8 +1317,8 @@ try:
             casting = stage
             log("%.1f - %s until %.1f" % (value, stage["spell"], stage["up_to"]))
 
-        if API.Player.Mana < stage["mana"]:
-            if not regain_mana(stage["mana"]):
+        if API.Player.Mana < cost(stage["mana"]):
+            if not regain_mana(cost(stage["mana"])):
                 # Weighted, because a dry stretch has just spent the whole REGEN_TIMEOUT standing
                 # still where a casting cycle costs cycle_cost. Counting both as one would either
                 # end a slow-gaining run in minutes or leave a starved one going for hours.
@@ -1374,7 +1384,7 @@ try:
                 "refused for mana at %d - raise %s's mana in STAGES"
                 % (API.Player.Mana, stage["spell"])
             )
-            regain_mana(stage["mana"])
+            regain_mana(cost(stage["mana"]))
 
         # Nothing waited for refills a pouch
         elif outcome == "noReagents":

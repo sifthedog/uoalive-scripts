@@ -373,6 +373,17 @@ def backoff_for(count, step, cap):
     return min(step * count, cap)
 
 
+# src/uo/mana.py
+LMC_CAP = 40  # OSI caps Lower Mana Cost at 40%; raise on shards that don't
+
+
+# ceil(base * (100 - lmc) / 100), the server's Spell.ScaleMana. `or 0`: the field is None between
+# world states and 0 while the client refreshes stats
+def cost(base):
+    lmc = min(API.Player.LowerManaCost or 0, LMC_CAP)
+    return -(-base * (100 - lmc) // 100)
+
+
 # src/uo/save.py
 class SaveWatch(object):
     def __init__(self, saving_text, done_text, wait, poll, log, heartbeat, stop_reason):
@@ -564,12 +575,12 @@ def one_pass():
 
             continue
 
-        if API.Player.Mana < entry["mana"]:
+        if API.Player.Mana < cost(entry["mana"]):
             if not said_short:
                 said_short = True
                 log(
                     "%d/%d mana for %s - waiting for it"
-                    % (API.Player.Mana, entry["mana"], item["name"])
+                    % (API.Player.Mana, cost(entry["mana"]), item["name"])
                 )
 
             continue
