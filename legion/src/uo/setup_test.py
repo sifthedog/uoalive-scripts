@@ -101,6 +101,16 @@ class SetupTest(unittest.TestCase):
         self.assertIsNone(self.ask())
         self.assertIn("add a source of wood, or carry some", self.api.texts())
 
+    def test_the_material_names_the_sources_block_and_its_refusal(self):
+        self.setup = Setup(dict(CONFIG, material="reagents"), self.said.append,
+                           lambda: self.stop[0])
+        self.actions.wood = False
+        self.schedule({1: lambda: self.api.press("OK"), 3: lambda: self.api.press("Cancel")})
+
+        self.assertIsNone(self.ask())
+        self.assertIn("Reagents", self.api.texts())
+        self.assertIn("add a source of reagents, or carry some", self.api.texts())
+
     def test_fetching_tools_shows_the_row_and_needs_a_container_with_tools(self):
         seen = []
 

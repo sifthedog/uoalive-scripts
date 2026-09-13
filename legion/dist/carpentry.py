@@ -2667,7 +2667,7 @@ class Setup(object):
         c["tools_value"] = self._label(gump, "", VALUE_X, y + 3, MUTED)
         y += ROW + MARGIN // 2
 
-        self._label(gump, "Wood", LABEL_X, y)
+        self._label(gump, self._material().capitalize(), LABEL_X, y)
         self._button(gump, "source", "Add a source", FIELD_X, y, 140)
         self._button(gump, "clear", "Clear", FIELD_X + 148, y, 70)
         y += ROW
@@ -2732,6 +2732,9 @@ class Setup(object):
 
         return gump
 
+    def _material(self):
+        return self._config.get("material", "wood")
+
     def _mode(self):
         return self._config["tool_modes"][self._controls["modes"].GetSelectedIndex()][0]
 
@@ -2777,7 +2780,8 @@ class Setup(object):
             if index < len(lines):
                 c["sources"][index].SetText(clipped(lines[index], LINE_CHARS))
             elif index == 0:
-                c["sources"][0].SetText("nothing picked - the run works through the wood you carry")
+                c["sources"][0].SetText("nothing picked - the run works through the %s you carry"
+                                        % self._material())
             else:
                 c["sources"][index].SetText("")
 
@@ -2804,13 +2808,13 @@ class Setup(object):
             return "unload every: a whole number of products, 1 or more"
 
         if len(self._sources) == 0 and not actions["has_wood"]():
-            return "add a source of wood, or carry some"
+            return "add a source of %s, or carry some" % self._material()
 
         return None
 
     def _run(self, pending, actions):
         if pending == "source":
-            self._log("target a chest, a storage box or a pack animal holding wood")
+            self._log("target a chest, a storage box or a pack animal holding %s" % self._material())
             line, refusal = actions["source"]()
 
             if line is not None:
