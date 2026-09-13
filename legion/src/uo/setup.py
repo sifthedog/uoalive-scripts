@@ -13,7 +13,7 @@ LINE = 22
 TITLE_HEIGHT = 40
 BUTTON_HEIGHT = 24
 FONT = 15
-MAX_SOURCE_LINES = 4
+SOURCE_LINES = 4
 LINE_CHARS = 92
 RADIO_CHAR = 8
 RADIO_GAP = 40
@@ -62,7 +62,7 @@ class Setup(object):
 
     def _show(self, heading, rows):
         outputs = self._config["outputs"]
-        height = (TITLE_HEIGHT + ROW * 2 + ROW + LINE * MAX_SOURCE_LINES + ROW * 3
+        height = (TITLE_HEIGHT + ROW * 2 + ROW + LINE * SOURCE_LINES + ROW * 3
                   + LINE * (len(rows) + 1) + ROW * 2 + BUTTON_HEIGHT + MARGIN * 4)
 
         gump = API.Gumps.CreateGump(True, True)
@@ -104,10 +104,10 @@ class Setup(object):
 
         c["sources"] = []
 
-        for index in range(MAX_SOURCE_LINES):
+        for index in range(SOURCE_LINES):
             c["sources"].append(self._label(gump, "", FIELD_X, y + index * LINE, MUTED))
 
-        y += LINE * MAX_SOURCE_LINES + MARGIN // 2
+        y += LINE * SOURCE_LINES + MARGIN // 2
 
         self._label(gump, "What is made", LABEL_X, y)
         c["outputs"] = []
@@ -198,9 +198,14 @@ class Setup(object):
         c["tools_value"].IsVisible = fetching
         c["tools_value"].SetText(clipped(self._tools_line or "required", LINE_CHARS))
 
-        for index in range(MAX_SOURCE_LINES):
-            if index < len(self._sources):
-                c["sources"][index].SetText(clipped(self._sources[index], LINE_CHARS))
+        lines = list(self._sources)
+
+        if len(lines) > SOURCE_LINES:
+            lines[SOURCE_LINES - 1:] = ["... and %d more" % (len(lines) - SOURCE_LINES + 1)]
+
+        for index in range(SOURCE_LINES):
+            if index < len(lines):
+                c["sources"][index].SetText(clipped(lines[index], LINE_CHARS))
             elif index == 0:
                 c["sources"][0].SetText("nothing picked - the run works through the wood you carry")
             else:
@@ -235,11 +240,6 @@ class Setup(object):
 
     def _run(self, pending, actions):
         if pending == "source":
-            if len(self._sources) >= MAX_SOURCE_LINES:
-                self._say("that is as many sources as the form lists - clear them to start over")
-
-                return None
-
             self._log("target a chest, a storage box or a pack animal holding wood")
             line, refusal = actions["source"]()
 

@@ -246,6 +246,18 @@ class SetupTest(unittest.TestCase):
 
         self.assertEqual(self.ask()["sources"], 1)
 
+    def test_more_sources_than_rows_are_all_kept_and_summed_on_the_last_row(self):
+        self.actions.source_answers = [("source %d" % n, None) for n in range(6)]
+        seen = []
+        self.schedule(dict([(n, lambda: self.api.press("Add a source")) for n in range(1, 7)]
+                           + [(7, lambda: seen.append(list(self.api.texts()))),
+                              (8, lambda: self.api.press("OK"))]))
+
+        self.assertEqual(self.ask()["sources"], 6)
+        self.assertIn("source 2", seen[0])
+        self.assertNotIn("source 3", seen[0])
+        self.assertIn("... and 3 more", seen[0])
+
     def test_closing_the_form_answers_nothing(self):
         self.schedule({2: self.api.close_drawn})
 
