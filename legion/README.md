@@ -17,7 +17,7 @@ repo targets the ClassicUO web client; nothing is shared between the two.
 | `tinkering.py` | Trains Tinkering from 20 to cap on the iron ingots you carry: makes whatever the band still gains on, and sells it to the vendor that buys it, unloads it or keeps it as a gump at the start decides |
 | `carpentry.py` | Trains Carpentry from 0 to cap on the cheapest recipe each band still gains on, restocks wood the way `bowcraft.py` does, and unloads what it made into the container you pick |
 | `inscription.py` | Trains Inscription from 30 to cap on the spell scroll with the fewest reagents each circle gains on, meditating when the pool is short, restocking scrolls and reagents the way `carpentry.py` does, and selling or unloading the scrolls as a gump at the start decides |
-| `alchemy.py` | Trains Alchemy from 0 to cap on the potion each band gains on, restocks bottles and reagents the way `carpentry.py` does, and unloads what it made into the container you pick or keeps it |
+| `alchemy.py` | Trains Alchemy from 0 to cap on the potion each band gains on, restocks bottles and reagents the way `carpentry.py` does, and pours what it made into the kegs in your pack, unloads it into the container you pick, or keeps it |
 | `magery.py` | Trains Magery on the four spells that gain without a victim, meditating when the pool runs dry |
 | `mysticism.py` | Trains Mysticism on the five spells that gain without a victim, meditating when the pool runs dry |
 | `chivalry.py` | Trains Chivalry on its five spells, gating each cast on tithing points, putting the weapon away for every trance and drawing it again after, and bandaging itself under the health floor |
@@ -2039,8 +2039,12 @@ reagents. Each cycle:
 
 1. Read the skill. An uncovered band ends the run; a band change re-selects the row and says what it
    takes.
-2. Unload once the pack holds the form's `Unload every` potions the run made. Keeping them, the run
-   ends at `MAX_HELD`.
+2. Put away what was made. **Kegs**, the default: the shard pours a craft into a keg in the pack
+   already holding that potion, and bottles it when none does, so a bottled potion is dropped onto
+   the first empty keg in the pack and the rest of the band pours in by itself - one empty keg per
+   band. `MAX_KEG_MISSES` keg runs in a row that poured nothing, no empty keg left or the drop
+   refused, end the run. **Unload** once the pack holds the form's `Unload every` potions the run
+   made. **Keep**, and the run ends at `MAX_HELD`.
 3. Restock when the pack pays for fewer than `RESTOCK_AT` crafts: only the kinds the band spends,
    each filled to `BATCH_CRAFTS` crafts' worth. A move the shard refuses as too heavy unloads first.
    Short of a kind with none of it left in what you picked ends the run, naming the kind.
@@ -2050,8 +2054,8 @@ reagents. Each cycle:
 **The consumed rows** measure the pack either side of the craft, so a row lists the bottle and the
 reagent by kind, and a failure lists what the shard kept.
 
-**What is unloaded** is only what the run made: `keep_existing` remembers the potions in the pack at
-the start, so one you carried in is neither moved nor counted. Every poison potion lands as the one
+**What is poured or unloaded** is only what the run made: `keep_existing` remembers the potions in
+the pack at the start, so one you carried in is neither moved nor counted. Every poison potion lands as the one
 art, so a poison carried in from an earlier run is told apart by serial only.
 
 ### Before you run it
@@ -2060,9 +2064,10 @@ art, so a poison carried in from an earlier run is told apart by serial only.
 - **A mortar and pestle in your pack**, and spares, or a container holding them picked on the form.
 - **Empty bottles and the band's reagent in your pack or in what you pick.** Bottles weigh a stone
   each, which is what bounds `BATCH_CRAFTS`.
-- **Something to unload into**: a trash barrel destroys the potions, a chest keeps them. With a
-  potion keg of the type in your pack the shard pours straight into it and nothing is unloaded;
-  the keg is never used, since using one pours a potion out of it.
+- **Somewhere for the potions**: with Kegs, an empty potion keg in your pack for each band the run
+  will cross; a keg holding the band's potion already takes it straight. With Unload, a trash
+  barrel destroys the potions and a chest keeps them. A keg is dropped onto, never used, since
+  using one pours a potion out of it.
 
 ### What to set
 
@@ -2074,6 +2079,9 @@ art, so a poison carried in from an earlier run is told apart by serial only.
 | `BATCH_CRAFTS` / `RESTOCK_AT` | `30` / `5` | Crafts' worth each kind is filled to, and the crafts left that trigger it |
 | `DUMP_AT` / `MAX_HELD` | `10` / `60` | The form's default for potions before an unload, and the most kept with nowhere to put them |
 | `MAX_DUMP_MISSES` | `3` | Unloads in a row that moved nothing before the run ends |
+| `KEG_GRAPHICS` / `KEG_NAME_WORDS` | `0x1940` / `keg` | What counts as a keg, by art or name word |
+| `KEG_FILLED_TEXT` | `keg of` | A keg whose name carries it holds potions; any other keg is empty |
+| `MAX_KEG_MISSES` | `3` | Keg runs in a row that poured nothing before the run ends |
 | `TOOL_GRAPHICS` / `TOOL_NAME_WORDS` | `0x0E9B` / `mortar` | An art learned by name joins the set |
 | `CATEGORY_NAMES` | UOAlive's seven groups | Where the group rows end and the item rows begin |
 | `RECIPES` | every row on UOAlive | `(category button, row button)`, pressed as written. Run `craft-map.py` with the menu open and paste the block it writes |
@@ -2082,6 +2090,8 @@ art, so a poison carried in from an earlier run is told apart by serial only.
 ### When it goes wrong
 
 - **`out of 2 nightshade - ...`**: the pack and everything you picked are out of that kind.
+- **`3 keg runs in a row poured nothing`**: no empty keg is left in the pack, or the shard refused
+  the drop. If an empty keg is there, its name is not what `KEG_FILLED_TEXT` expects.
 - **`the shard refused ... in the pack 3 times`**: everything the recipe takes is there and the shard
   still refuses, so the row pressed is another potion. Run `craft-map.py` and paste the table again.
 - **`'greater cure' is not in RECIPES`**: the band names a row the table lacks. Run `craft-map.py`
@@ -2092,7 +2102,8 @@ art, so a poison carried in from an earlier run is told apart by serial only.
 ### Unverified
 
 - Every wording in `OUTCOME_TEXT` but the keg success, and every art: the mortar, the bottle, the
-  reagents and the potions are stock RunUO, none read off UOAlive. Stock DefAlchemy says `You pour
+  reagents, the potions and the keg are stock RunUO, none read off UOAlive. So are the keg names
+  behind `KEG_FILLED_TEXT`: `A specially lined keg` empty, `A keg of <potion> potions` started. Stock DefAlchemy says `You pour
   the potion into a bottle` for a success and `You fail to create a useful potion` for a failure;
   UOAlive's NOTICES panel says `You create the potion and pour it into a keg.` with a keg in the
   pack.

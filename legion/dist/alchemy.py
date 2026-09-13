@@ -111,8 +111,17 @@ TOO_HEAVY_TEXT = ["That container cannot hold more weight"]
 TOOL_GRAPHICS = set([0x0E9B])
 TOOL_NAME_WORDS = ["mortar"]
 
+# Potion keg, 6464. Stock RunUO names an empty one "A specially lined keg" and a started one "A keg
+# of <potion> potions": a keg whose name lacks KEG_FILLED_TEXT is empty. Unverified on UOAlive.
+KEG_GRAPHICS = set([0x1940])
+KEG_NAME_WORDS = ["keg"]
+KEG_FILLED_TEXT = ["keg of"]
+
+# Keg runs in a row that poured nothing - no empty keg, or the drop refused - before the run ends
+MAX_KEG_MISSES = 3
+
 TOOL_MODES = [("stop", "Stop the run"), ("fetch", "Fetch from a container")]
-OUTPUT_OPTIONS = [("unload", "Unload into a container"), ("keep", "Keep")]
+OUTPUT_OPTIONS = [("kegs", "Kegs"), ("unload", "Unload into a container"), ("keep", "Keep")]
 
 # Products in the pack, counted as amounts, before they are unloaded
 DUMP_AT = 10
@@ -335,6 +344,170 @@ RECIPES = {
 }
 
 
+# src/uo/pack.py
+def pack_contents():
+    items = API.ItemsInContainer(API.Backpack, True)
+
+    return items if items else []
+
+
+# The item cap is per container, so the guard and the combine both count the top level only
+def pack_top_level():
+    items = API.ItemsInContainer(API.Backpack, False)
+
+    return items if items else []
+
+
+# None is an unreported stack, not an empty one: counted as 0 it would hide the ore a swing just
+# delivered, which is the proof that the swing landed
+def amount_of(item):
+    amount = getattr(item, "Amount", None)
+
+    return amount if amount is not None else 1
+
+
+def hue_of(item):
+    return getattr(item, "Hue", 0) or 0
+
+
+def counts_by_graphic(items):
+    counts = {}
+
+    for item in items:
+        key = (item.Graphic, hue_of(item))
+        counts[key] = counts.get(key, 0) + amount_of(item)
+
+    return counts
+
+
+def diff_counts(before, after):
+    gained = {}
+    lost = {}
+
+    for key in set(list(before.keys()) + list(after.keys())):
+        change = after.get(key, 0) - before.get(key, 0)
+
+        if change > 0:
+            gained[key] = change
+        elif change < 0:
+            lost[key] = -change
+
+    return gained, lost
+
+
+# src/uo/text.py
+def words_of(text):
+    letters = []
+
+    for char in (text or "").lower():
+        letters.append(char if char.isalnum() else " ")
+
+    return "".join(letters).split()
+
+
+def word_in(text, words):
+    found = words_of(text)
+
+    for word in words:
+        if word in found:
+            return True
+
+    return False
+
+
+def any_in(text, fragments):
+    low = (text or "").lower()
+
+    for fragment in fragments:
+        if fragment in low:
+            return True
+
+    return False
+
+
+def untagged(text):
+    kept = []
+    inside = False
+
+    for char in text or "":
+        if char == "<":
+            inside = True
+        elif char == ">":
+            inside = False
+        elif not inside:
+            kept.append(char)
+
+    return "".join(kept)
+
+
+def clipped(text, limit):
+    flat = " ".join((text or "").split())
+
+    return flat if len(flat) <= limit else flat[:limit] + "..."
+
+
+# A craft gump is a header, then a notice, then every row it can make: the sentence talking to you
+# sits in the middle, where neither end of a clip reaches it
+def spoken(text, word, limit):
+    flat = " ".join((text or "").split())
+    at = flat.lower().find(word.lower())
+
+    if at <= 0:
+        return clipped(flat, limit)
+
+    return "..." + clipped(flat[at:], limit)
+
+
+# src/alchemy/kegs.py
+class Kegs(object):
+    """The empty potion kegs in the pack. The shard pours a craft into a keg already holding that
+    potion and bottles it otherwise, so the bottled one is dropped onto the first empty keg and the
+    rest of the band pours in by itself. Dropped onto, never used: using a keg pours one out."""
+
+    def __init__(self, dump, config, log):
+        self._dump = dump
+        self._config = config
+        self._log = log
+
+    def _is_keg(self, item):
+        return item.Graphic in self._config["graphics"] or word_in(item.Name, self._config["words"])
+
+    def empty(self):
+        for item in pack_contents():
+            if self._is_keg(item) and not any_in(item.Name, self._config["filled_text"]):
+                return item
+
+        return None
+
+    def run(self):
+        items = self._dump.items()
+
+        if len(items) == 0:
+            return 0
+
+        keg = self.empty()
+
+        if keg is None:
+            self._log("no empty keg in the pack for the %d potions the run made" % self._dump.held())
+
+            return 0
+
+        before = self._dump.held()
+
+        for item in items:
+            API.MoveItem(item.Serial, keg.Serial, amount_of(item))
+            API.Pause(self._config["move_delay"])
+
+        moved = before - self._dump.held()
+
+        if moved > 0:
+            self._log("poured %d into '%s'" % (moved, keg.Name))
+        else:
+            self._log("'%s' took nothing" % keg.Name)
+
+        return moved
+
+
 # src/uo/components.py
 def short_of(needs, counts):
     short = {}
@@ -404,69 +577,6 @@ def chebyshev(x, y, unknown):
         return unknown
 
     return max(abs(me.X - x), abs(me.Y - y))
-
-
-# src/uo/text.py
-def words_of(text):
-    letters = []
-
-    for char in (text or "").lower():
-        letters.append(char if char.isalnum() else " ")
-
-    return "".join(letters).split()
-
-
-def word_in(text, words):
-    found = words_of(text)
-
-    for word in words:
-        if word in found:
-            return True
-
-    return False
-
-
-def any_in(text, fragments):
-    low = (text or "").lower()
-
-    for fragment in fragments:
-        if fragment in low:
-            return True
-
-    return False
-
-
-def untagged(text):
-    kept = []
-    inside = False
-
-    for char in text or "":
-        if char == "<":
-            inside = True
-        elif char == ">":
-            inside = False
-        elif not inside:
-            kept.append(char)
-
-    return "".join(kept)
-
-
-def clipped(text, limit):
-    flat = " ".join((text or "").split())
-
-    return flat if len(flat) <= limit else flat[:limit] + "..."
-
-
-# A craft gump is a header, then a notice, then every row it can make: the sentence talking to you
-# sits in the middle, where neither end of a clip reaches it
-def spoken(text, word, limit):
-    flat = " ".join((text or "").split())
-    at = flat.lower().find(word.lower())
-
-    if at <= 0:
-        return clipped(flat, limit)
-
-    return "..." + clipped(flat[at:], limit)
 
 
 # src/uo/journal.py
@@ -1203,57 +1313,6 @@ def make_room(restock, log, noun, sell=None, unload=None):
         return phase if run() else None
 
     return None
-
-
-# src/uo/pack.py
-def pack_contents():
-    items = API.ItemsInContainer(API.Backpack, True)
-
-    return items if items else []
-
-
-# The item cap is per container, so the guard and the combine both count the top level only
-def pack_top_level():
-    items = API.ItemsInContainer(API.Backpack, False)
-
-    return items if items else []
-
-
-# None is an unreported stack, not an empty one: counted as 0 it would hide the ore a swing just
-# delivered, which is the proof that the swing landed
-def amount_of(item):
-    amount = getattr(item, "Amount", None)
-
-    return amount if amount is not None else 1
-
-
-def hue_of(item):
-    return getattr(item, "Hue", 0) or 0
-
-
-def counts_by_graphic(items):
-    counts = {}
-
-    for item in items:
-        key = (item.Graphic, hue_of(item))
-        counts[key] = counts.get(key, 0) + amount_of(item)
-
-    return counts
-
-
-def diff_counts(before, after):
-    gained = {}
-    lost = {}
-
-    for key in set(list(before.keys()) + list(after.keys())):
-        change = after.get(key, 0) - before.get(key, 0)
-
-        if change > 0:
-            gained[key] = change
-        elif change < 0:
-            lost[key] = -change
-
-    return gained, lost
 
 
 # src/uo/retry.py
@@ -3537,6 +3596,12 @@ dump = Dump(sources, PRODUCTS, {
     "move_delay": MOVE_DELAY,
     "keep_existing": True,
 }, log)
+kegs = Kegs(dump, {
+    "graphics": KEG_GRAPHICS,
+    "words": KEG_NAME_WORDS,
+    "filled_text": KEG_FILLED_TEXT,
+    "move_delay": MOVE_DELAY,
+}, log)
 tool_store = ToolStore(tools, sources, {
     "noun": "mortars and pestles",
     "pick_timeout": PICK_TIMEOUT,
@@ -3617,7 +3682,7 @@ answers = setup.ask({
 })
 
 # The stop lands at the next Pause, so the lines until then read a form that was never answered
-output = answers["output"] if answers is not None else "keep"
+output = answers["output"] if answers is not None else "kegs"
 dump_at = answers["dump_at"] if answers is not None else DUMP_AT
 log.enabled = answers["debug_logs"] if answers is not None else False
 
@@ -3626,9 +3691,12 @@ if answers is None:
 
 # The radio, not the cursor: a container picked before switching to Keep stays unused
 unloading = output == "unload"
+kegging = output == "kegs"
 
 if unloading:
     log("unloading every %d potions" % dump_at)
+elif kegging:
+    log("pouring into the kegs in the pack - a bottled potion goes onto the first empty keg")
 else:
     log("keeping what is made - the run ends once the pack holds %d potions" % MAX_HELD)
 
@@ -3651,6 +3719,7 @@ recorder = attempt_log(DATA_PATH, skill_name, log)
 materials = Materials(stock, set())
 craft_recorder = CraftRecorder(recorder, materials, REFUND_SETTLE, REFUND_POLL)
 unloader = Unloader(dump)
+kegger = Unloader(kegs)
 
 stop = None
 tally = 0
@@ -3725,7 +3794,14 @@ try:
                 stop = ("%d unloads in a row moved nothing into '%s'"
                         % (unloader.misses, dump.name()))
                 break
-        elif not unloading and held >= MAX_HELD:
+        elif kegging and held > 0:
+            if kegger.run():
+                stall.progressed()
+            elif kegger.misses >= MAX_KEG_MISSES:
+                stop = ("%d keg runs in a row poured nothing - no empty keg in the pack, or the "
+                        "drop was refused" % kegger.misses)
+                break
+        elif not unloading and not kegging and held >= MAX_HELD:
             stop = "the pack holds %d potions and nothing was picked to unload into" % held
             break
 

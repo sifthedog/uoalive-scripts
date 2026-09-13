@@ -5,9 +5,10 @@ from alchemy.config import (BANDS, BATCH_CRAFTS, BUTTON_STRIDE, CATEGORY_BUTTON_
                             CRAFT_TITLE, CRAFT_TITLE_FRAGMENTS, CRAFT_TITLE_TEXT, DATA_PATH,
                             DUMP_AT, FETCH_POLL, FETCH_TIMEOUT, GUMP_POLL, GUMP_TIMEOUT,
                             HEARTBEAT_EVERY, ITEM_BUTTON_TYPE, JOURNAL_TAIL_LINES,
-                            JOURNAL_TAIL_SECONDS, KIND_ORDER, LAST_TEN_LABEL, LOG_EVERY,
-                            MAKE_LAST_BUTTON, MAX_CYCLES, MAX_DUMP_MISSES, MAX_EMPTY_MOVES,
-                            MAX_HELD, MAX_NO_MATERIAL, MAX_NO_TOOL, MAX_PICKS, MAX_THROTTLED,
+                            JOURNAL_TAIL_SECONDS, KEG_FILLED_TEXT, KEG_GRAPHICS, KEG_NAME_WORDS,
+                            KIND_ORDER, LAST_TEN_LABEL, LOG_EVERY, MAKE_LAST_BUTTON, MAX_CYCLES,
+                            MAX_DUMP_MISSES, MAX_EMPTY_MOVES, MAX_HELD, MAX_KEG_MISSES,
+                            MAX_NO_MATERIAL, MAX_NO_TOOL, MAX_PICKS, MAX_THROTTLED,
                             MAX_UNKNOWN, MAX_UNREADABLE_REPORTS, MIN_SKILL, MOVE_DELAY, NEEDS,
                             NOTES_PATH, NOTES_TAIL_SECONDS, OPEN_DELAY, OUTCOME_TEXT,
                             PATHFIND_TIMEOUT, PICK_TIMEOUT, PRODUCTS, RECIPES, REFUND_POLL,
@@ -16,6 +17,7 @@ from alchemy.config import (BANDS, BATCH_CRAFTS, BUTTON_STRIDE, CATEGORY_BUTTON_
                             STALL_STOP, STALL_WARN, STEP_DELAY, STOCK_KINDS, STOPPED,
                             THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX, TOOL_GRAPHICS,
                             TOOL_NAME_WORDS, TOO_HEAVY_TEXT, UNREADABLE_TEXT_LIMIT)
+from alchemy.kegs import Kegs
 from uo.components import affordable, short_of, shortfall_report
 from uo.craft import Crafter
 from uo.craftmenu import CraftMenu
@@ -120,6 +122,12 @@ dump = Dump(sources, PRODUCTS, {
     "move_delay": MOVE_DELAY,
     "keep_existing": True,
 }, log)
+kegs = Kegs(dump, {
+    "graphics": KEG_GRAPHICS,
+    "words": KEG_NAME_WORDS,
+    "filled_text": KEG_FILLED_TEXT,
+    "move_delay": MOVE_DELAY,
+}, log)
 tool_store = ToolStore(tools, sources, {
     "noun": "mortars and pestles",
     "pick_timeout": PICK_TIMEOUT,
@@ -200,7 +208,7 @@ answers = setup.ask({
 })
 
 # The stop lands at the next Pause, so the lines until then read a form that was never answered
-output = answers["output"] if answers is not None else "keep"
+output = answers["output"] if answers is not None else "kegs"
 dump_at = answers["dump_at"] if answers is not None else DUMP_AT
 log.enabled = answers["debug_logs"] if answers is not None else False
 
@@ -209,9 +217,12 @@ if answers is None:
 
 # The radio, not the cursor: a container picked before switching to Keep stays unused
 unloading = output == "unload"
+kegging = output == "kegs"
 
 if unloading:
     log("unloading every %d potions" % dump_at)
+elif kegging:
+    log("pouring into the kegs in the pack - a bottled potion goes onto the first empty keg")
 else:
     log("keeping what is made - the run ends once the pack holds %d potions" % MAX_HELD)
 
@@ -234,6 +245,7 @@ recorder = attempt_log(DATA_PATH, skill_name, log)
 materials = Materials(stock, set())
 craft_recorder = CraftRecorder(recorder, materials, REFUND_SETTLE, REFUND_POLL)
 unloader = Unloader(dump)
+kegger = Unloader(kegs)
 
 stop = None
 tally = 0
@@ -308,7 +320,14 @@ try:
                 stop = ("%d unloads in a row moved nothing into '%s'"
                         % (unloader.misses, dump.name()))
                 break
-        elif not unloading and held >= MAX_HELD:
+        elif kegging and held > 0:
+            if kegger.run():
+                stall.progressed()
+            elif kegger.misses >= MAX_KEG_MISSES:
+                stop = ("%d keg runs in a row poured nothing - no empty keg in the pack, or the "
+                        "drop was refused" % kegger.misses)
+                break
+        elif not unloading and not kegging and held >= MAX_HELD:
             stop = "the pack holds %d potions and nothing was picked to unload into" % held
             break
 

@@ -71,8 +71,17 @@ TOO_HEAVY_TEXT = ["That container cannot hold more weight"]
 TOOL_GRAPHICS = set([0x0E9B])
 TOOL_NAME_WORDS = ["mortar"]
 
+# Potion keg, 6464. Stock RunUO names an empty one "A specially lined keg" and a started one "A keg
+# of <potion> potions": a keg whose name lacks KEG_FILLED_TEXT is empty. Unverified on UOAlive.
+KEG_GRAPHICS = set([0x1940])
+KEG_NAME_WORDS = ["keg"]
+KEG_FILLED_TEXT = ["keg of"]
+
+# Keg runs in a row that poured nothing - no empty keg, or the drop refused - before the run ends
+MAX_KEG_MISSES = 3
+
 TOOL_MODES = [("stop", "Stop the run"), ("fetch", "Fetch from a container")]
-OUTPUT_OPTIONS = [("unload", "Unload into a container"), ("keep", "Keep")]
+OUTPUT_OPTIONS = [("kegs", "Kegs"), ("unload", "Unload into a container"), ("keep", "Keep")]
 
 # Products in the pack, counted as amounts, before they are unloaded
 DUMP_AT = 10
