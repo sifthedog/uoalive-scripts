@@ -2,7 +2,7 @@ import API
 
 from uo.journal import journal_tail
 from uo.entity import hex_of
-from uo.pack import count_of, counts_by_graphic, diff_counts, pack_contents
+from uo.pack import count_of, counts_by_graphic, diff_counts, hue_of, pack_contents
 from uo.retry import settled
 from uo.text import any_in, clipped, phrase_in, untagged
 
@@ -18,6 +18,8 @@ class Crafter(object):
         self._stamp = stamp
         self._item_buttons = {}
         self._item_probes = {}
+        # Products whose art the table has wrong, proven made on a row the menu named
+        self._trusted = set()
         self._make_last = False
         self._said_unreadable = 0
         self._said_no_make_last = False
@@ -212,16 +214,41 @@ class Crafter(object):
         arts = set()
 
         for item in items:
-            if (item.Graphic, item.Hue) in gained and self._named_for(item, product):
+            if (item.Graphic, hue_of(item)) in gained and self._named_for(item, product):
                 arts.add(item.Graphic)
 
         if len(arts) != 1:
             return False
 
         art = arts.pop()
-        self._config["products"][product].add(art)
+        # Rebound rather than added to: carpentry's addon products share one set object
+        self._config["products"][product] = set(self._config["products"][product]) | set([art])
         self._log("'%s' landed as %s, not the art in the table - put %s in it"
                   % (product, hex_of(art), hex_of(art)))
+
+        return True
+
+    def _keep_row(self, product, button):
+        if button != self._config["make_last_button"]:
+            self._item_buttons[product] = button
+
+        self._make_last = True
+
+    # A row the menu named by its exact label is proof the pack cannot overrule: the shard said made
+    # and no art in the table landed, so the table is what is wrong
+    def _trust_named(self, product, button, held):
+        if product not in self._trusted:
+            if self._menu.named_button(product) != button:
+                return False
+
+            self._trusted.add(product)
+            gained, _lost = diff_counts(held, counts_by_graphic(pack_contents()))
+            arts = sorted(set(graphic for graphic, _hue in gained))
+            self._log("'%s' landed as %s, which the product table does not list - counting the row "
+                      "the menu named as made; put it in the table"
+                      % (product, ", ".join(hex_of(art) for art in arts) or "nothing new"))
+
+        self._keep_row(product, button)
 
         return True
 
@@ -283,9 +310,11 @@ class Crafter(object):
 
         if outcome == "made":
             if self._learn_art(product, held):
-                self._item_buttons[product] = button
-                self._make_last = True
+                self._keep_row(product, button)
 
+                return "made"
+
+            if self._trust_named(product, button, held):
                 return "made"
 
             return self._wrong_product(product, button)

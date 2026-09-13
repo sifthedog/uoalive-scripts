@@ -32,6 +32,9 @@ class BandsTest(unittest.TestCase):
         for product in ("dartboard (south)", "ballot box", "rustic bench (south)"):
             self.assertEqual(PRODUCTS[product], DEED_GRAPHICS)
 
+    def test_the_sign_hanger_is_not_a_deed(self):
+        self.assertEqual(PRODUCTS["dark wooden sign hanger"], set([0x0B97]))
+
 
 class OutcomeOrderTest(unittest.TestCase):
     def test_failed_is_read_before_made_and_throttled_last(self):

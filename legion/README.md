@@ -1568,7 +1568,7 @@ is the menu, reported once: the title is a cliloc that `GetGumpContents` may ans
 
 | Outcome | What it means |
 | --- | --- |
-| `made` | The pack gained a product graphic. The only proof that counts |
+| `made` | The pack gained a product graphic, or the shard said so on a row the menu named by its exact label |
 | `failed` | The shard says the craft failed. Still a gain and still spends wood |
 | `noMaterial` | Restocks next cycle. `MAX_NO_MATERIAL` with wood still in the pack ends the run naming it |
 | `wrongRow` | Made something that is not the product. Next candidate row |
@@ -1711,7 +1711,7 @@ when `DATA_PATH` is set.
 - Whether every `HtmlControl.Text` on a row resolves the localized name or hands back a cliloc
   number. If the latter, every run walks the rows.
 - Whether `API.RequestTarget` returning falsy is ESC, which ends the multi-pick.
-- The product graphics are stock; a reskinned one reads every craft as `wrongRow`.
+- The product graphics are stock. A reskinned one is reported once and the named row is kept, so it costs the log line and nothing else.
 
 ## tinkering.py
 
@@ -1861,7 +1861,7 @@ destroys it; a chest keeps it.
 | `BANDS` | see above | Ceiling and product |
 | `PRODUCTS` | table | Row name as the gump spells it, and the graphics it arrives as |
 | `WOOD_COST` / `MIN_CRAFT_WOOD` | table / `5` | When the pack is too short to try |
-| `DEED_GRAPHICS` | `0x14F0` | What every addon lands as |
+| `DEED_GRAPHICS` | `0x14F0` | What the addon products land as. The sign hanger is not one of them |
 | `TOOL_GRAPHICS` / `TOOL_NAME_WORDS` | stock / `saw`, … | An art learned by name joins the set |
 | `CATEGORY_NAMES` | the wiki's groups | Where the group rows end and the item rows begin |
 | `RECIPES` | empty | `(category button, row button)`. Copy the `is the row on button` lines in |
@@ -1888,11 +1888,16 @@ destroys it; a chest keeps it.
 - **`the pack holds 60 products and nothing was picked to unload into`**: pick a container next time,
   or raise `MAX_HELD`.
 - **`3 unloads in a row moved nothing`**: the container is full, locked down, or not a container.
+- **`'x' landed as 0x…, which the product table does not list`**: `PRODUCTS` has the wrong art for
+  the row. The run keeps going on the row the menu named; put the graphic it names in the table so
+  the unload counts it.
 
 ### Unverified
 
-- Every row name and product graphic is stock ServUO, none read off UOAlive. The walk finds a row
-  by its text, so a wrong name costs categories walked, not wood.
+- Every row name is stock ServUO, none read off UOAlive. The walk finds a row by its text, so a
+  wrong name costs categories walked, not wood.
+- The product graphics are stock apart from the sign hanger, which lands as `Wooden Signpost`
+  `0x0B97`. The four addon products are still assumed to be deeds.
 - The ceilings assume the stock minimum-plus-25 gain window. A row that hits 100% success early has
   stopped gaining; move its ceiling down.
 - Whether the wooden container engraving tool's ceiling is 100 on this shard. If it is, it covers

@@ -23,6 +23,7 @@ class CraftMenu(object):
         self._said_not_menu = False
         self._category_buttons = {}
         self._category_rejects = {}
+        self._named_buttons = {}
 
     def current_id(self):
         return self._id
@@ -201,6 +202,10 @@ class CraftMenu(object):
 
         return None
 
+    # The row an exact label match found, which a wrong product graphic must not be allowed to blame
+    def named_button(self, product):
+        return self._named_buttons.get(product)
+
     def _say_no_row(self, product, rows):
         if product in self._said_no_row:
             return
@@ -295,6 +300,7 @@ class CraftMenu(object):
         named = self.named_row(product, gump)
 
         if named is not None:
+            self._named_buttons[product] = named
             self._log("'%s' is the row on button %d - the menu names it there" % (product, named))
 
             return (gump, named)

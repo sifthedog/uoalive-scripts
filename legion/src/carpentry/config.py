@@ -47,7 +47,8 @@ PRODUCTS = {
     "barrel lid": set([0x1DB8]),
     "dartboard (south)": DEED_GRAPHICS,
     "wooden box": set([0x9AA]),
-    "dark wooden sign hanger": DEED_GRAPHICS,
+    # Lands as 'Wooden Signpost' 0x0B97 on UOAlive, an item and not the addon deed the rest are
+    "dark wooden sign hanger": set([0x0B97]),
     "ballot box": DEED_GRAPHICS,
     "bokuto": set([0x27A8]),
     "quarter staff": set([0x0E89, 0x0E8A]),
