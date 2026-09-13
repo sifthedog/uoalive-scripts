@@ -40,6 +40,9 @@ class BarrelSources(object):
 
         return entry["serial"]
 
+    def container_of(self, entry):
+        return None if entry["kind"] == "box" else entry["serial"]
+
 
 def messages(api):
     return "\n".join(api.messages)
@@ -92,12 +95,12 @@ class DumpTest(unittest.TestCase):
 
         self.assertEqual([held.Serial for held in self.dump.items()], [2])
 
-    def test_pick_takes_the_container_and_opens_it(self):
+    def test_pick_takes_the_container_and_never_uses_it(self):
         self.api.requested_target = BARREL
 
         self.assertIsNotNone(self.dump.pick())
         self.assertTrue(self.dump.picked())
-        self.assertEqual(self.sources.opened, 1)
+        self.assertEqual(self.sources.opened, 0)
         self.assertEqual(self.dump.name(), "trash barrel")
 
     def test_esc_leaves_nothing_picked(self):

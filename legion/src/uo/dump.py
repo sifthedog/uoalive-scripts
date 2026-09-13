@@ -66,7 +66,7 @@ class Dump(object):
             return ("'%s' is a storage box, which takes nothing you made - pick a barrel or a "
                     "chest" % self._sources.name_of(entry))
 
-        if self._sources.open(entry) is None:
+        if self._sources.container_of(entry) is None:
             return "'%s' has no backpack to unload into" % self._sources.name_of(entry)
 
         return None
@@ -109,7 +109,9 @@ class Dump(object):
 
             return 0
 
-        container = self._sources.open(self._entry)
+        # Dropped onto, never used: a drop lands in a closed chest, and using a potion keg pours
+        # one out of it
+        container = self._sources.container_of(self._entry)
 
         if container is None:
             self._log("'%s' has no backpack to unload into" % self.name())

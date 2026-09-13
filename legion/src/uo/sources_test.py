@@ -71,6 +71,15 @@ class SourcesTest(unittest.TestCase):
     def test_a_chest_is_an_item(self):
         self.assertEqual(self.sources.entry_for(CHEST)["kind"], "item")
 
+    def test_a_container_in_the_pack_has_no_spot_and_is_in_reach(self):
+        keg = item(serial=PILE + 1, name="a keg", x=44, y=65)
+        self.api.items[keg.Serial] = keg
+        self.api.hold(keg)
+        entry = self.sources.entry_for(keg.Serial)
+
+        self.assertIsNone(entry["spot"])
+        self.assertTrue(self.sources.reach(entry))
+
     def test_the_box_is_known_by_its_name_and_keeps_its_spot(self):
         entry = self.sources.entry_for(BOX)
 

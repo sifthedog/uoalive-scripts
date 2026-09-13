@@ -3,7 +3,7 @@ import API
 from uo.box import StorageBox
 from uo.stock import total_of
 from uo.entity import chebyshev, hex_of, player
-from uo.pack import amount_of
+from uo.pack import amount_of, pack_contents
 from uo.retry import settled
 from uo.target import request_one
 from uo.text import any_in
@@ -66,8 +66,12 @@ class Sources(object):
         item = API.FindItem(serial)
 
         if item is not None:
+            # An item in the pack reads its slot in the pack's gump as X and Y, not the ground
+            in_pack = serial in set(held.Serial for held in pack_contents())
+
             return {"kind": "box" if self._is_box(item) else "item", "serial": serial,
-                    "name": item.Name or "?", "spot": (item.X, item.Y, item.Z)}
+                    "name": item.Name or "?",
+                    "spot": None if in_pack else (item.X, item.Y, item.Z)}
 
         animal = API.FindMobile(serial)
 
@@ -318,7 +322,7 @@ class Sources(object):
 
         spot = entry["spot"]
 
-        # A container inside the pack has no world position
+        # A container inside the pack has no world position, and neither does one not yet placed
         if spot is None or (spot[0] == 0 and spot[1] == 0):
             return True
 

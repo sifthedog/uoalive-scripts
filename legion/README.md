@@ -2059,9 +2059,9 @@ art, so a poison carried in from an earlier run is told apart by serial only.
 - **A mortar and pestle in your pack**, and spares, or a container holding them picked on the form.
 - **Empty bottles and the band's reagent in your pack or in what you pick.** Bottles weigh a stone
   each, which is what bounds `BATCH_CRAFTS`.
-- **Something to unload into**, in reach: a trash barrel destroys the potions, a chest keeps them.
-- **No potion keg of the band's type in the pack**: the shard pours into it, and the unload never
-  sees the potion.
+- **Something to unload into**: a trash barrel destroys the potions, a chest keeps them, and a
+  potion keg in your pack takes the ones of its type. The keg is dropped onto, never used - using
+  one pours a potion out of it.
 
 ### What to set
 
