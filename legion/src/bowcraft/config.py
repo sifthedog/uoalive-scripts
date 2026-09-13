@@ -13,7 +13,7 @@ SKILL_NAMES = ["Bowcraft", "Bowcraft/Fletching", "Fletching"]
 
 MIN_SKILL = 30.0
 
-# The two bands that offer a choice: "fukiya darts" and "yumi" are the other way
+# The two bands that offer a choice: "fukiya dart" and "yumi" are the other way
 LOW_BAND_ITEM = "bow"
 HIGH_BAND_ITEM = "yumi"
 
@@ -27,8 +27,12 @@ BANDS = [
     (None, HIGH_BAND_ITEM),
 ]
 
-# The CATEGORIES rows, lowercased: where the group block ends and the item rows begin
-CATEGORY_NAMES = ["materials", "ammunition", "weapons"]
+# The CATEGORIES rows, lowercased, as craft-map.py read them off UOAlive's menu
+CATEGORY_NAMES = [
+    "materials",
+    "ammunition",
+    "weapons",
+]
 
 # Name as the SELECTIONS row spells it, and the graphics it lands in the pack as
 PRODUCTS = {
@@ -38,7 +42,7 @@ PRODUCTS = {
     "heavy crossbow": set([0x13FD]),
     "repeating crossbow": set([0x26C3]),
     "yumi": set([0x27A5]),
-    "fukiya darts": set([0x2806]),
+    "fukiya dart": set([0x2806]),
 }
 
 PRODUCT_GRAPHICS = set().union(*PRODUCTS.values())
@@ -119,7 +123,7 @@ VENDORS = {
     "composite bow": ("bowyer", BOWYER_TITLES),
     "heavy crossbow": ("bowyer", BOWYER_TITLES),
     "repeating crossbow": ("bowyer", BOWYER_TITLES),
-    "fukiya darts": ("bowyer", BOWYER_TITLES),
+    "fukiya dart": ("bowyer", BOWYER_TITLES),
     "yumi": None,
 }
 
@@ -190,26 +194,40 @@ CATEGORY_BUTTON_TYPE = 0
 ITEM_BUTTON_TYPE = 1
 MAKE_LAST_BUTTON = 47
 
-# (category button, row button). A shortcut, not the truth: a row this gets wrong is walked for
+# (category button, row button) for every row, as craft-map.py read them off UOAlive's menu. Run
+# craft-map.py again and paste its block over this one when the menu changes.
 RECIPES = {
+    # Materials (button 1)
+    "elven fletching": (1, 2),
+    "kindling": (1, 22),
+    "shaft": (1, 42),
+    # Ammunition (button 21)
+    "arrow": (21, 2),
+    "crossbow bolt": (21, 22),
+    "fukiya dart": (21, 42),
+    # Weapons (button 41)
     "bow": (41, 2),
     "crossbow": (41, 22),
     "heavy crossbow": (41, 42),
     "composite bow": (41, 62),
     "repeating crossbow": (41, 82),
     "yumi": (41, 102),
-    "arrow": (21, 2),
-    "crossbow bolt": (21, 22),
-    "fukiya darts": (21, 42),
-    "kindling": (1, 22),
-    "shaft": (1, 42),
+    "elven composite longbow": (41, 122),
+    "magical shortbow": (41, 142),
+    "blight gripped longbow": (41, 162),
+    "faerie fire": (41, 182),
+    "silvani's feywood bow": (41, 202),
+    "mischief maker": (41, 222),
+    "the night reaper": (41, 242),
+    "barbed longbow": (41, 262),
+    "slayer longbow": (41, 282),
+    "frozen longbow": (41, 302),
+    "longbow of might": (41, 322),
+    "ranger's shortbow": (41, 342),
+    "lightweight shortbow": (41, 362),
+    "mystical shortbow": (41, 382),
+    "assassin's shortbow": (41, 402),
 }
-
-MAX_CATEGORIES = 6
-MAX_ITEM_ROWS = 12
-
-# Each miss costs one item's worth of wood, which is why the gump text is read first
-MAX_ITEM_PROBES = 8
 
 # Seconds throughout - API.Pause takes seconds
 PICK_TIMEOUT = 60.0
@@ -223,9 +241,6 @@ GUMP_POLL = 0.15
 # Has to outlast the craft animation, which plays before the shard answers
 CRAFT_TIMEOUT = 10.0
 CRAFT_POLL = 0.2
-
-# How long the pack has to show the new item once the shard has answered
-CRAFT_SETTLE = 1.5
 
 # A failed craft's refund arrives after the journal line; the consumed row waits this long for it
 REFUND_SETTLE = 1.5
@@ -263,7 +278,7 @@ WOOD_COST = {
     "composite bow": 7,
     "heavy crossbow": 7,
     "repeating crossbow": 7,
-    "fukiya darts": 4,
+    "fukiya dart": 4,
 }
 
 # For a product WOOD_COST lacks

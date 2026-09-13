@@ -61,9 +61,18 @@ BANDS = [
     (None, "fancy wind chimes"),
 ]
 
-# The CATEGORIES rows, lowercased: where the group block ends and the item rows begin
-CATEGORY_NAMES = ["wooden items", "tools", "parts", "utensils", "misc", "miscellaneous", "jewelry",
-                  "multi-component items", "assemblies", "traps", "magic jewelry"]
+# The CATEGORIES rows, lowercased, as craft-map.py read them off UOAlive's menu
+CATEGORY_NAMES = [
+    "jewelry",
+    "wooden items",
+    "tools",
+    "parts",
+    "utensils",
+    "miscellaneous",
+    "assemblies",
+    "traps",
+    "magic jewelry",
+]
 
 # Name as the SELECTIONS row spells it, and the graphics it lands in the pack as. Iron key and
 # hammer are read off UOAlive; the rest are stock art.
@@ -200,19 +209,232 @@ CATEGORY_BUTTON_TYPE = 0
 ITEM_BUTTON_TYPE = 1
 MAKE_LAST_BUTTON = 47
 
-# (category button, row button), from the 'is the row on button' log lines. Item buttons count on
-# across the pages, ten rows a page: Misc's second page, third row, is index 12
+# (category button, row button) for every row, as craft-map.py read them off UOAlive's menu. Run
+# craft-map.py again and paste its block over this one when the menu changes.
 RECIPES = {
+    # Jewelry (button 1)
+    "ring": (1, 2),
+    "bracelet": (1, 22),
+    "gargish necklace": (1, 42),
+    "gargish bracelet": (1, 62),
+    "gargish ring": (1, 82),
+    "gargish earrings": (1, 102),
+    "star sapphire ring": (1, 122),
+    "star sapphire necklace (silver)": (1, 142),
+    "star sapphire necklace (jewelled)": (1, 162),
+    "star sapphire earrings": (1, 182),
+    "star sapphire necklace (golden)": (1, 202),
+    "star sapphire bracelet": (1, 222),
+    "emerald ring": (1, 242),
+    "emerald necklace (silver)": (1, 262),
+    "emerald necklace (jewelled)": (1, 282),
+    "emerald earrings": (1, 302),
+    "emerald necklace (golden)": (1, 322),
+    "emerald bracelet": (1, 342),
+    "sapphire ring": (1, 362),
+    "sapphire necklace (silver)": (1, 382),
+    "sapphire necklace (jewelled)": (1, 402),
+    "sapphire earrings": (1, 422),
+    "sapphire necklace (golden)": (1, 442),
+    "sapphire bracelet": (1, 462),
+    "ruby ring": (1, 482),
+    "ruby necklace (silver)": (1, 502),
+    "ruby necklace (jewelled)": (1, 522),
+    "ruby earrings": (1, 542),
+    "ruby necklace (golden)": (1, 562),
+    "ruby bracelet": (1, 582),
+    "citrine ring": (1, 602),
+    "citrine necklace (silver)": (1, 622),
+    "citrine necklace (jewelled)": (1, 642),
+    "citrine earrings": (1, 662),
+    "citrine necklace (golden)": (1, 682),
+    "citrine bracelet": (1, 702),
+    "amethyst ring": (1, 722),
+    "amethyst necklace (silver)": (1, 742),
+    "amethyst necklace (jewelled)": (1, 762),
+    "amethyst earrings": (1, 782),
+    "amethyst necklace (golden)": (1, 802),
+    "amethyst bracelet": (1, 822),
+    "tourmaline ring": (1, 842),
+    "tourmaline necklace (silver)": (1, 862),
+    "tourmaline necklace (jewelled)": (1, 882),
+    "tourmaline earrings": (1, 902),
+    "tourmaline necklace (golden)": (1, 922),
+    "tourmaline bracelet": (1, 942),
+    "amber ring": (1, 962),
+    "amber necklace (silver)": (1, 982),
+    "amber necklace (jewelled)": (1, 1002),
+    "amber earrings": (1, 1022),
+    "amber necklace (golden)": (1, 1042),
+    "amber bracelet": (1, 1062),
+    "diamond ring": (1, 1082),
+    "diamond necklace (silver)": (1, 1102),
+    "diamond necklace (jewelled)": (1, 1122),
+    "diamond earrings": (1, 1142),
+    "diamond necklace (golden)": (1, 1162),
+    "diamond bracelet": (1, 1182),
+    "krampus minion earrings": (1, 1202),
+    "candied staff": (1, 1222),
+    # Wooden Items (button 21)
+    "nunchaku": (21, 2),
+    "jointing plane": (21, 22),
+    "moulding planes": (21, 42),
+    "smoothing plane": (21, 62),
+    "clock frame": (21, 82),
+    "axle": (21, 102),
+    "rolling pin": (21, 122),
+    "ramrod": (21, 142),
+    "softened reeds": (21, 162),
+    "round basket": (21, 182),
+    "bushel": (21, 202),
+    "small bushel": (21, 222),
+    "picnic basket": (21, 242),
+    "winnowing basket": (21, 262),
+    "square basket": (21, 282),
+    "basket": (21, 302),
+    "tall round basket": (21, 322),
+    "small square basket": (21, 342),
+    "tall basket": (21, 362),
+    "small round basket": (21, 382),
+    "enchanted picnic basket": (21, 402),
+    # Tools (button 41)
+    "scissors": (41, 2),
+    "mortar and pestle": (41, 22),
+    "scorp": (41, 42),
+    "tinker's tools": (41, 62),
+    "hatchet": (41, 82),
+    "draw knife": (41, 102),
+    "sewing kit": (41, 122),
+    "saw": (41, 142),
+    "dovetail saw": (41, 162),
+    "froe": (41, 182),
+    "shovel": (41, 202),
+    "hammer": (41, 222),
+    "tongs": (41, 242),
+    "smith's hammer": (41, 262),
+    "sledge hammer": (41, 282),
+    "inshave": (41, 302),
+    "pickaxe": (41, 322),
+    "lockpick": (41, 342),
+    "skillet": (41, 362),
+    "flour sifter": (41, 382),
+    "fletcher's tools": (41, 402),
+    "mapmaker's pen": (41, 422),
+    "scribe's pen": (41, 442),
+    "clippers": (41, 462),
+    "metal container engraving tool": (41, 482),
+    "pitchfork": (41, 502),
+    # Parts (button 61)
+    "gears": (61, 2),
+    "clock parts": (61, 22),
+    "barrel tap": (61, 42),
+    "springs": (61, 62),
+    "sextant parts": (61, 82),
+    "barrel hoops": (61, 102),
+    "hinge": (61, 122),
+    "bola balls": (61, 142),
+    "jeweled filigree": (61, 162),
+    # Utensils (button 81)
+    "butcher knife": (81, 2),
+    "spoon (left)": (81, 22),
+    "spoon (right)": (81, 42),
+    "plate": (81, 62),
+    "fork (left)": (81, 82),
+    "fork (right)": (81, 102),
+    "cleaver": (81, 122),
+    "knife (left)": (81, 142),
+    "knife (right)": (81, 162),
+    "goblet": (81, 182),
+    "pewter mug": (81, 202),
+    "pewter bowl": (81, 222),
+    "a plant bowl": (81, 242),
+    "skinning knife": (81, 262),
+    "gargish cleaver": (81, 282),
+    "gargish butcher's knife": (81, 302),
+    # Miscellaneous (button 101)
+    "key ring": (101, 2),
+    "candelabra": (101, 22),
+    "scales": (101, 42),
+    "iron key": (101, 62),
+    "globe": (101, 82),
+    "spyglass": (101, 102),
+    "lantern": (101, 122),
+    "heating stand": (101, 142),
+    "shoji lantern": (101, 162),
+    "paper lantern": (101, 182),
+    "round paper lantern": (101, 202),
+    "wind chimes": (101, 222),
     "fancy wind chimes": (101, 242),
+    "ter-mur style candelabra": (101, 262),
+    "communication crystal": (101, 282),
+    "gorgon lens": (101, 302),
+    "a scale collar": (101, 322),
+    "dragon lamp": (101, 342),
+    "stained glass lamp": (101, 362),
+    "tall double lamp": (101, 382),
+    "curled metal sign hanger": (101, 402),
+    "flourished metal sign hanger": (101, 422),
+    "inward curled metal sign hanger": (101, 442),
+    "end curled metal sign hanger": (101, 462),
+    "left metal door (s in)": (101, 482),
+    "right metal door (s in)": (101, 502),
+    "left metal door (e out)": (101, 522),
+    "right metal door (e out)": (101, 542),
+    "currency wall safe": (101, 562),
+    "left metal door (e in)": (101, 582),
+    "right metal door (e in)": (101, 602),
+    "left metal door (s out)": (101, 622),
+    "right metal door (s out)": (101, 642),
+    "kotl power core": (101, 662),
+    "weathered bronze globe sculpture": (101, 682),
+    "weathered bronze man on a bench sculpture": (101, 702),
+    "weathered bronze fairy sculpture": (101, 722),
+    "weathered bronze archer sculpture": (101, 742),
+    "barbed whip": (101, 762),
+    "spiked whip": (101, 782),
+    "bladed whip": (101, 802),
+    # Assemblies (button 121)
+    "axle with gears": (121, 2),
+    # "clock parts": (121, 22),  listed again, the first kept
+    # "sextant parts": (121, 42),  listed again, the first kept
+    "clock (right)": (121, 62),
+    "clock (left)": (121, 82),
+    "sextant": (121, 102),
+    "bola": (121, 122),
+    "potion keg": (121, 142),
+    "leather wolf assembly": (121, 162),
+    "clockwork scorpion assembly": (121, 182),
+    "vollem assembly": (121, 202),
+    "hitching rope": (121, 222),
+    "hitching post (replica)": (121, 242),
+    "arcanic rune stone": (121, 262),
+    "void orb": (121, 282),
+    "advanced training dummy (south)": (121, 302),
+    "advanced training dummy (east)": (121, 322),
+    "distillery (south)": (121, 342),
+    "distillery (east)": (121, 362),
+    "kotl automaton": (121, 382),
+    "telescope": (121, 402),
+    "oracle of the sea": (121, 422),
+    # Traps (button 141)
+    "dart trap": (141, 2),
+    "poison trap": (141, 22),
+    "explosion trap": (141, 42),
+    # Magic Jewelry (button 161)
+    "brilliant amber bracelet": (161, 2),
+    "fire ruby bracelet": (161, 22),
+    "dark sapphire bracelet": (161, 42),
+    "white pearl bracelet": (161, 62),
+    "ecru citrine ring": (161, 82),
+    "blue diamond ring": (161, 102),
+    "perfect emerald ring": (161, 122),
+    "turquoise ring": (161, 142),
+    "resilient bracer": (161, 162),
+    "essence of battle": (161, 182),
+    "pendant of the magi": (161, 202),
+    "dr. spector's lenses": (161, 222),
+    "bracelet of primal consumption": (161, 242),
 }
-
-MAX_CATEGORIES = 10
-
-# The stock Tools group runs past twenty rows and the item buttons count across its pages
-MAX_ITEM_ROWS = 24
-
-# Each miss costs one item's worth of ingots, which is why the gump text is read first
-MAX_ITEM_PROBES = 8
 
 # Whole seconds: the API takes an int here
 PATHFIND_TIMEOUT = 10
@@ -223,9 +445,6 @@ GUMP_POLL = 0.15
 # Has to outlast the craft animation, which plays before the shard answers
 CRAFT_TIMEOUT = 10.0
 CRAFT_POLL = 0.2
-
-# How long the pack has to show the new item once the shard has answered
-CRAFT_SETTLE = 1.5
 
 # A failed craft's refund arrives after the journal line; the consumed row waits this long for it
 REFUND_SETTLE = 1.5
@@ -458,17 +677,6 @@ def word_in(text, words):
     return False
 
 
-def phrase_in(text, phrase):
-    found = words_of(text)
-    wanted = words_of(phrase)
-
-    for start in range(len(found) - len(wanted) + 1):
-        if found[start:start + len(wanted)] == wanted:
-            return True
-
-    return len(wanted) == 0
-
-
 def any_in(text, fragments):
     low = (text or "").lower()
 
@@ -544,105 +752,10 @@ def forget(phrases):
         API.ClearJournal(text)
 
 
-# src/uo/entity.py
-# API.Player is None whenever the client is between world states - a recall, a server line change,
-# the moment around a death - and reading through it threw a live restock away
-def player():
-    try:
-        return API.Player
-    except Exception:
-        if API.StopRequested:
-            raise
-
-        return None
-
-
-def hex_of(value):
-    return "0x%x" % (value & 0xFFFFFFFF)
-
-
-# unknown is what an unanswered client reads as, so the caller pathfinds and asks again rather than
-# treating silence as arm's length
-def chebyshev(x, y, unknown):
-    me = player()
-
-    if me is None:
-        return unknown
-
-    return max(abs(me.X - x), abs(me.Y - y))
-
-
-# src/uo/pack.py
-def pack_contents():
-    items = API.ItemsInContainer(API.Backpack, True)
-
-    return items if items else []
-
-
-# The item cap is per container, so the guard and the combine both count the top level only
-def pack_top_level():
-    items = API.ItemsInContainer(API.Backpack, False)
-
-    return items if items else []
-
-
-# None is an unreported stack, not an empty one: counted as 0 it would hide the ore a swing just
-# delivered, which is the proof that the swing landed
-def amount_of(item):
-    amount = getattr(item, "Amount", None)
-
-    return amount if amount is not None else 1
-
-
-def hue_of(item):
-    return getattr(item, "Hue", 0) or 0
-
-
-def counts_by_graphic(items):
-    counts = {}
-
-    for item in items:
-        key = (item.Graphic, hue_of(item))
-        counts[key] = counts.get(key, 0) + amount_of(item)
-
-    return counts
-
-
-def diff_counts(before, after):
-    gained = {}
-    lost = {}
-
-    for key in set(list(before.keys()) + list(after.keys())):
-        change = after.get(key, 0) - before.get(key, 0)
-
-        if change > 0:
-            gained[key] = change
-        elif change < 0:
-            lost[key] = -change
-
-    return gained, lost
-
-
-def count_of(graphics):
-    return sum(amount_of(item) for item in pack_contents() if item.Graphic in graphics)
-
-
-# src/uo/retry.py
-def settled(timeout, poll, landed):
-    waited = 0.0
-
-    while waited < timeout:
-        API.Pause(poll)
-        waited += poll
-
-        if landed():
-            return True
-
-    return False
-
-
 # src/uo/craft.py
 class Crafter(object):
+    """Presses the RECIPES row as written and reads only the shard's words for the outcome."""
+
     def __init__(self, tools, menu, stock, buckets, config, log, stamp=None):
         self._tools = tools
         self._menu = menu
@@ -651,23 +764,14 @@ class Crafter(object):
         self._config = config
         self._log = log
         self._stamp = stamp
-        self._item_buttons = {}
-        self._item_probes = {}
-        # Products whose art the table has wrong, proven made on a row the menu named
-        self._trusted = set()
-        # RECIPES rows whose label on the menu read as the product, as good as a row the walk found
-        self._labelled = {}
         self._make_last = False
         self._said_unreadable = 0
         self._said_no_make_last = False
         self._heard = ""
-        # Products the recipe table got wrong on this shard, which the walk owns from then on
-        self._walked = set()
 
     def forget_last(self):
         self._make_last = False
 
-    # The phrase is kept so a made that never landed can say what was believed and where
     def _journal_bucket(self):
         for name, phrases in self._buckets:
             for phrase in phrases:
@@ -694,17 +798,11 @@ class Crafter(object):
 
         return None
 
-    # Pack first: a success this table has no wording for would otherwise wait out the timeout.
-    # The gump's NOTICES panel is read too because the shard writes refusals there, not the journal.
-    def _read_outcome(self, opened, landed):
+    # The gump's NOTICES panel is read too because the shard writes refusals there, not the journal
+    def _read_outcome(self, opened):
         waited = 0.0
 
         while not API.StopRequested:
-            if landed():
-                self._heard = "the pack gained it"
-
-                return "made"
-
             hit = self._journal_bucket()
 
             if hit is None:
@@ -719,8 +817,6 @@ class Crafter(object):
             API.Pause(self._config["craft_poll"])
             waited += self._config["craft_poll"]
 
-    # The shard's own words for an outcome the script cannot act on, since a refusal nobody can read
-    # cannot be fixed from the log
     def _report_outcome(self, why, gump):
         if self._said_unreadable >= self._config["max_reports"]:
             return
@@ -736,19 +832,13 @@ class Crafter(object):
         self._log("the pack holds %s, and the menu is set to %s here"
                   % (self._stock.hue_report(), self._config["material"]))
 
-    def _forget_row(self, product):
-        self._make_last = False
-        self._labelled.pop(product, None)
-
-        if product in self._item_buttons:
-            del self._item_buttons[product]
-
-        self._item_probes[product] = self._item_probes.get(product, 0) + 1
-
-    # The button to press, or an outcome when there is none. MAKE LAST is the only path that skips
-    # the category: a row button is only in the gump once its category is showing.
+    # MAKE LAST is the only path that skips the category: a row button is only in the gump once
+    # its category is showing
     def _choose_button(self, product, gump):
-        known = None if product in self._walked else self._config["recipes"].get(product)
+        known = self._config["recipes"].get(product)
+
+        if known is None:
+            return None, "noRow"
 
         if self._make_last:
             if self._menu.has_button(self._config["make_last_button"], gump):
@@ -761,162 +851,10 @@ class Crafter(object):
                 self._log("the menu has no MAKE LAST on button %d, pressing the row itself"
                           % self._config["make_last_button"])
 
-        if known is not None:
-            # Remembered too, so a later walk starts in the right category
-            self._menu.remember_category(product, known[0])
-
-            if not self._menu.has_button(known[0], gump):
-                self._log("the menu has no category button %d for '%s'" % (known[0], product))
-
-                return None, self._walk_instead(product)
-
-            page = self._menu.press(known[0], gump, self._config["gump_timeout"])
-
-            if not page:
-                return None, "noGump"
-
-            if not self._menu.has_button(known[1], page):
-                self._log("the menu has no row button %d for '%s'" % (known[1], product))
-
-                return None, self._walk_instead(product)
-
-            # The table is checked against the row's own label when the menu shows one: a row
-            # that reads as the product is as good as one the walk found, and one that reads
-            # otherwise is a shard that reordered the menu, not a row to press blind
-            label = self._menu.label_of(known[1], page)
-
-            if label is not None and label.lower() != product:
-                self._log("button %d reads '%s', not '%s'" % (known[1], label, product))
-
-                return None, self._walk_instead(product)
-
-            if label is not None:
-                self._labelled[product] = known[1]
-
-            return known[1], None
-
-        gump, category = self._menu.find_category(product, gump)
-
-        if category is None:
-            return None, "noRow"
-
-        if not gump:
+        if not self._menu.press(known[0], gump, self._config["gump_timeout"]):
             return None, "noGump"
 
-        button = self._item_buttons.get(product)
-
-        if button is not None:
-            return button, None
-
-        probe = self._item_probes.get(product, 0)
-        found = self._menu.find_row(product, gump) if probe == 0 else None
-
-        if found is None:
-            order = self._menu.candidate_buttons(product, gump)
-        else:
-            gump, button = found
-
-            if not gump:
-                return None, "noGump"
-
-            if button is not None:
-                self._item_buttons[product] = button
-
-                return button, None
-
-            order = []
-
-        if probe < min(self._config["max_probes"], len(order)):
-            return order[probe], None
-
-        rejected = self._menu.reject_category(product, category)
-        self._menu.forget_category(product)
-
-        if rejected >= self._config["max_categories"]:
-            return None, "noRow"
-
-        self._item_probes[product] = 0
-        self._log("no row on button %d's page made a '%s', trying another category"
-                  % (category, product))
-
-        return None, "wrongRow"
-
-    def _walk_instead(self, product):
-        if product in self._config["recipes"] and product not in self._walked:
-            self._walked.add(product)
-            self._log("the button table is out of date for '%s', walking the categories for it "
-                      "instead" % product)
-
-        self._forget_row(product)
-
-        return "wrongRow"
-
-    def _named_for(self, item, product):
-        props = API.ItemNameAndProps(item.Serial) or ""
-        name = props.split("\n")[0] if props else (item.Name or "")
-
-        return phrase_in(name, product)
-
-    # The shard said made and the table's art never landed: a new art in the pack whose name says
-    # the product is it under this shard's number. UOAlive's lightning scroll is not stock 0x1F4B.
-    def _learn_art(self, product, held):
-        items = pack_contents()
-        gained, _lost = diff_counts(held, counts_by_graphic(items))
-        arts = set()
-
-        for item in items:
-            if (item.Graphic, hue_of(item)) in gained and self._named_for(item, product):
-                arts.add(item.Graphic)
-
-        if len(arts) != 1:
-            return False
-
-        art = arts.pop()
-        # Rebound rather than added to: carpentry's addon products share one set object
-        self._config["products"][product] = set(self._config["products"][product]) | set([art])
-        self._log("'%s' landed as %s, not the art in the table - put %s in it"
-                  % (product, hex_of(art), hex_of(art)))
-
-        return True
-
-    def _keep_row(self, product, button):
-        if button != self._config["make_last_button"]:
-            self._item_buttons[product] = button
-
-        self._make_last = True
-
-    # A row the menu named by its exact label, found by the walk or checked off RECIPES, is proof
-    # the pack cannot overrule: the shard said made and no art in the table landed, so the table is
-    # what is wrong
-    def _trust_named(self, product, button, held):
-        if product not in self._trusted:
-            if button not in (self._menu.named_button(product), self._labelled.get(product)):
-                return False
-
-            self._trusted.add(product)
-            gained, _lost = diff_counts(held, counts_by_graphic(pack_contents()))
-            arts = sorted(set(graphic for graphic, _hue in gained))
-            self._log("'%s' landed as %s, which the product table does not list - counting the row "
-                      "the menu named as made; put it in the table"
-                      % (product, ", ".join(hex_of(art) for art in arts) or "nothing new"))
-
-        self._keep_row(product, button)
-
-        return True
-
-    # Something was made and none of it was the product, so a row was wrong - unless the press was
-    # MAKE LAST, which the shard forgets on its own and which says nothing about the proven row
-    def _wrong_product(self, product, button):
-        if button == self._config["make_last_button"]:
-            self._make_last = False
-            self._log("MAKE LAST did not make a '%s', pressing the row itself next time" % product)
-
-            return "wrongRow"
-
-        self._log("button %d did not make a '%s' - %s - trying the next row"
-                  % (button, product, self._heard))
-
-        return self._walk_instead(product)
+        return known[1], None
 
     def craft_once(self, product):
         # Asked apart from the gump, so an empty pack and a menu that will not open read differently
@@ -933,45 +871,17 @@ class Crafter(object):
         if button is None:
             return outcome
 
-        # The details pages may have taken the menu down and brought it back
         gump = self._menu.current_id() or gump
-
-        graphics = self._config["products"][product]
-        before = count_of(graphics)
-        held = counts_by_graphic(pack_contents())
-
-        def made_one():
-            return count_of(graphics) > before
 
         API.ClearJournal()
 
         opened = self._menu.press(button, gump, self._config["craft_timeout"])
-        outcome = self._read_outcome(opened, made_one)
-
-        # The pack is the proof no wording can argue with: a shard that says nothing still delivers
-        if outcome in ("made", None) and (made_one() or settled(
-                self._config["craft_settle"], self._config["craft_poll"], made_one)):
-            if self._item_buttons.get(product) is None:
-                self._item_buttons[product] = button
-                self._log("'%s' is the row on button %d" % (product, button))
-
-            self._make_last = True
-            self._said_unreadable = 0
-
-            return "made"
+        outcome = self._read_outcome(opened)
 
         if outcome == "made":
-            if self._learn_art(product, held):
-                self._keep_row(product, button)
-
-                return "made"
-
-            if self._trust_named(product, button, held):
-                return "made"
-
-            return self._wrong_product(product, button)
-
-        if outcome == "noMaterial":
+            self._make_last = True
+            self._said_unreadable = 0
+        elif outcome == "noMaterial":
             self._report_outcome("refused for materials", opened)
         elif outcome is None:
             self._report_outcome("nothing readable came back", opened)
@@ -981,6 +891,34 @@ class Crafter(object):
                 self._log("MAKE LAST made nothing, pressing the row itself next time")
 
         return outcome
+
+
+# src/uo/entity.py
+# API.Player is None whenever the client is between world states - a recall, a server line change,
+# the moment around a death - and reading through it threw a live restock away
+def player():
+    try:
+        return API.Player
+    except Exception:
+        if API.StopRequested:
+            raise
+
+        return None
+
+
+def hex_of(value):
+    return "0x%x" % (value & 0xFFFFFFFF)
+
+
+# unknown is what an unanswered client reads as, so the caller pathfinds and asks again rather than
+# treating silence as arm's length
+def chebyshev(x, y, unknown):
+    me = player()
+
+    if me is None:
+        return unknown
+
+    return max(abs(me.X - x), abs(me.Y - y))
 
 
 # src/uo/gump.py
@@ -1109,14 +1047,8 @@ class CraftMenu(object):
         self._page = 0
         self._ignored = set()
         self._said_gump_text = False
-        self._said_no_category = False
-        self._said_no_row = set()
-        self._said_no_details = False
         self._said_no_button = set()
         self._said_not_menu = False
-        self._category_buttons = {}
-        self._category_rejects = {}
-        self._named_buttons = {}
 
     def current_id(self):
         return self._id
@@ -1290,202 +1222,8 @@ class CraftMenu(object):
     def categories_of(self, gump):
         return self._labelled(gump, self._config["category_type"])
 
-    # None when the menu names no row on that button, which is also how unreadable controls read
-    def label_of(self, button, gump):
-        for label, found in self.rows_of(gump):
-            if found == button:
-                return label
-
-        return None
-
     def item_rows(self, gump):
         return [label for label, _button in self.rows_of(gump)]
-
-    # The row's button by its name, or None when the menu does not name it
-    def named_row(self, product, gump):
-        for label, button in self.rows_of(gump):
-            if label.lower() == product:
-                return button
-
-        return None
-
-    # The row an exact label match found, which a wrong product graphic must not be allowed to blame
-    def named_button(self, product):
-        return self._named_buttons.get(product)
-
-    def _say_no_row(self, product, rows):
-        if product in self._said_no_row:
-            return
-
-        self._said_no_row.add(product)
-        self._log("no SELECTIONS row reads '%s' - walking the rows" % product)
-        self._log("rows seen: %s" % (", ".join(label for label, _button in rows) or "none"))
-
-    # Whole row, never a substring: "crossbow" is inside "crossbow bolt", in another category.
-    # A menu that reads as one line has no rows, and GumpContains is case-sensitive
-    def page_has(self, product, gump):
-        rows = self.item_rows(gump)
-
-        for row in rows:
-            if row.lower() == product:
-                return True
-
-        if len(rows) > 0:
-            return False
-
-        return phrase_in(API.GetGumpContents(gump), product) or API.GumpContains(product, gump)
-
-    def remember_category(self, product, button):
-        self._category_buttons[product] = button
-
-    def forget_category(self, product):
-        if product in self._category_buttons:
-            del self._category_buttons[product]
-
-    def reject_category(self, product, button):
-        rejected = self._category_rejects.setdefault(product, set())
-        rejected.add(button)
-
-        return len(rejected)
-
-    # Pressing a category only redraws the SELECTIONS panel, so walking them costs no wood
-    def find_category(self, product, gump):
-        known = self._category_buttons.get(product)
-
-        if known is not None:
-            return (self.press(known, gump, self._config["gump_timeout"]), known)
-
-        rejected = self._category_rejects.get(product, set())
-
-        for index in range(self._config["max_categories"]):
-            button = self.button_id(self._config["category_type"], index)
-
-            if button in rejected or not self.has_button(button, gump):
-                continue
-
-            opened = self.press(button, gump, self._config["gump_timeout"])
-
-            # A press that answered nothing is not a verdict on the category
-            if not opened:
-                return (0, 0)
-
-            if self.page_has(product, opened):
-                self._category_buttons[product] = button
-                self._log("'%s' is in the category on button %d" % (product, button))
-
-                return (opened, button)
-
-            gump = opened
-
-        if not self._said_no_category:
-            self._said_no_category = True
-            self._log("no category lists '%s' - check the name against the SELECTIONS rows"
-                      % product)
-
-        return (gump, None)
-
-    # The pen is used again when the details page took the menu down with it
-    def _back_to(self, category):
-        menu = self.open()
-
-        if not menu:
-            return 0
-
-        return self.press(category, menu, self._config["gump_timeout"])
-
-    # A row the menu names is taken on its name. Otherwise the details page (its button plus one,
-    # which costs nothing to open) of each row whose name carries the product is opened until one
-    # names it; with no names to read, every row's is. A details page shows the row's own name, so
-    # a row whose name lacks the product is not opened. None sends the caller to the walk;
-    # (gump, None) is a category that has no such row.
-    def find_row(self, product, gump):
-        category = self._category_buttons.get(product)
-
-        if category is None or button_ids(gump) is None:
-            return None
-
-        named = self.named_row(product, gump)
-
-        if named is not None:
-            self._named_buttons[product] = named
-            self._log("'%s' is the row on button %d - the menu names it there" % (product, named))
-
-            return (gump, named)
-
-        rows = self.rows_of(gump)
-
-        # A gump with buttons but no readable names is reported by the walk instead
-        if rows:
-            self._say_no_row(product, rows)
-            order = [button for label, button in rows if phrase_in(label, product)]
-        else:
-            order = self._walk_order(product, rows)
-
-        for button in order:
-            if not self.has_button(button, gump):
-                continue
-
-            if not self.has_button(button + 1, gump):
-                return None
-
-            before = self.lines(gump)
-            details = self.press_page(button + 1, gump, self._config["gump_timeout"])
-
-            if not details:
-                return None
-
-            text = self.lines(details)
-
-            if text == before:
-                if not self._said_no_details:
-                    self._said_no_details = True
-                    self._log("button %d opened no details page, walking the rows instead"
-                              % (button + 1))
-
-                return None
-
-            named = phrase_in(" ".join(text), product)
-            API.CloseGump(details)
-            gump = self._back_to(category)
-
-            if not gump:
-                return (0, None)
-
-            if named:
-                self._log("'%s' is the row on button %d - its details page names it"
-                          % (product, button))
-
-                return (gump, button)
-
-        return (gump, None)
-
-    # The rows named for the product, then the rows whose names carry it, then every row in order
-    def _walk_order(self, product, rows):
-        order = [button for label, button in rows if label.lower() == product]
-
-        for label, button in rows:
-            if button not in order and phrase_in(label, product):
-                order.append(button)
-
-        for index in range(self._config["max_item_rows"]):
-            button = self.button_id(self._config["item_type"], index)
-
-            if button not in order:
-                order.append(button)
-
-        return order
-
-    # The named rows first: unlike a category, a wrong row crafts the wrong item and spends the wood
-    def candidate_buttons(self, product, gump):
-        rows = self.rows_of(gump)
-
-        if self.named_row(product, gump) is None:
-            self._say_no_row(product, rows)
-
-        order = self._walk_order(product, rows)
-        known = button_ids(gump)
-
-        return order if known is None else [button for button in order if button in known]
 
 
 # src/uo/craftrun.py
@@ -1573,6 +1311,75 @@ class CraftRecorder(object):
 
         after = self._materials.settled_snapshot(self._refund_settle, self._refund_poll)
         self._recorder.record(skill_from, outcome, product, self._materials.spent(before, after))
+
+
+# src/uo/pack.py
+def pack_contents():
+    items = API.ItemsInContainer(API.Backpack, True)
+
+    return items if items else []
+
+
+# The item cap is per container, so the guard and the combine both count the top level only
+def pack_top_level():
+    items = API.ItemsInContainer(API.Backpack, False)
+
+    return items if items else []
+
+
+# None is an unreported stack, not an empty one: counted as 0 it would hide the ore a swing just
+# delivered, which is the proof that the swing landed
+def amount_of(item):
+    amount = getattr(item, "Amount", None)
+
+    return amount if amount is not None else 1
+
+
+def hue_of(item):
+    return getattr(item, "Hue", 0) or 0
+
+
+def counts_by_graphic(items):
+    counts = {}
+
+    for item in items:
+        key = (item.Graphic, hue_of(item))
+        counts[key] = counts.get(key, 0) + amount_of(item)
+
+    return counts
+
+
+def diff_counts(before, after):
+    gained = {}
+    lost = {}
+
+    for key in set(list(before.keys()) + list(after.keys())):
+        change = after.get(key, 0) - before.get(key, 0)
+
+        if change > 0:
+            gained[key] = change
+        elif change < 0:
+            lost[key] = -change
+
+    return gained, lost
+
+
+def count_of(graphics):
+    return sum(amount_of(item) for item in pack_contents() if item.Graphic in graphics)
+
+
+# src/uo/retry.py
+def settled(timeout, poll, landed):
+    waited = 0.0
+
+    while waited < timeout:
+        API.Pause(poll)
+        waited += poll
+
+        if landed():
+            return True
+
+    return False
 
 
 # src/uo/tool.py
@@ -3428,8 +3235,6 @@ menu = CraftMenu(tools, {
     "tool_noun": "tinker's tools",
     "gump_timeout": GUMP_TIMEOUT,
     "gump_poll": GUMP_POLL,
-    "max_categories": MAX_CATEGORIES,
-    "max_item_rows": MAX_ITEM_ROWS,
 }, log)
 sources = Sources(stock, {
     "max_picks": 1,
@@ -3442,14 +3247,10 @@ sources = Sources(stock, {
 }, log)
 crafter = Crafter(tools, menu, stock, OUTCOME_TEXT, {
     "recipes": RECIPES,
-    "products": PRODUCTS,
     "make_last_button": MAKE_LAST_BUTTON,
     "gump_timeout": GUMP_TIMEOUT,
     "craft_timeout": CRAFT_TIMEOUT,
     "craft_poll": CRAFT_POLL,
-    "craft_settle": CRAFT_SETTLE,
-    "max_probes": MAX_ITEM_PROBES,
-    "max_categories": MAX_CATEGORIES,
     "max_reports": MAX_UNREADABLE_REPORTS,
     "text_limit": UNREADABLE_TEXT_LIMIT,
     "tail_seconds": JOURNAL_TAIL_SECONDS,
@@ -3675,7 +3476,7 @@ try:
                             "above, and set the menu's material to %s"
                             % (stock.pack_report(), no_material, IRON))
                     break
-        elif outcome in ("wrongRow", "saving"):
+        elif outcome == "saving":
             stall.progressed()
         elif outcome == "toolWorn":
             crafter.forget_last()
@@ -3685,7 +3486,7 @@ try:
             stop = "the shard says you cannot make a %s at %s" % (product, reading(value))
             break
         elif outcome == "noRow":
-            stop = "could not find the SELECTIONS row for '%s'" % product
+            stop = "'%s' is not in RECIPES" % product
             break
         elif outcome in ("noTool", "noGump"):
             no_tool += 1

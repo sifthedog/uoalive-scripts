@@ -108,17 +108,6 @@ class SmallFill(object):
         item = self._request["item"]
         material = self._request["material"]
 
-        # The first craft proves the row on its own; the batches are only ever off a proven row
-        if not self._crafter.proven(item):
-            outcome = self._crafter.craft_once(item, material)
-
-            if outcome == "made":
-                self.made += 1
-            elif outcome == "failed":
-                self.fails += 1
-
-            return outcome
-
         batch = self.owed()
         outcome, made, failed = self._crafter.craft_batch(item, material, batch)
         self.made += made
@@ -141,7 +130,7 @@ class SmallFill(object):
         if outcome is not None:
             self._unknown = 0
 
-        if outcome in ("made", "failed", "batch", "saving"):
+        if outcome in ("batch", "saving"):
             self._stall.progressed()
         elif outcome == "noMaterial":
             # What is already made goes in before the run ends
@@ -150,9 +139,6 @@ class SmallFill(object):
 
             return ("the shard says there are not enough %s ingots - %s in the pack, %d still owed"
                     % (self._request["material"], ingot_report(config["ingots"]), self.owed()))
-        elif outcome == "wrongRow":
-            return ("the row for '%s' made something else - read the line above, fix RECIPES, "
-                    "and run it again" % item)
         elif outcome == "toolWorn":
             self._stall.progressed()
             self._log("the tool wore out, looking for another")
@@ -161,7 +147,7 @@ class SmallFill(object):
         elif outcome == "noAnvil":
             return "stand next to an anvil and a forge"
         elif outcome == "noRow":
-            return "could not find the SELECTIONS row for '%s'" % item
+            return "'%s' is not in RECIPES" % item
         elif outcome == "noMaterialRow":
             return "the material page has no row for %s" % self._request["material"]
         elif outcome in ("noTool", "noGump"):

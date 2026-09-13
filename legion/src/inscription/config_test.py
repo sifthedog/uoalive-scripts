@@ -1,7 +1,7 @@
 import unittest
 
 from inscription.config import (BANDS, KIND_ORDER, MANA, MANA_BY_CIRCLE, NEEDS, OUTCOME_TEXT,
-                                PRODUCTS, SPELLS, STOCK_KINDS)
+                                PRODUCTS, RECIPES, SPELLS, STOCK_KINDS)
 from uo.stages import band_for
 
 
@@ -24,6 +24,10 @@ class BandsTest(unittest.TestCase):
             self.assertIn(product, PRODUCTS)
             self.assertIn(product, NEEDS)
             self.assertIn(product, MANA)
+
+    def test_every_spell_is_a_row_on_the_menu(self):
+        for name in SPELLS:
+            self.assertIn(name, RECIPES)
 
     def test_the_bands_climb_a_circle_at_a_time_from_the_fourth(self):
         circles = [SPELLS[product][0] for _ceiling, product in BANDS]

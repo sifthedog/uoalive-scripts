@@ -22,7 +22,7 @@ BANDS = [
     (67.1, "dark wooden sign hanger"),
     (70.0, "ballot box"),
     (73.6, "bokuto"),
-    (98.6, "quarter staff"),
+    (95.0, "quarter staff"),
     (103.9, "gnarled staff"),
     (105.0, "tetsubo"),
     (106.5, "black staff"),
@@ -213,9 +213,8 @@ CATEGORY_BUTTON_TYPE = 0
 ITEM_BUTTON_TYPE = 1
 MAKE_LAST_BUTTON = 47
 
-# (category button, row button) for every row, as craft-map.py read them off UOAlive's menu. Each
-# is checked against the label the menu draws on that button before it is pressed, so a row that
-# moves is walked for, not mis-pressed. Run craft-map.py again and paste its block over this one.
+# (category button, row button) for every row, as craft-map.py read them off UOAlive's menu. Run
+# craft-map.py again and paste its block over this one when the menu changes.
 RECIPES = {
     # Other (button 1)
     "barrel staves": (1, 2),
@@ -457,14 +456,6 @@ RECIPES = {
     "pickpocket dip (south)": (181, 62),
 }
 
-MAX_CATEGORIES = 12
-
-# The item buttons count across the pages: UOAlive's Misc. Add-Ons runs to 59 rows over six pages
-MAX_ITEM_ROWS = 80
-
-# Each miss costs one item's worth of wood, which is why the gump text is read first
-MAX_ITEM_PROBES = 8
-
 # Seconds throughout - API.Pause takes seconds
 PICK_TIMEOUT = 60.0
 
@@ -477,9 +468,6 @@ GUMP_POLL = 0.15
 # Has to outlast the craft animation, which plays before the shard answers
 CRAFT_TIMEOUT = 10.0
 CRAFT_POLL = 0.2
-
-# How long the pack has to show the new item once the shard has answered
-CRAFT_SETTLE = 1.5
 
 # A failed craft's refund arrives after the journal line; the consumed row waits this long for it
 REFUND_SETTLE = 1.5

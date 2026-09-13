@@ -54,19 +54,6 @@ class FakeCrafter(object):
     def __init__(self, outcomes):
         self.outcomes = list(outcomes)
         self.calls = []
-        self._proven = False
-
-    def proven(self, item):
-        return self._proven
-
-    def craft_once(self, item, material):
-        self.calls.append(("once", 1))
-        outcome = self.outcomes.pop(0)
-
-        if outcome == "made":
-            self._proven = True
-
-        return outcome
 
     def craft_batch(self, item, material, amount):
         self.calls.append(("batch", amount))
@@ -130,34 +117,25 @@ class SmallFillTest(unittest.TestCase):
         self.assertIsNone(fill.run())
         self.assertEqual(fill.combined, 0)
 
-    def test_proves_the_row_then_batches_the_rest_and_combines(self):
+    def test_batches_the_whole_deed_and_combines(self):
         crafter = FakeCrafter([("made", 9, 1)])
 
         def batch(item, material, amount):
             crafter.calls.append(("batch", amount))
-            self.items.waiting = [101, 102, 103]
+            self.items.waiting = [100, 101, 102, 103]
 
             return crafter.outcomes.pop(0)
 
         crafter.craft_batch = batch
         fill = self.fill(FakeDeed(0, 10), crafter)
-
-        def once(item, material):
-            crafter.calls.append(("once", 1))
-            crafter._proven = True
-            self.items.waiting = [100]
-
-            return "made"
-
-        crafter.craft_once = once
         fill._deed.settle_after_combine = lambda count: 10 if count > 1 else count
 
         self.assertIsNone(fill.run())
-        self.assertEqual(crafter.calls, [("once", 1), ("batch", 9)])
-        self.assertEqual(fill.summary(), "4 combined, 10 made, 1 failed, 10/10 in the deed")
+        self.assertEqual(crafter.calls, [("batch", 10)])
+        self.assertEqual(fill.summary(), "4 combined, 9 made, 1 failed, 10/10 in the deed")
 
     def test_out_of_ingots_stops_with_the_count_owed(self):
-        fill = self.fill(FakeDeed(3, 10), FakeCrafter(["noMaterial"]))
+        fill = self.fill(FakeDeed(3, 10), FakeCrafter([("noMaterial", 0, 0)]))
 
         stop = fill.run()
 
@@ -167,7 +145,7 @@ class SmallFillTest(unittest.TestCase):
     def test_a_refused_batch_of_pieces_is_rejected_and_the_run_goes_on(self):
         self.items.waiting = [100, 101]
         self.combiner.answer = "notExceptional"
-        crafter = FakeCrafter(["noAnvil"])
+        crafter = FakeCrafter([("noAnvil", 0, 0)])
         fill = self.fill(FakeDeed(0, 10), crafter)
 
         self.assertEqual(fill.run(), "stand next to an anvil and a forge")

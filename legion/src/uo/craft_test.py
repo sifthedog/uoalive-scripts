@@ -5,19 +5,14 @@ from test_support.uo import install, item
 
 BOW = 0x13B2
 CROSSBOW = 0x0F50
-SIGNPOST = 0x0B97
 MAKE_LAST = 47
 
 CONFIG = {
     "recipes": {"bow": (41, 2)},
-    "products": {"bow": set([BOW])},
     "make_last_button": MAKE_LAST,
     "gump_timeout": 1.0,
     "craft_timeout": 1.0,
     "craft_poll": 0.2,
-    "craft_settle": 0.4,
-    "max_probes": 8,
-    "max_categories": 6,
     "max_reports": 2,
     "text_limit": 160,
     "tail_seconds": 20.0,
@@ -43,33 +38,14 @@ class Menu(object):
         self._api = api
         self.presses = []
         self.makes = {}
-        self.names = {}
-        self.props = {}
-        self.named = {}
         self.labels = {}
         self.missing = set()
-        self.found = None
 
     def open(self):
         return 88
 
     def current_id(self):
         return 88
-
-    def find_category(self, product, gump):
-        return 88, 41
-
-    def find_row(self, product, gump):
-        return self.found
-
-    def candidate_buttons(self, product, gump):
-        return []
-
-    def reject_category(self, product, button):
-        return 1
-
-    def forget_category(self, product):
-        pass
 
     def has_button(self, button, gump):
         return button not in self.missing
@@ -80,21 +56,11 @@ class Menu(object):
 
         if graphic is not None:
             held = list(self._api.containers.get(self._api.Backpack, []))
-            serial = 100 + len(held)
-            held.append(item(serial=serial, graphic=graphic, name=self.names.get(graphic, "")))
+            held.append(item(serial=100 + len(held), graphic=graphic))
             self._api.hold(*held)
-
-            if graphic in self.props:
-                self._api.props[serial] = self.props[graphic]
             self._api.hear("You create the item")
 
         return 88
-
-    def remember_category(self, product, button):
-        pass
-
-    def named_button(self, product):
-        return self.named.get(product)
 
     def label_of(self, button, gump):
         return self.labels.get(button)
@@ -103,33 +69,20 @@ class Menu(object):
         return []
 
 
-class MakeLastTest(unittest.TestCase):
+class CraftTest(unittest.TestCase):
     def setUp(self):
         self.api = install()
         self.menu = Menu(self.api)
         self.said = []
-        # A learned art is rebound into the product table, so each test gets its own
-        config = dict(CONFIG)
-        config["products"] = {"bow": set([BOW])}
         self.crafter = Crafter(Tools(), self.menu, Stock(), [("made", ["You create the item"])],
-                               config, self.said.append)
+                               CONFIG, self.said.append)
 
-    def test_a_proven_row_is_pressed_as_make_last_from_then_on(self):
+    def test_the_table_row_is_pressed_then_make_last(self):
         self.menu.makes = {2: BOW, MAKE_LAST: BOW}
 
         self.assertEqual(self.crafter.craft_once("bow"), "made")
         self.assertEqual(self.crafter.craft_once("bow"), "made")
         self.assertEqual(self.menu.presses, [41, 2, MAKE_LAST])
-
-    def test_make_last_making_the_wrong_thing_does_not_forget_the_row(self):
-        self.menu.makes = {2: BOW, MAKE_LAST: CROSSBOW}
-
-        self.assertEqual(self.crafter.craft_once("bow"), "made")
-        self.assertEqual(self.crafter.craft_once("bow"), "wrongRow")
-        self.assertEqual(self.crafter.craft_once("bow"), "made")
-        self.assertEqual(self.menu.presses, [41, 2, MAKE_LAST, 41, 2])
-        self.assertEqual(self.crafter._item_buttons, {"bow": 2})
-        self.assertEqual(self.crafter._walked, set())
 
     def test_the_row_is_pressed_when_the_menu_has_no_make_last(self):
         self.menu.makes = {2: BOW}
@@ -140,79 +93,47 @@ class MakeLastTest(unittest.TestCase):
         self.assertEqual(self.menu.presses, [41, 2, 41, 2])
         self.assertEqual(len([line for line in self.said if "no MAKE LAST" in line]), 1)
 
-    def test_a_recipe_button_the_menu_lacks_is_walked_for_and_never_pressed(self):
-        self.menu.missing = set([2])
-
-        self.assertEqual(self.crafter.craft_once("bow"), "wrongRow")
-        self.assertEqual(self.menu.presses, [41])
-        self.assertEqual(self.crafter._walked, set(["bow"]))
-
-    def test_a_recipe_row_whose_label_reads_otherwise_is_walked_for_not_pressed(self):
+    def test_a_label_that_reads_otherwise_is_pressed_anyway(self):
         self.menu.labels = {2: "crossbow"}
-
-        self.assertEqual(self.crafter.craft_once("bow"), "wrongRow")
-        self.assertEqual(self.menu.presses, [41])
-        self.assertEqual(self.crafter._walked, set(["bow"]))
-        self.assertEqual(self.said[0], "button 2 reads 'crossbow', not 'bow'")
-
-    def test_a_recipe_row_whose_label_agrees_is_trusted_like_a_named_row(self):
-        self.menu.labels = {2: "Bow"}
-        self.menu.makes = {2: SIGNPOST, MAKE_LAST: SIGNPOST}
-        self.menu.names = {SIGNPOST: "Wooden Signpost"}
+        self.menu.makes = {2: BOW}
 
         self.assertEqual(self.crafter.craft_once("bow"), "made")
-        self.assertEqual(self.crafter.craft_once("bow"), "made")
-        self.assertEqual(self.menu.presses, [41, 2, MAKE_LAST])
-        self.assertEqual(self.crafter._walked, set())
-        self.assertEqual(len([line for line in self.said if "product table" in line]), 1)
-
-    def test_a_recipe_row_on_a_menu_with_no_labels_is_pressed_as_before(self):
-        self.menu.makes = {2: SIGNPOST}
-        self.menu.names = {SIGNPOST: "Wooden Signpost"}
-
-        self.assertEqual(self.crafter.craft_once("bow"), "wrongRow")
         self.assertEqual(self.menu.presses, [41, 2])
 
-
-class DetailsRowTest(unittest.TestCase):
-    def setUp(self):
-        self.api = install()
-        self.menu = Menu(self.api)
-        self.said = []
-        config = dict(CONFIG)
-        config["recipes"] = {}
-        self.crafter = Crafter(Tools(), self.menu, Stock(), [("made", ["You create the item"])],
-                               config, self.said.append)
-
-    def test_the_row_the_details_pages_named_is_pressed_and_kept(self):
-        self.menu.found = (88, 22)
-        self.menu.makes = {22: BOW, MAKE_LAST: BOW}
+    def test_a_button_the_menu_lacks_is_pressed_anyway(self):
+        self.menu.missing = set([41, 2])
+        self.menu.makes = {2: BOW}
 
         self.assertEqual(self.crafter.craft_once("bow"), "made")
+        self.assertEqual(self.menu.presses, [41, 2])
+
+    def test_the_wrong_graphic_landing_is_still_made(self):
+        self.menu.makes = {2: CROSSBOW}
+
         self.assertEqual(self.crafter.craft_once("bow"), "made")
-        self.assertEqual(self.menu.presses, [22, MAKE_LAST])
-        self.assertEqual(self.crafter._item_buttons, {"bow": 22})
+        self.assertEqual(self.said, [])
 
-    def test_a_category_the_details_pages_rule_out_is_left_without_a_craft(self):
-        self.menu.found = (88, None)
+    def test_nothing_landing_is_made_when_the_journal_says_so(self):
+        self.menu.press = lambda button, gump, timeout: (self.api.hear("You create the item"), 88)[1]
 
-        self.assertEqual(self.crafter.craft_once("bow"), "wrongRow")
+        self.assertEqual(self.crafter.craft_once("bow"), "made")
+
+    def test_a_product_not_in_the_table_is_no_row(self):
+        self.assertEqual(self.crafter.craft_once("crossbow"), "noRow")
         self.assertEqual(self.menu.presses, [])
 
-    def test_a_menu_that_went_away_is_no_gump(self):
-        self.menu.found = (0, None)
+    def test_nothing_readable_after_make_last_presses_the_row_next(self):
+        self.menu.makes = {2: BOW}
+
+        self.assertEqual(self.crafter.craft_once("bow"), "made")
+        self.assertIsNone(self.crafter.craft_once("bow"))
+        self.assertEqual(self.crafter.craft_once("bow"), "made")
+        self.assertEqual(self.menu.presses, [41, 2, MAKE_LAST, 41, 2])
+
+    def test_a_category_press_that_answers_nothing_is_no_gump(self):
+        self.menu.press = lambda button, gump, timeout: 0
 
         self.assertEqual(self.crafter.craft_once("bow"), "noGump")
-
-    def test_a_row_the_details_named_wrongly_goes_to_the_walk_next(self):
-        self.menu.found = (88, 22)
-        self.menu.makes = {22: CROSSBOW}
-
-        self.assertEqual(self.crafter.craft_once("bow"), "wrongRow")
-        self.menu.found = (88, 2)
-
-        self.assertEqual(self.crafter.craft_once("bow"), "wrongRow")
-        self.assertEqual(self.menu.presses, [22])
 
 
 class NoticeTest(unittest.TestCase):
@@ -236,119 +157,3 @@ class NoticeTest(unittest.TestCase):
         self.api.GumpContains = lambda text, gump=None: text == "You fail to inscribe the scroll"
 
         self.assertEqual(self.crafter.craft_once("bow"), "failed")
-
-
-class HeardTest(unittest.TestCase):
-    def setUp(self):
-        self.api = install()
-        self.menu = Menu(self.api)
-        self.said = []
-        self.crafter = Crafter(Tools(), self.menu, Stock(), [("made", ["You create the item"])],
-                               CONFIG, self.said.append)
-
-    def test_a_made_that_never_landed_says_what_was_believed(self):
-        self.menu.makes = {2: CROSSBOW}
-
-        self.assertEqual(self.crafter.craft_once("bow"), "wrongRow")
-        self.assertIn("button 2 did not make a 'bow' - the journal said 'You create the item' - "
-                      "trying the next row", self.said)
-
-    def test_a_notice_names_the_gump(self):
-        self.api.gump_contents[88] = "NOTICES You create the item"
-
-        self.assertEqual(self.crafter.craft_once("bow"), "wrongRow")
-        self.assertIn("button 2 did not make a 'bow' - the gump said 'You create the item' - "
-                      "trying the next row", self.said)
-
-
-class LearnArtTest(unittest.TestCase):
-    def setUp(self):
-        self.api = install()
-        self.menu = Menu(self.api)
-        self.said = []
-        config = dict(CONFIG)
-        config["products"] = {"bow": set([BOW])}
-        self.crafter = Crafter(Tools(), self.menu, Stock(), [("made", ["You create the item"])],
-                               config, self.said.append)
-
-    def test_a_new_art_named_for_the_product_is_it_under_another_number(self):
-        self.menu.makes = {2: 0x1234}
-        self.menu.names = {0x1234: "bow"}
-
-        self.assertEqual(self.crafter.craft_once("bow"), "made")
-        self.assertEqual(self.crafter._item_buttons, {"bow": 2})
-        self.assertIn("'bow' landed as 0x1234, not the art in the table - put 0x1234 in it",
-                      self.said)
-
-        self.menu.makes = {MAKE_LAST: 0x1234}
-
-        self.assertEqual(self.crafter.craft_once("bow"), "made")
-        self.assertEqual(self.menu.presses, [41, 2, MAKE_LAST])
-
-    def test_the_tooltip_names_it_when_the_item_does_not(self):
-        self.menu.makes = {2: 0x1234}
-        self.menu.props = {0x1234: "a bow\nweight 6 stones"}
-
-        self.assertEqual(self.crafter.craft_once("bow"), "made")
-
-    def test_a_new_art_named_for_something_else_is_a_wrong_row(self):
-        self.menu.makes = {2: 0x1234}
-        self.menu.names = {0x1234: "crossbow bolt"}
-
-        self.assertEqual(self.crafter.craft_once("bow"), "wrongRow")
-        self.assertEqual(self.crafter._item_buttons, {})
-
-    def test_nothing_new_in_the_pack_is_still_a_wrong_row(self):
-        self.api.gump_contents[88] = "NOTICES You create the item"
-        self.menu.makes = {}
-
-        self.assertEqual(self.crafter.craft_once("bow"), "wrongRow")
-
-
-class TrustedRowTest(unittest.TestCase):
-    def setUp(self):
-        self.api = install()
-        self.menu = Menu(self.api)
-        self.said = []
-        self.config = dict(CONFIG)
-        self.config["products"] = {"bow": set([BOW])}
-        self.crafter = Crafter(Tools(), self.menu, Stock(), [("made", ["You create the item"])],
-                               self.config, self.said.append)
-
-    def test_a_made_the_pack_cannot_prove_keeps_the_row_the_menu_named(self):
-        self.menu.named = {"bow": 2}
-        self.menu.makes = {2: SIGNPOST}
-        self.menu.names = {SIGNPOST: "Wooden Signpost"}
-
-        self.assertEqual(self.crafter.craft_once("bow"), "made")
-        self.assertEqual(self.crafter._item_buttons, {"bow": 2})
-        self.assertIn("'bow' landed as 0xb97, which the product table does not list - counting the "
-                      "row the menu named as made; put it in the table", self.said)
-
-    def test_make_last_is_trusted_once_the_named_row_is(self):
-        self.menu.named = {"bow": 2}
-        self.menu.makes = {2: SIGNPOST, MAKE_LAST: SIGNPOST}
-        self.menu.names = {SIGNPOST: "Wooden Signpost"}
-
-        self.assertEqual(self.crafter.craft_once("bow"), "made")
-        self.assertEqual(self.crafter.craft_once("bow"), "made")
-        self.assertEqual(self.menu.presses, [41, 2, MAKE_LAST])
-        self.assertEqual(self.crafter._item_buttons, {"bow": 2})
-        self.assertEqual(len([line for line in self.said if "product table" in line]), 1)
-
-    def test_a_row_the_menu_did_not_name_is_still_a_wrong_row(self):
-        self.menu.makes = {2: SIGNPOST}
-        self.menu.names = {SIGNPOST: "Wooden Signpost"}
-
-        self.assertEqual(self.crafter.craft_once("bow"), "wrongRow")
-        self.assertEqual(self.crafter._item_buttons, {})
-
-    def test_a_learned_art_does_not_reach_a_product_sharing_the_set(self):
-        deeds = set([0x14F0])
-        self.config["products"] = {"bow": deeds, "crossbow": deeds}
-        self.menu.makes = {2: 0x1234}
-        self.menu.names = {0x1234: "bow"}
-
-        self.assertEqual(self.crafter.craft_once("bow"), "made")
-        self.assertEqual(self.config["products"]["bow"], set([0x14F0, 0x1234]))
-        self.assertEqual(self.config["products"]["crossbow"], set([0x14F0]))

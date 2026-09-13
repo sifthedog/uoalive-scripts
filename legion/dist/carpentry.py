@@ -98,7 +98,7 @@ BANDS = [
     (67.1, "dark wooden sign hanger"),
     (70.0, "ballot box"),
     (73.6, "bokuto"),
-    (98.6, "quarter staff"),
+    (95.0, "quarter staff"),
     (103.9, "gnarled staff"),
     (105.0, "tetsubo"),
     (106.5, "black staff"),
@@ -287,9 +287,8 @@ CATEGORY_BUTTON_TYPE = 0
 ITEM_BUTTON_TYPE = 1
 MAKE_LAST_BUTTON = 47
 
-# (category button, row button) for every row, as craft-map.py read them off UOAlive's menu. Each
-# is checked against the label the menu draws on that button before it is pressed, so a row that
-# moves is walked for, not mis-pressed. Run craft-map.py again and paste its block over this one.
+# (category button, row button) for every row, as craft-map.py read them off UOAlive's menu. Run
+# craft-map.py again and paste its block over this one when the menu changes.
 RECIPES = {
     # Other (button 1)
     "barrel staves": (1, 2),
@@ -531,14 +530,6 @@ RECIPES = {
     "pickpocket dip (south)": (181, 62),
 }
 
-MAX_CATEGORIES = 12
-
-# The item buttons count across the pages: UOAlive's Misc. Add-Ons runs to 59 rows over six pages
-MAX_ITEM_ROWS = 80
-
-# Each miss costs one item's worth of wood, which is why the gump text is read first
-MAX_ITEM_PROBES = 8
-
 # Seconds throughout - API.Pause takes seconds
 PICK_TIMEOUT = 60.0
 
@@ -551,9 +542,6 @@ GUMP_POLL = 0.15
 # Has to outlast the craft animation, which plays before the shard answers
 CRAFT_TIMEOUT = 10.0
 CRAFT_POLL = 0.2
-
-# How long the pack has to show the new item once the shard has answered
-CRAFT_SETTLE = 1.5
 
 # A failed craft's refund arrives after the journal line; the consumed row waits this long for it
 REFUND_SETTLE = 1.5
@@ -704,10 +692,6 @@ def diff_counts(before, after):
             lost[key] = -change
 
     return gained, lost
-
-
-def count_of(graphics):
-    return sum(amount_of(item) for item in pack_contents() if item.Graphic in graphics)
 
 
 # src/uo/retry.py
@@ -896,17 +880,6 @@ def word_in(text, words):
     return False
 
 
-def phrase_in(text, phrase):
-    found = words_of(text)
-    wanted = words_of(phrase)
-
-    for start in range(len(found) - len(wanted) + 1):
-        if found[start:start + len(wanted)] == wanted:
-            return True
-
-    return len(wanted) == 0
-
-
 def any_in(text, fragments):
     low = (text or "").lower()
 
@@ -993,6 +966,8 @@ def matched_bucket(buckets):
 
 # src/uo/craft.py
 class Crafter(object):
+    """Presses the RECIPES row as written and reads only the shard's words for the outcome."""
+
     def __init__(self, tools, menu, stock, buckets, config, log, stamp=None):
         self._tools = tools
         self._menu = menu
@@ -1001,23 +976,14 @@ class Crafter(object):
         self._config = config
         self._log = log
         self._stamp = stamp
-        self._item_buttons = {}
-        self._item_probes = {}
-        # Products whose art the table has wrong, proven made on a row the menu named
-        self._trusted = set()
-        # RECIPES rows whose label on the menu read as the product, as good as a row the walk found
-        self._labelled = {}
         self._make_last = False
         self._said_unreadable = 0
         self._said_no_make_last = False
         self._heard = ""
-        # Products the recipe table got wrong on this shard, which the walk owns from then on
-        self._walked = set()
 
     def forget_last(self):
         self._make_last = False
 
-    # The phrase is kept so a made that never landed can say what was believed and where
     def _journal_bucket(self):
         for name, phrases in self._buckets:
             for phrase in phrases:
@@ -1044,17 +1010,11 @@ class Crafter(object):
 
         return None
 
-    # Pack first: a success this table has no wording for would otherwise wait out the timeout.
-    # The gump's NOTICES panel is read too because the shard writes refusals there, not the journal.
-    def _read_outcome(self, opened, landed):
+    # The gump's NOTICES panel is read too because the shard writes refusals there, not the journal
+    def _read_outcome(self, opened):
         waited = 0.0
 
         while not API.StopRequested:
-            if landed():
-                self._heard = "the pack gained it"
-
-                return "made"
-
             hit = self._journal_bucket()
 
             if hit is None:
@@ -1069,8 +1029,6 @@ class Crafter(object):
             API.Pause(self._config["craft_poll"])
             waited += self._config["craft_poll"]
 
-    # The shard's own words for an outcome the script cannot act on, since a refusal nobody can read
-    # cannot be fixed from the log
     def _report_outcome(self, why, gump):
         if self._said_unreadable >= self._config["max_reports"]:
             return
@@ -1086,19 +1044,13 @@ class Crafter(object):
         self._log("the pack holds %s, and the menu is set to %s here"
                   % (self._stock.hue_report(), self._config["material"]))
 
-    def _forget_row(self, product):
-        self._make_last = False
-        self._labelled.pop(product, None)
-
-        if product in self._item_buttons:
-            del self._item_buttons[product]
-
-        self._item_probes[product] = self._item_probes.get(product, 0) + 1
-
-    # The button to press, or an outcome when there is none. MAKE LAST is the only path that skips
-    # the category: a row button is only in the gump once its category is showing.
+    # MAKE LAST is the only path that skips the category: a row button is only in the gump once
+    # its category is showing
     def _choose_button(self, product, gump):
-        known = None if product in self._walked else self._config["recipes"].get(product)
+        known = self._config["recipes"].get(product)
+
+        if known is None:
+            return None, "noRow"
 
         if self._make_last:
             if self._menu.has_button(self._config["make_last_button"], gump):
@@ -1111,162 +1063,10 @@ class Crafter(object):
                 self._log("the menu has no MAKE LAST on button %d, pressing the row itself"
                           % self._config["make_last_button"])
 
-        if known is not None:
-            # Remembered too, so a later walk starts in the right category
-            self._menu.remember_category(product, known[0])
-
-            if not self._menu.has_button(known[0], gump):
-                self._log("the menu has no category button %d for '%s'" % (known[0], product))
-
-                return None, self._walk_instead(product)
-
-            page = self._menu.press(known[0], gump, self._config["gump_timeout"])
-
-            if not page:
-                return None, "noGump"
-
-            if not self._menu.has_button(known[1], page):
-                self._log("the menu has no row button %d for '%s'" % (known[1], product))
-
-                return None, self._walk_instead(product)
-
-            # The table is checked against the row's own label when the menu shows one: a row
-            # that reads as the product is as good as one the walk found, and one that reads
-            # otherwise is a shard that reordered the menu, not a row to press blind
-            label = self._menu.label_of(known[1], page)
-
-            if label is not None and label.lower() != product:
-                self._log("button %d reads '%s', not '%s'" % (known[1], label, product))
-
-                return None, self._walk_instead(product)
-
-            if label is not None:
-                self._labelled[product] = known[1]
-
-            return known[1], None
-
-        gump, category = self._menu.find_category(product, gump)
-
-        if category is None:
-            return None, "noRow"
-
-        if not gump:
+        if not self._menu.press(known[0], gump, self._config["gump_timeout"]):
             return None, "noGump"
 
-        button = self._item_buttons.get(product)
-
-        if button is not None:
-            return button, None
-
-        probe = self._item_probes.get(product, 0)
-        found = self._menu.find_row(product, gump) if probe == 0 else None
-
-        if found is None:
-            order = self._menu.candidate_buttons(product, gump)
-        else:
-            gump, button = found
-
-            if not gump:
-                return None, "noGump"
-
-            if button is not None:
-                self._item_buttons[product] = button
-
-                return button, None
-
-            order = []
-
-        if probe < min(self._config["max_probes"], len(order)):
-            return order[probe], None
-
-        rejected = self._menu.reject_category(product, category)
-        self._menu.forget_category(product)
-
-        if rejected >= self._config["max_categories"]:
-            return None, "noRow"
-
-        self._item_probes[product] = 0
-        self._log("no row on button %d's page made a '%s', trying another category"
-                  % (category, product))
-
-        return None, "wrongRow"
-
-    def _walk_instead(self, product):
-        if product in self._config["recipes"] and product not in self._walked:
-            self._walked.add(product)
-            self._log("the button table is out of date for '%s', walking the categories for it "
-                      "instead" % product)
-
-        self._forget_row(product)
-
-        return "wrongRow"
-
-    def _named_for(self, item, product):
-        props = API.ItemNameAndProps(item.Serial) or ""
-        name = props.split("\n")[0] if props else (item.Name or "")
-
-        return phrase_in(name, product)
-
-    # The shard said made and the table's art never landed: a new art in the pack whose name says
-    # the product is it under this shard's number. UOAlive's lightning scroll is not stock 0x1F4B.
-    def _learn_art(self, product, held):
-        items = pack_contents()
-        gained, _lost = diff_counts(held, counts_by_graphic(items))
-        arts = set()
-
-        for item in items:
-            if (item.Graphic, hue_of(item)) in gained and self._named_for(item, product):
-                arts.add(item.Graphic)
-
-        if len(arts) != 1:
-            return False
-
-        art = arts.pop()
-        # Rebound rather than added to: carpentry's addon products share one set object
-        self._config["products"][product] = set(self._config["products"][product]) | set([art])
-        self._log("'%s' landed as %s, not the art in the table - put %s in it"
-                  % (product, hex_of(art), hex_of(art)))
-
-        return True
-
-    def _keep_row(self, product, button):
-        if button != self._config["make_last_button"]:
-            self._item_buttons[product] = button
-
-        self._make_last = True
-
-    # A row the menu named by its exact label, found by the walk or checked off RECIPES, is proof
-    # the pack cannot overrule: the shard said made and no art in the table landed, so the table is
-    # what is wrong
-    def _trust_named(self, product, button, held):
-        if product not in self._trusted:
-            if button not in (self._menu.named_button(product), self._labelled.get(product)):
-                return False
-
-            self._trusted.add(product)
-            gained, _lost = diff_counts(held, counts_by_graphic(pack_contents()))
-            arts = sorted(set(graphic for graphic, _hue in gained))
-            self._log("'%s' landed as %s, which the product table does not list - counting the row "
-                      "the menu named as made; put it in the table"
-                      % (product, ", ".join(hex_of(art) for art in arts) or "nothing new"))
-
-        self._keep_row(product, button)
-
-        return True
-
-    # Something was made and none of it was the product, so a row was wrong - unless the press was
-    # MAKE LAST, which the shard forgets on its own and which says nothing about the proven row
-    def _wrong_product(self, product, button):
-        if button == self._config["make_last_button"]:
-            self._make_last = False
-            self._log("MAKE LAST did not make a '%s', pressing the row itself next time" % product)
-
-            return "wrongRow"
-
-        self._log("button %d did not make a '%s' - %s - trying the next row"
-                  % (button, product, self._heard))
-
-        return self._walk_instead(product)
+        return known[1], None
 
     def craft_once(self, product):
         # Asked apart from the gump, so an empty pack and a menu that will not open read differently
@@ -1283,45 +1083,17 @@ class Crafter(object):
         if button is None:
             return outcome
 
-        # The details pages may have taken the menu down and brought it back
         gump = self._menu.current_id() or gump
-
-        graphics = self._config["products"][product]
-        before = count_of(graphics)
-        held = counts_by_graphic(pack_contents())
-
-        def made_one():
-            return count_of(graphics) > before
 
         API.ClearJournal()
 
         opened = self._menu.press(button, gump, self._config["craft_timeout"])
-        outcome = self._read_outcome(opened, made_one)
-
-        # The pack is the proof no wording can argue with: a shard that says nothing still delivers
-        if outcome in ("made", None) and (made_one() or settled(
-                self._config["craft_settle"], self._config["craft_poll"], made_one)):
-            if self._item_buttons.get(product) is None:
-                self._item_buttons[product] = button
-                self._log("'%s' is the row on button %d" % (product, button))
-
-            self._make_last = True
-            self._said_unreadable = 0
-
-            return "made"
+        outcome = self._read_outcome(opened)
 
         if outcome == "made":
-            if self._learn_art(product, held):
-                self._keep_row(product, button)
-
-                return "made"
-
-            if self._trust_named(product, button, held):
-                return "made"
-
-            return self._wrong_product(product, button)
-
-        if outcome == "noMaterial":
+            self._make_last = True
+            self._said_unreadable = 0
+        elif outcome == "noMaterial":
             self._report_outcome("refused for materials", opened)
         elif outcome is None:
             self._report_outcome("nothing readable came back", opened)
@@ -1459,14 +1231,8 @@ class CraftMenu(object):
         self._page = 0
         self._ignored = set()
         self._said_gump_text = False
-        self._said_no_category = False
-        self._said_no_row = set()
-        self._said_no_details = False
         self._said_no_button = set()
         self._said_not_menu = False
-        self._category_buttons = {}
-        self._category_rejects = {}
-        self._named_buttons = {}
 
     def current_id(self):
         return self._id
@@ -1640,202 +1406,8 @@ class CraftMenu(object):
     def categories_of(self, gump):
         return self._labelled(gump, self._config["category_type"])
 
-    # None when the menu names no row on that button, which is also how unreadable controls read
-    def label_of(self, button, gump):
-        for label, found in self.rows_of(gump):
-            if found == button:
-                return label
-
-        return None
-
     def item_rows(self, gump):
         return [label for label, _button in self.rows_of(gump)]
-
-    # The row's button by its name, or None when the menu does not name it
-    def named_row(self, product, gump):
-        for label, button in self.rows_of(gump):
-            if label.lower() == product:
-                return button
-
-        return None
-
-    # The row an exact label match found, which a wrong product graphic must not be allowed to blame
-    def named_button(self, product):
-        return self._named_buttons.get(product)
-
-    def _say_no_row(self, product, rows):
-        if product in self._said_no_row:
-            return
-
-        self._said_no_row.add(product)
-        self._log("no SELECTIONS row reads '%s' - walking the rows" % product)
-        self._log("rows seen: %s" % (", ".join(label for label, _button in rows) or "none"))
-
-    # Whole row, never a substring: "crossbow" is inside "crossbow bolt", in another category.
-    # A menu that reads as one line has no rows, and GumpContains is case-sensitive
-    def page_has(self, product, gump):
-        rows = self.item_rows(gump)
-
-        for row in rows:
-            if row.lower() == product:
-                return True
-
-        if len(rows) > 0:
-            return False
-
-        return phrase_in(API.GetGumpContents(gump), product) or API.GumpContains(product, gump)
-
-    def remember_category(self, product, button):
-        self._category_buttons[product] = button
-
-    def forget_category(self, product):
-        if product in self._category_buttons:
-            del self._category_buttons[product]
-
-    def reject_category(self, product, button):
-        rejected = self._category_rejects.setdefault(product, set())
-        rejected.add(button)
-
-        return len(rejected)
-
-    # Pressing a category only redraws the SELECTIONS panel, so walking them costs no wood
-    def find_category(self, product, gump):
-        known = self._category_buttons.get(product)
-
-        if known is not None:
-            return (self.press(known, gump, self._config["gump_timeout"]), known)
-
-        rejected = self._category_rejects.get(product, set())
-
-        for index in range(self._config["max_categories"]):
-            button = self.button_id(self._config["category_type"], index)
-
-            if button in rejected or not self.has_button(button, gump):
-                continue
-
-            opened = self.press(button, gump, self._config["gump_timeout"])
-
-            # A press that answered nothing is not a verdict on the category
-            if not opened:
-                return (0, 0)
-
-            if self.page_has(product, opened):
-                self._category_buttons[product] = button
-                self._log("'%s' is in the category on button %d" % (product, button))
-
-                return (opened, button)
-
-            gump = opened
-
-        if not self._said_no_category:
-            self._said_no_category = True
-            self._log("no category lists '%s' - check the name against the SELECTIONS rows"
-                      % product)
-
-        return (gump, None)
-
-    # The pen is used again when the details page took the menu down with it
-    def _back_to(self, category):
-        menu = self.open()
-
-        if not menu:
-            return 0
-
-        return self.press(category, menu, self._config["gump_timeout"])
-
-    # A row the menu names is taken on its name. Otherwise the details page (its button plus one,
-    # which costs nothing to open) of each row whose name carries the product is opened until one
-    # names it; with no names to read, every row's is. A details page shows the row's own name, so
-    # a row whose name lacks the product is not opened. None sends the caller to the walk;
-    # (gump, None) is a category that has no such row.
-    def find_row(self, product, gump):
-        category = self._category_buttons.get(product)
-
-        if category is None or button_ids(gump) is None:
-            return None
-
-        named = self.named_row(product, gump)
-
-        if named is not None:
-            self._named_buttons[product] = named
-            self._log("'%s' is the row on button %d - the menu names it there" % (product, named))
-
-            return (gump, named)
-
-        rows = self.rows_of(gump)
-
-        # A gump with buttons but no readable names is reported by the walk instead
-        if rows:
-            self._say_no_row(product, rows)
-            order = [button for label, button in rows if phrase_in(label, product)]
-        else:
-            order = self._walk_order(product, rows)
-
-        for button in order:
-            if not self.has_button(button, gump):
-                continue
-
-            if not self.has_button(button + 1, gump):
-                return None
-
-            before = self.lines(gump)
-            details = self.press_page(button + 1, gump, self._config["gump_timeout"])
-
-            if not details:
-                return None
-
-            text = self.lines(details)
-
-            if text == before:
-                if not self._said_no_details:
-                    self._said_no_details = True
-                    self._log("button %d opened no details page, walking the rows instead"
-                              % (button + 1))
-
-                return None
-
-            named = phrase_in(" ".join(text), product)
-            API.CloseGump(details)
-            gump = self._back_to(category)
-
-            if not gump:
-                return (0, None)
-
-            if named:
-                self._log("'%s' is the row on button %d - its details page names it"
-                          % (product, button))
-
-                return (gump, button)
-
-        return (gump, None)
-
-    # The rows named for the product, then the rows whose names carry it, then every row in order
-    def _walk_order(self, product, rows):
-        order = [button for label, button in rows if label.lower() == product]
-
-        for label, button in rows:
-            if button not in order and phrase_in(label, product):
-                order.append(button)
-
-        for index in range(self._config["max_item_rows"]):
-            button = self.button_id(self._config["item_type"], index)
-
-            if button not in order:
-                order.append(button)
-
-        return order
-
-    # The named rows first: unlike a category, a wrong row crafts the wrong item and spends the wood
-    def candidate_buttons(self, product, gump):
-        rows = self.rows_of(gump)
-
-        if self.named_row(product, gump) is None:
-            self._say_no_row(product, rows)
-
-        order = self._walk_order(product, rows)
-        known = button_ids(gump)
-
-        return order if known is None else [button for button in order if button in known]
 
 
 # src/uo/craftrun.py
@@ -4072,19 +3644,13 @@ menu = CraftMenu(tools, {
     "tool_noun": "carpentry tools",
     "gump_timeout": GUMP_TIMEOUT,
     "gump_poll": GUMP_POLL,
-    "max_categories": MAX_CATEGORIES,
-    "max_item_rows": MAX_ITEM_ROWS,
 }, log)
 crafter = Crafter(tools, menu, wood, OUTCOME_TEXT, {
     "recipes": RECIPES,
-    "products": PRODUCTS,
     "make_last_button": MAKE_LAST_BUTTON,
     "gump_timeout": GUMP_TIMEOUT,
     "craft_timeout": CRAFT_TIMEOUT,
     "craft_poll": CRAFT_POLL,
-    "craft_settle": CRAFT_SETTLE,
-    "max_probes": MAX_ITEM_PROBES,
-    "max_categories": MAX_CATEGORIES,
     "max_reports": MAX_UNREADABLE_REPORTS,
     "text_limit": UNREADABLE_TEXT_LIMIT,
     "tail_seconds": JOURNAL_TAIL_SECONDS,
@@ -4300,7 +3866,7 @@ try:
                             "above; if it wants another wood, set WOOD_TYPE and the menu to match"
                             % (wood.pack_report(), no_material))
                     break
-        elif outcome in ("wrongRow", "saving"):
+        elif outcome == "saving":
             stall.progressed()
         elif outcome == "toolWorn":
             crafter.forget_last()
@@ -4310,7 +3876,7 @@ try:
             stop = "the shard says you cannot make a %s at %s" % (product, reading(value))
             break
         elif outcome == "noRow":
-            stop = "could not find the SELECTIONS row for '%s'" % product
+            stop = "'%s' is not in RECIPES" % product
             break
         elif outcome == "noTool" and tool_store.picked() and tool_store.fetch():
             crafter.forget_last()

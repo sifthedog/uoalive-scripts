@@ -90,11 +90,11 @@ SPELLS = {
     "earthquake": (8, 0x1F65, [BLOODMOSS, GINSENG, MANDRAKE, ASH]),
     "energy vortex": (8, 0x1F66, [BLACK_PEARL, BLOODMOSS, MANDRAKE, NIGHTSHADE]),
     "resurrection": (8, 0x1F67, [BLOODMOSS, GARLIC, GINSENG]),
-    "air elemental": (8, 0x1F68, [BLOODMOSS, MANDRAKE, SILK]),
+    "summon air elemental": (8, 0x1F68, [BLOODMOSS, MANDRAKE, SILK]),
     "summon daemon": (8, 0x1F69, [BLOODMOSS, MANDRAKE, SILK, ASH]),
-    "earth elemental": (8, 0x1F6A, [BLOODMOSS, MANDRAKE, SILK]),
-    "fire elemental": (8, 0x1F6B, [BLOODMOSS, MANDRAKE, SILK, ASH]),
-    "water elemental": (8, 0x1F6C, [BLOODMOSS, MANDRAKE, SILK]),
+    "summon earth elemental": (8, 0x1F6A, [BLOODMOSS, MANDRAKE, SILK]),
+    "summon fire elemental": (8, 0x1F6B, [BLOODMOSS, MANDRAKE, SILK, ASH]),
+    "summon water elemental": (8, 0x1F6C, [BLOODMOSS, MANDRAKE, SILK]),
 }
 
 
@@ -112,15 +112,16 @@ PRODUCT_GRAPHICS = set().union(*PRODUCTS.values())
 NEEDS = dict((name, needs_of(SPELLS[name][2])) for name in SPELLS)
 MANA = dict((name, MANA_BY_CIRCLE[SPELLS[name][0]]) for name in SPELLS)
 
-# The CATEGORIES rows, lowercased: where the group block ends and the item rows begin. The
-# paired names are UOAlive's
-CATEGORY_NAMES = ["first - second circle", "third - fourth circle", "fifth - sixth circle",
-                  "seventh - eighth circle", "spells of necromancy", "spells of mysticism",
-                  "first circle", "second circle", "third circle", "fourth circle",
-                  "fifth circle", "sixth circle", "seventh circle", "eighth circle",
-                  "necromancy", "mysticism", "spellweaving", "other", "runebooks", "spellbooks",
-                  "1st circle", "2nd circle", "3rd circle", "4th circle", "5th circle",
-                  "6th circle", "7th circle", "8th circle"]
+# The CATEGORIES rows, lowercased, as craft-map.py read them off UOAlive's menu
+CATEGORY_NAMES = [
+    "first - second circle",
+    "third - fourth circle",
+    "fifth - sixth circle",
+    "seventh - eighth circle",
+    "spells of necromancy",
+    "other",
+    "spells of mysticism",
+]
 
 TOOL_GRAPHICS = set([0x0FBF, 0x0FC0])
 TOOL_NAME_WORDS = ["pen"]
@@ -231,24 +232,130 @@ CATEGORY_BUTTON_TYPE = 0
 ITEM_BUTTON_TYPE = 1
 MAKE_LAST_BUTTON = 47
 
-# (category button, row button) on UOAlive, whose menu pairs the circles at 1, 21, 41, 61 and lists
-# each pair in spell order over sixteen rows. Lightning is read off the gump; the rest follow the
-# same layout, and a wrong one costs one craft before the details pages find the row
+# (category button, row button) for every row, as craft-map.py read them off UOAlive's menu. Run
+# craft-map.py again and paste its block over this one when the menu changes.
 RECIPES = {
+    # First - Second Circle (button 1)
+    "reactive armor": (1, 2),
+    "clumsy": (1, 22),
+    "create food": (1, 42),
+    "feeblemind": (1, 62),
+    "heal": (1, 82),
+    "magic arrow": (1, 102),
+    "night sight": (1, 122),
+    "weaken": (1, 142),
+    "agility": (1, 162),
+    "cunning": (1, 182),
+    "cure": (1, 202),
+    "harm": (1, 222),
+    "magic trap": (1, 242),
+    "magic untrap": (1, 262),
+    "protection": (1, 282),
+    "strength": (1, 302),
+    # Third - Fourth Circle (button 21)
+    "bless": (21, 2),
+    "fireball": (21, 22),
+    "magic lock": (21, 42),
+    "poison": (21, 62),
+    "telekinesis": (21, 82),
+    "teleport": (21, 102),
+    "unlock": (21, 122),
+    "wall of stone": (21, 142),
+    "arch cure": (21, 162),
+    "arch protection": (21, 182),
+    "curse": (21, 202),
+    "fire field": (21, 222),
+    "greater heal": (21, 242),
     "lightning": (21, 262),
+    "mana drain": (21, 282),
+    "recall": (21, 302),
+    # Fifth - Sixth Circle (button 41)
+    "blade spirits": (41, 2),
+    "dispel field": (41, 22),
+    "incognito": (41, 42),
     "magic reflection": (41, 62),
+    "mind blast": (41, 82),
+    "paralyze": (41, 102),
+    "poison field": (41, 122),
+    "summon creature": (41, 142),
+    "dispel": (41, 162),
+    "energy bolt": (41, 182),
+    "explosion": (41, 202),
+    "invisibility": (41, 222),
+    "mark": (41, 242),
+    "mass curse": (41, 262),
+    "paralyze field": (41, 282),
     "reveal": (41, 302),
+    # Seventh - Eighth Circle (button 61)
+    "chain lightning": (61, 2),
+    "energy field": (61, 22),
     "flamestrike": (61, 42),
+    "gate travel": (61, 62),
+    "mana vampire": (61, 82),
+    "mass dispel": (61, 102),
+    "meteor swarm": (61, 122),
+    "polymorph": (61, 142),
+    "earthquake": (61, 162),
+    "energy vortex": (61, 182),
     "resurrection": (61, 202),
+    "summon air elemental": (61, 222),
+    "summon daemon": (61, 242),
+    "summon earth elemental": (61, 262),
+    "summon fire elemental": (61, 282),
+    "summon water elemental": (61, 302),
+    # Spells of Necromancy (button 81)
+    "animate dead": (81, 2),
+    "blood oath": (81, 22),
+    "corpse skin": (81, 42),
+    "curse weapon": (81, 62),
+    "evil omen": (81, 82),
+    "horrific beast": (81, 102),
+    "lich form": (81, 122),
+    "mind rot": (81, 142),
+    "pain spike": (81, 162),
+    "poison strike": (81, 182),
+    "strangle": (81, 202),
+    "summon familiar": (81, 222),
+    "vampiric embrace": (81, 242),
+    "vengeful spirit": (81, 262),
+    "wither": (81, 282),
+    "wraith form": (81, 302),
+    "exorcism": (81, 322),
+    # Other (button 101)
+    "enchanted switch": (101, 2),
+    "runed prism": (101, 22),
+    "runebook": (101, 42),
+    "bulk order book": (101, 62),
+    "spellbook": (101, 82),
+    "scrapper's compendium": (101, 102),
+    "spellbook engraving tool": (101, 122),
+    "mysticism spellbook": (101, 142),
+    "necromancer spellbook": (101, 162),
+    "exodus summoning rite": (101, 182),
+    "prophetic manuscript": (101, 202),
+    "blank scroll": (101, 222),
+    "scroll binder": (101, 242),
+    "book (100 pages)": (101, 262),
+    "book (200 pages)": (101, 282),
+    "runic atlas": (101, 302),
+    # Spells of Mysticism (button 121)
+    "nether bolt": (121, 2),
+    "healing stone": (121, 22),
+    "purge magic": (121, 42),
+    "enchant": (121, 62),
+    "sleep": (121, 82),
+    "eagle strike": (121, 102),
+    "animated weapon": (121, 122),
+    "stone form": (121, 142),
+    "spell trigger": (121, 162),
+    "mass sleep": (121, 182),
+    "cleansing winds": (121, 202),
+    "bombard": (121, 222),
+    "spell plague": (121, 242),
+    "hail storm": (121, 262),
+    "nether cyclone": (121, 282),
+    "rising colossus": (121, 302),
 }
-
-MAX_CATEGORIES = 14
-
-# UOAlive pairs the circles, sixteen rows over two pages
-MAX_ITEM_ROWS = 16
-
-# Each miss costs one scroll's worth of materials, which is why the gump text is read first
-MAX_ITEM_PROBES = 8
 
 # Whole seconds: the API takes an int here
 PATHFIND_TIMEOUT = 10
@@ -259,9 +366,6 @@ GUMP_POLL = 0.15
 # Has to outlast the craft animation, which plays before the shard answers
 CRAFT_TIMEOUT = 10.0
 CRAFT_POLL = 0.2
-
-# How long the pack has to show the new scroll once the shard has answered
-CRAFT_SETTLE = 1.5
 
 # A failed craft's refund arrives after the journal line; the consumed row waits this long for it
 REFUND_SETTLE = 1.5

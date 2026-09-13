@@ -188,17 +188,6 @@ def word_in(text, words):
     return False
 
 
-def phrase_in(text, phrase):
-    found = words_of(text)
-    wanted = words_of(phrase)
-
-    for start in range(len(found) - len(wanted) + 1):
-        if found[start:start + len(wanted)] == wanted:
-            return True
-
-    return len(wanted) == 0
-
-
 def any_in(text, fragments):
     low = (text or "").lower()
 
@@ -915,11 +904,18 @@ DEED_TEXT = {
 ARTICLES = ["a ", "an "]
 EXCEPTIONAL_TEXT = "exceptional"
 
-# Lower-cased, both spellings the stock clilocs may resolve to
+# The CATEGORIES rows, lowercased, as craft-map.py read them off UOAlive's menu
 CATEGORY_NAMES = [
-    "metal armor", "helmets", "shields", "bladed", "bladed weapons", "axes", "polearms",
-    "pole arms", "bashing", "bashing weapons", "cannons", "high seas cannons", "throwing",
-    "throwing weapons", "miscellaneous",
+    "metal armor",
+    "helmets",
+    "shields",
+    "bladed",
+    "axes",
+    "polearms",
+    "bashing",
+    "cannons",
+    "throwing",
+    "miscellaneous",
 ]
 
 CRAFT_TITLE = "BLACKSMITHY"
@@ -935,33 +931,220 @@ ITEM_BUTTON_TYPE = 1
 MATERIAL_ROW_TYPE = 5
 MATERIAL_BUTTON_TYPE = 6
 
-MAX_CATEGORIES = 10
-MAX_ITEM_ROWS = 20
 MAX_MATERIAL_ROWS = 12
 
-# (category button, row button) as the deed names the item, read off this shard's menu. A row
-# not in here has to be named by the page's text; nothing is pressed on a guess.
+# (category button, row button) for every row, as craft-map.py read them off UOAlive's menu, keyed
+# as the deed names the item. Run craft-map.py again and paste its block over this one when the
+# menu changes.
 RECIPES = {
-    "ringmail gloves": (1, 2), "ringmail leggings": (1, 22), "ringmail sleeves": (1, 42),
-    "ringmail tunic": (1, 62), "chainmail coif": (1, 82), "chainmail leggings": (1, 102),
-    "chainmail tunic": (1, 122), "platemail arms": (1, 142), "platemail gloves": (1, 162),
-    "platemail gorget": (1, 182), "platemail legs": (1, 202), "platemail tunic": (1, 222),
-    "platemail": (1, 222), "female plate": (1, 242), "female platemail": (1, 242),
-    "bascinet": (21, 2), "close helmet": (21, 22), "helmet": (21, 42), "norse helm": (21, 62),
+    # Metal Armor (button 1)
+    "ringmail gloves": (1, 2),
+    "ringmail leggings": (1, 22),
+    "ringmail sleeves": (1, 42),
+    "ringmail tunic": (1, 62),
+    "chainmail coif": (1, 82),
+    "chainmail leggings": (1, 102),
+    "chainmail tunic": (1, 122),
+    "platemail arms": (1, 142),
+    "platemail gloves": (1, 162),
+    "platemail gorget": (1, 182),
+    "platemail legs": (1, 202),
+    "platemail (tunic)": (1, 222),
+    "platemail (female)": (1, 242),
+    "universal barding deed": (1, 262),
+    "platemail mempo": (1, 282),
+    "platemail do": (1, 302),
+    "platemail hiro sode": (1, 322),
+    "platemail suneate": (1, 342),
+    "platemail haidate": (1, 362),
+    "gargish platemail arms": (1, 382),
+    "gargish platemail chest": (1, 402),
+    "gargish platemail leggings": (1, 422),
+    "gargish platemail kilt": (1, 442),
+    # "gargish platemail arms": (1, 462),  listed again, the first kept
+    # "gargish platemail chest": (1, 482),  listed again, the first kept
+    # "gargish platemail leggings": (1, 502),  listed again, the first kept
+    # "gargish platemail kilt": (1, 522),  listed again, the first kept
+    "gargish amulet": (1, 542),
+    "britches of warding": (1, 562),
+    # Helmets (button 21)
+    "bascinet": (21, 2),
+    "close helmet": (21, 22),
+    "helmet": (21, 42),
+    "norse helm": (21, 62),
     "plate helm": (21, 82),
-    "buckler": (41, 2), "bronze shield": (41, 22), "heater shield": (41, 42),
-    "metal shield": (41, 62), "metal kite shield": (41, 82), "tear kite shield": (41, 102),
-    "bone harvester": (61, 2), "broadsword": (61, 22), "crescent blade": (61, 42),
-    "cutlass": (61, 62), "dagger": (61, 82), "katana": (61, 102), "kryss": (61, 122),
-    "longsword": (61, 142), "scimitar": (61, 162), "viking sword": (61, 182),
-    "axe": (81, 2), "battle axe": (81, 22), "double axe": (81, 42),
-    "executioner's axe": (81, 62), "large battle axe": (81, 82), "two handed axe": (81, 102),
+    "chainmail hatsuburi": (21, 102),
+    "platemail hatsuburi": (21, 122),
+    "heavy platemail jingasa": (21, 142),
+    "light platemail jingasa": (21, 162),
+    "small platemail jingasa": (21, 182),
+    "decorative platemail kabuto": (21, 202),
+    "platemail battle kabuto": (21, 222),
+    "standard platemail kabuto": (21, 242),
+    "circlet": (21, 262),
+    "royal circlet": (21, 282),
+    "gemmed circlet": (21, 302),
+    # Shields (button 41)
+    "buckler": (41, 2),
+    "bronze shield": (41, 22),
+    "heater shield": (41, 42),
+    "metal shield": (41, 62),
+    "metal kite shield": (41, 82),
+    "tear kite shield": (41, 102),
+    "chaos shield": (41, 122),
+    "order shield": (41, 142),
+    "small plate shield": (41, 162),
+    "gargish kite shield": (41, 182),
+    "large plate shield": (41, 202),
+    "medium plate shield": (41, 222),
+    "gargish chaos shield": (41, 242),
+    "gargish order shield": (41, 262),
+    # Bladed (button 61)
+    "bone harvester": (61, 2),
+    "broadsword": (61, 22),
+    "crescent blade": (61, 42),
+    "cutlass": (61, 62),
+    "dagger": (61, 82),
+    "katana": (61, 102),
+    "kryss": (61, 122),
+    "longsword": (61, 142),
+    "scimitar": (61, 162),
+    "viking sword": (61, 182),
+    "paladin sword": (61, 202),
+    "no-dachi": (61, 222),
+    "wakizashi": (61, 242),
+    "lajatang": (61, 262),
+    "daisho": (61, 282),
+    "tekagi": (61, 302),
+    "shuriken": (61, 322),
+    "kama": (61, 342),
+    "sai": (61, 362),
+    "radiant scimitar": (61, 382),
+    "war cleaver": (61, 402),
+    "elven spellblade": (61, 422),
+    "assassin spike": (61, 442),
+    "leafblade": (61, 462),
+    "rune blade": (61, 482),
+    "elven machete": (61, 502),
+    "rune carving knife": (61, 522),
+    "cold forged blade": (61, 542),
+    "overseer sundered blade": (61, 562),
+    "luminous rune blade": (61, 582),
+    "true spellblade": (61, 602),
+    "icy spellblade": (61, 622),
+    "fiery spellblade": (61, 642),
+    "spellblade of defense": (61, 662),
+    "true assassin spike": (61, 682),
+    "charged assassin spike": (61, 702),
+    "magekiller assassin spike": (61, 722),
+    "wounding assassin spike": (61, 742),
+    "true leafblade": (61, 762),
+    "luckblade": (61, 782),
+    "magekiller leafblade": (61, 802),
+    "leafblade of ease": (61, 822),
+    "knight's war cleaver": (61, 842),
+    "butcher's war cleaver": (61, 862),
+    "serrated war cleaver": (61, 882),
+    "true war cleaver": (61, 902),
+    "adventurer's machete": (61, 922),
+    "orcish machete": (61, 942),
+    "machete of defense": (61, 962),
+    "diseased machete": (61, 982),
+    "runesabre": (61, 1002),
+    "mage's rune blade": (61, 1022),
+    "rune blade of knowledge": (61, 1042),
+    "corrupted rune blade": (61, 1062),
+    "true radiant scimitar": (61, 1082),
+    "darkglow scimitar": (61, 1102),
+    "icy scimitar": (61, 1122),
+    "twinkling scimitar": (61, 1142),
+    "bone machete": (61, 1162),
+    "gargish katana": (61, 1182),
+    "gargish kryss": (61, 1202),
+    "gargish bone harvester": (61, 1222),
+    "gargish tekagi": (61, 1242),
+    "gargish daisho": (61, 1262),
+    "dread sword": (61, 1282),
+    "gargish talwar": (61, 1302),
+    "gargish dagger": (61, 1322),
+    "bloodblade": (61, 1342),
+    "shortblade": (61, 1362),
+    # Axes (button 81)
+    "axe": (81, 2),
+    "battle axe": (81, 22),
+    "double axe": (81, 42),
+    "executioner's axe": (81, 62),
+    "large battle axe": (81, 82),
+    "two handed axe": (81, 102),
     "war axe": (81, 122),
-    "bardiche": (101, 2), "bladed staff": (101, 22), "double bladed staff": (101, 42),
-    "halberd": (101, 62), "lance": (101, 82), "pike": (101, 102), "short spear": (101, 122),
-    "scythe": (101, 142), "spear": (101, 162), "war fork": (101, 182),
-    "hammer pick": (121, 2), "mace": (121, 22), "maul": (121, 42), "scepter": (121, 62),
-    "war mace": (121, 82), "war hammer": (121, 102),
+    "ornate axe": (81, 142),
+    "guardian axe": (81, 162),
+    "singing axe": (81, 182),
+    "thundering axe": (81, 202),
+    "heavy ornate axe": (81, 222),
+    "gargish battle axe": (81, 242),
+    "gargish axe": (81, 262),
+    "dual short axes": (81, 282),
+    # Polearms (button 101)
+    "bardiche": (101, 2),
+    "bladed staff": (101, 22),
+    "double bladed staff": (101, 42),
+    "halberd": (101, 62),
+    "lance": (101, 82),
+    "pike": (101, 102),
+    "short spear": (101, 122),
+    "scythe": (101, 142),
+    "spear": (101, 162),
+    "war fork": (101, 182),
+    "gargish bardiche": (101, 202),
+    "gargish war fork": (101, 222),
+    "gargish scythe": (101, 242),
+    "gargish pike": (101, 262),
+    "gargish lance": (101, 282),
+    "dual pointed spear": (101, 302),
+    # Bashing (button 121)
+    "hammer pick": (121, 2),
+    "mace": (121, 22),
+    "maul": (121, 42),
+    "scepter": (121, 62),
+    "war mace": (121, 82),
+    "war hammer": (121, 102),
+    "tessen": (121, 122),
+    "diamond mace": (121, 142),
+    "shard thrasher": (121, 162),
+    "ruby mace": (121, 182),
+    "emerald mace": (121, 202),
+    "sapphire mace": (121, 222),
+    "silver-etched mace": (121, 242),
+    "gargish war hammer": (121, 262),
+    "gargish maul": (121, 282),
+    "gargish tessen": (121, 302),
+    "disc mace": (121, 322),
+    # Cannons (button 141)
+    "cannonball": (141, 2),
+    "grapeshot": (141, 22),
+    "culverin": (141, 42),
+    "carronade": (141, 62),
+    # Throwing (button 161)
+    "boomerang": (161, 2),
+    "cyclone": (161, 22),
+    "soul glaive": (161, 42),
+    # Miscellaneous (button 181)
+    "dragon gloves": (181, 2),
+    "dragon helm": (181, 22),
+    "dragon leggings": (181, 42),
+    "dragon sleeves": (181, 62),
+    "dragon breastplate": (181, 82),
+    "crushed glass": (181, 102),
+    "powdered iron": (181, 122),
+    "metal keg": (181, 142),
+    "exodus sacrificial dagger": (181, 162),
+    "gloves of feudal grip": (181, 182),
+    # As the deed words the two rows the menu brackets
+    "platemail tunic": (1, 222),
+    "platemail": (1, 222),
+    "female plate": (1, 242),
+    "female platemail": (1, 242),
 }
 
 # On the row's details page: 1 MAKE NOW, 2 MAKE NUMBER, 3 MAKE MAX. CANCEL MAKE is 1 + 6 + 11 * 20
@@ -1006,8 +1189,6 @@ GUMP_POLL = 0.15
 
 CRAFT_TIMEOUT = 10.0
 CRAFT_POLL = 0.2
-CRAFT_SETTLE = 1.5
-
 TARGET_TIMEOUT = 4.0
 COMBINE_TIMEOUT = 4.0
 COMBINE_POLL = 0.2
@@ -1091,7 +1272,7 @@ STOPPERS = ("noMaterial", "noAnvil", "skillTooLow", "toolWorn", "throttled", "sa
 
 
 class DeedCrafter(object):
-    """One proving craft off the row, then MAKE NUMBER batches of it."""
+    """MAKE NUMBER batches off the RECIPES row, pressed as written."""
 
     def __init__(self, tool, menu, items, picker, buckets, config, log, stamp=None):
         self._tool = tool
@@ -1102,16 +1283,7 @@ class DeedCrafter(object):
         self._config = config
         self._log = log
         self._stamp = stamp
-        self._item_buttons = {}
         self._said_unreadable = 0
-        self._said_unjudged = False
-
-    def forget_row(self, product):
-        if product in self._item_buttons:
-            del self._item_buttons[product]
-
-    def proven(self, product):
-        return product in self._item_buttons
 
     def _notice_bucket(self, gump):
         if not gump:
@@ -1123,29 +1295,6 @@ class DeedCrafter(object):
                     return name
 
         return None
-
-    # Pack first: a success this table has no wording for would otherwise wait out the timeout.
-    # The gump's NOTICES panel is read too because the shard writes refusals there, not the journal.
-    def _read_outcome(self, opened, landed):
-        waited = 0.0
-
-        while not API.StopRequested:
-            if landed():
-                return "made"
-
-            hit = matched_bucket(self._buckets)
-
-            if hit is None:
-                hit = self._notice_bucket(opened)
-
-            if hit is not None:
-                return hit
-
-            if waited >= self._config["craft_timeout"]:
-                return None
-
-            API.Pause(self._config["craft_poll"])
-            waited += self._config["craft_poll"]
 
     def _report_outcome(self, why, gump):
         if self._said_unreadable >= self._config["max_reports"]:
@@ -1160,64 +1309,16 @@ class DeedCrafter(object):
         self._log("%s - the gump says '%s'" % (why, text or "(nothing)"))
         self._log("the journal says '%s'" % (" | ".join(lines) or "(nothing)"))
 
-    # A known recipe is pressed as given; anything else has to be named by the page's text.
-    # Rows are never pressed on a guess - each wrong one spends a piece's worth of ingots.
     def _choose_button(self, product, gump):
         known = self._config["recipes"].get(product)
 
-        if known is not None:
-            self._menu.remember_category(product, known[0])
-
-            if not self._menu.has_button(known[0], gump):
-                self._log("the menu has no category button %d for '%s'" % (known[0], product))
-
-                return None, "noRow"
-
-            page = self._menu.press(known[0], gump, self._config["gump_timeout"])
-
-            if not page:
-                return None, "noGump"
-
-            if not self._menu.has_button(known[1], page):
-                self._log("the menu has no row button %d for '%s'" % (known[1], product))
-
-                return None, "noRow"
-
-            return known[1], None
-
-        gump, category = self._menu.find_category(product, gump)
-
-        if category is None:
+        if known is None:
             return None, "noRow"
 
-        if not gump:
+        if not self._menu.press(known[0], gump, self._config["gump_timeout"]):
             return None, "noGump"
 
-        button = self._menu.named_row(product, gump)
-
-        if button is None:
-            self._log("no row on button %d's page reads '%s' - the page says '%s'"
-                      % (category, product, " | ".join(self._menu.lines(gump)) or "(no text)"))
-
-            return None, "noRow"
-
-        return button, None
-
-    # None from every new item is a tooltip that never came, which is not a wrong row
-    def _made_product(self, new):
-        verdicts = [self._items.is_product(item.Serial) for item in new]
-
-        if True in verdicts:
-            return True
-
-        if False in verdicts:
-            return False
-
-        if not self._said_unjudged:
-            self._said_unjudged = True
-            self._log("the new item's tooltip did not arrive - taking the craft as the product")
-
-        return True
+        return known[1], None
 
     def _ready(self, material):
         if self._tool.serial() is None:
@@ -1235,56 +1336,6 @@ class DeedCrafter(object):
                 return None, why
 
         return gump, None
-
-    # A single craft off the row, so a wrong row costs one item's worth rather than a batch's
-    def craft_once(self, product, material):
-        gump, why = self._ready(material)
-
-        if why is not None:
-            return why
-
-        button, outcome = self._choose_button(product, gump)
-
-        if button is None:
-            return outcome
-
-        before = self._items.serials()
-
-        def landed():
-            return len(self._items.new_since(before)) > 0
-
-        API.ClearJournal()
-
-        opened = self._menu.press(button, gump, self._config["craft_timeout"])
-        outcome = self._read_outcome(opened, landed)
-
-        if outcome in ("made", None) and (landed() or settled(
-                self._config["craft_settle"], self._config["craft_poll"], landed)):
-            if not self._made_product(self._items.new_since(before)):
-                self._log("button %d made %s, not a '%s'"
-                          % (button, ", ".join("'%s'" % self._items.name_of(item.Serial)
-                                               for item in self._items.new_since(before)),
-                             product))
-
-                return "wrongRow"
-
-            self._item_buttons[product] = button
-            self._said_unreadable = 0
-            self._log("'%s' is the row on button %d" % (product, button))
-
-            return "made"
-
-        if outcome == "made":
-            self._log("button %d made nothing that landed in the pack" % button)
-
-            return "wrongRow"
-
-        if outcome == "noMaterial":
-            self._report_outcome("refused for materials", opened)
-        elif outcome is None:
-            self._report_outcome("nothing readable came back", opened)
-
-        return outcome
 
     def _cancel(self):
         self._menu.reply(self._config["cancel_button"], self._menu.current_id())
@@ -1354,13 +1405,13 @@ class DeedCrafter(object):
         if why is not None:
             return why, 0, 0
 
-        gump, category = self._menu.find_category(product, gump)
+        button, why = self._choose_button(product, gump)
 
-        if not gump or category is None:
-            return "noGump", 0, 0
+        if why is not None:
+            return why, 0, 0
 
-        details = self._menu.press_page(self._item_buttons[product] + 1, gump,
-                                        self._config["gump_timeout"])
+        gump = self._menu.current_id() or gump
+        details = self._menu.press_page(button + 1, gump, self._config["gump_timeout"])
 
         if not details:
             return "noGump", 0, 0
@@ -1380,12 +1431,6 @@ class DeedCrafter(object):
             self._report_outcome("the batch of %d made nothing" % amount, self._menu.current_id())
         elif outcome == "noMaterial":
             self._report_outcome("refused for materials", self._menu.current_id())
-
-        if made > 0 and not self._made_product(self._items.new_since(before)):
-            self._log("the batch made %d that are not a '%s' - the row moved" % (made, product))
-            self.forget_row(product)
-
-            return "wrongRow", made, failed
 
         return outcome, made, failed
 
@@ -1545,17 +1590,6 @@ class SmallFill(object):
         item = self._request["item"]
         material = self._request["material"]
 
-        # The first craft proves the row on its own; the batches are only ever off a proven row
-        if not self._crafter.proven(item):
-            outcome = self._crafter.craft_once(item, material)
-
-            if outcome == "made":
-                self.made += 1
-            elif outcome == "failed":
-                self.fails += 1
-
-            return outcome
-
         batch = self.owed()
         outcome, made, failed = self._crafter.craft_batch(item, material, batch)
         self.made += made
@@ -1578,7 +1612,7 @@ class SmallFill(object):
         if outcome is not None:
             self._unknown = 0
 
-        if outcome in ("made", "failed", "batch", "saving"):
+        if outcome in ("batch", "saving"):
             self._stall.progressed()
         elif outcome == "noMaterial":
             # What is already made goes in before the run ends
@@ -1587,9 +1621,6 @@ class SmallFill(object):
 
             return ("the shard says there are not enough %s ingots - %s in the pack, %d still owed"
                     % (self._request["material"], ingot_report(config["ingots"]), self.owed()))
-        elif outcome == "wrongRow":
-            return ("the row for '%s' made something else - read the line above, fix RECIPES, "
-                    "and run it again" % item)
         elif outcome == "toolWorn":
             self._stall.progressed()
             self._log("the tool wore out, looking for another")
@@ -1598,7 +1629,7 @@ class SmallFill(object):
         elif outcome == "noAnvil":
             return "stand next to an anvil and a forge"
         elif outcome == "noRow":
-            return "could not find the SELECTIONS row for '%s'" % item
+            return "'%s' is not in RECIPES" % item
         elif outcome == "noMaterialRow":
             return "the material page has no row for %s" % self._request["material"]
         elif outcome in ("noTool", "noGump"):
@@ -2013,14 +2044,8 @@ class CraftMenu(object):
         self._page = 0
         self._ignored = set()
         self._said_gump_text = False
-        self._said_no_category = False
-        self._said_no_row = set()
-        self._said_no_details = False
         self._said_no_button = set()
         self._said_not_menu = False
-        self._category_buttons = {}
-        self._category_rejects = {}
-        self._named_buttons = {}
 
     def current_id(self):
         return self._id
@@ -2194,202 +2219,8 @@ class CraftMenu(object):
     def categories_of(self, gump):
         return self._labelled(gump, self._config["category_type"])
 
-    # None when the menu names no row on that button, which is also how unreadable controls read
-    def label_of(self, button, gump):
-        for label, found in self.rows_of(gump):
-            if found == button:
-                return label
-
-        return None
-
     def item_rows(self, gump):
         return [label for label, _button in self.rows_of(gump)]
-
-    # The row's button by its name, or None when the menu does not name it
-    def named_row(self, product, gump):
-        for label, button in self.rows_of(gump):
-            if label.lower() == product:
-                return button
-
-        return None
-
-    # The row an exact label match found, which a wrong product graphic must not be allowed to blame
-    def named_button(self, product):
-        return self._named_buttons.get(product)
-
-    def _say_no_row(self, product, rows):
-        if product in self._said_no_row:
-            return
-
-        self._said_no_row.add(product)
-        self._log("no SELECTIONS row reads '%s' - walking the rows" % product)
-        self._log("rows seen: %s" % (", ".join(label for label, _button in rows) or "none"))
-
-    # Whole row, never a substring: "crossbow" is inside "crossbow bolt", in another category.
-    # A menu that reads as one line has no rows, and GumpContains is case-sensitive
-    def page_has(self, product, gump):
-        rows = self.item_rows(gump)
-
-        for row in rows:
-            if row.lower() == product:
-                return True
-
-        if len(rows) > 0:
-            return False
-
-        return phrase_in(API.GetGumpContents(gump), product) or API.GumpContains(product, gump)
-
-    def remember_category(self, product, button):
-        self._category_buttons[product] = button
-
-    def forget_category(self, product):
-        if product in self._category_buttons:
-            del self._category_buttons[product]
-
-    def reject_category(self, product, button):
-        rejected = self._category_rejects.setdefault(product, set())
-        rejected.add(button)
-
-        return len(rejected)
-
-    # Pressing a category only redraws the SELECTIONS panel, so walking them costs no wood
-    def find_category(self, product, gump):
-        known = self._category_buttons.get(product)
-
-        if known is not None:
-            return (self.press(known, gump, self._config["gump_timeout"]), known)
-
-        rejected = self._category_rejects.get(product, set())
-
-        for index in range(self._config["max_categories"]):
-            button = self.button_id(self._config["category_type"], index)
-
-            if button in rejected or not self.has_button(button, gump):
-                continue
-
-            opened = self.press(button, gump, self._config["gump_timeout"])
-
-            # A press that answered nothing is not a verdict on the category
-            if not opened:
-                return (0, 0)
-
-            if self.page_has(product, opened):
-                self._category_buttons[product] = button
-                self._log("'%s' is in the category on button %d" % (product, button))
-
-                return (opened, button)
-
-            gump = opened
-
-        if not self._said_no_category:
-            self._said_no_category = True
-            self._log("no category lists '%s' - check the name against the SELECTIONS rows"
-                      % product)
-
-        return (gump, None)
-
-    # The pen is used again when the details page took the menu down with it
-    def _back_to(self, category):
-        menu = self.open()
-
-        if not menu:
-            return 0
-
-        return self.press(category, menu, self._config["gump_timeout"])
-
-    # A row the menu names is taken on its name. Otherwise the details page (its button plus one,
-    # which costs nothing to open) of each row whose name carries the product is opened until one
-    # names it; with no names to read, every row's is. A details page shows the row's own name, so
-    # a row whose name lacks the product is not opened. None sends the caller to the walk;
-    # (gump, None) is a category that has no such row.
-    def find_row(self, product, gump):
-        category = self._category_buttons.get(product)
-
-        if category is None or button_ids(gump) is None:
-            return None
-
-        named = self.named_row(product, gump)
-
-        if named is not None:
-            self._named_buttons[product] = named
-            self._log("'%s' is the row on button %d - the menu names it there" % (product, named))
-
-            return (gump, named)
-
-        rows = self.rows_of(gump)
-
-        # A gump with buttons but no readable names is reported by the walk instead
-        if rows:
-            self._say_no_row(product, rows)
-            order = [button for label, button in rows if phrase_in(label, product)]
-        else:
-            order = self._walk_order(product, rows)
-
-        for button in order:
-            if not self.has_button(button, gump):
-                continue
-
-            if not self.has_button(button + 1, gump):
-                return None
-
-            before = self.lines(gump)
-            details = self.press_page(button + 1, gump, self._config["gump_timeout"])
-
-            if not details:
-                return None
-
-            text = self.lines(details)
-
-            if text == before:
-                if not self._said_no_details:
-                    self._said_no_details = True
-                    self._log("button %d opened no details page, walking the rows instead"
-                              % (button + 1))
-
-                return None
-
-            named = phrase_in(" ".join(text), product)
-            API.CloseGump(details)
-            gump = self._back_to(category)
-
-            if not gump:
-                return (0, None)
-
-            if named:
-                self._log("'%s' is the row on button %d - its details page names it"
-                          % (product, button))
-
-                return (gump, button)
-
-        return (gump, None)
-
-    # The rows named for the product, then the rows whose names carry it, then every row in order
-    def _walk_order(self, product, rows):
-        order = [button for label, button in rows if label.lower() == product]
-
-        for label, button in rows:
-            if button not in order and phrase_in(label, product):
-                order.append(button)
-
-        for index in range(self._config["max_item_rows"]):
-            button = self.button_id(self._config["item_type"], index)
-
-            if button not in order:
-                order.append(button)
-
-        return order
-
-    # The named rows first: unlike a category, a wrong row crafts the wrong item and spends the wood
-    def candidate_buttons(self, product, gump):
-        rows = self.rows_of(gump)
-
-        if self.named_row(product, gump) is None:
-            self._say_no_row(product, rows)
-
-        order = self._walk_order(product, rows)
-        known = button_ids(gump)
-
-        return order if known is None else [button for button in order if button in known]
 
 
 # src/uo/tool.py
@@ -2870,8 +2701,6 @@ menu = CraftMenu(tool, {
     "tool_noun": "smith's tools",
     "gump_timeout": GUMP_TIMEOUT,
     "gump_poll": GUMP_POLL,
-    "max_categories": MAX_CATEGORIES,
-    "max_item_rows": MAX_ITEM_ROWS,
 }, log)
 picker = MaterialPicker(menu, {
     "aliases": MATERIAL_ALIASES,
@@ -2932,10 +2761,8 @@ def fill_small(small):
         "gump_timeout": GUMP_TIMEOUT,
         "craft_timeout": CRAFT_TIMEOUT,
         "craft_poll": CRAFT_POLL,
-        "craft_settle": CRAFT_SETTLE,
         "recipes": RECIPES,
-        "max_categories": MAX_CATEGORIES,
-        "max_reports": MAX_UNREADABLE_REPORTS,
+            "max_reports": MAX_UNREADABLE_REPORTS,
         "text_limit": UNREADABLE_TEXT_LIMIT,
         "tail_seconds": JOURNAL_TAIL_SECONDS,
         "tail_lines": JOURNAL_TAIL_LINES,

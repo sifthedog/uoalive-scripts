@@ -28,6 +28,11 @@ class BandsTest(unittest.TestCase):
 
         self.assertIsNone(VENDORS["yumi"])
 
+    def test_the_other_way_round_the_end_bands_are_rows_too(self):
+        for product in ("fukiya dart", "yumi", "bow"):
+            self.assertIn(product, RECIPES)
+            self.assertIn(product, WOOD_COST)
+
 
 class OutcomeOrderTest(unittest.TestCase):
     def test_failed_is_read_before_made_and_throttled_last(self):

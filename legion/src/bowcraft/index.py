@@ -2,25 +2,25 @@ import API
 
 from bowcraft.config import (BANDS, BATCH_SIZE, BOX, BOX_PRESS_POLL, BOX_PRESS_TIMEOUT, BOX_TAKE,
                              BUTTON_STRIDE, CATEGORY_BUTTON_TYPE, CATEGORY_NAMES, CONTAINER_RANGE,
-                             CONTEXT_TIMEOUT, CRAFT_POLL, CRAFT_SETTLE, CRAFT_TIMEOUT, CRAFT_TITLE,
+                             CONTEXT_TIMEOUT, CRAFT_POLL, CRAFT_TIMEOUT, CRAFT_TITLE,
                              CRAFT_TITLE_FRAGMENTS, CRAFT_TITLE_TEXT, DATA_PATH, DUMP_AT,
                              FETCH_POLL, FETCH_TIMEOUT, GUMP_POLL, GUMP_TIMEOUT, HEARTBEAT_EVERY,
                              ITEM_BUTTON_TYPE, JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS,
                              LAST_TEN_LABEL, LOG_EVERY, MAKE_LAST_BUTTON, MATERIAL_GRAPHICS,
-                             MAX_CATEGORIES, MAX_CYCLES, MAX_DUMP_MISSES, MAX_EMPTY_MOVES,
-                             MAX_HELD, MAX_ITEM_PROBES, MAX_ITEM_ROWS, MAX_NO_MATERIAL,
-                             MAX_NO_TOOL, MAX_PICKS, MAX_SELL_MISSES, MAX_THROTTLED, MAX_UNKNOWN,
-                             MAX_UNREADABLE_REPORTS, MIN_CRAFT_WOOD, MIN_SKILL, MOVE_DELAY,
-                             OPEN_DELAY, OPL_WAIT, OUTCOME_TEXT, PATHFIND_TIMEOUT, PICK_TIMEOUT,
-                             PRODUCTS, PRODUCT_GRAPHICS, RECIPES, REFUND_POLL, REFUND_SETTLE,
-                             REGULAR_WOOD, RESTOCK_AT, RETURN_WRONG_WOOD, SAVE_DONE_TEXT,
-                             SAVE_POLL, SAVE_WAIT, SAVING_TEXT, SELL_AT, SELL_ENTRY, SELL_PHRASE,
-                             SELL_POLL, SELL_RETRY_AFTER, SELL_TIMEOUT, SETUP, SKILL_NAMES,
-                             SKILL_POLL, SKILL_TIMEOUT, STALL_STOP, STALL_WARN, STEP_DELAY,
-                             STOPPED, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX, TOOL_GRAPHICS,
-                             TOOL_NAME_WORDS, TOO_HEAVY_TEXT, UNREADABLE_TEXT_LIMIT, VENDORS,
-                             VENDOR_RANGE, VENDOR_SCAN_RADIUS, VENDOR_SERIAL, VENDOR_STEPS,
-                             WOOD_COST, WOOD_HUES, WOOD_KINDS, WOOD_TYPE, WOOD_TYPES)
+                             MAX_CYCLES, MAX_DUMP_MISSES, MAX_EMPTY_MOVES, MAX_HELD,
+                             MAX_NO_MATERIAL, MAX_NO_TOOL, MAX_PICKS, MAX_SELL_MISSES,
+                             MAX_THROTTLED, MAX_UNKNOWN, MAX_UNREADABLE_REPORTS, MIN_CRAFT_WOOD,
+                             MIN_SKILL, MOVE_DELAY, OPEN_DELAY, OPL_WAIT, OUTCOME_TEXT,
+                             PATHFIND_TIMEOUT, PICK_TIMEOUT, PRODUCTS, PRODUCT_GRAPHICS, RECIPES,
+                             REFUND_POLL, REFUND_SETTLE, REGULAR_WOOD, RESTOCK_AT,
+                             RETURN_WRONG_WOOD, SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT, SAVING_TEXT,
+                             SELL_AT, SELL_ENTRY, SELL_PHRASE, SELL_POLL, SELL_RETRY_AFTER,
+                             SELL_TIMEOUT, SETUP, SKILL_NAMES, SKILL_POLL, SKILL_TIMEOUT,
+                             STALL_STOP, STALL_WARN, STEP_DELAY, STOPPED, THROTTLE_BACKOFF,
+                             THROTTLE_BACKOFF_MAX, TOOL_GRAPHICS, TOOL_NAME_WORDS, TOO_HEAVY_TEXT,
+                             UNREADABLE_TEXT_LIMIT, VENDORS, VENDOR_RANGE, VENDOR_SCAN_RADIUS,
+                             VENDOR_SERIAL, VENDOR_STEPS, WOOD_COST, WOOD_HUES, WOOD_KINDS,
+                             WOOD_TYPE, WOOD_TYPES)
 from uo.restock import Restock
 from uo.sources import Sources
 from uo.cost import cost_of, short_by
@@ -135,19 +135,13 @@ menu = CraftMenu(tools, {
     "tool_noun": "fletcher's tools",
     "gump_timeout": GUMP_TIMEOUT,
     "gump_poll": GUMP_POLL,
-    "max_categories": MAX_CATEGORIES,
-    "max_item_rows": MAX_ITEM_ROWS,
 }, log)
 crafter = Crafter(tools, menu, wood, OUTCOME_TEXT, {
     "recipes": RECIPES,
-    "products": PRODUCTS,
     "make_last_button": MAKE_LAST_BUTTON,
     "gump_timeout": GUMP_TIMEOUT,
     "craft_timeout": CRAFT_TIMEOUT,
     "craft_poll": CRAFT_POLL,
-    "craft_settle": CRAFT_SETTLE,
-    "max_probes": MAX_ITEM_PROBES,
-    "max_categories": MAX_CATEGORIES,
     "max_reports": MAX_UNREADABLE_REPORTS,
     "text_limit": UNREADABLE_TEXT_LIMIT,
     "tail_seconds": JOURNAL_TAIL_SECONDS,
@@ -428,7 +422,7 @@ try:
                             "above; if it wants another wood, set WOOD_TYPE and the menu to match"
                             % (wood.pack_report(), no_material))
                     break
-        elif outcome in ("wrongRow", "saving"):
+        elif outcome == "saving":
             stall.progressed()
         elif outcome == "toolWorn":
             crafter.forget_last()
@@ -438,7 +432,7 @@ try:
             stop = "the shard says you cannot make a %s at %s" % (product, reading(value))
             break
         elif outcome == "noRow":
-            stop = "could not find the SELECTIONS row for '%s'" % product
+            stop = "'%s' is not in RECIPES" % product
             break
         elif outcome == "noTool" and tool_store.picked() and tool_store.fetch():
             crafter.forget_last()

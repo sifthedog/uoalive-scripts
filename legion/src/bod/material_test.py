@@ -16,8 +16,6 @@ MENU = {
     "tool_noun": "smith's tools",
     "gump_timeout": 1.0,
     "gump_poll": 0.2,
-    "max_categories": 10,
-    "max_item_rows": 20,
 }
 
 CONFIG = {

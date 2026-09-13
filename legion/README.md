@@ -84,8 +84,8 @@ clock       the one time.time(), so tests have one thing to fake
 components  what one craft takes of each kind, and what the pack is short of
 convert     resource -> product, judged by the pack diff, with a per-hue write-off
 cost        what one craft of a product takes, and how short the pack is of it
-craft       one craft through the menu: the row, MAKE LAST, and the outcome read three ways
-craftmenu   a craft gump: opening it, walking the categories, reading and pressing the rows
+craft       one craft through the menu: the RECIPES row, MAKE LAST, and the outcome read two ways
+craftmenu   a craft gump: opening it, reading and pressing the rows
 craftrun    the crafting scripts' shared bookkeeping: ending a cycle, a sell or unload trip, what a
             craft spent, and freeing weight for a restock by selling or unloading
 crafttool   the tool a craft menu is opened with, found in the pack by art or by name
@@ -254,7 +254,7 @@ paladin who never once failed.
 | `chivalry.py` | the same | `fizzled`, and `unknown` for an attempt it could not name | the mana wait, the buff already standing, the health floor, the tithing gate and the weapon moves |
 | `tame.py` | `tamed` | `failed` | `pending` |
 | `arms-lore.py` | `read` | `missed` | a use that raised no cursor, unread wordings |
-| `bowcraft.py` | `made` | `failed` | `noMaterial`, `wrongRow`, a worn tool, the sell trips |
+| `bowcraft.py` | `made` | `failed` | `noMaterial`, a worn tool, the sell trips |
 | `tinkering.py` | `made` | `failed` | the same, and the unloading |
 | `carpentry.py` | `made` | `failed` | the same, and the unloading |
 | `inscription.py` | `made` | `failed` | the same, the mana waits, and the sell trips or unloading |
@@ -1546,23 +1546,11 @@ material by hand.
 
 **Finding the row.** Buttons are `1 + type + index * 20`: categories are type 0 (**1** Materials,
 **21** Ammunition, **41** Weapons), the arrow on a `SELECTIONS` row is type 1, and `MAKE LAST` is
-**47**, read off this shard's menu. `RECIPES` names the buttons for known rows; it is a shortcut, and
-the pack is still what proves a craft. A table row is checked against the label the menu draws on
-that button: one that reads as the product is trusted like a row the walk found, one that reads
-otherwise is walked for instead of pressed. `craft-map.py` writes the table off the live menu.
-Anything else walks the categories: each is pressed until
-its rows name the product, and the row's button is read off the gump's controls, which draw each
-`SELECTIONS` row as its button, its name, then its details button, every page at once (UOAlive's
-Misc. Add-Ons is 59 rows over six pages, and `GetGumpContents` hands them back as one line). A row
-the controls do not name has the details page (its button plus one, which spends nothing) of each
-row whose name carries the product opened until one names it; a details page shows the row's own
-name, so the other rows are not opened. With no names to read, every row's page is, so
-`MAX_ITEM_ROWS` counts the category, not a page. A craft that added none of the product's graphics tries the next
-candidate, up to `MAX_ITEM_PROBES`, then the next category. Matches are whole-row: `crossbow` is inside `crossbow
-bolt`, and a substring match finds Ammunition first. Once a row has made the item,
-every craft after is `MAKE LAST`, when the menu has that button; a band change, a worn tool or a
-wrong graphic sends it back. A `RECIPES` button the menu does not have is never sent: the product
-goes to the walk instead.
+**47**, read off this shard's menu. `RECIPES` names each row's category and row button and is
+pressed as written: nothing is checked against the menu's labels or against what lands in the
+pack, and a row the table lacks ends the run. `craft-map.py` writes the table off the live menu.
+Once a row has made the item, every craft after is `MAKE LAST` when the menu has that button; a
+band change or a worn tool sends it back to the row.
 
 **Recognising the menu.** A gump naming `CRAFT_TITLE`, or one whose rows include a `CATEGORY_NAMES`
 entry or `LAST TEN`, is the menu, wherever it sits among the open gumps. Any other gump is ignored
@@ -1571,13 +1559,12 @@ is the menu, reported once: the title is a cliloc that `GetGumpContents` may ans
 
 | Outcome | What it means |
 | --- | --- |
-| `made` | The pack gained a product graphic, or the shard said so on a row the menu named by its exact label |
+| `made` | The shard said so, in the journal or the gump's NOTICES panel |
 | `failed` | The shard says the craft failed. Still a gain and still spends wood |
 | `noMaterial` | Restocks next cycle. `MAX_NO_MATERIAL` with wood still in the pack ends the run naming it |
-| `wrongRow` | Made something that is not the product. Next candidate row |
-| `toolWorn` | Looks for another pair and re-selects the row |
+| `toolWorn` | Looks for another pair and presses the row again |
 | `skillTooLow` | Ends the run: the band table and the shard disagree |
-| `noRow` | Ends the run: no row in any category made the product |
+| `noRow` | Ends the run: the product is not in `RECIPES` |
 | `noTool` | Retried `MAX_NO_TOOL` times, then ends the run |
 | `noGump` | The tools opened no menu. Retried the same way |
 | `throttled` | Backs off, capped at `THROTTLE_BACKOFF_MAX` |
@@ -1650,31 +1637,24 @@ when `DATA_PATH` is set.
 | `CRAFT_TITLE` | `BOWCRAFT AND FLETCHING` | Recognises a gump already open. Never refuses one |
 | `BUTTON_STRIDE` | `20` | Every derived button moves with it |
 | `MAKE_LAST_BUTTON` | `47` | The one button not derived |
-| `RECIPES` | table | `(category button, row button)` for known rows |
-| `MAX_CATEGORIES` / `MAX_ITEM_ROWS` | `6` / `12` | How far the walk goes |
-| `MAX_ITEM_PROBES` | `8` | Crafts spent finding the row before the category is written off |
-| `CRAFT_TIMEOUT` / `CRAFT_SETTLE` | `10.0` / `1.5` | How long the shard has to answer, and the pack to show it |
+| `RECIPES` | every row on UOAlive | `(category button, row button)`, pressed as written. Run `craft-map.py` with the menu open and paste the block it writes |
+| `CRAFT_TIMEOUT` | `10.0` | How long the shard has to answer |
 | `MAX_SELL_MISSES` / `SELL_RETRY_AFTER` | `3` / `25` | Trips that bought nothing before trips pause, and cycles before asking again. Neither ends the run |
 | `MIN_CRAFT_WOOD` | `10` | The largest recipe. Under this there is nothing to make |
 | `MAX_NO_MATERIAL` | `3` | Refusals for material in a row, with wood in the pack, before the run ends |
 
 ### When it goes wrong
 
-- **`no SELECTIONS row reads 'crossbow' - walking the rows`** then **`rows seen: …`**: the
-  controls named no such row. The run pays crafts to find the row instead. If the names are spelled
-  differently, fix `PRODUCTS`; if the block is the group names, this shard emits labels the other
-  way round.
-- **`no category lists 'yumi'`** or **`could not find the SELECTIONS row`**: the name in `PRODUCTS`
-  is not what the row says, or the item is not in this shard's menu. Open it by hand.
+- **`'yumi' is not in RECIPES`**: the band names a row the table lacks. Run `craft-map.py` with
+  the menu open and paste the block it writes; the keys are the rows' labels lowercased.
+- **It keeps making the wrong thing**: a `RECIPES` row points at another button, and the run counts
+  whatever that button made as made. Run `craft-map.py` and paste the table again.
 - **`the tools opened a gump that does not name BOWCRAFT AND FLETCHING`**: said once, and used
   anyway. `(no text)` is ordinary for a cliloc header.
 - **`ignoring gump 0x… - it is not the craft menu`**: a gump the shard keeps up beside the menu.
   Harmless; the line says what it starts with. **`gump 0x… has no button 47`**: `MAKE_LAST_BUTTON`
-  or a `RECIPES` entry is wrong for this menu, and the row is walked for instead of pressed blind.
-- **`the button table is out of date for 'crossbow'`**: the `RECIPES` button made something else,
-  or, after **`button N reads 'x', not 'crossbow'`**, the menu's own label on that button is another
-  item's, so it was not pressed. The walk corrects it; run `craft-map.py` and paste the table it
-  writes to save the crafts.
+  or a `RECIPES` entry is wrong for this menu; the press is refused, since the shard drops the
+  connection for a button the gump does not have.
 - **`unreadable outcome (n/5), check OUTCOME_TEXT`**: a success needs no wording; a refusal does.
 - **`refused for materials - the gump says '…'`** with **`the pack holds 300 boards hue 0x7d1`**:
   the menu spends only the wood type it is set to. `0x0` is plain; anything else is a special wood.
@@ -1713,17 +1693,15 @@ when `DATA_PATH` is set.
 
 ### Unverified
 
-- Whether every `HtmlControl.Text` on a row resolves the localized name or hands back a cliloc
-  number. If the latter, every run walks the rows.
 - Whether `API.RequestTarget` returning falsy is ESC, which ends the multi-pick.
-- The product graphics are stock. A reskinned one is reported once and the named row is kept, so it costs the log line and nothing else.
+- The product graphics are stock. A reskinned one is never noticed by the craft; only the unload and the sell count would miss it.
 
 ## tinkering.py
 
 Trains Tinkering from 20 to cap on the iron ingots in your pack. There is no restock: it makes the
 band's item until the pack is short of a craft, and does with it what the gump at the start says.
-Everything under the loop is shared with `bowcraft.py`, which is where the craft menu, the row walk
-and the outcomes are described.
+Everything under the loop is shared with `bowcraft.py`, which is where the craft menu, the row and
+the outcomes are described.
 
 | Tinkering | Makes | Ingots | Sells to |
 | --- | --- | --- | --- |
@@ -1779,8 +1757,7 @@ then counts toward `MAX_NO_MATERIAL`, since a menu set to another metal is the o
 | `TOOL_GRAPHICS` / `TOOL_NAME_WORDS` | stock / `tinker` | An art learned by name joins the set |
 | `INGOT_HUES` | nine rows | Names the ingots set aside |
 | `CATEGORY_NAMES` | stock | Where the group rows end and the item rows begin |
-| `RECIPES` | wind chimes | `(category button, row button)`. Copy the `is the row on button` lines in |
-| `MAX_CATEGORIES` / `MAX_ITEM_ROWS` | `10` / `24` | How far the walk goes; the Tools group runs past twenty rows |
+| `RECIPES` | every row on UOAlive | `(category button, row button)`, pressed as written. Run `craft-map.py` with the menu open and paste the block it writes |
 | `SELL_AT` | `10` | Products in the pack before a sell trip |
 | `DATA_PATH` | `skill-attempts.jsonl` | Where each craft is appended, with what it spent. `""` records nothing |
 
@@ -1791,8 +1768,8 @@ then counts toward `MAX_NO_MATERIAL`, since a menu set to another metal is the o
 - **`the shard refused 40 ingots in the pack 3 times`**: the menu's material is not iron. The gump's
   own words are printed above it.
 - **`no jeweler within 18`**: said once per band. Walk to one; the trips retry on their own.
-- **`no SELECTIONS row reads 'iron key' - walking the rows`**: the row is spelled differently on
-  this shard. `rows seen` lists what it read; fix `BANDS` and `PRODUCTS` to match.
+- **`'iron key' is not in RECIPES`**: the band names a row the table lacks. Run `craft-map.py` and
+  paste the block it writes; fix `BANDS` and `PRODUCTS` to the label it read.
 - **`the pack holds 60 unsold and nothing was picked to unload into`**, or **`the pack holds 60 and
   nothing was picked to unload into`** on a keeping run: pick a container next time.
 - **`nothing was pressed in 60s`**: the gump timed out, so everything is kept. Press faster, or
@@ -1813,7 +1790,7 @@ Trains Carpentry from 0 to cap on the cheapest recipe each band still gains on. 
 form as `bowcraft.py`, without Sell: wood is pulled from the chests, storage box and pack animals
 you add, everything made goes into the container you pick under Unload, since no vendor buys a
 deed, or is kept, and the tools are fetched from a container or the run stops when they run out. Everything under the loop is shared with `bowcraft.py`,
-which is where the craft menu, the row walk and the outcomes are described.
+which is where the craft menu, the row and the outcomes are described.
 
 | Carpentry | Makes | Wood |
 | --- | --- | --- |
@@ -1842,7 +1819,8 @@ Ceilings are exclusive; the first row the value is under wins. Each cycle:
    at `MAX_HELD` instead.
 3. Restock if under `RESTOCK_AT` wood, as `bowcraft.py` does. When the shard refuses a move as too
    heavy, the run unloads first. Out of wood with the pack short of the band's recipe ends the run.
-4. Open the menu with a carpentry tool, press the row or `MAKE LAST`, and read the outcome.
+4. Open the menu with a carpentry tool, press the `RECIPES` row or `MAKE LAST`, and read the
+   outcome off the journal and the NOTICES panel. Nothing is checked against the menu.
 
 **What is unloaded** is only what the run made: every addon is a deed, and the deed art is also a
 house deed's, so nothing that was in the pack when the run started is ever moved. A trash barrel
@@ -1869,8 +1847,7 @@ destroys it; a chest keeps it.
 | `DEED_GRAPHICS` | `0x14F0` | What the addon products land as. The sign hanger is not one of them |
 | `TOOL_GRAPHICS` / `TOOL_NAME_WORDS` | stock / `saw`, … | An art learned by name joins the set |
 | `CATEGORY_NAMES` | UOAlive's ten groups | Where the group rows end and the item rows begin |
-| `RECIPES` | every row on UOAlive | `(category button, row button)`. Run `craft-map.py` with the menu open and paste the block it writes |
-| `MAX_CATEGORIES` / `MAX_ITEM_ROWS` | `12` / `80` | How far the walk goes; UOAlive's Misc. Add-Ons runs to 59 rows over six pages |
+| `RECIPES` | every row on UOAlive | `(category button, row button)`, pressed as written. Run `craft-map.py` with the menu open and paste the block it writes |
 | `DUMP_AT` / `MAX_HELD` | `10` / `60` | Products before an unload, and the most kept with nowhere to put them |
 | `MAX_DUMP_MISSES` | `3` | Unloads in a row that moved nothing before the run ends |
 | `BATCH_SIZE` / `RESTOCK_AT` | `300` / `40` | What a restock fills to, and what triggers one |
@@ -1883,24 +1860,19 @@ destroys it; a chest keeps it.
 
 ### When it goes wrong
 
-- **`no SELECTIONS row reads 'dark wooden sign hanger' - walking the rows`**: the row is spelled
-  differently on this shard. `rows seen` lists what it read; fix `BANDS`, `PRODUCTS` and
-  `WOOD_COST` to match, and run `craft-map.py` for the table. UOAlive's display case is
-  `small display case (south)`, and the wiki names addons without the facing.
-- **`no category lists 'dark wooden sign hanger'`**: the shard may not have the item. Put a
-  Trinsic-style chair (15 wood, 42.1) in its place, and the ballot box from 47.3.
+- **`'dark wooden sign hanger' is not in RECIPES`**: the band names a row the table lacks. Run
+  `craft-map.py` and paste its block; UOAlive's display case is `small display case (south)`, and
+  the wiki names addons without the facing. A shard without the item takes a Trinsic-style chair
+  (15 wood, 42.1) in its place, and the ballot box from 47.3.
 - **`the shard refused 300 boards in the pack 3 times`**: the menu's material is not `WOOD_TYPE`.
 - **`the pack holds 60 products and nothing was picked to unload into`**: pick a container next time,
   or raise `MAX_HELD`.
 - **`3 unloads in a row moved nothing`**: the container is full, locked down, or not a container.
-- **`'x' landed as 0x…, which the product table does not list`**: `PRODUCTS` has the wrong art for
-  the row. The run keeps going on the row the menu named; put the graphic it names in the table so
-  the unload counts it.
+- **Made, but never unloaded**: `PRODUCTS` has the wrong art for the row, so the unload does not
+  count it. Put the graphic the pack shows in the table.
 
 ### Unverified
 
-- Every row name is stock ServUO, none read off UOAlive. The walk finds a row by its text, so a
-  wrong name costs categories walked, not wood.
 - The product graphics are stock apart from the sign hanger, which lands as `Wooden Signpost`
   `0x0B97`. The four addon products are still assumed to be deeds.
 - The ceilings assume the stock minimum-plus-25 gain window. A row that hits 100% success early has
@@ -1915,7 +1887,7 @@ Trains Inscription from 30 to cap on the spell scroll with the fewest reagents i
 guides train through. Every scroll spends a blank scroll, one of each reagent and mana, so the run
 meditates when the pool is short, pulls scrolls and reagents from what you point at the way
 `carpentry.py` does, and asks at the start what to do with the scrolls it makes. Everything under the
-loop is shared with `bowcraft.py`, which is where the craft menu, the row walk and the outcomes are
+loop is shared with `bowcraft.py`, which is where the craft menu, the row and the outcomes are
 described; the meditation is `magery.py`'s.
 
 | Inscription | Circle | Makes | Reagents | Mana |
@@ -1977,9 +1949,8 @@ counts the band's scroll by art, so it does count one you carried in.
 | `MEDITATE` / `MEDITATE_TO_FULL` | `True` / `True` | As `magery.py` |
 | `MAX_DRY` | `5` | Mana waits in a row that brought nothing before the run ends |
 | `TOOL_GRAPHICS` / `TOOL_NAME_WORDS` | stock / `pen` | An art learned by name joins the set |
-| `CATEGORY_NAMES` | UOAlive's paired circles, and the singles | Where the group rows end and the item rows begin |
-| `RECIPES` | the five bands | `(category button, row button)` on UOAlive. Copy the `is the row on button` lines in for any other spell |
-| `MAX_CATEGORIES` / `MAX_ITEM_ROWS` | `14` / `16` | How far the walk goes; UOAlive pairs the circles, sixteen rows over two pages |
+| `CATEGORY_NAMES` | UOAlive's paired circles | Where the group rows end and the item rows begin |
+| `RECIPES` | every row on UOAlive | `(category button, row button)`, pressed as written. Run `craft-map.py` with the menu open and paste the block it writes |
 | `DATA_PATH` | `skill-attempts.jsonl` | Where each craft is appended, with what it spent. `""` records nothing |
 
 ### When it goes wrong
@@ -1991,9 +1962,9 @@ counts the band's scroll by art, so it does count one you carried in.
 - **`mana is not coming back`**: meditation is refused or broken every time, and natural
   regeneration did not reach the figure inside `REGEN_TIMEOUT`. Empty your hands.
 - **`the shard refused ... in the pack 3 times`**: everything the recipe takes is there and the shard
-  still refuses, so the row pressed is another spell. Read `rows seen` and correct `BANDS`.
-- **`no SELECTIONS row reads 'magic reflection' - walking the rows`**: the row is spelled
-  differently on this shard. `rows seen` lists what it read; fix `BANDS` and `SPELLS` to match.
+  still refuses, so the row pressed is another spell. Run `craft-map.py` and paste the table again.
+- **`'magic reflection' is not in RECIPES`**: the band names a row the table lacks. Run
+  `craft-map.py` and paste its block; fix `BANDS` and `SPELLS` to the label it read.
 - **`no mage or scribe within 18`**: walk to one; the trips retry on their own.
 - **`nothing was pressed in 60s`**: the gump timed out, so the scrolls are kept. Press faster, or
   raise `OUTPUT_CHOICE.timeout`.
@@ -2057,10 +2028,8 @@ Each cycle:
    cursor with the bag. The pieces leaving the bag are the proof and the count; the wording is read
    only when none left, because a mixed bag gets a refusal per piece alongside the successes. Then
    `Salvage All` the bag if it holds judged pieces the deed did not take.
-5. Otherwise craft. The first time, one piece off the `RECIPES` row, or the row the page's text
-   names, so a wrong row costs one item's ingots; its tooltip proves the row. Nothing is pressed on
-   a guess: a row that made something else, or a page naming no row, stops the run with what it saw.
-   After that, the row's details page, `MAKE NUMBER`, and the number owed typed into the prompt.
+5. Otherwise craft: the `RECIPES` row's details page, `MAKE NUMBER`, and the number owed typed
+   into the prompt. The row is pressed as written; an item the table lacks ends the run.
    The auto craft says nothing when it ends, so the batch is counted from the pack and the failure
    lines, and `BATCH_IDLE` seconds of silence ends it. A refusal mid-batch presses `CANCEL MAKE`.
 
@@ -2074,11 +2043,10 @@ and makes three more. Out of ingots with pieces waiting, they go in before the r
 | `notRequested`, `notExceptional`, `wrongMaterial` | Nothing left the bag. Every offered piece is left there and never offered again, since the shard does not say which it meant. `wrongMaterial` re-selects the menu's material |
 | `notInPack` | Ends the run: the deed or the bag is not in your backpack |
 | `noCursor` | `MAX_NO_CURSOR` of them end the run |
-| `made`, `failed` | The proving craft. Both spend ingots |
 | `batch` | A batch ended, by count or by going quiet. The log says how many it made and failed |
-| `wrongRow` | Ends the run naming what it made; fix `RECIPES` |
 | `noMaterial` | Ends the run naming the ingots in the pack and the pieces still owed |
-| `noAnvil`, `skillTooLow`, `noRow`, `noMaterialRow` | End the run with the reason |
+| `noAnvil`, `skillTooLow`, `noMaterialRow` | End the run with the reason |
+| `noRow` | Ends the run: the item is not in `RECIPES` |
 | `toolWorn`, `noTool`, `noGump`, `throttled`, `saving`, unreadable | As `bowcraft.py` |
 
 ### Large deeds
@@ -2166,10 +2134,10 @@ small; the small leaving the pack is the proof. The run stops when every entry r
   character lacks the skill and the shard left it off. Add the wording to `MATERIAL_ALIASES`.
 - **`the deed's gump raised no cursor 3 times`**: button 4 is not the container combine here.
   Count the buttons and set `BOD_COMBINE_BUTTON`.
-- **`button 62 made 'ringmail leggings', not a 'ringmail tunic'`** then **`the row for … made
-  something else`**: the `RECIPES` entry is wrong. Correct it, or drop it and let the walk find the row.
-- **`no row on button 1's page reads '…'`**: the item is not in `RECIPES` and the page's text does
-  not name it. Add the entry from the page text in that line.
+- **`'ringmail tunic' is not in RECIPES`**: the deed's wording is not a key. Add it beside the
+  menu's own label for that row, the way `platemail` sits beside `platemail (tunic)`.
+- **The batch made the wrong thing**, seen as `notRequested` at the combine: a `RECIPES` row points
+  at another button. Run `craft-map.py` and paste the table again.
 - **`the deed took none of the 5 offered (notRequested)`** on pieces that plainly are the item:
   the deed wants another graphic of the same name (female plate, gargish). Stop it and read the
   SELECTIONS rows.
@@ -2180,8 +2148,6 @@ small; the small leaving the pack is the proof. The run stops when every entry r
 - **`batch of 10: 4 made, 2 failed (batch)`** with fewer than asked: the batch went quiet for
   `BATCH_IDLE`. The next cycle asks for what is still owed.
 - **`the deed's tooltip is behind the count`**: said once; the pack proved the combine.
-- **`the new item's tooltip did not arrive - taking the craft as the product`**: trusted. A wrong
-  row shows as `notRequested` at the combine.
 
 ### Notes
 

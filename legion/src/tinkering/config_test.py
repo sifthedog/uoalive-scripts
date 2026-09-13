@@ -1,7 +1,7 @@
 import unittest
 
 from tinkering.config import (BANDS, INGOT_COST, OUTCOME_TEXT, OUTPUT_CHOICE, OUTPUT_OPTIONS,
-                              PRODUCTS, VENDORS)
+                              PRODUCTS, RECIPES, VENDORS)
 from uo.stages import band_for
 
 
@@ -16,9 +16,10 @@ class BandsTest(unittest.TestCase):
         self.assertEqual(band_for(BANDS, 111.8), "fancy wind chimes")
         self.assertEqual(band_for(BANDS, 120.0), "fancy wind chimes")
 
-    def test_every_band_has_a_product_a_cost_and_a_buyer_or_none(self):
+    def test_every_band_has_a_product_a_row_a_cost_and_a_buyer_or_none(self):
         for _ceiling, product in BANDS:
             self.assertIn(product, PRODUCTS)
+            self.assertIn(product, RECIPES)
             self.assertIn(product, INGOT_COST)
             self.assertIn(product, VENDORS)
 

@@ -1,6 +1,6 @@
 import unittest
 
-from carpentry.config import BANDS, DEED_GRAPHICS, OUTCOME_TEXT, PRODUCTS, WOOD_COST
+from carpentry.config import BANDS, DEED_GRAPHICS, OUTCOME_TEXT, PRODUCTS, RECIPES, WOOD_COST
 from uo.stages import band_for
 
 
@@ -11,8 +11,8 @@ class BandsTest(unittest.TestCase):
         self.assertEqual(band_for(BANDS, 11.0), "barrel lid")
         self.assertEqual(band_for(BANDS, 42.1), "dark wooden sign hanger")
         self.assertEqual(band_for(BANDS, 70.0), "bokuto")
-        self.assertEqual(band_for(BANDS, 98.5), "quarter staff")
-        self.assertEqual(band_for(BANDS, 98.6), "gnarled staff")
+        self.assertEqual(band_for(BANDS, 94.9), "quarter staff")
+        self.assertEqual(band_for(BANDS, 95.0), "gnarled staff")
         self.assertEqual(band_for(BANDS, 119.6), "rustic bench (south)")
         self.assertEqual(band_for(BANDS, 119.7), "small display case (south)")
         self.assertEqual(band_for(BANDS, 120.0), "small display case (south)")
@@ -21,6 +21,10 @@ class BandsTest(unittest.TestCase):
         for _ceiling, product in BANDS:
             self.assertIn(product, PRODUCTS)
             self.assertIn(product, WOOD_COST)
+
+    def test_every_band_has_a_recipe(self):
+        for _ceiling, product in BANDS:
+            self.assertIn(product, RECIPES)
 
     def test_the_ceilings_climb(self):
         ceilings = [ceiling for ceiling, _product in BANDS if ceiling is not None]
