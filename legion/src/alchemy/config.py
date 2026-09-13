@@ -10,17 +10,16 @@ SKILL_NAMES = ["Alchemy"]
 
 MIN_SKILL = 0.0
 
-# Ceilings are exclusive, in the client's float percentage. The wiki's path on stock RunUO floors
-# (lesser poison -5, poison 15, greater agility 35, greater strength 45, greater poison 55, greater
-# cure 65, deadly poison 90; success is (skill - floor) / 50). A failure keeps the bottle and loses
-# half the reagents, never fewer than one.
+# Ceilings are exclusive, in the client's float percentage. Stock RunUO floors (lesser poison -5,
+# poison 15, greater agility 35, greater poison 55, deadly poison 90; success is (skill - floor) /
+# 50), each row ridden until the next cheap one rather than swapped for the greater strength and
+# greater cure the wiki's path takes in between. A failure keeps the bottle and loses half the
+# reagents, never fewer than one.
 BANDS = [
     (15.0, "lesser poison"),
     (35.0, "poison"),
-    (45.0, "greater agility"),
-    (55.0, "greater strength"),
-    (75.0, "greater poison"),
-    (90.0, "greater cure"),
+    (60.0, "greater agility"),
+    (90.0, "greater poison"),
     (None, "deadly poison"),
 ]
 

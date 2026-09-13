@@ -2026,14 +2026,15 @@ is where the craft menu, the row and the outcomes are described.
 | --- | --- | --- |
 | 0 – 15 | lesser poison | a bottle, 1 nightshade |
 | 15 – 35 | poison | a bottle, 2 nightshade |
-| 35 – 45 | greater agility | a bottle, 3 blood moss |
-| 45 – 55 | greater strength | a bottle, 5 mandrake root |
-| 55 – 75 | greater poison | a bottle, 4 nightshade |
-| 75 – 90 | greater cure | a bottle, 6 garlic |
+| 35 – 60 | greater agility | a bottle, 3 blood moss |
+| 60 – 90 | greater poison | a bottle, 4 nightshade |
 | 90 – cap | deadly poison | a bottle, 8 nightshade |
 
-The wiki's path on stock RunUO floors, where success is `(skill - floor) / 50`. Ceilings are
-exclusive; the first row the value is under wins. A failure keeps the bottle and loses half the
+Stock RunUO floors, where success is `(skill - floor) / 50`: greater agility opens at 35 and
+greater poison at 55, and each is ridden until the next cheap row rather than swapped for the
+greater strength and greater cure the wiki's path takes in between. Ceilings are exclusive; the
+first row the value is under wins. `POTIONS` carries both, so putting them back is one edit of
+`BANDS`. A failure keeps the bottle and loses half the
 reagents. Each cycle:
 
 1. Read the skill. An uncovered band ends the run; a band change re-selects the row and says what it
