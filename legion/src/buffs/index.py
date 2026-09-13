@@ -12,6 +12,7 @@ from uo.guards import dead, first_reason, stopped
 from uo.heartbeat import Heartbeat
 from uo.log import make_log
 from uo.loop import backoff_for
+from uo.mana import cost
 from uo.save import SaveWatch
 from uo.vitals import position_and_mana
 
@@ -150,12 +151,12 @@ def one_pass():
 
             continue
 
-        if API.Player.Mana < entry["mana"]:
+        if API.Player.Mana < cost(entry["mana"]):
             if not said_short:
                 said_short = True
                 log(
                     "%d/%d mana for %s - waiting for it"
-                    % (API.Player.Mana, entry["mana"], item["name"])
+                    % (API.Player.Mana, cost(entry["mana"]), item["name"])
                 )
 
             continue

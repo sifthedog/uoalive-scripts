@@ -17,7 +17,7 @@ from uo.guards import dead, first_reason, hurt, skill_capped, stopped
 from uo.heartbeat import Heartbeat
 from uo.log import make_log
 from uo.loop import backoff_for
-from uo.mana import ManaWatch
+from uo.mana import ManaWatch, cost
 from uo.meditate import Meditation
 from uo.record import attempt_log
 from uo.save import SaveWatch
@@ -176,8 +176,8 @@ try:
             casting = stage
             log("%.1f - %s until %.1f" % (value, stage["spell"], stage["up_to"]))
 
-        if API.Player.Mana < stage["mana"]:
-            if not regain_mana(stage["mana"]):
+        if API.Player.Mana < cost(stage["mana"]):
+            if not regain_mana(cost(stage["mana"])):
                 # Weighted, because a dry stretch has just spent the whole REGEN_TIMEOUT standing
                 # still where a casting cycle costs cycle_cost. Counting both as one would either
                 # end a slow-gaining run in minutes or leave a starved one going for hours.
@@ -243,7 +243,7 @@ try:
                 "refused for mana at %d - raise %s's mana in STAGES"
                 % (API.Player.Mana, stage["spell"])
             )
-            regain_mana(stage["mana"])
+            regain_mana(cost(stage["mana"]))
 
         # Nothing waited for refills a pouch
         elif outcome == "noReagents":

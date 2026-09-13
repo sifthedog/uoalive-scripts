@@ -1215,7 +1215,7 @@ Every timing is in seconds.
 
 | Setting | Default | What it is for |
 | --- | --- | --- |
-| `STAGES` | four rows | One row per band: cast `spell` until the skill reaches `up_to`, at `mana` a cast |
+| `STAGES` | four rows | One row per band: cast `spell` until the skill reaches `up_to`, at `mana` a cast. `mana` is the base circle cost; the gate scales it by the status gump's Lower Mana Cost, capped at `uo/mana.py`'s `LMC_CAP` (40, OSI's) |
 | `STAGES[].up_to` | — | The skill value the row trains to, exclusive. A float, `74.6` |
 | `STAGES[].buff` | — | A `BuffIconType` member name, matched against `str(buff.Type)`. Earthquake has none |
 | `STAGES[].target` | `self` | Answers the row's cursor. Every row but Earthquake |

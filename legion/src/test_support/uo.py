@@ -101,6 +101,7 @@ class FakePlayer(object):
         self.HitsMax = fields.get("hits_max", 100)
         self.Mana = fields.get("mana", 50)
         self.ManaMax = fields.get("mana_max", 50)
+        self.LowerManaCost = fields.get("lower_mana_cost", 0)
         self.Weight = fields.get("weight", 100)
         self.WeightMax = fields.get("weight_max", 400)
         self.Followers = fields.get("followers", 0)

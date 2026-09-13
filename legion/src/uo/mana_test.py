@@ -1,7 +1,31 @@
 import unittest
 
-from uo.mana import ManaWatch
+from uo.mana import ManaWatch, cost
 from test_support.uo import install
+
+
+class CostTest(unittest.TestCase):
+    def setUp(self):
+        self.api = install()
+
+    def test_no_lmc_is_the_base(self):
+        self.assertEqual(cost(50), 50)
+
+    def test_lmc_takes_its_percent_rounding_up(self):
+        self.api.Player.LowerManaCost = 40
+
+        self.assertEqual(cost(50), 30)
+        self.assertEqual(cost(9), 6)
+
+    def test_lmc_past_the_cap_counts_as_the_cap(self):
+        self.api.Player.LowerManaCost = 60
+
+        self.assertEqual(cost(50), 30)
+
+    def test_an_unread_lmc_is_zero(self):
+        self.api.Player.LowerManaCost = None
+
+        self.assertEqual(cost(50), 50)
 
 
 class ManaWatchTest(unittest.TestCase):

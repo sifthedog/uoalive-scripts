@@ -23,7 +23,7 @@ from uo.heartbeat import Heartbeat
 from uo.journal import journal_tail
 from uo.log import make_log
 from uo.loop import backoff_for
-from uo.mana import ManaWatch
+from uo.mana import ManaWatch, cost
 from uo.meditate import Meditation
 from uo.record import attempt_log
 from uo.save import SaveWatch
@@ -229,8 +229,8 @@ try:
                 API.Player.TithingPoints, stage["tithing"])
             break
 
-        if API.Player.Mana < stage["mana"]:
-            arrived = regain_mana(stage["mana"])
+        if API.Player.Mana < cost(stage["mana"]):
+            arrived = regain_mana(cost(stage["mana"]))
 
             if stop is not None:
                 break
@@ -298,7 +298,7 @@ try:
                 "refused for mana at %d - raise %s's mana in STAGES"
                 % (API.Player.Mana, stage["spell"])
             )
-            regain_mana(stage["mana"])
+            regain_mana(cost(stage["mana"]))
 
         elif outcome == "noTithing":
             stop = "out of tithing points - tithe gold at a shrine"
