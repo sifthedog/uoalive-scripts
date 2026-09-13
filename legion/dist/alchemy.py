@@ -59,7 +59,7 @@ MIN_SKILL = 0.0
 BANDS = [
     (15.0, "lesser poison"),
     (35.0, "poison"),
-    (60.0, "greater agility"),
+    (65.0, "greater agility"),
     (90.0, "greater poison"),
     (None, "deadly poison"),
 ]
