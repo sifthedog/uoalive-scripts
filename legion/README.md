@@ -2059,9 +2059,9 @@ art, so a poison carried in from an earlier run is told apart by serial only.
 - **A mortar and pestle in your pack**, and spares, or a container holding them picked on the form.
 - **Empty bottles and the band's reagent in your pack or in what you pick.** Bottles weigh a stone
   each, which is what bounds `BATCH_CRAFTS`.
-- **Something to unload into**: a trash barrel destroys the potions, a chest keeps them, and a
-  potion keg in your pack takes the ones of its type. The keg is dropped onto, never used - using
-  one pours a potion out of it.
+- **Something to unload into**: a trash barrel destroys the potions, a chest keeps them. With a
+  potion keg of the type in your pack the shard pours straight into it and nothing is unloaded;
+  the keg is never used, since using one pours a potion out of it.
 
 ### What to set
 
@@ -2090,9 +2090,11 @@ art, so a poison carried in from an earlier run is told apart by serial only.
 
 ### Unverified
 
-- Every wording in `OUTCOME_TEXT`, and every art: the mortar, the bottle, the reagents and the
-  potions are stock RunUO, none read off UOAlive. Stock DefAlchemy says `You pour the potion into a
-  bottle` for a success and `You fail to create a useful potion` for a failure.
+- Every wording in `OUTCOME_TEXT` but the keg success, and every art: the mortar, the bottle, the
+  reagents and the potions are stock RunUO, none read off UOAlive. Stock DefAlchemy says `You pour
+  the potion into a bottle` for a success and `You fail to create a useful potion` for a failure;
+  UOAlive's NOTICES panel says `You create the potion and pour it into a keg.` with a keg in the
+  pack.
 - `MAKE_LAST_BUTTON` and the button stride are assumed to be `bowcraft.py`'s, as the same gump.
 
 ## bod.py

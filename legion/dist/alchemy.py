@@ -225,6 +225,8 @@ OUTCOME_TEXT = [
         "made",
         [
             "You pour the potion into a bottle",
+            # Read off UOAlive's NOTICES panel with a keg in the pack: the potion never lands
+            "You create the potion and pour it into a keg",
             "You create the item",
             "You create an exceptional",
             "You put the",
