@@ -1679,20 +1679,29 @@ class Converter(object):
         return True
 
     # The action throttle can hold a conversion well past any pause worth taking, and reading too
-    # early is indistinguishable from a resource that cannot be worked
+    # early is indistinguishable from a resource that cannot be worked. Reported only once the diff
+    # has held still for a poll: the client can drop the source stack one poll before it adds the
+    # product, and the loss-only diff read in between is a conversion that worked reading as one
+    # that destroyed the material
     def _wait_for_change(self, before):
         waited = 0.0
+        last = None
 
         while waited < self._config["timeout"]:
             API.Pause(self._config["poll"])
             waited += self._config["poll"]
 
-            gained, lost = diff_counts(before, counts_by_graphic(pack_contents()))
+            changed = diff_counts(before, counts_by_graphic(pack_contents()))
 
-            if gained or lost:
-                return gained, lost
+            if not changed[0] and not changed[1]:
+                continue
 
-        return None
+            if changed == last:
+                return changed
+
+            last = changed
+
+        return last
 
     def _convert_one(self, stack):
         hue = hue_of(stack)

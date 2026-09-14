@@ -78,6 +78,36 @@ class ConverterTest(unittest.TestCase):
 
         self.assertEqual(self.converted, [({(0x1BF2, 0): 5}, {(0x19B9, 0): 10})])
 
+    # The pack change arrives in two steps: the logs go on one poll, the boards land on the next.
+    # Read on the first, that is a loss with nothing gained - a conversion that worked, recorded as
+    # one that burned the material away
+    def test_a_change_that_arrives_in_two_steps_is_reported_whole(self):
+        self.api.hold(item(serial=1, graphic=0x19B9, hue=0, amount=10))
+        self.after = []
+        polls = []
+
+        def pause(seconds):
+            polls.append(seconds)
+
+            if len(polls) == 2:
+                self.api.hold(item(serial=2, graphic=0x1BF2, hue=0, amount=10))
+
+        self.api.Pause = pause
+
+        self.build(timeout=2.0, poll=0.5).run()
+
+        self.assertEqual(self.converted, [({(0x1BF2, 0): 10}, {(0x19B9, 0): 10})])
+
+    # A failed smelt destroys the ore with nothing to show for it, so a loss that settles has to
+    # report rather than wait out the timeout looking for a product that is never coming
+    def test_a_loss_with_no_product_is_still_reported(self):
+        self.api.hold(item(serial=1, graphic=0x19B9, hue=0, amount=10))
+        self.after = []
+
+        self.build(timeout=2.0, poll=0.5).run()
+
+        self.assertEqual(self.converted, [({}, {(0x19B9, 0): 10})])
+
     def test_a_pack_that_held_still_is_not_a_conversion(self):
         self.api.hold(item(serial=1, graphic=0x19B9, hue=0, amount=10))
 
