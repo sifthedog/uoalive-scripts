@@ -2059,12 +2059,13 @@ is where the craft menu, the row and the outcomes are described.
 | 0 – 15 | lesser poison | a bottle, 1 nightshade |
 | 15 – 35 | poison | a bottle, 2 nightshade |
 | 35 – 73 | greater agility | a bottle, 3 blood moss |
-| 73 – 90 | greater poison | a bottle, 4 nightshade |
-| 90 – cap | deadly poison | a bottle, 8 nightshade |
+| 73 – 92.5 | greater poison | a bottle, 4 nightshade |
+| 92.5 – 100 | greater conflagration | a bottle, 10 grave dust |
+| 100 – cap | deadly poison | a bottle, 8 nightshade |
 
-Stock RunUO floors, where success is `(skill - floor) / 50`: greater agility opens at 35 and
-greater poison at 55, and each is ridden until the next cheap row rather than swapped for the
-greater strength and greater cure the wiki's path takes in between. Ceilings are exclusive; the
+Stock RunUO floors, where success is `(skill - floor) / 50`: greater agility opens at 35,
+greater poison at 55 and greater conflagration at 65, and each is ridden until the next cheap row
+rather than swapped for the greater strength and greater cure the wiki's path takes in between. Ceilings are exclusive; the
 first row the value is under wins. `POTIONS` carries both, so putting them back is one edit of
 `BANDS`. A failure keeps the bottle and loses half the
 reagents. Each cycle:
@@ -2106,8 +2107,8 @@ art, so a poison carried in from an earlier run is told apart by serial only.
 | Setting | Default | What it is for |
 | --- | --- | --- |
 | `BANDS` | see above | Ceiling and potion. Any `POTIONS` row |
-| `POTIONS` | seven rows | Row name as the gump spells it: the potion's art, its reagent and how many |
-| `STOCK_KINDS` | five rows | Bottles and the four reagents, by art and name words |
+| `POTIONS` | eight rows | Row name as the gump spells it: the potion's art, its reagent and how many |
+| `STOCK_KINDS` | six rows | Bottles and the five reagents, by art and name words |
 | `BATCH_CRAFTS` / `RESTOCK_AT` | `30` / `5` | Crafts' worth each kind is filled to, and the crafts left that trigger it |
 | `DUMP_AT` / `MAX_HELD` | `10` / `60` | The form's default for potions before an unload, and the most kept with nowhere to put them |
 | `MAX_DUMP_MISSES` | `3` | Unloads in a row that moved nothing before the run ends |
@@ -2135,7 +2136,10 @@ art, so a poison carried in from an earlier run is told apart by serial only.
 
 - Every wording in `OUTCOME_TEXT` but the keg success, and every art: the mortar, the bottle, the
   reagents, the potions and the keg are stock RunUO, none read off UOAlive. So are the keg names
-  behind `KEG_FILLED_TEXT`: `A specially lined keg` empty, `A keg of <potion> potions` started. Stock DefAlchemy says `You pour
+  behind `KEG_FILLED_TEXT`: `A specially lined keg` empty, `A keg of <potion> potions` started.
+  Greater conflagration's ten grave dust were read off UOAlive's row; the dust's art `0x0F8F` and
+  the potion's `0x0F06` are stock, and whether a keg takes one is unread - pick Unload or Keep if
+  the drop is refused. Stock DefAlchemy says `You pour
   the potion into a bottle` for a success and `You fail to create a useful potion` for a failure;
   UOAlive's NOTICES panel says `You create the potion and pour it into a keg.` with a keg in the
   pack.

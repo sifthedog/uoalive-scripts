@@ -14,8 +14,10 @@ class BandsTest(unittest.TestCase):
         self.assertEqual(band_for(BANDS, 35.0), "greater agility")
         self.assertEqual(band_for(BANDS, 72.9), "greater agility")
         self.assertEqual(band_for(BANDS, 73.0), "greater poison")
-        self.assertEqual(band_for(BANDS, 89.9), "greater poison")
-        self.assertEqual(band_for(BANDS, 90.0), "deadly poison")
+        self.assertEqual(band_for(BANDS, 92.4), "greater poison")
+        self.assertEqual(band_for(BANDS, 92.5), "greater conflagration")
+        self.assertEqual(band_for(BANDS, 99.9), "greater conflagration")
+        self.assertEqual(band_for(BANDS, 100.0), "deadly poison")
         self.assertEqual(band_for(BANDS, 120.0), "deadly poison")
 
     def test_every_band_is_a_potion_with_an_art_a_recipe_and_its_needs(self):

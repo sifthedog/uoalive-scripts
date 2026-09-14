@@ -11,15 +11,16 @@ SKILL_NAMES = ["Alchemy"]
 MIN_SKILL = 0.0
 
 # Ceilings are exclusive, in the client's float percentage. Stock RunUO floors (lesser poison -5,
-# poison 15, greater agility 35, greater poison 55, deadly poison 90; success is (skill - floor) /
-# 50), each row ridden until the next cheap one rather than swapped for the greater strength and
-# greater cure the wiki's path takes in between. A failure keeps the bottle and loses half the
-# reagents, never fewer than one.
+# poison 15, greater agility 35, greater poison 55, greater conflagration 65, deadly poison 90;
+# success is (skill - floor) / 50), each row ridden until the next cheap one rather than swapped
+# for the greater strength and greater cure the wiki's path takes in between. A failure keeps the
+# bottle and loses half the reagents, never fewer than one.
 BANDS = [
     (15.0, "lesser poison"),
     (35.0, "poison"),
     (73.0, "greater agility"),
-    (90.0, "greater poison"),
+    (92.5, "greater poison"),
+    (100.0, "greater conflagration"),
     (None, "deadly poison"),
 ]
 
@@ -28,6 +29,7 @@ NIGHTSHADE = "nightshade"
 BLOODMOSS = "blood moss"
 MANDRAKE = "mandrake root"
 GARLIC = "garlic"
+GRAVE_DUST = "grave dust"
 
 # Stock art, unverified on UOAlive; an art learned by name joins its set
 STOCK_KINDS = [
@@ -36,12 +38,14 @@ STOCK_KINDS = [
     (BLOODMOSS, set([0x0F7B]), ["bloodmoss", "blood moss"]),
     (MANDRAKE, set([0x0F86]), ["mandrake"]),
     (GARLIC, set([0x0F84]), ["garlic"]),
+    (GRAVE_DUST, set([0x0F8F]), ["grave dust"]),
 ]
 
 KIND_ORDER = [kind for kind, _graphics, _words in STOCK_KINDS]
 
 # Row name as the SELECTIONS row spells it: the potion's art, its reagent and how many. Stock RunUO:
-# every poison lands as 0x0F0A, and every potion takes one bottle besides.
+# every poison lands as 0x0F0A, every conflagration as 0x0F06, and every potion takes one bottle
+# besides.
 POTIONS = {
     "lesser poison": (0x0F0A, NIGHTSHADE, 1),
     "poison": (0x0F0A, NIGHTSHADE, 2),
@@ -49,6 +53,7 @@ POTIONS = {
     "greater strength": (0x0F09, MANDRAKE, 5),
     "greater poison": (0x0F0A, NIGHTSHADE, 4),
     "greater cure": (0x0F07, GARLIC, 6),
+    "greater conflagration": (0x0F06, GRAVE_DUST, 10),
     "deadly poison": (0x0F0A, NIGHTSHADE, 8),
 }
 
@@ -214,6 +219,7 @@ OUTCOME_TEXT = [
             "enough bloodmoss",
             "enough mandrake",
             "enough garlic",
+            "enough grave dust",
         ],
     ),
     (
