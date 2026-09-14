@@ -13,6 +13,7 @@ repo targets the ClassicUO web client; nothing is shared between the two.
 | `fishing.py` | Gets off the mount, says `all guard`, casts the fishing pole once at the nearest water and records what came out. Run it again for the next cast |
 | `attack.py` | Turns war mode on and attacks the nearest gray or red mobile within 10 tiles that is not your pet or, by its tooltip, anyone else's. Run it again for the next one |
 | `arms-lore.py` | Target a weapon, then read it every half second until Arms Lore caps |
+| `hiding.py` | Uses Hiding over and over until the skill caps, pacing itself off the shard's refusals, and records every roll |
 | `bowcraft.py` | Trains Bowcraft from 30 to cap: makes whatever the band still gains on, restocks wood from the containers and pack animals you pick, and sells it to the bowyer, unloads it or keeps it as a gump at the start decides |
 | `tinkering.py` | Trains Tinkering from 20 to cap on the iron ingots you carry: makes whatever the band still gains on, and sells it to the vendor that buys it, unloads it or keeps it as a gump at the start decides |
 | `carpentry.py` | Trains Carpentry from 0 to cap on the cheapest recipe each band still gains on, restocks wood the way `bowcraft.py` does, and unloads what it made into the container you pick |
@@ -238,7 +239,7 @@ reports everything as unread is also crawling; fix the wording, not the timeout.
 
 ## The attempt log
 
-Fourteen scripts append one JSON line per attempt to `DATA_PATH`; `skilldb.py` turns them into two CSV
+Fifteen scripts append one JSON line per attempt to `DATA_PATH`; `skilldb.py` turns them into two CSV
 tables. A bare filename lands beside the running script, in the `LegionScripts` folder, read off
 `API.ScriptPath` or assumed when the client does not say; the run logs `recording to …` at the start.
 A path with a folder in it is used as written. `DATA_PATH = ""` records nothing. The file is opened and closed per row; a run that cannot write says so once and
@@ -257,6 +258,7 @@ paladin who never once failed.
 | `chivalry.py` | the same | `fizzled`, and `unknown` for an attempt it could not name | the mana wait, the buff already standing, the health floor, the tithing gate and the weapon moves |
 | `tame.py` | `tamed` | `failed` | `pending` |
 | `arms-lore.py` | `read` | `missed` | a use that raised no cursor, unread wordings |
+| `hiding.py` | `hidden` | `failed` | `busy` (fighting or casting, no roll), throttles, unread wordings |
 | `bowcraft.py` | `made` | `failed` | `noMaterial`, a worn tool, the sell trips |
 | `tinkering.py` | `made` | `failed` | the same, and the unloading |
 | `carpentry.py` | `made` | `failed` | the same, and the unloading |
@@ -1148,6 +1150,35 @@ the script. The weapon can sit in your pack.
 Nothing here has watched Arms Lore on this shard. `read` is a list of stems (`damage`,
 `durability`, `quality`) rather than a sentence, because shards report the reading in different
 wording. Unmatched outcomes are counted and reported as `N outcome(s) went unread`.
+
+## hiding.py
+
+Uses Hiding every cycle until the skill caps or you stop the script. It raises no cursor and needs
+nothing in the pack. Each roll is recorded as `hidden` or `failed`, whether or not you were already
+hidden: a success while hidden keeps you hidden, a failure reveals you.
+
+- The wording is read first. When the journal matched nothing, the player's hidden flag before and
+  after the use is the second proof: off to on is `hidden`, on to off is `failed`, unchanged is unread.
+- The pace is learned, not configured: `PACE_FLOOR` is the floor, `PACE_STEP` is added on every
+  throttle and taken back after `PACE_EASE_AFTER` rolls. ServUO holds the timer for 10s after a
+  roll, so a run settles near that.
+- `busy` is a refusal without a roll - you are fighting or casting. It is counted and said, not recorded.
+
+| Setting | Default | What it is for |
+| --- | --- | --- |
+| `PACE_FLOOR` | `1.0` | Seconds between uses to start from |
+| `PACE_STEP` | `1.0` | Added per throttle, taken back after `PACE_EASE_AFTER` rolls |
+| `PACE_MAX` | `12.0` | The pace never goes above this |
+| `PACE_EASE_AFTER` | `5` | Rolls in a row before the pace eases by one step |
+| `MAX_THROTTLED` | `20` | Throttles in a row before the run stops |
+| `READ_TIMEOUT` | `1.5` | How long the outcome has to land in the journal |
+| `READ_POLL` | `0.1` | How often the journal is asked |
+| `DATA_PATH` | `skill-attempts.jsonl` | Where each roll is appended. `""` records nothing |
+
+`You have hidden yourself well.` and `You fail to hide` were watched on UOAlive; the `busy` phrases
+are ServUO's. UOAlive lets Hiding go to 120 with a power scroll and fail past 100, so a capped run
+is longer than stock.
+Unmatched outcomes are counted and reported as `N outcome(s) went unread`.
 
 ## magery.py
 
