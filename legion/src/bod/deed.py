@@ -60,6 +60,15 @@ def parse_deed(lines, config):
     return request, None
 
 
+# The first trade, in order, whose recipes make every item the deed asks for
+def trade_of(request, trades):
+    for name, trade in trades:
+        if all(item in trade["recipes"] for item, _done in request["entries"]):
+            return name
+
+    return None
+
+
 def entry_request(request, item, done):
     return {
         "large": False,
@@ -95,7 +104,8 @@ class Deed(object):
 
     def describe(self):
         request = self.request
-        flags = "%s, %s" % (", exceptional" if request["exceptional"] else "", request["material"])
+        flags = "%s, %s" % (", exceptional" if request["exceptional"] else "",
+                            request["material"] or "no material")
 
         if request["large"]:
             return "large deed x%d: %s%s" % (

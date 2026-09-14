@@ -1,30 +1,27 @@
 import API
 
 from bod.box import DeedBox
-from bod.checks import ingot_report, preflight
+from bod.checks import preflight, stock_report
 from bod.combine import DeedCombiner
 from bod.config import (ARTICLES, BATCH_IDLE, BOD_COMBINE_BUTTON, BOD_GUMP_TEXT, BOX_NAMES,
                         BOX_POLL, BOX_TIMEOUT, BUTTON_STRIDE, CANCEL_MAKE_BUTTON,
-                        CATEGORY_BUTTON_TYPE, CATEGORY_NAMES, CHECK_BEFORE_START, COMBINE_POLL,
-                        COMBINE_TEXT, COMBINE_TIMEOUT, CONTEXT_TIMEOUT, CRAFT_INTERVAL, CRAFT_POLL,
-                        CRAFT_TIMEOUT, CRAFT_TITLE, CRAFT_TITLE_FRAGMENTS, CRAFT_TITLE_TEXT,
-                        DEED_GRAPHICS, DEED_NAME_WORDS, DEED_TEXT, DONE_SOUND, EXCEPTIONAL_TEXT,
-                        GUMP_POLL, GUMP_TIMEOUT, HEARTBEAT_EVERY, INGOT_COST, INGOT_GRAPHICS,
+                        CATEGORY_BUTTON_TYPE, CHECK_BEFORE_START, COMBINE_POLL, COMBINE_TEXT,
+                        COMBINE_TIMEOUT, CONTEXT_TIMEOUT, CRAFT_INTERVAL, CRAFT_POLL,
+                        CRAFT_TIMEOUT, DEED_GRAPHICS, DEED_NAME_WORDS, DEED_TEXT, DONE_SOUND,
+                        EXCEPTIONAL_TEXT, GUMP_POLL, GUMP_TIMEOUT, HEARTBEAT_EVERY, INGOT_GRAPHICS,
                         INGOT_HUES, INGOT_NAME_WORDS, ITEM_BUTTON_TYPE, JOURNAL_TAIL_LINES,
                         JOURNAL_TAIL_SECONDS, LARGE_COMBINE_BUTTON, LARGE_COMBINE_TEXT,
                         LAST_TEN_LABEL, MAKE_NUMBER_BUTTON, MATERIAL_ALIASES, MATERIAL_BUTTON_TYPE,
                         MATERIAL_ORDER, MATERIAL_ROWS_AFTER, MATERIAL_ROW_TYPE, MAX_CYCLES,
                         MAX_MATERIAL_ROWS, MAX_NO_CURSOR, MAX_NO_TOOL, MAX_THROTTLED, MAX_UNKNOWN,
                         MAX_UNREADABLE_REPORTS, MOVE_DELAY, NOTES_PATH, NOTES_TAIL_SECONDS,
-                        OPEN_DELAY, OPL_ASKS, OPL_SETTLE, OPL_TIMEOUT, OUTCOME_TEXT, PICK_TIMEOUT,
-                        PLAIN_MATERIAL, PROMPT_DELAY, RECIPES, REREAD_POLL, REREAD_SETTLE,
-                        SALVAGE_AT_END, SALVAGE_ENTRIES, SALVAGE_SETTLE, SAVE_DONE_TEXT, SAVE_POLL,
-                        SAVE_WAIT, SAVING_TEXT, SKILL_NAMES, STALL_STOP, STALL_WARN, STEP_DELAY,
+                        OPEN_DELAY, OPL_ASKS, OPL_SETTLE, OPL_TIMEOUT, PICK_TIMEOUT, PROMPT_DELAY,
+                        REREAD_POLL, REREAD_SETTLE, SALVAGE_ENTRIES, SALVAGE_SETTLE, SAVE_DONE_TEXT,
+                        SAVE_POLL, SAVE_WAIT, SAVING_TEXT, STALL_STOP, STALL_WARN, STEP_DELAY,
                         STOPPED, TARGET_TIMEOUT, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX,
-                        TOOL_BAG_NAMES, TOOL_GRAPHICS, TOOL_NAME_WORDS, TOOL_PREFERENCE,
-                        UNREADABLE_TEXT_LIMIT, USES_TEXT)
+                        TOOL_BAG_NAMES, TRADES, UNREADABLE_TEXT_LIMIT, USES_TEXT)
 from bod.craft import DeedCrafter
-from bod.deed import Deed, entry_request
+from bod.deed import Deed, entry_request, trade_of
 from bod.fill import SmallFill
 from bod.items import ItemBook
 from bod.material import MaterialPicker
@@ -73,14 +70,14 @@ INGOTS = {
     "ingot_words": INGOT_NAME_WORDS,
     "materials": sorted(set(INGOT_HUES.values()), key=len, reverse=True),
     "hues": INGOT_HUES,
-    "costs": INGOT_COST,
     "uses_text": USES_TEXT,
     "opl_timeout": OPL_TIMEOUT,
 }
 
+# plain is the trade's once the deed says which trade it is
 DEEDS = {
     "text": DEED_TEXT,
-    "plain": PLAIN_MATERIAL,
+    "plain": None,
     "articles": ARTICLES,
     "opl_timeout": OPL_TIMEOUT,
     "reread_settle": REREAD_SETTLE,
@@ -112,8 +109,6 @@ def combine_config(button):
 
 
 saves = SaveWatch(SAVING_TEXT, SAVE_DONE_TEXT, SAVE_WAIT, SAVE_POLL, log, heartbeat, stop_reason)
-skill_name = find_skill_name(SKILL_NAMES)
-skill = SkillReader(skill_name) if skill_name is not None else None
 
 log("target the bulk order deed to fill, small or large, ESC to stop")
 
@@ -132,6 +127,28 @@ request, refused = deed.read()
 if request is None:
     log("%s is not a deed this run can fill: %s" % (hex_of(picked), refused))
     API.Stop()
+
+trade_name = trade_of(request, TRADES)
+
+if trade_name is None:
+    log("no trade in TRADES makes %s" % ", ".join(item for item, _done in request["entries"]))
+    API.Stop()
+
+# Stop() only lands at the next client call, so the lines below still run once: the first trade
+# stands in so they read something rather than throwing ahead of it
+trade = dict(TRADES).get(trade_name, TRADES[0][1])
+
+# Read before the trade was known, so the material a deed did not name is filled in here; the
+# smalls the large flow reads later get it from DEEDS
+DEEDS["plain"] = trade["plain"]
+INGOTS["costs"] = trade["costs"]
+INGOTS["kinds"] = trade["kinds"]
+
+if request["material"] is None:
+    request["material"] = trade["plain"]
+
+skill_name = find_skill_name(trade["skill_names"])
+skill = SkillReader(skill_name) if skill_name is not None else None
 
 deed_item = API.FindItem(picked)
 
@@ -156,22 +173,23 @@ if bag is None:
     log("no %s in the pack - combining from the pack itself, and salvaging nothing"
         % " or ".join(TOOL_BAG_NAMES))
 
-tool = CraftTool("smith's tool", TOOL_GRAPHICS, TOOL_NAME_WORDS, log, TOOL_PREFERENCE)
+tool = CraftTool(trade["tool_noun"], trade["tool_graphics"], trade["tool_words"], log,
+                 trade["tool_preference"])
 
 if tool.serial() is None:
-    log("no smith's hammer or tongs in the pack")
+    log("no %s in the pack" % trade["tool_noun"])
     API.Stop()
 
 menu = CraftMenu(tool, {
     "stride": BUTTON_STRIDE,
     "category_type": CATEGORY_BUTTON_TYPE,
     "item_type": ITEM_BUTTON_TYPE,
-    "category_names": CATEGORY_NAMES,
+    "category_names": trade["category_names"],
     "last_ten_label": LAST_TEN_LABEL,
-    "title": CRAFT_TITLE,
-    "title_text": CRAFT_TITLE_TEXT,
-    "title_fragments": CRAFT_TITLE_FRAGMENTS,
-    "tool_noun": "smith's tools",
+    "title": trade["title"],
+    "title_text": trade["title_text"],
+    "title_fragments": [phrase.lower() for phrase in trade["title_text"]],
+    "tool_noun": trade["tool_noun"],
     "gump_timeout": GUMP_TIMEOUT,
     "gump_poll": GUMP_POLL,
 }, log)
@@ -189,7 +207,8 @@ FILL = {
     # The pieces land beside the tool, so the bag is what the deed is aimed at
     "combine_target": bag if bag is not None else API.Backpack,
     "bag": bag,
-    "salvage": SALVAGE_AT_END,
+    "salvage": trade["salvage"],
+    "tool_noun": trade["tool_noun"],
     "salvage_entries": SALVAGE_ENTRIES,
     "context_timeout": CONTEXT_TIMEOUT,
     "salvage_settle": SALVAGE_SETTLE,
@@ -218,14 +237,14 @@ fills = []
 def fill_small(small):
     items = ItemBook(small.request, {
         "aliases": MATERIAL_ALIASES,
-        "plain": PLAIN_MATERIAL,
+        "plain": trade["plain"],
         "articles": ARTICLES,
         "exceptional_text": EXCEPTIONAL_TEXT,
         "opl_timeout": OPL_TIMEOUT,
         "opl_settle": OPL_SETTLE,
         "asks": OPL_ASKS,
     }, log)
-    crafter = DeedCrafter(tool, menu, items, picker, OUTCOME_TEXT, {
+    crafter = DeedCrafter(tool, menu, items, picker, trade["outcome_text"], {
         "make_number_button": MAKE_NUMBER_BUTTON,
         "cancel_button": CANCEL_MAKE_BUTTON,
         "prompt_delay": PROMPT_DELAY,
@@ -234,7 +253,7 @@ def fill_small(small):
         "gump_timeout": GUMP_TIMEOUT,
         "craft_timeout": CRAFT_TIMEOUT,
         "craft_poll": CRAFT_POLL,
-        "recipes": RECIPES,
+        "recipes": trade["recipes"],
         "max_reports": MAX_UNREADABLE_REPORTS,
         "text_limit": UNREADABLE_TEXT_LIMIT,
         "tail_seconds": JOURNAL_TAIL_SECONDS,
@@ -390,8 +409,8 @@ def run_large():
 start = skill.read() if skill is not None else None
 
 log("%s: %s%s, %s in the pack"
-    % (deed.describe(), skill_name or "Blacksmithy", " at %s" % reading(start),
-       ingot_report(INGOTS)))
+    % (deed.describe(), skill_name or trade["skill_names"][0], " at %s" % reading(start),
+       stock_report(INGOTS)))
 
 try:
     reason = run_large() if request["large"] else run_small()

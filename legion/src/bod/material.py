@@ -13,8 +13,9 @@ class MaterialPicker(object):
         self._selected = None
         self._said_unsplit = False
 
+    # A deed that names no material (a potion deed) never opens the page
     def needs(self, material):
-        return self._selected != material
+        return material is not None and self._selected != material
 
     def forget(self):
         self._selected = None

@@ -24,6 +24,7 @@ BUCKETS = [
     ("made", ["You create the item"]),
     ("noMaterial", ["not enough ingots"]),
     ("noAnvil", ["near an anvil and a forge"]),
+    ("keg", ["pour it into a keg"]),
 ]
 
 
@@ -171,6 +172,12 @@ class BatchTest(unittest.TestCase):
         self.api.gump_text = ["You must be near an anvil and a forge to smith items."]
 
         self.assertEqual(self.crafter.craft_batch("axe", "iron", 3)[0], "noAnvil")
+
+    def test_a_keg_swallowing_the_potion_cancels_the_batch(self):
+        self.api.gump_text = ["You create the potion and pour it into a keg."]
+
+        self.assertEqual(self.crafter.craft_batch("axe", None, 3)[0], "keg")
+        self.assertIn((227, 88), self.api.replies)
 
     def test_a_material_row_that_is_missing_ends_the_craft(self):
         self.picker.answer = "noMaterialRow"

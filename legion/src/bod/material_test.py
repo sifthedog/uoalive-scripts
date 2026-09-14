@@ -103,6 +103,9 @@ class MaterialPickerTest(unittest.TestCase):
         self.assertTrue(any("DULL COPPER" in line for line in self.said))
         self.assertTrue(self.picker.needs("valorite"))
 
+    def test_no_material_never_needs_the_page(self):
+        self.assertFalse(self.picker.needs(None))
+
     def test_forget_asks_again(self):
         self.picker.select("copper", 88)
         self.picker.forget()

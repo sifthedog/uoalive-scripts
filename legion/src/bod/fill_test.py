@@ -11,6 +11,7 @@ CONFIG = {
     "context_timeout": 1.0,
     "salvage_settle": 0.1,
     "ingots": {"ingot_graphics": set(), "ingot_words": [], "materials": [], "hues": {}},
+    "tool_noun": "smith's tool",
     "max_cycles": 50,
     "max_unknown": 3,
     "max_throttled": 3,
@@ -139,8 +140,18 @@ class SmallFillTest(unittest.TestCase):
 
         stop = fill.run()
 
-        self.assertIn("not enough iron ingots", stop)
+        self.assertIn("materials ran out", stop)
         self.assertIn("7 still owed", stop)
+
+    def test_a_keg_taking_the_crafts_stops_the_run(self):
+        fill = self.fill(FakeDeed(0, 10), FakeCrafter([("keg", 0, 0)]))
+
+        self.assertIn("potion keg", fill.run())
+
+    def test_no_tool_names_the_trades_tool(self):
+        fill = self.fill(FakeDeed(0, 10), FakeCrafter([("noTool", 0, 0), ("noTool", 0, 0)]))
+
+        self.assertEqual(fill.run(), "no smith's tool left")
 
     def test_a_refused_batch_of_pieces_is_rejected_and_the_run_goes_on(self):
         self.items.waiting = [100, 101]

@@ -1,6 +1,6 @@
 import unittest
 
-from bod.checks import ingot_counts, material_of, preflight, uses_of
+from bod.checks import material_of, preflight, stock_counts, stock_report, uses_of
 from test_support.uo import install, item
 
 CONFIG = {
@@ -8,7 +8,9 @@ CONFIG = {
     "ingot_words": ["ingot", "ingots"],
     "materials": ["iron", "dull copper", "shadow iron", "copper", "valorite"],
     "hues": {0: "iron", 0x973: "dull copper"},
-    "costs": {"axe": 14, "platemail gorget": 10},
+    "costs": {"axe": 14, "platemail gorget": 10,
+              "greater heal potion": {"empty bottle": 1, "ginseng": 7}},
+    "kinds": {"empty bottle": set([0x0F0E]), "ginseng": set([0x0F85])},
     "uses_text": "uses remaining",
     "opl_timeout": 1,
 }
@@ -33,15 +35,26 @@ class MaterialOfTest(unittest.TestCase):
         self.assertEqual(material_of(item(name="Ingots", hue=0x123), CONFIG), "hue 0x123")
 
 
-class IngotCountsTest(unittest.TestCase):
-    def test_counts_by_material(self):
+class StockCountsTest(unittest.TestCase):
+    def test_counts_ingots_by_material_and_kinds_by_art(self):
         api = install()
         api.hold(item(serial=1, graphic=0x1BF2, name="Ingots", amount=100),
                  item(serial=2, graphic=0x1BF2, name="Ingots", amount=50),
                  item(serial=3, graphic=0x1BF2, name="Valorite Ingots", hue=0x8AB, amount=7),
-                 item(serial=4, graphic=0x0F3F, name="arrow", amount=200))
+                 item(serial=4, graphic=0x0F3F, name="arrow", amount=200),
+                 item(serial=5, graphic=0x0F85, name="Ginseng", amount=30),
+                 item(serial=6, graphic=0x0F0E, name="Empty Bottle", amount=3))
 
-        self.assertEqual(ingot_counts(CONFIG), {"iron": 150, "valorite": 7})
+        self.assertEqual(stock_counts(CONFIG),
+                         {"iron ingots": 150, "valorite ingots": 7, "ginseng": 30,
+                          "empty bottle": 3})
+        self.assertEqual(stock_report(CONFIG),
+                         "3 empty bottle, 30 ginseng, 150 iron ingots, 7 valorite ingots")
+
+    def test_nothing_is_no_stock(self):
+        install()
+
+        self.assertEqual(stock_report(CONFIG), "no stock")
 
 
 class UsesOfTest(unittest.TestCase):
@@ -87,11 +100,21 @@ class PreflightTest(unittest.TestCase):
         self.assertEqual(len(problems), 2)
         self.assertIn("15 uses left across 2 tool(s)", problems[1])
 
-    def test_an_unknown_item_skips_the_ingot_check(self):
+    def test_an_unknown_item_skips_the_stock_check(self):
         problems, notes = preflight([request(item="tessen")], [7], CONFIG)
 
         self.assertEqual(problems, [])
-        self.assertTrue(any("no ingot cost" in note for note in notes))
+        self.assertTrue(any("no cost is known" in note for note in notes))
+
+    def test_a_dict_cost_is_checked_per_kind(self):
+        self.api.hold(item(serial=2, graphic=0x0F0E, name="Empty Bottle", amount=10),
+                      item(serial=3, graphic=0x0F85, name="Ginseng", amount=50))
+        problems, notes = preflight([request(item="greater heal potion", material=None)], [7],
+                                    CONFIG)
+
+        self.assertEqual(len(problems), 1)
+        self.assertIn("70 ginseng for the 10 pieces owed, and the pack holds 50", problems[0])
+        self.assertTrue(any("10 empty bottle cover" in note for note in notes))
 
     def test_tools_that_say_nothing_skip_the_uses_check(self):
         problems, notes = preflight([request()], [9], CONFIG)

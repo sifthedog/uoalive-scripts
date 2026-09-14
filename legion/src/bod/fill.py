@@ -1,6 +1,6 @@
 import API
 
-from bod.checks import ingot_report
+from bod.checks import stock_report
 from uo.loop import backoff_for
 from uo.menu import context_menu
 
@@ -102,7 +102,7 @@ class SmallFill(object):
         self._items.forget_missing()
         after = len(API.ItemsInContainer(bag, True) or [])
         self._log("salvaged: the bag went from %d items to %d, %s in the pack"
-                  % (before, after, ingot_report(self._config["ingots"])))
+                  % (before, after, stock_report(self._config["ingots"])))
 
     def _craft(self):
         item = self._request["item"]
@@ -137,8 +137,10 @@ class SmallFill(object):
             if len(waiting) > 0:
                 self._combine_now(waiting)
 
-            return ("the shard says there are not enough %s ingots - %s in the pack, %d still owed"
-                    % (self._request["material"], ingot_report(config["ingots"]), self.owed()))
+            return ("the shard says the materials ran out - %s in the pack, %d still owed"
+                    % (stock_report(config["ingots"]), self.owed()))
+        elif outcome == "keg":
+            return "a potion keg in the pack is swallowing the crafts - take it out and run again"
         elif outcome == "toolWorn":
             self._stall.progressed()
             self._log("the tool wore out, looking for another")
@@ -154,11 +156,11 @@ class SmallFill(object):
             self._no_tool += 1
 
             if self._no_tool >= config["max_no_tool"]:
-                return ("no smith's tool left" if outcome == "noTool"
+                return ("no %s left" % config["tool_noun"] if outcome == "noTool"
                         else "the craft menu will not open")
 
             self._log("%s (%d/%d), trying again"
-                      % ("no smith's tool in the pack" if outcome == "noTool"
+                      % ("no %s in the pack" % config["tool_noun"] if outcome == "noTool"
                          else "the tool opened no craft menu", self._no_tool, config["max_no_tool"]))
             API.Pause(backoff_for(self._no_tool, config["backoff"], config["backoff_max"]))
         elif outcome == "throttled":

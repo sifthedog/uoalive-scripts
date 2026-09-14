@@ -486,3 +486,199 @@ COMBINE_TEXT = [
     ("notInPack", ["must have the item in your backpack"]),
     ("tooMany", ["provided more than"]),
 ]
+
+# Alchemy deeds: the mortar's menu, as craft-map.py read it on 2026-09-13. Same button layout as
+# the smith menu down to CANCEL MAKE on 227, and no material page. A row's details page reads
+# 'MAKE NOW MAKE NUMBER MAKE MAX BACK' on 1, 2, 3, 0, and names the reagent and the bottle
+ALCHEMY_SKILL_NAMES = ["Alchemy"]
+ALCHEMY_TOOL_GRAPHICS = set([0x0E9B])
+ALCHEMY_TOOL_NAME_WORDS = ["mortar"]
+ALCHEMY_CRAFT_TITLE_TEXT = ["ALCHEMY", "ALCHEMIST"]
+
+ALCHEMY_CATEGORY_NAMES = [
+    "healing and curative",
+    "enhancement",
+    "toxic",
+    "explosive",
+    "strange brew",
+    "ingredients",
+    "skill tinctures",
+]
+
+# Keyed as the deed names the potion
+ALCHEMY_RECIPES = {
+    # Healing and Curative (button 1)
+    "refresh potion": (1, 2),
+    "greater refreshment potion": (1, 22),
+    "lesser heal potion": (1, 42),
+    "heal potion": (1, 62),
+    "greater heal potion": (1, 82),
+    "lesser cure potion": (1, 102),
+    "cure potion": (1, 122),
+    "greater cure potion": (1, 142),
+    # Enhancement (button 21)
+    "agility potion": (21, 2),
+    "greater agility potion": (21, 22),
+    "night sight potion": (21, 42),
+    "strength potion": (21, 62),
+    "greater strength potion": (21, 82),
+    "invisibility potion": (21, 102),
+    # Toxic (button 41)
+    "lesser poison potion": (41, 2),
+    "poison potion": (41, 22),
+    "greater poison potion": (41, 42),
+    "deadly poison potion": (41, 62),
+    # Explosive (button 61)
+    "lesser explosion potion": (61, 2),
+    "explosion potion": (61, 22),
+    "greater explosion potion": (61, 42),
+    "conflagration potion": (61, 62),
+    "greater conflagration potion": (61, 82),
+    "confusion blast potion": (61, 102),
+    "greater confusion blast potion": (61, 122),
+}
+
+# Stock art, unverified on UOAlive
+REAGENT_KINDS = {
+    "empty bottles": set([0x0F0E]),
+    "black pearl": set([0x0F7A]),
+    "blood moss": set([0x0F7B]),
+    "garlic": set([0x0F84]),
+    "ginseng": set([0x0F85]),
+    "mandrake root": set([0x0F86]),
+    "nightshade": set([0x0F88]),
+    "spider's silk": set([0x0F8D]),
+    "sulfurous ash": set([0x0F8C]),
+    "grave dust": set([0x0F8F]),
+    "pig iron": set([0x0F8A]),
+}
+
+
+def _potion(reagent, count):
+    return {"empty bottles": 1, reagent: count}
+
+
+# Per potion, stock RunUO counts. Only greater heal is read off the menu's details page, which says
+# 'Ginseng 7 Empty Bottles 1'; the rest follow the stock table
+POTION_COST = {
+    "refresh potion": _potion("black pearl", 1),
+    "greater refreshment potion": _potion("black pearl", 5),
+    "lesser heal potion": _potion("ginseng", 1),
+    "heal potion": _potion("ginseng", 3),
+    "greater heal potion": _potion("ginseng", 7),
+    "lesser cure potion": _potion("garlic", 1),
+    "cure potion": _potion("garlic", 3),
+    "greater cure potion": _potion("garlic", 6),
+    "agility potion": _potion("blood moss", 1),
+    "greater agility potion": _potion("blood moss", 3),
+    "night sight potion": _potion("spider's silk", 1),
+    "strength potion": _potion("mandrake root", 2),
+    "greater strength potion": _potion("mandrake root", 5),
+    "invisibility potion": {"empty bottles": 1, "blood moss": 4, "nightshade": 3},
+    "lesser poison potion": _potion("nightshade", 1),
+    "poison potion": _potion("nightshade", 2),
+    "greater poison potion": _potion("nightshade", 4),
+    "deadly poison potion": _potion("nightshade", 8),
+    "lesser explosion potion": _potion("sulfurous ash", 3),
+    "explosion potion": _potion("sulfurous ash", 5),
+    "greater explosion potion": _potion("sulfurous ash", 10),
+    "conflagration potion": _potion("grave dust", 5),
+    "greater conflagration potion": _potion("grave dust", 10),
+    "confusion blast potion": _potion("pig iron", 5),
+    "greater confusion blast potion": _potion("pig iron", 10),
+}
+
+# The shard pours a craft into a keg of that potion instead of a bottle, so a keg is its own stop
+ALCHEMY_OUTCOME_TEXT = [
+    (
+        "failed",
+        [
+            "You fail to create a useful potion",
+            "You failed to create the item",
+            "You fail to create",
+            "You have failed to create",
+            "lost some of the raw material",
+        ],
+    ),
+    ("keg", ["pour it into a keg"]),
+    (
+        "made",
+        [
+            "You pour the potion into a bottle",
+            "You create the item",
+            "You create an exceptional",
+            "You put the",
+        ],
+    ),
+    (
+        "noMaterial",
+        [
+            "You don't have the components",
+            "You do not have the components",
+            "You don't have the resources",
+            "You do not have the resources",
+            "enough empty bottles",
+            "enough black pearl",
+            "enough blood moss",
+            "enough bloodmoss",
+            "enough garlic",
+            "enough ginseng",
+            "enough mandrake",
+            "enough nightshade",
+            "enough spider",
+            "enough sulfurous",
+            "enough grave dust",
+            "enough pig iron",
+        ],
+    ),
+    (
+        "skillTooLow",
+        [
+            "You have no idea how to make that",
+            "You do not have enough skill",
+            "You are not skilled enough",
+            "lack the skill",
+        ],
+    ),
+    ("toolWorn", ["You have worn out your tool", "worn out your tool"]),
+    ("saving", SAVING_TEXT),
+    ("throttled", THROTTLED_TEXT),
+]
+
+# The first trade whose recipes make every item on the deed fills it. A number cost is ingots of
+# the deed's material; a dict cost is stock per kind. plain is what a deed with no material line
+# wants: None means there is no material page to press
+TRADES = [
+    ("smith", {
+        "skill_names": SKILL_NAMES,
+        "tool_noun": "smith's tool",
+        "tool_graphics": TOOL_GRAPHICS,
+        "tool_words": TOOL_NAME_WORDS,
+        "tool_preference": TOOL_PREFERENCE,
+        "title": CRAFT_TITLE,
+        "title_text": CRAFT_TITLE_TEXT,
+        "category_names": CATEGORY_NAMES,
+        "recipes": RECIPES,
+        "costs": INGOT_COST,
+        "kinds": {},
+        "outcome_text": OUTCOME_TEXT,
+        "salvage": SALVAGE_AT_END,
+        "plain": PLAIN_MATERIAL,
+    }),
+    ("alchemy", {
+        "skill_names": ALCHEMY_SKILL_NAMES,
+        "tool_noun": "mortar and pestle",
+        "tool_graphics": ALCHEMY_TOOL_GRAPHICS,
+        "tool_words": ALCHEMY_TOOL_NAME_WORDS,
+        "tool_preference": None,
+        "title": ALCHEMY_CRAFT_TITLE_TEXT[0],
+        "title_text": ALCHEMY_CRAFT_TITLE_TEXT,
+        "category_names": ALCHEMY_CATEGORY_NAMES,
+        "recipes": ALCHEMY_RECIPES,
+        "costs": POTION_COST,
+        "kinds": REAGENT_KINDS,
+        "outcome_text": ALCHEMY_OUTCOME_TEXT,
+        "salvage": False,
+        "plain": None,
+    }),
+]

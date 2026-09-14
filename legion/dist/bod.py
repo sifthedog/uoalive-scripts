@@ -66,6 +66,15 @@ def parse_deed(lines, config):
     return request, None
 
 
+# The first trade, in order, whose recipes make every item the deed asks for
+def trade_of(request, trades):
+    for name, trade in trades:
+        if all(item in trade["recipes"] for item, _done in request["entries"]):
+            return name
+
+    return None
+
+
 def entry_request(request, item, done):
     return {
         "large": False,
@@ -101,7 +110,8 @@ class Deed(object):
 
     def describe(self):
         request = self.request
-        flags = "%s, %s" % (", exceptional" if request["exceptional"] else "", request["material"])
+        flags = "%s, %s" % (", exceptional" if request["exceptional"] else "",
+                            request["material"] or "no material")
 
         if request["large"]:
             return "large deed x%d: %s%s" % (
@@ -375,24 +385,36 @@ def material_of(item, config):
     return config["hues"].get(hue, "hue 0x%x" % hue)
 
 
-def ingot_counts(config):
+def kind_of(item, kinds):
+    for name in kinds:
+        if item.Graphic in kinds[name]:
+            return name
+
+    return None
+
+
+# Ingots by the material they are ('iron ingots'), and every other stock kind by its art
+def stock_counts(config):
     counts = {}
+    kinds = config.get("kinds", {})
 
     for item in pack_contents():
-        if not is_ingot(item, config):
-            continue
+        if is_ingot(item, config):
+            name = "%s ingots" % material_of(item, config)
+        else:
+            name = kind_of(item, kinds)
 
-        material = material_of(item, config)
-        counts[material] = counts.get(material, 0) + amount_of(item)
+        if name is not None:
+            counts[name] = counts.get(name, 0) + amount_of(item)
 
     return counts
 
 
-def ingot_report(config):
-    counts = ingot_counts(config)
+def stock_report(config):
+    counts = stock_counts(config)
 
     if len(counts) == 0:
-        return "no ingots"
+        return "no stock"
 
     return ", ".join("%d %s" % (counts[name], name) for name in sorted(counts))
 
@@ -423,6 +445,14 @@ def tool_uses(serials, config):
     return total, unread
 
 
+# A cost is ingots of the deed's material when it is a number, and stock per kind when it is a dict
+def needs_of(request, cost):
+    if isinstance(cost, dict):
+        return dict(cost)
+
+    return {"%s ingots" % request["material"]: cost}
+
+
 # Problems stop the run; notes are said and the run goes on. Requests are summed: a large deed
 # is checked as every small it still needs
 def preflight(requests, tool_serials, config):
@@ -442,23 +472,24 @@ def preflight(requests, tool_serials, config):
         if cost is None:
             unknown.append(request["item"])
         else:
-            needed[request["material"]] = needed.get(request["material"], 0) + cost * pieces
+            for name, each in needs_of(request, cost).items():
+                needed[name] = needed.get(name, 0) + each * pieces
 
     if len(unknown) > 0:
-        notes.append("no ingot cost is known for %s, so those are not checked"
+        notes.append("no cost is known for %s, so those are not checked"
                      % ", ".join("'%s'" % item for item in unknown))
 
-    held = ingot_counts(config)
+    held = stock_counts(config)
 
-    for material in sorted(needed):
-        have = held.get(material, 0)
+    for name in sorted(needed):
+        have = held.get(name, 0)
 
-        if have < needed[material]:
-            problems.append("%d %s ingots for the %d pieces owed, and the pack holds %d"
-                            % (needed[material], material, owed, have))
+        if have < needed[name]:
+            problems.append("%d %s for the %d pieces owed, and the pack holds %d"
+                            % (needed[name], name, owed, have))
         else:
-            notes.append("%d %s ingots cover the %d pieces owed, %d in the pack"
-                         % (needed[material], material, owed, have))
+            notes.append("%d %s cover the %d pieces owed, %d in the pack"
+                         % (needed[name], name, owed, have))
 
     uses, unread = tool_uses(tool_serials, config)
 
@@ -1106,7 +1137,6 @@ CATEGORY_NAMES = [
 
 CRAFT_TITLE = "BLACKSMITHY"
 CRAFT_TITLE_TEXT = [CRAFT_TITLE, "BLACKSMITH"]
-CRAFT_TITLE_FRAGMENTS = [phrase.lower() for phrase in CRAFT_TITLE_TEXT]
 LAST_TEN_LABEL = "LAST TEN"
 
 # Buttons are 1 + type + index * 20 on this shard: categories 1, 21, 41 ..., rows 2, 22, 42 ...,
@@ -1457,9 +1487,205 @@ COMBINE_TEXT = [
     ("tooMany", ["provided more than"]),
 ]
 
+# Alchemy deeds: the mortar's menu, as craft-map.py read it on 2026-09-13. Same button layout as
+# the smith menu down to CANCEL MAKE on 227, and no material page. A row's details page reads
+# 'MAKE NOW MAKE NUMBER MAKE MAX BACK' on 1, 2, 3, 0, and names the reagent and the bottle
+ALCHEMY_SKILL_NAMES = ["Alchemy"]
+ALCHEMY_TOOL_GRAPHICS = set([0x0E9B])
+ALCHEMY_TOOL_NAME_WORDS = ["mortar"]
+ALCHEMY_CRAFT_TITLE_TEXT = ["ALCHEMY", "ALCHEMIST"]
+
+ALCHEMY_CATEGORY_NAMES = [
+    "healing and curative",
+    "enhancement",
+    "toxic",
+    "explosive",
+    "strange brew",
+    "ingredients",
+    "skill tinctures",
+]
+
+# Keyed as the deed names the potion
+ALCHEMY_RECIPES = {
+    # Healing and Curative (button 1)
+    "refresh potion": (1, 2),
+    "greater refreshment potion": (1, 22),
+    "lesser heal potion": (1, 42),
+    "heal potion": (1, 62),
+    "greater heal potion": (1, 82),
+    "lesser cure potion": (1, 102),
+    "cure potion": (1, 122),
+    "greater cure potion": (1, 142),
+    # Enhancement (button 21)
+    "agility potion": (21, 2),
+    "greater agility potion": (21, 22),
+    "night sight potion": (21, 42),
+    "strength potion": (21, 62),
+    "greater strength potion": (21, 82),
+    "invisibility potion": (21, 102),
+    # Toxic (button 41)
+    "lesser poison potion": (41, 2),
+    "poison potion": (41, 22),
+    "greater poison potion": (41, 42),
+    "deadly poison potion": (41, 62),
+    # Explosive (button 61)
+    "lesser explosion potion": (61, 2),
+    "explosion potion": (61, 22),
+    "greater explosion potion": (61, 42),
+    "conflagration potion": (61, 62),
+    "greater conflagration potion": (61, 82),
+    "confusion blast potion": (61, 102),
+    "greater confusion blast potion": (61, 122),
+}
+
+# Stock art, unverified on UOAlive
+REAGENT_KINDS = {
+    "empty bottles": set([0x0F0E]),
+    "black pearl": set([0x0F7A]),
+    "blood moss": set([0x0F7B]),
+    "garlic": set([0x0F84]),
+    "ginseng": set([0x0F85]),
+    "mandrake root": set([0x0F86]),
+    "nightshade": set([0x0F88]),
+    "spider's silk": set([0x0F8D]),
+    "sulfurous ash": set([0x0F8C]),
+    "grave dust": set([0x0F8F]),
+    "pig iron": set([0x0F8A]),
+}
+
+
+def _potion(reagent, count):
+    return {"empty bottles": 1, reagent: count}
+
+
+# Per potion, stock RunUO counts. Only greater heal is read off the menu's details page, which says
+# 'Ginseng 7 Empty Bottles 1'; the rest follow the stock table
+POTION_COST = {
+    "refresh potion": _potion("black pearl", 1),
+    "greater refreshment potion": _potion("black pearl", 5),
+    "lesser heal potion": _potion("ginseng", 1),
+    "heal potion": _potion("ginseng", 3),
+    "greater heal potion": _potion("ginseng", 7),
+    "lesser cure potion": _potion("garlic", 1),
+    "cure potion": _potion("garlic", 3),
+    "greater cure potion": _potion("garlic", 6),
+    "agility potion": _potion("blood moss", 1),
+    "greater agility potion": _potion("blood moss", 3),
+    "night sight potion": _potion("spider's silk", 1),
+    "strength potion": _potion("mandrake root", 2),
+    "greater strength potion": _potion("mandrake root", 5),
+    "invisibility potion": {"empty bottles": 1, "blood moss": 4, "nightshade": 3},
+    "lesser poison potion": _potion("nightshade", 1),
+    "poison potion": _potion("nightshade", 2),
+    "greater poison potion": _potion("nightshade", 4),
+    "deadly poison potion": _potion("nightshade", 8),
+    "lesser explosion potion": _potion("sulfurous ash", 3),
+    "explosion potion": _potion("sulfurous ash", 5),
+    "greater explosion potion": _potion("sulfurous ash", 10),
+    "conflagration potion": _potion("grave dust", 5),
+    "greater conflagration potion": _potion("grave dust", 10),
+    "confusion blast potion": _potion("pig iron", 5),
+    "greater confusion blast potion": _potion("pig iron", 10),
+}
+
+# The shard pours a craft into a keg of that potion instead of a bottle, so a keg is its own stop
+ALCHEMY_OUTCOME_TEXT = [
+    (
+        "failed",
+        [
+            "You fail to create a useful potion",
+            "You failed to create the item",
+            "You fail to create",
+            "You have failed to create",
+            "lost some of the raw material",
+        ],
+    ),
+    ("keg", ["pour it into a keg"]),
+    (
+        "made",
+        [
+            "You pour the potion into a bottle",
+            "You create the item",
+            "You create an exceptional",
+            "You put the",
+        ],
+    ),
+    (
+        "noMaterial",
+        [
+            "You don't have the components",
+            "You do not have the components",
+            "You don't have the resources",
+            "You do not have the resources",
+            "enough empty bottles",
+            "enough black pearl",
+            "enough blood moss",
+            "enough bloodmoss",
+            "enough garlic",
+            "enough ginseng",
+            "enough mandrake",
+            "enough nightshade",
+            "enough spider",
+            "enough sulfurous",
+            "enough grave dust",
+            "enough pig iron",
+        ],
+    ),
+    (
+        "skillTooLow",
+        [
+            "You have no idea how to make that",
+            "You do not have enough skill",
+            "You are not skilled enough",
+            "lack the skill",
+        ],
+    ),
+    ("toolWorn", ["You have worn out your tool", "worn out your tool"]),
+    ("saving", SAVING_TEXT),
+    ("throttled", THROTTLED_TEXT),
+]
+
+# The first trade whose recipes make every item on the deed fills it. A number cost is ingots of
+# the deed's material; a dict cost is stock per kind. plain is what a deed with no material line
+# wants: None means there is no material page to press
+TRADES = [
+    ("smith", {
+        "skill_names": SKILL_NAMES,
+        "tool_noun": "smith's tool",
+        "tool_graphics": TOOL_GRAPHICS,
+        "tool_words": TOOL_NAME_WORDS,
+        "tool_preference": TOOL_PREFERENCE,
+        "title": CRAFT_TITLE,
+        "title_text": CRAFT_TITLE_TEXT,
+        "category_names": CATEGORY_NAMES,
+        "recipes": RECIPES,
+        "costs": INGOT_COST,
+        "kinds": {},
+        "outcome_text": OUTCOME_TEXT,
+        "salvage": SALVAGE_AT_END,
+        "plain": PLAIN_MATERIAL,
+    }),
+    ("alchemy", {
+        "skill_names": ALCHEMY_SKILL_NAMES,
+        "tool_noun": "mortar and pestle",
+        "tool_graphics": ALCHEMY_TOOL_GRAPHICS,
+        "tool_words": ALCHEMY_TOOL_NAME_WORDS,
+        "tool_preference": None,
+        "title": ALCHEMY_CRAFT_TITLE_TEXT[0],
+        "title_text": ALCHEMY_CRAFT_TITLE_TEXT,
+        "category_names": ALCHEMY_CATEGORY_NAMES,
+        "recipes": ALCHEMY_RECIPES,
+        "costs": POTION_COST,
+        "kinds": REAGENT_KINDS,
+        "outcome_text": ALCHEMY_OUTCOME_TEXT,
+        "salvage": False,
+        "plain": None,
+    }),
+]
+
 
 # src/bod/craft.py
-STOPPERS = ("noMaterial", "noAnvil", "skillTooLow", "toolWorn", "throttled", "saving")
+STOPPERS = ("noMaterial", "noAnvil", "keg", "skillTooLow", "toolWorn", "throttled", "saving")
 
 
 class DeedCrafter(object):
@@ -1765,7 +1991,7 @@ class SmallFill(object):
         self._items.forget_missing()
         after = len(API.ItemsInContainer(bag, True) or [])
         self._log("salvaged: the bag went from %d items to %d, %s in the pack"
-                  % (before, after, ingot_report(self._config["ingots"])))
+                  % (before, after, stock_report(self._config["ingots"])))
 
     def _craft(self):
         item = self._request["item"]
@@ -1800,8 +2026,10 @@ class SmallFill(object):
             if len(waiting) > 0:
                 self._combine_now(waiting)
 
-            return ("the shard says there are not enough %s ingots - %s in the pack, %d still owed"
-                    % (self._request["material"], ingot_report(config["ingots"]), self.owed()))
+            return ("the shard says the materials ran out - %s in the pack, %d still owed"
+                    % (stock_report(config["ingots"]), self.owed()))
+        elif outcome == "keg":
+            return "a potion keg in the pack is swallowing the crafts - take it out and run again"
         elif outcome == "toolWorn":
             self._stall.progressed()
             self._log("the tool wore out, looking for another")
@@ -1817,11 +2045,11 @@ class SmallFill(object):
             self._no_tool += 1
 
             if self._no_tool >= config["max_no_tool"]:
-                return ("no smith's tool left" if outcome == "noTool"
+                return ("no %s left" % config["tool_noun"] if outcome == "noTool"
                         else "the craft menu will not open")
 
             self._log("%s (%d/%d), trying again"
-                      % ("no smith's tool in the pack" if outcome == "noTool"
+                      % ("no %s in the pack" % config["tool_noun"] if outcome == "noTool"
                          else "the tool opened no craft menu", self._no_tool, config["max_no_tool"]))
             API.Pause(backoff_for(self._no_tool, config["backoff"], config["backoff_max"]))
         elif outcome == "throttled":
@@ -2055,8 +2283,9 @@ class MaterialPicker(object):
         self._selected = None
         self._said_unsplit = False
 
+    # A deed that names no material (a potion deed) never opens the page
     def needs(self, material):
-        return self._selected != material
+        return material is not None and self._selected != material
 
     def forget(self):
         self._selected = None
@@ -2337,9 +2566,18 @@ class CraftMenu(object):
         self._log("ignoring gump %s - it is not the craft menu, it starts '%s'"
                   % (hex_of(ident), lines[0] if lines else "(no text)"))
 
+    # Every craft menu comes up under the same id, so the one remembered may now be showing another
+    # skill's menu, which would take this menu's buttons. Only a gump naming another menu is let go:
+    # a build whose GetGumpContents answers nothing still answers for its own.
+    def _is_other_menu(self, ident):
+        return any_in(API.GetGumpContents(ident) or "", self._config.get("foreign_fragments", []))
+
     def open(self):
         if self._id and is_open(self._id):
-            return self._id
+            if not self._is_other_menu(self._id):
+                return self._id
+
+            self._id = 0
 
         before = open_ids()
 
@@ -2791,14 +3029,14 @@ INGOTS = {
     "ingot_words": INGOT_NAME_WORDS,
     "materials": sorted(set(INGOT_HUES.values()), key=len, reverse=True),
     "hues": INGOT_HUES,
-    "costs": INGOT_COST,
     "uses_text": USES_TEXT,
     "opl_timeout": OPL_TIMEOUT,
 }
 
+# plain is the trade's once the deed says which trade it is
 DEEDS = {
     "text": DEED_TEXT,
-    "plain": PLAIN_MATERIAL,
+    "plain": None,
     "articles": ARTICLES,
     "opl_timeout": OPL_TIMEOUT,
     "reread_settle": REREAD_SETTLE,
@@ -2830,8 +3068,6 @@ def combine_config(button):
 
 
 saves = SaveWatch(SAVING_TEXT, SAVE_DONE_TEXT, SAVE_WAIT, SAVE_POLL, log, heartbeat, stop_reason)
-skill_name = find_skill_name(SKILL_NAMES)
-skill = SkillReader(skill_name) if skill_name is not None else None
 
 log("target the bulk order deed to fill, small or large, ESC to stop")
 
@@ -2850,6 +3086,28 @@ request, refused = deed.read()
 if request is None:
     log("%s is not a deed this run can fill: %s" % (hex_of(picked), refused))
     API.Stop()
+
+trade_name = trade_of(request, TRADES)
+
+if trade_name is None:
+    log("no trade in TRADES makes %s" % ", ".join(item for item, _done in request["entries"]))
+    API.Stop()
+
+# Stop() only lands at the next client call, so the lines below still run once: the first trade
+# stands in so they read something rather than throwing ahead of it
+trade = dict(TRADES).get(trade_name, TRADES[0][1])
+
+# Read before the trade was known, so the material a deed did not name is filled in here; the
+# smalls the large flow reads later get it from DEEDS
+DEEDS["plain"] = trade["plain"]
+INGOTS["costs"] = trade["costs"]
+INGOTS["kinds"] = trade["kinds"]
+
+if request["material"] is None:
+    request["material"] = trade["plain"]
+
+skill_name = find_skill_name(trade["skill_names"])
+skill = SkillReader(skill_name) if skill_name is not None else None
 
 deed_item = API.FindItem(picked)
 
@@ -2874,22 +3132,23 @@ if bag is None:
     log("no %s in the pack - combining from the pack itself, and salvaging nothing"
         % " or ".join(TOOL_BAG_NAMES))
 
-tool = CraftTool("smith's tool", TOOL_GRAPHICS, TOOL_NAME_WORDS, log, TOOL_PREFERENCE)
+tool = CraftTool(trade["tool_noun"], trade["tool_graphics"], trade["tool_words"], log,
+                 trade["tool_preference"])
 
 if tool.serial() is None:
-    log("no smith's hammer or tongs in the pack")
+    log("no %s in the pack" % trade["tool_noun"])
     API.Stop()
 
 menu = CraftMenu(tool, {
     "stride": BUTTON_STRIDE,
     "category_type": CATEGORY_BUTTON_TYPE,
     "item_type": ITEM_BUTTON_TYPE,
-    "category_names": CATEGORY_NAMES,
+    "category_names": trade["category_names"],
     "last_ten_label": LAST_TEN_LABEL,
-    "title": CRAFT_TITLE,
-    "title_text": CRAFT_TITLE_TEXT,
-    "title_fragments": CRAFT_TITLE_FRAGMENTS,
-    "tool_noun": "smith's tools",
+    "title": trade["title"],
+    "title_text": trade["title_text"],
+    "title_fragments": [phrase.lower() for phrase in trade["title_text"]],
+    "tool_noun": trade["tool_noun"],
     "gump_timeout": GUMP_TIMEOUT,
     "gump_poll": GUMP_POLL,
 }, log)
@@ -2907,7 +3166,8 @@ FILL = {
     # The pieces land beside the tool, so the bag is what the deed is aimed at
     "combine_target": bag if bag is not None else API.Backpack,
     "bag": bag,
-    "salvage": SALVAGE_AT_END,
+    "salvage": trade["salvage"],
+    "tool_noun": trade["tool_noun"],
     "salvage_entries": SALVAGE_ENTRIES,
     "context_timeout": CONTEXT_TIMEOUT,
     "salvage_settle": SALVAGE_SETTLE,
@@ -2936,14 +3196,14 @@ fills = []
 def fill_small(small):
     items = ItemBook(small.request, {
         "aliases": MATERIAL_ALIASES,
-        "plain": PLAIN_MATERIAL,
+        "plain": trade["plain"],
         "articles": ARTICLES,
         "exceptional_text": EXCEPTIONAL_TEXT,
         "opl_timeout": OPL_TIMEOUT,
         "opl_settle": OPL_SETTLE,
         "asks": OPL_ASKS,
     }, log)
-    crafter = DeedCrafter(tool, menu, items, picker, OUTCOME_TEXT, {
+    crafter = DeedCrafter(tool, menu, items, picker, trade["outcome_text"], {
         "make_number_button": MAKE_NUMBER_BUTTON,
         "cancel_button": CANCEL_MAKE_BUTTON,
         "prompt_delay": PROMPT_DELAY,
@@ -2952,7 +3212,7 @@ def fill_small(small):
         "gump_timeout": GUMP_TIMEOUT,
         "craft_timeout": CRAFT_TIMEOUT,
         "craft_poll": CRAFT_POLL,
-        "recipes": RECIPES,
+        "recipes": trade["recipes"],
         "max_reports": MAX_UNREADABLE_REPORTS,
         "text_limit": UNREADABLE_TEXT_LIMIT,
         "tail_seconds": JOURNAL_TAIL_SECONDS,
@@ -3108,8 +3368,8 @@ def run_large():
 start = skill.read() if skill is not None else None
 
 log("%s: %s%s, %s in the pack"
-    % (deed.describe(), skill_name or "Blacksmithy", " at %s" % reading(start),
-       ingot_report(INGOTS)))
+    % (deed.describe(), skill_name or trade["skill_names"][0], " at %s" % reading(start),
+       stock_report(INGOTS)))
 
 try:
     reason = run_large() if request["large"] else run_small()

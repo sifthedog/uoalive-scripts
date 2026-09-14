@@ -1,7 +1,7 @@
 import unittest
 
 from bod.config import ARTICLES, DEED_TEXT, PLAIN_MATERIAL
-from bod.deed import Deed, entry_request, parse_deed
+from bod.deed import Deed, entry_request, parse_deed, trade_of
 from test_support.uo import install
 
 CONFIG = {
@@ -83,6 +83,28 @@ class ParseDeedTest(unittest.TestCase):
         self.assertIsNone(request)
         self.assertIn("platemail gorget: 3", why)
 
+    def test_no_material_line_and_no_plain_is_none(self):
+        config = dict(CONFIG)
+        config["plain"] = None
+        request, _why = parse_deed(["amount to make: 10", "greater heal potion: 0"], config)
+
+        self.assertIsNone(request["material"])
+
+
+class TradeOfTest(unittest.TestCase):
+    TRADES = [("smith", {"recipes": {"axe": (81, 2), "dagger": (61, 82)}}),
+              ("alchemy", {"recipes": {"greater heal potion": (1, 82)}})]
+
+    def test_the_trade_whose_recipes_make_every_entry(self):
+        self.assertEqual(trade_of({"entries": [("axe", 0), ("dagger", 2)]}, self.TRADES), "smith")
+        self.assertEqual(trade_of({"entries": [("greater heal potion", 0)]}, self.TRADES),
+                         "alchemy")
+
+    def test_no_trade_makes_it(self):
+        self.assertIsNone(trade_of({"entries": [("axe", 0), ("greater heal potion", 0)]},
+                                   self.TRADES))
+        self.assertIsNone(trade_of({"entries": [("tessen", 0)]}, self.TRADES))
+
 
 class DeedTest(unittest.TestCase):
     def setUp(self):
@@ -110,6 +132,13 @@ class DeedTest(unittest.TestCase):
 
         self.assertEqual(self.deed.describe(),
                          "large deed x15: bascinet (15 done), helmet (0 done), iron")
+
+    def test_describe_says_no_material(self):
+        self.deed._config = dict(CONFIG, plain=None)
+        self.api.props[0x40001234] = "amount to make: 10\ngreater heal potion: 2"
+        self.deed.read()
+
+        self.assertEqual(self.deed.describe(), "greater heal potion x10, 2 done, no material")
 
     def test_a_tooltip_that_caught_up_is_taken(self):
         self.api.props[0x40001234] = "\n".join(STOCK)

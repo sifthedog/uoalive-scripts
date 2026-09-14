@@ -25,24 +25,36 @@ def material_of(item, config):
     return config["hues"].get(hue, "hue 0x%x" % hue)
 
 
-def ingot_counts(config):
+def kind_of(item, kinds):
+    for name in kinds:
+        if item.Graphic in kinds[name]:
+            return name
+
+    return None
+
+
+# Ingots by the material they are ('iron ingots'), and every other stock kind by its art
+def stock_counts(config):
     counts = {}
+    kinds = config.get("kinds", {})
 
     for item in pack_contents():
-        if not is_ingot(item, config):
-            continue
+        if is_ingot(item, config):
+            name = "%s ingots" % material_of(item, config)
+        else:
+            name = kind_of(item, kinds)
 
-        material = material_of(item, config)
-        counts[material] = counts.get(material, 0) + amount_of(item)
+        if name is not None:
+            counts[name] = counts.get(name, 0) + amount_of(item)
 
     return counts
 
 
-def ingot_report(config):
-    counts = ingot_counts(config)
+def stock_report(config):
+    counts = stock_counts(config)
 
     if len(counts) == 0:
-        return "no ingots"
+        return "no stock"
 
     return ", ".join("%d %s" % (counts[name], name) for name in sorted(counts))
 
@@ -73,6 +85,14 @@ def tool_uses(serials, config):
     return total, unread
 
 
+# A cost is ingots of the deed's material when it is a number, and stock per kind when it is a dict
+def needs_of(request, cost):
+    if isinstance(cost, dict):
+        return dict(cost)
+
+    return {"%s ingots" % request["material"]: cost}
+
+
 # Problems stop the run; notes are said and the run goes on. Requests are summed: a large deed
 # is checked as every small it still needs
 def preflight(requests, tool_serials, config):
@@ -92,23 +112,24 @@ def preflight(requests, tool_serials, config):
         if cost is None:
             unknown.append(request["item"])
         else:
-            needed[request["material"]] = needed.get(request["material"], 0) + cost * pieces
+            for name, each in needs_of(request, cost).items():
+                needed[name] = needed.get(name, 0) + each * pieces
 
     if len(unknown) > 0:
-        notes.append("no ingot cost is known for %s, so those are not checked"
+        notes.append("no cost is known for %s, so those are not checked"
                      % ", ".join("'%s'" % item for item in unknown))
 
-    held = ingot_counts(config)
+    held = stock_counts(config)
 
-    for material in sorted(needed):
-        have = held.get(material, 0)
+    for name in sorted(needed):
+        have = held.get(name, 0)
 
-        if have < needed[material]:
-            problems.append("%d %s ingots for the %d pieces owed, and the pack holds %d"
-                            % (needed[material], material, owed, have))
+        if have < needed[name]:
+            problems.append("%d %s for the %d pieces owed, and the pack holds %d"
+                            % (needed[name], name, owed, have))
         else:
-            notes.append("%d %s ingots cover the %d pieces owed, %d in the pack"
-                         % (needed[material], material, owed, have))
+            notes.append("%d %s cover the %d pieces owed, %d in the pack"
+                         % (needed[name], name, owed, have))
 
     uses, unread = tool_uses(tool_serials, config)
 
