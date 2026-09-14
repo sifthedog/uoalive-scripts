@@ -24,6 +24,7 @@ repo targets the ClassicUO web client; nothing is shared between the two.
 | `chivalry.py` | Trains Chivalry on its five spells, gating each cast on tithing points, putting the weapon away for every trance and drawing it again after, and bandaging itself under the health floor |
 | `bod.py` | Target a Blacksmithing bulk order deed, small or large: crafts what it asks for from the ingots in your pack, combines the pieces, and for a large deed gets the smalls from the Bulk Order Deed Box and fills them one by one |
 | `inventory.py` | Target a bag or chest: writes one JSON line per item in it - name, tier, durability, weight and every tooltip property, parsed and verbatim |
+| `potion-keg.py` | Asks how many potion kegs, then makes each one from the boards, ingots and bottles in your pack - staves, lid and keg on the carpentry menu, hoops, tap and the potion keg on the tinkering menu - stopping the moment the next press cannot be afforded |
 
 ## How to run it
 
@@ -38,7 +39,7 @@ repo targets the ClassicUO web client; nothing is shared between the two.
    unloaded or kept, and wants the unload container if you press Unload;
    `inscription.py` wants the containers holding scrolls and reagents, then draws the same
    gump and wants the unload container if you press Unload; `bod.py`
-   wants the deed; `inventory.py` wants the bag. `magery.py`, `mysticism.py`, `buffs.py`, `fishing.py` and `attack.py` raise none. ESC
+   wants the deed; `inventory.py` wants the bag; `potion-keg.py` draws a gump asking how many. `magery.py`, `mysticism.py`, `buffs.py`, `fishing.py`, `attack.py` and `hiding.py` raise none. ESC
    declines, and each script says what it does instead.
 
 ## How it is built
@@ -2321,6 +2322,35 @@ small; the small leaving the pack is the proof. The run stops when every entry r
   `API.PromptResponse` are seen working on a live run.
 - The large flow, all of it: that `API.MoveItem` into the box is accepted, that `0x2258` is the
   deed art here, that button 2 on the large gump is the combine, and the stock ServUO wordings.
+
+## potion-keg.py
+
+Draws a gump asking how many potion kegs, then makes each one from boards, ingots and bottles
+through the rows of `STAGES`: barrel staves, barrel lid and the keg on the carpentry menu, barrel
+hoops, barrel tap and the potion keg on the tinkering menu. Each press is the first stage the
+next potion keg still lacks, counted back from the potion keg through what the pack already
+holds, so parts already there are used before more are made. Before each press the pack is counted against what that press spends; the run stops
+the moment the next press cannot be afforded, says what is short, and never restocks or unloads.
+One potion keg is finished before the next is started, so they land one at a time. Every craft
+menu comes up under the same gump id, so each menu is told the other's title words and opens
+afresh when the gump it remembers has become the other skill's menu.
+
+- **Before you run it**: Carpentry and Tinkering at the rows' minimums (57.9 for the keg and 75
+  for the potion keg, stock), carpentry tools and tinker's tools in the pack, the carpentry menu
+  set to the wood in the pack, and per potion keg: 23 boards, 7 ingots and 10 bottles. Bottles
+  have no row on either menu.
+- **What to set**: `STAGES` if a recipe differs; `PART_KINDS` if a part's art differs (a part
+  named with a word in the list is learned); `MENUS` if a row's buttons move, from
+  `craft-map.py`. A finished potion keg is the same art as the empty keg it took, so
+  `MADE_KEG_TYPES` lists the words that mark one as made and keep it out of the next count.
+- **`short of … for the keg of potion keg N of M`**: the pack lacks that part for that press.
+  The count only sees what is in the pack, and only the parts `PART_KINDS` recognises.
+- **`the shard refused the parts in the pack for a …`**: the count said enough and the menu said
+  no. Read the gump's own words above the line; a part by another name or art is the usual cause.
+- **`the shard says you cannot make a … yet`**: skill below that row's minimum.
+- **Unverified**: every art in `PART_KINDS`, the keg names behind `MADE_KEG_TYPES`, the counts in
+  `STAGES`, and which `OUTCOME_TEXT` wording a parts refusal lands in: the buckets were read off
+  wood and ingot refusals.
 
 ## craft-map.py
 

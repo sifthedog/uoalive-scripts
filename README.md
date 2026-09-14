@@ -14,5 +14,6 @@ Python scripts for [TazUO](https://tazuo.org)'s Legion Scripting engine, in [`le
 | `legion/dist/mysticism.py` | Trains Mysticism from nothing to cap on the five spells that gain without a victim |
 | `legion/dist/chivalry.py` | Trains Chivalry, spending tithing points as well as mana |
 | `legion/dist/bowcraft.py` | Trains Bowcraft from 40 to cap through the craft gump |
+| `legion/dist/potion-keg.py` | Makes as many potion kegs as you ask for, one at a time, from boards, ingots and bottles: every part on the carpentry and tinkering menus, then the keg, then the potion keg |
 
 See [legion/README.md](legion/README.md) for the build step, layout, and notes on TazUO's API.

@@ -296,9 +296,18 @@ class CraftMenu(object):
         self._log("ignoring gump %s - it is not the craft menu, it starts '%s'"
                   % (hex_of(ident), lines[0] if lines else "(no text)"))
 
+    # Every craft menu comes up under the same id, so the one remembered may now be showing another
+    # skill's menu, which would take this menu's buttons. Only a gump naming another menu is let go:
+    # a build whose GetGumpContents answers nothing still answers for its own.
+    def _is_other_menu(self, ident):
+        return any_in(API.GetGumpContents(ident) or "", self._config.get("foreign_fragments", []))
+
     def open(self):
         if self._id and is_open(self._id):
-            return self._id
+            if not self._is_other_menu(self._id):
+                return self._id
+
+            self._id = 0
 
         before = open_ids()
 

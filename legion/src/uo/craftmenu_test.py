@@ -143,6 +143,19 @@ class OpenTest(unittest.TestCase):
         self.assertEqual(self.menu.open(), 88)
         self.assertEqual(self.api.used, [])
 
+    def test_a_menu_adopted_under_another_menus_id_is_opened_afresh(self):
+        config = dict(CONFIG)
+        config["foreign_fragments"] = ["tinkering", "tinker"]
+        self.menu = CraftMenu(FakeTool(), config, self.said.append)
+        self.api.gump = 88
+        self.menu.open()
+        self.api.gump_contents[88] = "TINKERING MENU\nJewelry\nWooden Items"
+        self.api.opens[7] = 89
+        self.api.gump_contents[89] = "BOWCRAFT AND FLETCHING\nMaterials\nAmmunition\nWeapons"
+
+        self.assertEqual(self.menu.open(), 89)
+        self.assertEqual(self.api.used, [7])
+
     def test_an_unrecognised_newcomer_is_used_and_said_once(self):
         self.api.gump = 0x13e7a7f3
         self.api.opens[7] = 89
