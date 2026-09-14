@@ -14,12 +14,24 @@ class Kegs(object):
         self._config = config
         self._log = log
 
-    def _is_keg(self, item):
+    def is_keg(self, item):
         return item.Graphic in self._config["graphics"] or word_in(item.Name, self._config["words"])
+
+    def is_empty(self, item):
+        return self.is_keg(item) and not any_in(item.Name, self._config["filled_text"])
+
+    # Fullness is a tooltip line, not the name
+    def is_full(self, item):
+        if not self.is_keg(item):
+            return False
+
+        props = API.ItemNameAndProps(item.Serial, True, self._config["opl_timeout"]) or ""
+
+        return any_in(props, self._config["full_text"])
 
     def empty(self):
         for item in pack_contents():
-            if self._is_keg(item) and not any_in(item.Name, self._config["filled_text"]):
+            if self.is_empty(item):
                 return item
 
         return None
@@ -51,3 +63,18 @@ class Kegs(object):
             self._log("'%s' took nothing" % keg.Name)
 
         return moved
+
+
+class EmptyKegs(object):
+    """What ToolStore fetches: an empty keg is the tool, and the pack holds one or none."""
+
+    def __init__(self, kegs):
+        self._kegs = kegs
+
+    def is_tool(self, item):
+        return self._kegs.is_empty(item)
+
+    def serial(self):
+        keg = self._kegs.empty()
+
+        return keg.Serial if keg is not None else None

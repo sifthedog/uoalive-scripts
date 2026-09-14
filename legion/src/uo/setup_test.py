@@ -268,6 +268,39 @@ class SetupTest(unittest.TestCase):
         self.assertNotIn("source 3", seen[0])
         self.assertIn("... and 3 more", seen[0])
 
+    def test_picks_show_for_their_output_only_and_never_block_ok(self):
+        config = dict(CONFIG, outputs=CONFIG["outputs"] + [("kegs", "Kegs")], picks=[
+            {"key": "keg_store", "output": "kegs", "caption": "Pick full keg container",
+             "prompt": "target the keg store", "hint": "optional - kegs stay in the pack"},
+        ])
+        self.setup = Setup(config, self.said.append, lambda: self.stop[0])
+        actions = self.actions.as_dict()
+        actions["keg_store"] = lambda: ("'a chest' 0x40004000", None)
+        seen = []
+        self.schedule({
+            1: lambda: seen.append(self.api.visible("Pick full keg container")),
+            2: lambda: self.api.check("Kegs"),
+            3: lambda: seen.append(self.api.visible("Pick full keg container")),
+            4: lambda: self.api.press("Pick full keg container"),
+            5: lambda: self.api.press("OK"),
+        })
+
+        self.assertEqual(self.setup.ask(actions)["output"], "kegs")
+        self.assertEqual(seen, [False, True])
+        self.assertIn("target the keg store", self.said)
+        self.assertIn("'a chest' 0x40004000", self.api.texts())
+
+    def test_an_unpicked_pick_shows_its_hint(self):
+        config = dict(CONFIG, outputs=CONFIG["outputs"] + [("kegs", "Kegs")], picks=[
+            {"key": "keg_store", "output": "kegs", "caption": "Pick full keg container",
+             "prompt": "target the keg store", "hint": "optional - kegs stay in the pack"},
+        ])
+        self.setup = Setup(config, self.said.append, lambda: self.stop[0])
+        self.schedule({1: lambda: self.api.check("Kegs"), 2: lambda: self.api.press("OK")})
+
+        self.assertEqual(self.ask()["output"], "kegs")
+        self.assertIn("optional - kegs stay in the pack", self.api.texts())
+
     def test_closing_the_form_answers_nothing(self):
         self.schedule({2: self.api.close_drawn})
 

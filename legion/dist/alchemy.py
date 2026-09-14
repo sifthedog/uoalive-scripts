@@ -52,15 +52,16 @@ SKILL_NAMES = ["Alchemy"]
 MIN_SKILL = 0.0
 
 # Ceilings are exclusive, in the client's float percentage. Stock RunUO floors (lesser poison -5,
-# poison 15, greater agility 35, greater poison 55, deadly poison 90; success is (skill - floor) /
-# 50), each row ridden until the next cheap one rather than swapped for the greater strength and
-# greater cure the wiki's path takes in between. A failure keeps the bottle and loses half the
-# reagents, never fewer than one.
+# poison 15, greater agility 35, greater poison 55, greater conflagration 65, deadly poison 90;
+# success is (skill - floor) / 50), each row ridden until the next cheap one rather than swapped
+# for the greater strength and greater cure the wiki's path takes in between. A failure keeps the
+# bottle and loses half the reagents, never fewer than one.
 BANDS = [
     (15.0, "lesser poison"),
     (35.0, "poison"),
     (73.0, "greater agility"),
-    (90.0, "greater poison"),
+    (92.5, "greater poison"),
+    (100.0, "greater conflagration"),
     (None, "deadly poison"),
 ]
 
@@ -69,6 +70,7 @@ NIGHTSHADE = "nightshade"
 BLOODMOSS = "blood moss"
 MANDRAKE = "mandrake root"
 GARLIC = "garlic"
+GRAVE_DUST = "grave dust"
 
 # Stock art, unverified on UOAlive; an art learned by name joins its set
 STOCK_KINDS = [
@@ -77,12 +79,14 @@ STOCK_KINDS = [
     (BLOODMOSS, set([0x0F7B]), ["bloodmoss", "blood moss"]),
     (MANDRAKE, set([0x0F86]), ["mandrake"]),
     (GARLIC, set([0x0F84]), ["garlic"]),
+    (GRAVE_DUST, set([0x0F8F]), ["grave dust"]),
 ]
 
 KIND_ORDER = [kind for kind, _graphics, _words in STOCK_KINDS]
 
 # Row name as the SELECTIONS row spells it: the potion's art, its reagent and how many. Stock RunUO:
-# every poison lands as 0x0F0A, and every potion takes one bottle besides.
+# every poison lands as 0x0F0A, every conflagration as 0x0F06, and every potion takes one bottle
+# besides.
 POTIONS = {
     "lesser poison": (0x0F0A, NIGHTSHADE, 1),
     "poison": (0x0F0A, NIGHTSHADE, 2),
@@ -90,6 +94,7 @@ POTIONS = {
     "greater strength": (0x0F09, MANDRAKE, 5),
     "greater poison": (0x0F0A, NIGHTSHADE, 4),
     "greater cure": (0x0F07, GARLIC, 6),
+    "greater conflagration": (0x0F06, GRAVE_DUST, 10),
     "deadly poison": (0x0F0A, NIGHTSHADE, 8),
 }
 
@@ -117,6 +122,12 @@ KEG_GRAPHICS = set([0x1940])
 KEG_NAME_WORDS = ["keg"]
 KEG_FILLED_TEXT = ["keg of"]
 
+# The tooltip line of a keg holding 100: stock RunUO's "The keg is completely full." Unverified.
+KEG_FULL_TEXT = ["completely full"]
+
+# How long a keg's tooltip is waited for, in whole seconds
+OPL_TIMEOUT = 2
+
 # Keg runs in a row that poured nothing - no empty keg, or the drop refused - before the run ends
 MAX_KEG_MISSES = 3
 
@@ -139,6 +150,15 @@ SETUP = {
     "material": "reagents",
     "tool_modes": TOOL_MODES,
     "outputs": OUTPUT_OPTIONS,
+    # Both optional: unpicked, nothing is fetched and a full keg stays in the pack
+    "picks": [
+        {"key": "keg_source", "output": "kegs", "caption": "Pick empty keg container",
+         "prompt": "target the container holding empty kegs",
+         "hint": "optional - without one the run ends when the pack has no empty keg"},
+        {"key": "keg_store", "output": "kegs", "caption": "Pick full keg container",
+         "prompt": "target the container full kegs are stored in",
+         "hint": "optional - without one a full keg stays in the pack"},
+    ],
     "unsold_hint": None,
     "dump_at": DUMP_AT,
     "hue": 996,
@@ -254,6 +274,7 @@ OUTCOME_TEXT = [
             "enough bloodmoss",
             "enough mandrake",
             "enough garlic",
+            "enough grave dust",
         ],
     ),
     (
@@ -469,12 +490,24 @@ class Kegs(object):
         self._config = config
         self._log = log
 
-    def _is_keg(self, item):
+    def is_keg(self, item):
         return item.Graphic in self._config["graphics"] or word_in(item.Name, self._config["words"])
+
+    def is_empty(self, item):
+        return self.is_keg(item) and not any_in(item.Name, self._config["filled_text"])
+
+    # Fullness is a tooltip line, not the name
+    def is_full(self, item):
+        if not self.is_keg(item):
+            return False
+
+        props = API.ItemNameAndProps(item.Serial, True, self._config["opl_timeout"]) or ""
+
+        return any_in(props, self._config["full_text"])
 
     def empty(self):
         for item in pack_contents():
-            if self._is_keg(item) and not any_in(item.Name, self._config["filled_text"]):
+            if self.is_empty(item):
                 return item
 
         return None
@@ -506,6 +539,21 @@ class Kegs(object):
             self._log("'%s' took nothing" % keg.Name)
 
         return moved
+
+
+class EmptyKegs(object):
+    """What ToolStore fetches: an empty keg is the tool, and the pack holds one or none."""
+
+    def __init__(self, kegs):
+        self._kegs = kegs
+
+    def is_tool(self, item):
+        return self._kegs.is_empty(item)
+
+    def serial(self):
+        keg = self._kegs.empty()
+
+        return keg.Serial if keg is not None else None
 
 
 # src/uo/components.py
@@ -1156,9 +1204,18 @@ class CraftMenu(object):
         self._log("ignoring gump %s - it is not the craft menu, it starts '%s'"
                   % (hex_of(ident), lines[0] if lines else "(no text)"))
 
+    # Every craft menu comes up under the same id, so the one remembered may now be showing another
+    # skill's menu, which would take this menu's buttons. Only a gump naming another menu is let go:
+    # a build whose GetGumpContents answers nothing still answers for its own.
+    def _is_other_menu(self, ident):
+        return any_in(API.GetGumpContents(ident) or "", self._config.get("foreign_fragments", []))
+
     def open(self):
         if self._id and is_open(self._id):
-            return self._id
+            if not self._is_other_menu(self._id):
+                return self._id
+
+            self._id = 0
 
         before = open_ids()
 
@@ -1495,7 +1552,10 @@ class Dump(object):
         return [item for item in pack_contents() if item.Graphic in graphics]
 
     def items(self):
-        return [item for item in self._products() if item.Serial not in self._kept]
+        only = self._config.get("only")
+
+        return [item for item in self._products()
+                if item.Serial not in self._kept and (only is None or only(item))]
 
     def held(self):
         return sum(amount_of(item) for item in self.items())
@@ -2417,8 +2477,12 @@ class Setup(object):
         self._sources = []
         self._tools_line = None
         self._unload_line = None
+        self._pick_lines = {}
         self._message = None
         self._controls = {}
+
+    def _picks(self):
+        return self._config.get("picks", [])
 
     def _presser(self, key):
         def press():
@@ -2444,7 +2508,8 @@ class Setup(object):
     def _show(self, heading, rows):
         outputs = self._config["outputs"]
         height = (TITLE_HEIGHT + ROW * 2 + ROW + LINE * SOURCE_LINES + ROW * 3
-                  + LINE * (len(rows) + 1) + ROW * 2 + BUTTON_HEIGHT + MARGIN * 4)
+                  + ROW * len(self._picks()) + LINE * (len(rows) + 1) + ROW * 2 + BUTTON_HEIGHT
+                  + MARGIN * 4)
 
         gump = API.Gumps.CreateGump(True, True)
 
@@ -2516,7 +2581,16 @@ class Setup(object):
         c["dump_at"].SetPos(VALUE_X, y)
         gump.Add(c["dump_at"])
         c["dump_unit"] = self._label(gump, "products", VALUE_X + DUMP_AT_WIDTH + 8, y + 3, MUTED)
-        y += ROW + MARGIN // 2
+        y += ROW
+
+        c["picks"] = {}
+
+        for pick in self._picks():
+            c["picks"][pick["key"]] = (self._button(gump, pick["key"], pick["caption"], FIELD_X, y, 148),
+                                       self._label(gump, "", VALUE_X, y + 3, MUTED))
+            y += ROW
+
+        y += MARGIN // 2
 
         self._label(gump, "Training", LABEL_X, y)
         self._label(gump, heading, FIELD_X, y)
@@ -2607,6 +2681,11 @@ class Setup(object):
             c["unload_value"].SetText(self._config["unsold_hint"] if self._output() == "sell"
                                       else "required")
 
+        for pick in self._picks():
+            button, value = c["picks"][pick["key"]]
+            button.IsVisible = value.IsVisible = self._output() == pick["output"]
+            value.SetText(clipped(self._pick_lines.get(pick["key"], pick["hint"]), LINE_CHARS))
+
     def _validate(self, actions):
         if self._mode() == "fetch" and not actions["tools_ready"]():
             return ("pick a container holding %s, or choose to stop when they run out"
@@ -2650,6 +2729,14 @@ class Setup(object):
 
             if line is not None:
                 self._unload_line = line
+
+            self._say(refusal)
+        elif pending in [pick["key"] for pick in self._picks()]:
+            self._log([pick for pick in self._picks() if pick["key"] == pending][0]["prompt"])
+            line, refusal = actions[pending]()
+
+            if line is not None:
+                self._pick_lines[pending] = line
 
             self._say(refusal)
         elif pending == "ok":
@@ -3600,7 +3687,22 @@ kegs = Kegs(dump, {
     "graphics": KEG_GRAPHICS,
     "words": KEG_NAME_WORDS,
     "filled_text": KEG_FILLED_TEXT,
+    "full_text": KEG_FULL_TEXT,
+    "opl_timeout": OPL_TIMEOUT,
     "move_delay": MOVE_DELAY,
+}, log)
+keg_source = ToolStore(EmptyKegs(kegs), sources, {
+    "noun": "empty kegs",
+    "pick_timeout": PICK_TIMEOUT,
+    "move_delay": MOVE_DELAY,
+    "fetch_timeout": FETCH_TIMEOUT,
+    "fetch_poll": FETCH_POLL,
+}, log)
+keg_store = Dump(sources, {"full kegs": KEG_GRAPHICS}, {
+    "pick_timeout": PICK_TIMEOUT,
+    "move_delay": MOVE_DELAY,
+    "keep_existing": False,
+    "only": kegs.is_full,
 }, log)
 tool_store = ToolStore(tools, sources, {
     "noun": "mortars and pestles",
@@ -3677,6 +3779,8 @@ answers = setup.ask({
     "clear": sources.clear,
     "unload": dump.pick_line,
     "unload_ready": dump.picked,
+    "keg_source": keg_source.pick,
+    "keg_store": keg_store.pick_line,
     "has_wood": lambda: stock.in_pack() > 0,
     "unsold_ahead": None,
 })
@@ -3696,7 +3800,9 @@ kegging = output == "kegs"
 if unloading:
     log("unloading every %d potions" % dump_at)
 elif kegging:
-    log("pouring into the kegs in the pack - a bottled potion goes onto the first empty keg")
+    log("pouring into the kegs in the pack - a bottled potion goes onto the first empty keg%s%s"
+        % (", fetching empty kegs from '%s'" % keg_source.name() if keg_source.picked() else "",
+           ", storing full kegs in '%s'" % keg_store.name() if keg_store.picked() else ""))
 else:
     log("keeping what is made - the run ends once the pack holds %d potions" % MAX_HELD)
 
@@ -3712,7 +3818,8 @@ log("%s at %s%s, %s in the pack, %s"
 
 stock.lift_from_bags()
 
-if crafts_left(first) < RESTOCK_AT:
+# Past the last ceiling the start-up Stop has not landed yet; the loop's band check ends the run
+if first is not None and crafts_left(first) < RESTOCK_AT:
     restock.run(targets_for(first))
 
 recorder = attempt_log(DATA_PATH, skill_name, log)
@@ -3720,6 +3827,7 @@ materials = Materials(stock, set())
 craft_recorder = CraftRecorder(recorder, materials, REFUND_SETTLE, REFUND_POLL)
 unloader = Unloader(dump)
 kegger = Unloader(kegs)
+storer = Unloader(keg_store)
 
 stop = None
 tally = 0
@@ -3794,13 +3902,25 @@ try:
                 stop = ("%d unloads in a row moved nothing into '%s'"
                         % (unloader.misses, dump.name()))
                 break
-        elif kegging and held > 0:
-            if kegger.run():
-                stall.progressed()
-            elif kegger.misses >= MAX_KEG_MISSES:
-                stop = ("%d keg runs in a row poured nothing - no empty keg in the pack, or the "
-                        "drop was refused" % kegger.misses)
-                break
+        elif kegging:
+            if keg_store.picked() and keg_store.held() > 0:
+                if storer.run():
+                    stall.progressed()
+                elif storer.misses >= MAX_DUMP_MISSES:
+                    stop = ("%d keg stores in a row moved nothing into '%s'"
+                            % (storer.misses, keg_store.name()))
+                    break
+
+            if held > 0:
+                if kegs.empty() is None and keg_source.picked():
+                    keg_source.fetch()
+
+                if kegger.run():
+                    stall.progressed()
+                elif kegger.misses >= MAX_KEG_MISSES:
+                    stop = ("%d keg runs in a row poured nothing - no empty keg in the pack or in "
+                            "what you picked, or the drop was refused" % kegger.misses)
+                    break
         elif not unloading and not kegging and held >= MAX_HELD:
             stop = "the pack holds %d potions and nothing was picked to unload into" % held
             break

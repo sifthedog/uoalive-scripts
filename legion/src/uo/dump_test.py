@@ -160,6 +160,16 @@ class DumpTest(unittest.TestCase):
 
         self.assertEqual([held.Serial for held in self.dump.items()], [2])
 
+    def test_only_keeps_what_the_predicate_refuses_out_of_the_items(self):
+        self.api.hold(self.house, item(serial=2, graphic=STAFF, name="a quarter staff"),
+                      item(serial=3, graphic=STAFF, name="a black staff"))
+        dump = Dump(self.sources, products(STAFF),
+                    dict(CONFIG, keep_existing=False, only=lambda held: "black" in held.Name),
+                    self.api.SysMsg)
+
+        self.assertEqual([held.Serial for held in dump.items()], [3])
+        self.assertEqual(dump.held(), 1)
+
     def test_run_with_nothing_picked_moves_nothing(self):
         self.api.hold(self.house, item(serial=2, graphic=STAFF, name="a quarter staff"))
 

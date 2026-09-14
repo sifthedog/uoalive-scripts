@@ -82,6 +82,12 @@ KEG_GRAPHICS = set([0x1940])
 KEG_NAME_WORDS = ["keg"]
 KEG_FILLED_TEXT = ["keg of"]
 
+# The tooltip line of a keg holding 100: stock RunUO's "The keg is completely full." Unverified.
+KEG_FULL_TEXT = ["completely full"]
+
+# How long a keg's tooltip is waited for, in whole seconds
+OPL_TIMEOUT = 2
+
 # Keg runs in a row that poured nothing - no empty keg, or the drop refused - before the run ends
 MAX_KEG_MISSES = 3
 
@@ -104,6 +110,15 @@ SETUP = {
     "material": "reagents",
     "tool_modes": TOOL_MODES,
     "outputs": OUTPUT_OPTIONS,
+    # Both optional: unpicked, nothing is fetched and a full keg stays in the pack
+    "picks": [
+        {"key": "keg_source", "output": "kegs", "caption": "Pick empty keg container",
+         "prompt": "target the container holding empty kegs",
+         "hint": "optional - without one the run ends when the pack has no empty keg"},
+        {"key": "keg_store", "output": "kegs", "caption": "Pick full keg container",
+         "prompt": "target the container full kegs are stored in",
+         "hint": "optional - without one a full keg stays in the pack"},
+    ],
     "unsold_hint": None,
     "dump_at": DUMP_AT,
     "hue": 996,

@@ -35,7 +35,8 @@ repo targets the ClassicUO web client; nothing is shared between the two.
    `arms-lore.py` wants the weapon; `bowcraft.py`, `carpentry.py` and `alchemy.py` draw a form: what happens when
    the tools run out, the chests, storage box and pack animals holding the material, added one cursor at a
    time, whether what is made is sold, unloaded or kept, with a cursor for each container the
-   choices need, and how many products pile up before each unload, then OK; `tinkering.py` draws a gump asking whether what it makes is sold,
+   choices need, and how many products pile up before each unload, then OK - `alchemy.py`'s Kegs
+   adds two optional cursors, the container empty kegs come from and the one full kegs go to; `tinkering.py` draws a gump asking whether what it makes is sold,
    unloaded or kept, and wants the unload container if you press Unload;
    `inscription.py` wants the containers holding scrolls and reagents, then draws the same
    gump and wants the unload container if you press Unload; `bod.py`
@@ -2075,8 +2076,12 @@ reagents. Each cycle:
 2. Put away what was made. **Kegs**, the default: the shard pours a craft into a keg in the pack
    already holding that potion, and bottles it when none does, so a bottled potion is dropped onto
    the first empty keg in the pack and the rest of the band pours in by itself - one empty keg per
-   band. `MAX_KEG_MISSES` keg runs in a row that poured nothing, no empty keg left or the drop
-   refused, end the run. **Unload** once the pack holds the form's `Unload every` potions the run
+   band. The form's two Kegs containers are optional: with an empty keg container picked, one keg
+   is fetched from it when the pack has none; with a full keg container picked, a keg whose
+   tooltip carries `KEG_FULL_TEXT` is moved into it first. `MAX_KEG_MISSES` keg runs in a row
+   that poured nothing, no empty keg left in the pack or in what you picked or the drop refused,
+   end the run, and so do `MAX_DUMP_MISSES` keg stores in a row that moved nothing. **Unload**
+   once the pack holds the form's `Unload every` potions the run
    made. **Keep**, and the run ends at `MAX_HELD`.
 3. Restock when the pack pays for fewer than `RESTOCK_AT` crafts: only the kinds the band spends,
    each filled to `BATCH_CRAFTS` crafts' worth. A move the shard refuses as too heavy unloads first.
@@ -2098,7 +2103,8 @@ art, so a poison carried in from an earlier run is told apart by serial only.
 - **Empty bottles and the band's reagent in your pack or in what you pick.** Bottles weigh a stone
   each, which is what bounds `BATCH_CRAFTS`.
 - **Somewhere for the potions**: with Kegs, an empty potion keg in your pack for each band the run
-  will cross; a keg holding the band's potion already takes it straight. With Unload, a trash
+  will cross, or a container of them picked on the form; a keg holding the band's potion already
+  takes it straight. A second container picked on the form takes the full ones. With Unload, a trash
   barrel destroys the potions and a chest keeps them. A keg is dropped onto, never used, since
   using one pours a potion out of it.
 
@@ -2114,6 +2120,7 @@ art, so a poison carried in from an earlier run is told apart by serial only.
 | `MAX_DUMP_MISSES` | `3` | Unloads in a row that moved nothing before the run ends |
 | `KEG_GRAPHICS` / `KEG_NAME_WORDS` | `0x1940` / `keg` | What counts as a keg, by art or name word |
 | `KEG_FILLED_TEXT` | `keg of` | A keg whose name carries it holds potions; any other keg is empty |
+| `KEG_FULL_TEXT` / `OPL_TIMEOUT` | `completely full` / `2` | The tooltip line of a keg holding 100, and how long the tooltip is waited for |
 | `MAX_KEG_MISSES` | `3` | Keg runs in a row that poured nothing before the run ends |
 | `TOOL_GRAPHICS` / `TOOL_NAME_WORDS` | `0x0E9B` / `mortar` | An art learned by name joins the set |
 | `CATEGORY_NAMES` | UOAlive's seven groups | Where the group rows end and the item rows begin |
@@ -2123,8 +2130,11 @@ art, so a poison carried in from an earlier run is told apart by serial only.
 ### When it goes wrong
 
 - **`out of 2 nightshade - ...`**: the pack and everything you picked are out of that kind.
-- **`3 keg runs in a row poured nothing`**: no empty keg is left in the pack, or the shard refused
-  the drop. If an empty keg is there, its name is not what `KEG_FILLED_TEXT` expects.
+- **`3 keg runs in a row poured nothing`**: no empty keg is left in the pack or in the container
+  you picked, or the shard refused the drop. If an empty keg is there, its name is not what
+  `KEG_FILLED_TEXT` expects.
+- **`3 keg stores in a row moved nothing`**: the full keg container refused the keg - full, or out
+  of reach. A full keg that is never stored is one whose tooltip lacks `KEG_FULL_TEXT`.
 - **`the shard refused ... in the pack 3 times`**: everything the recipe takes is there and the shard
   still refuses, so the row pressed is another potion. Run `craft-map.py` and paste the table again.
 - **`'greater cure' is not in RECIPES`**: the band names a row the table lacks. Run `craft-map.py`
@@ -2136,10 +2146,10 @@ art, so a poison carried in from an earlier run is told apart by serial only.
 
 - Every wording in `OUTCOME_TEXT` but the keg success, and every art: the mortar, the bottle, the
   reagents, the potions and the keg are stock RunUO, none read off UOAlive. So are the keg names
-  behind `KEG_FILLED_TEXT`: `A specially lined keg` empty, `A keg of <potion> potions` started.
-  Greater conflagration's ten grave dust were read off UOAlive's row; the dust's art `0x0F8F` and
-  the potion's `0x0F06` are stock, and whether a keg takes one is unread - pick Unload or Keep if
-  the drop is refused. Stock DefAlchemy says `You pour
+  behind `KEG_FILLED_TEXT`: `A specially lined keg` empty, `A keg of <potion> potions` started, and
+  the `The keg is completely full.` tooltip line behind `KEG_FULL_TEXT`. Greater conflagration's
+  ten grave dust were read off UOAlive's row; the dust's art `0x0F8F` and the potion's `0x0F06`
+  are stock, and whether a keg takes one is unread - pick Unload or Keep if the drop is refused. Stock DefAlchemy says `You pour
   the potion into a bottle` for a success and `You fail to create a useful potion` for a failure;
   UOAlive's NOTICES panel says `You create the potion and pour it into a keg.` with a keg in the
   pack.

@@ -35,7 +35,10 @@ class Dump(object):
         return [item for item in pack_contents() if item.Graphic in graphics]
 
     def items(self):
-        return [item for item in self._products() if item.Serial not in self._kept]
+        only = self._config.get("only")
+
+        return [item for item in self._products()
+                if item.Serial not in self._kept and (only is None or only(item))]
 
     def held(self):
         return sum(amount_of(item) for item in self.items())

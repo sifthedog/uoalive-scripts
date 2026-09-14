@@ -36,8 +36,12 @@ class Setup(object):
         self._sources = []
         self._tools_line = None
         self._unload_line = None
+        self._pick_lines = {}
         self._message = None
         self._controls = {}
+
+    def _picks(self):
+        return self._config.get("picks", [])
 
     def _presser(self, key):
         def press():
@@ -63,7 +67,8 @@ class Setup(object):
     def _show(self, heading, rows):
         outputs = self._config["outputs"]
         height = (TITLE_HEIGHT + ROW * 2 + ROW + LINE * SOURCE_LINES + ROW * 3
-                  + LINE * (len(rows) + 1) + ROW * 2 + BUTTON_HEIGHT + MARGIN * 4)
+                  + ROW * len(self._picks()) + LINE * (len(rows) + 1) + ROW * 2 + BUTTON_HEIGHT
+                  + MARGIN * 4)
 
         gump = API.Gumps.CreateGump(True, True)
 
@@ -135,7 +140,16 @@ class Setup(object):
         c["dump_at"].SetPos(VALUE_X, y)
         gump.Add(c["dump_at"])
         c["dump_unit"] = self._label(gump, "products", VALUE_X + DUMP_AT_WIDTH + 8, y + 3, MUTED)
-        y += ROW + MARGIN // 2
+        y += ROW
+
+        c["picks"] = {}
+
+        for pick in self._picks():
+            c["picks"][pick["key"]] = (self._button(gump, pick["key"], pick["caption"], FIELD_X, y, 148),
+                                       self._label(gump, "", VALUE_X, y + 3, MUTED))
+            y += ROW
+
+        y += MARGIN // 2
 
         self._label(gump, "Training", LABEL_X, y)
         self._label(gump, heading, FIELD_X, y)
@@ -226,6 +240,11 @@ class Setup(object):
             c["unload_value"].SetText(self._config["unsold_hint"] if self._output() == "sell"
                                       else "required")
 
+        for pick in self._picks():
+            button, value = c["picks"][pick["key"]]
+            button.IsVisible = value.IsVisible = self._output() == pick["output"]
+            value.SetText(clipped(self._pick_lines.get(pick["key"], pick["hint"]), LINE_CHARS))
+
     def _validate(self, actions):
         if self._mode() == "fetch" and not actions["tools_ready"]():
             return ("pick a container holding %s, or choose to stop when they run out"
@@ -269,6 +288,14 @@ class Setup(object):
 
             if line is not None:
                 self._unload_line = line
+
+            self._say(refusal)
+        elif pending in [pick["key"] for pick in self._picks()]:
+            self._log([pick for pick in self._picks() if pick["key"] == pending][0]["prompt"])
+            line, refusal = actions[pending]()
+
+            if line is not None:
+                self._pick_lines[pending] = line
 
             self._say(refusal)
         elif pending == "ok":

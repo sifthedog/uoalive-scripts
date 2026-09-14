@@ -1,7 +1,7 @@
 import unittest
 
-from alchemy.config import KEG_FILLED_TEXT, KEG_GRAPHICS, KEG_NAME_WORDS
-from alchemy.kegs import Kegs
+from alchemy.config import KEG_FILLED_TEXT, KEG_FULL_TEXT, KEG_GRAPHICS, KEG_NAME_WORDS
+from alchemy.kegs import EmptyKegs, Kegs
 from uo.dump import Dump
 from test_support.uo import install, item
 
@@ -9,7 +9,7 @@ POISON = 0x0F0A
 KEG = 0x1940
 
 CONFIG = {"graphics": KEG_GRAPHICS, "words": KEG_NAME_WORDS, "filled_text": KEG_FILLED_TEXT,
-          "move_delay": 0.0}
+          "full_text": KEG_FULL_TEXT, "move_delay": 0.0, "opl_timeout": 1}
 
 
 class KegsTest(unittest.TestCase):
@@ -51,3 +51,22 @@ class KegsTest(unittest.TestCase):
 
         self.assertEqual(self.kegs.run(), 0)
         self.assertEqual(self.api.messages, [])
+
+    def test_a_full_keg_is_read_off_its_tooltip(self):
+        self.api.props[1] = "A keg of Poison potions\nThe keg is completely full."
+
+        self.assertTrue(self.kegs.is_full(self.started))
+        self.assertFalse(self.kegs.is_full(item(serial=2, graphic=KEG, name="A keg of Poison potions")))
+        self.assertFalse(self.kegs.is_full(item(serial=3, graphic=POISON, name="a poison potion")))
+
+    def test_empty_kegs_read_as_a_tool_store_would(self):
+        empty = item(serial=2, graphic=KEG, name="A specially lined keg")
+        store = EmptyKegs(self.kegs)
+
+        self.assertIsNone(store.serial())
+        self.assertTrue(store.is_tool(empty))
+        self.assertFalse(store.is_tool(self.started))
+
+        self.api.hold(self.started, empty)
+
+        self.assertEqual(store.serial(), 2)

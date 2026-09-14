@@ -5,19 +5,20 @@ from alchemy.config import (BANDS, BATCH_CRAFTS, BUTTON_STRIDE, CATEGORY_BUTTON_
                             CRAFT_TITLE, CRAFT_TITLE_FRAGMENTS, CRAFT_TITLE_TEXT, DATA_PATH,
                             DUMP_AT, FETCH_POLL, FETCH_TIMEOUT, GUMP_POLL, GUMP_TIMEOUT,
                             HEARTBEAT_EVERY, ITEM_BUTTON_TYPE, JOURNAL_TAIL_LINES,
-                            JOURNAL_TAIL_SECONDS, KEG_FILLED_TEXT, KEG_GRAPHICS, KEG_NAME_WORDS,
-                            KIND_ORDER, LAST_TEN_LABEL, LOG_EVERY, MAKE_LAST_BUTTON, MAX_CYCLES,
-                            MAX_DUMP_MISSES, MAX_EMPTY_MOVES, MAX_HELD, MAX_KEG_MISSES,
-                            MAX_NO_MATERIAL, MAX_NO_TOOL, MAX_PICKS, MAX_THROTTLED,
-                            MAX_UNKNOWN, MAX_UNREADABLE_REPORTS, MIN_SKILL, MOVE_DELAY, NEEDS,
-                            NOTES_PATH, NOTES_TAIL_SECONDS, OPEN_DELAY, OUTCOME_TEXT,
+                            JOURNAL_TAIL_SECONDS, KEG_FILLED_TEXT, KEG_FULL_TEXT, KEG_GRAPHICS,
+                            KEG_NAME_WORDS, KIND_ORDER, LAST_TEN_LABEL, LOG_EVERY,
+                            MAKE_LAST_BUTTON, MAX_CYCLES, MAX_DUMP_MISSES, MAX_EMPTY_MOVES,
+                            MAX_HELD, MAX_KEG_MISSES, MAX_NO_MATERIAL, MAX_NO_TOOL, MAX_PICKS,
+                            MAX_THROTTLED, MAX_UNKNOWN, MAX_UNREADABLE_REPORTS, MIN_SKILL,
+                            MOVE_DELAY, NEEDS, NOTES_PATH, NOTES_TAIL_SECONDS, OPEN_DELAY,
+                            OPL_TIMEOUT, OUTCOME_TEXT,
                             PATHFIND_TIMEOUT, PICK_TIMEOUT, PRODUCTS, RECIPES, REFUND_POLL,
                             REFUND_SETTLE, RESTOCK_AT, SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT,
                             SAVING_TEXT, SETUP, SKILL_NAMES, SKILL_POLL, SKILL_TIMEOUT,
                             STALL_STOP, STALL_WARN, STEP_DELAY, STOCK_KINDS, STOPPED,
                             THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX, TOOL_GRAPHICS,
                             TOOL_NAME_WORDS, TOO_HEAVY_TEXT, UNREADABLE_TEXT_LIMIT)
-from alchemy.kegs import Kegs
+from alchemy.kegs import EmptyKegs, Kegs
 from uo.components import affordable, short_of, shortfall_report
 from uo.craft import Crafter
 from uo.craftmenu import CraftMenu
@@ -126,7 +127,22 @@ kegs = Kegs(dump, {
     "graphics": KEG_GRAPHICS,
     "words": KEG_NAME_WORDS,
     "filled_text": KEG_FILLED_TEXT,
+    "full_text": KEG_FULL_TEXT,
+    "opl_timeout": OPL_TIMEOUT,
     "move_delay": MOVE_DELAY,
+}, log)
+keg_source = ToolStore(EmptyKegs(kegs), sources, {
+    "noun": "empty kegs",
+    "pick_timeout": PICK_TIMEOUT,
+    "move_delay": MOVE_DELAY,
+    "fetch_timeout": FETCH_TIMEOUT,
+    "fetch_poll": FETCH_POLL,
+}, log)
+keg_store = Dump(sources, {"full kegs": KEG_GRAPHICS}, {
+    "pick_timeout": PICK_TIMEOUT,
+    "move_delay": MOVE_DELAY,
+    "keep_existing": False,
+    "only": kegs.is_full,
 }, log)
 tool_store = ToolStore(tools, sources, {
     "noun": "mortars and pestles",
@@ -203,6 +219,8 @@ answers = setup.ask({
     "clear": sources.clear,
     "unload": dump.pick_line,
     "unload_ready": dump.picked,
+    "keg_source": keg_source.pick,
+    "keg_store": keg_store.pick_line,
     "has_wood": lambda: stock.in_pack() > 0,
     "unsold_ahead": None,
 })
@@ -222,7 +240,9 @@ kegging = output == "kegs"
 if unloading:
     log("unloading every %d potions" % dump_at)
 elif kegging:
-    log("pouring into the kegs in the pack - a bottled potion goes onto the first empty keg")
+    log("pouring into the kegs in the pack - a bottled potion goes onto the first empty keg%s%s"
+        % (", fetching empty kegs from '%s'" % keg_source.name() if keg_source.picked() else "",
+           ", storing full kegs in '%s'" % keg_store.name() if keg_store.picked() else ""))
 else:
     log("keeping what is made - the run ends once the pack holds %d potions" % MAX_HELD)
 
@@ -247,6 +267,7 @@ materials = Materials(stock, set())
 craft_recorder = CraftRecorder(recorder, materials, REFUND_SETTLE, REFUND_POLL)
 unloader = Unloader(dump)
 kegger = Unloader(kegs)
+storer = Unloader(keg_store)
 
 stop = None
 tally = 0
@@ -321,13 +342,25 @@ try:
                 stop = ("%d unloads in a row moved nothing into '%s'"
                         % (unloader.misses, dump.name()))
                 break
-        elif kegging and held > 0:
-            if kegger.run():
-                stall.progressed()
-            elif kegger.misses >= MAX_KEG_MISSES:
-                stop = ("%d keg runs in a row poured nothing - no empty keg in the pack, or the "
-                        "drop was refused" % kegger.misses)
-                break
+        elif kegging:
+            if keg_store.picked() and keg_store.held() > 0:
+                if storer.run():
+                    stall.progressed()
+                elif storer.misses >= MAX_DUMP_MISSES:
+                    stop = ("%d keg stores in a row moved nothing into '%s'"
+                            % (storer.misses, keg_store.name()))
+                    break
+
+            if held > 0:
+                if kegs.empty() is None and keg_source.picked():
+                    keg_source.fetch()
+
+                if kegger.run():
+                    stall.progressed()
+                elif kegger.misses >= MAX_KEG_MISSES:
+                    stop = ("%d keg runs in a row poured nothing - no empty keg in the pack or in "
+                            "what you picked, or the drop was refused" % kegger.misses)
+                    break
         elif not unloading and not kegging and held >= MAX_HELD:
             stop = "the pack holds %d potions and nothing was picked to unload into" % held
             break
