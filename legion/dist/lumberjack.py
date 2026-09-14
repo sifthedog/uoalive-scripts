@@ -196,20 +196,29 @@ class Converter(object):
         return True
 
     # The action throttle can hold a conversion well past any pause worth taking, and reading too
-    # early is indistinguishable from a resource that cannot be worked
+    # early is indistinguishable from a resource that cannot be worked. Reported only once the diff
+    # has held still for a poll: the client can drop the source stack one poll before it adds the
+    # product, and the loss-only diff read in between is a conversion that worked reading as one
+    # that destroyed the material
     def _wait_for_change(self, before):
         waited = 0.0
+        last = None
 
         while waited < self._config["timeout"]:
             API.Pause(self._config["poll"])
             waited += self._config["poll"]
 
-            gained, lost = diff_counts(before, counts_by_graphic(pack_contents()))
+            changed = diff_counts(before, counts_by_graphic(pack_contents()))
 
-            if gained or lost:
-                return gained, lost
+            if not changed[0] and not changed[1]:
+                continue
 
-        return None
+            if changed == last:
+                return changed
+
+            last = changed
+
+        return last
 
     def _convert_one(self, stack):
         hue = hue_of(stack)
@@ -327,7 +336,9 @@ class Boards(object):
             "perform": self._perform,
             "blocked": self._no_axe_in_hand,
             "learn_product": self._learn_board,
-            "converted": config["converted"],
+            # Not recorded: cutting logs into boards is 1:1 and gains no Lumberjacking, so the row
+            # says nothing the swing rows do not
+            "converted": lambda gained, lost: None,
             "nothing_to_do": self._say_nothing_to_convert,
             "about_to_convert": self._converting,
         }, log, saves)
@@ -393,7 +404,6 @@ class Boards(object):
 
     def _converting(self):
         self._reported_nothing = False
-        self._config["about_to_convert"]()
 
     def run(self):
         return self._converter.run()
@@ -2924,11 +2934,8 @@ recorder = attempt_log(DATA_PATH if skill_name else "", skill.name(), log)
 gathered = Gathered(recorder, skill, skill_capped(skill_name), {
     "is_resource": wood.is_log,
     "name_of": lambda item: None,
-    "resource_graphics": LOG_GRAPHICS,
     "noun": "logs",
     "tool": "axe",
-    "converter_tool": "axe",
-    "made": "converted",
 }, log)
 boards = Boards(wood, axe, saves, {
     "attempts": CONVERT_ATTEMPTS,
@@ -2941,8 +2948,6 @@ boards = Boards(wood, axe, saves, {
     "board_graphics": BOARD_GRAPHICS,
     "throttled_text": THROTTLED_TEXT,
     "unskilled_text": UNSKILLED_TEXT,
-    "about_to_convert": gathered.before_convert,
-    "converted": gathered.after_convert,
 }, log)
 haul = Haul(wood, boards, saves, {
     "serials": PACK_ANIMAL_SERIALS,

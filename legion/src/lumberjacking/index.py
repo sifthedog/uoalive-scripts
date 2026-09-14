@@ -79,11 +79,8 @@ recorder = attempt_log(DATA_PATH if skill_name else "", skill.name(), log)
 gathered = Gathered(recorder, skill, skill_capped(skill_name), {
     "is_resource": wood.is_log,
     "name_of": lambda item: None,
-    "resource_graphics": LOG_GRAPHICS,
     "noun": "logs",
     "tool": "axe",
-    "converter_tool": "axe",
-    "made": "converted",
 }, log)
 boards = Boards(wood, axe, saves, {
     "attempts": CONVERT_ATTEMPTS,
@@ -96,8 +93,6 @@ boards = Boards(wood, axe, saves, {
     "board_graphics": BOARD_GRAPHICS,
     "throttled_text": THROTTLED_TEXT,
     "unskilled_text": UNSKILLED_TEXT,
-    "about_to_convert": gathered.before_convert,
-    "converted": gathered.after_convert,
 }, log)
 haul = Haul(wood, boards, saves, {
     "serials": PACK_ANIMAL_SERIALS,
