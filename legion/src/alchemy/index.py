@@ -238,7 +238,8 @@ log("%s at %s%s, %s in the pack, %s"
 
 stock.lift_from_bags()
 
-if crafts_left(first) < RESTOCK_AT:
+# Past the last ceiling the start-up Stop has not landed yet; the loop's band check ends the run
+if first is not None and crafts_left(first) < RESTOCK_AT:
     restock.run(targets_for(first))
 
 recorder = attempt_log(DATA_PATH, skill_name, log)
