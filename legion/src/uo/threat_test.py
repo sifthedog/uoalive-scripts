@@ -23,6 +23,7 @@ class Holding(object):
         self._api = api
         self._slices = slices
         self.waits = 0
+        self.speaks = None
 
     def wait(self, each):
         self.waits += 1
@@ -30,6 +31,9 @@ class Holding(object):
         for _ in range(self._slices):
             each()
             self._api.processes[-1].HasExited = True
+
+        if self.speaks is not None:
+            self.speaks()
 
 
 class WatchCase(unittest.TestCase):
@@ -194,6 +198,18 @@ class ThreatWatchHoldTest(WatchCase):
 
         self.assertTrue(self.api.processes[-1].HasExited)
         self.assertEqual(self.said, ["ambushed - nothing in sight, you 100/100"])
+
+    # The shard keeps talking while the gump is up, and the client files the hold's own
+    # "holding - You have been ambushed..." SysMsg in the journal beside it
+    def test_an_ambush_line_from_during_the_hold_does_not_hold_again(self):
+        self.hold.speaks = self.ambush
+        self.ambush()
+        self.watch.look()
+        self.watch.look()
+
+        self.assertEqual(self.hold.waits, 1)
+        self.assertEqual(self.said, ["ambushed - nothing in sight, you 100/100"])
+        self.assertTrue(self.api.processes[-1].HasExited)
 
     def test_a_hostile_still_there_after_the_hold_is_plain_trouble(self):
         self.ambush()

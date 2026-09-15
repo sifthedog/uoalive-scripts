@@ -1653,6 +1653,10 @@ class ThreatWatch(object):
             # The scan above is stale once the hold returns; the next look reads the fight afresh
             if self._hold is not None:
                 self._hold.wait(self._sound)
+                # The button means the player has judged it safe, so every ambush line from while
+                # the gump was up is stale - including the hold's own log line, which the client
+                # files in the journal and which carries the very phrase this watch waits on
+                forget(self._config["ambush_text"])
                 self._in_episode = False
                 self._trouble_seen = False
                 self._alarm_left = 0
