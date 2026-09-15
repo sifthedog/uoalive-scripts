@@ -209,7 +209,8 @@ DIFFERENT_ORE_TEXT = ["You cannot combine ores of different metals"]
 ORE_SETTLE_TIMEOUT = 1.5
 ORE_SETTLE_POLL = 0.15
 
-FIRE_BEETLE_GRAPHICS = set([0xA9])
+# 0x58F is a fire fox, which smelts the same way a beetle does - the name is the stock body's
+FIRE_BEETLE_GRAPHICS = set([0xA9, 0x58F])
 FIRE_BEETLE_SERIAL = None
 
 # A cursor at startup, so the beetle is chosen rather than guessed at by body and renamability -

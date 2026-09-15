@@ -679,7 +679,7 @@ Every timing is in seconds except `PATHFIND_TIMEOUT`.
 | --- | --- | --- |
 | `ORE_GRAPHICS` | four arts | The arts an ore pile is drawn with. Never a way to read a stack's size |
 | `ORE_NAME_WORD` | `ore` | Whole-word fallback for an unknown art. Whole, or `sycamore` gets smelted |
-| `FIRE_BEETLE_GRAPHICS` / `_SERIAL` | `0xa9` / `None` | The stock body, and a way to pin one |
+| `FIRE_BEETLE_GRAPHICS` / `_SERIAL` | `0xa9`, `0x58f` / `None` | The fire beetle and fire fox bodies, and a way to pin one |
 | `PICK_BEETLE` | `True` | A cursor at startup; ESC falls back to the search |
 | `PICK_TIMEOUT` | `60.0` | How long you have to answer that cursor |
 | `BEETLE_SCAN_RADIUS` / `SMELT_RANGE` | `18` / `2` | How far to look, and how close to stand |
@@ -779,8 +779,8 @@ ends the hold as well.
 - Whether `ApiStatic.IsCave` beats the name list. The survey prints it; nothing branches on it.
 - Whether `"onehanded"` is a pickaxe's layer, and whether `Amount` reads 0 for a stack the client
   has no data for, which `MIN_SMELT_AMOUNT` assumes.
-- `RESPAWN_DELAY`, `MINE_Z_RANGE`, the beetle body `0xa9`, that a beetle smelts by being targeted
-  with ore, and `DIFFERENT_ORE_TEXT`.
+- `RESPAWN_DELAY`, `MINE_Z_RANGE`, the beetle body `0xa9` and the fire fox `0x58f`, that either
+  smelts by being targeted with ore, and `DIFFERENT_ORE_TEXT`.
 - Whether `import clr` reaches `System.Diagnostics.Process` (logged once as `could not run afplay`),
   and whether encounter spawns come up gray or red so `trouble` keeps the alarm sounding.
 
