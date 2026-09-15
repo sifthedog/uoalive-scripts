@@ -1,14 +1,14 @@
 import API
 
-from potionkeg.config import (BUTTON_STRIDE, CATEGORY_BUTTON_TYPE, COUNT_PROMPT, CRAFT_POLL,
-                              CRAFT_TIMEOUT, GUMP_POLL, GUMP_TIMEOUT, ITEM_BUTTON_TYPE,
-                              JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS, LAST_TEN_LABEL,
-                              MADE_KEG_TYPES, MAKE_LAST_BUTTON, MAX_NO_TOOL, MAX_THROTTLED,
-                              MAX_UNKNOWN, MAX_UNREADABLE_REPORTS, MENUS, MOVE_DELAY, NOTES_PATH,
-                              NOTES_TAIL_SECONDS, OUTCOME_TEXT, PART_KINDS, PART_ORDER, STAGES,
-                              UNREADABLE_TEXT_LIMIT, WEIGHT_BUFFER)
-from potionkeg.plan import next_stage
-from potionkeg.prompt import CountPrompt
+from assembly.config import (ASSEMBLIES, BUTTON_STRIDE, CATEGORY_BUTTON_TYPE, CRAFT_POLL,
+                             CRAFT_TIMEOUT, GUMP_POLL, GUMP_TIMEOUT, ITEM_BUTTON_TYPE,
+                             JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS, LAST_TEN_LABEL,
+                             MADE_KEG_TYPES, MAKE_LAST_BUTTON, MAX_NO_TOOL, MAX_THROTTLED,
+                             MAX_UNKNOWN, MAX_UNREADABLE_REPORTS, MENUS, MOVE_DELAY, NOTES_PATH,
+                             NOTES_TAIL_SECONDS, OUTCOME_TEXT, PART_KINDS, PART_ORDER,
+                             START_PROMPT, UNREADABLE_TEXT_LIMIT, WEIGHT_BUFFER)
+from assembly.plan import next_stage
+from assembly.prompt import StartPrompt
 from uo.components import short_of, shortfall_report
 from uo.craft import Crafter
 from uo.craftmenu import CraftMenu
@@ -21,7 +21,7 @@ from uo.phrases import STOPPED
 from uo.stock import StockBook
 from uo.timings import STEP_DELAY, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX
 
-log = make_log("potion-keg")
+log = make_log("assembly")
 
 if API.HasTarget():
     API.CancelTarget()
@@ -32,7 +32,7 @@ def stop_reason():
 
 
 parts = StockBook({
-    "noun": "keg parts",
+    "noun": "assembly parts",
     "kinds": PART_KINDS,
     "types": MADE_KEG_TYPES,
     "hues": {},
@@ -71,23 +71,32 @@ def crafter_for(spec):
         "tail_seconds": JOURNAL_TAIL_SECONDS,
         "tail_lines": JOURNAL_TAIL_LINES,
         "notes_seconds": NOTES_TAIL_SECONDS,
-        "material": "keg parts",
+        "material": "assembly parts",
     }, log, log.stamp, notes)
 
 
 crafters = dict((name, crafter_for(MENUS[name])) for name in MENUS)
 
-wanted = CountPrompt(COUNT_PROMPT, log, stop_reason).ask()
+answers = StartPrompt(START_PROMPT, log, stop_reason).ask()
 
-if wanted is None:
+# The stop lands at the next Pause, so the lines until then read a prompt that was never answered
+picked = answers["assembly"] if answers is not None else ASSEMBLIES[0][0]
+wanted = answers["wanted"] if answers is not None else 0
+
+if answers is None:
     API.Stop()
 
-for name in MENUS:
+chosen = [row for row in ASSEMBLIES if row[0] == picked][0]
+stages = chosen[2]
+noun = chosen[1].lower()
+plural = noun if wanted == 1 else noun + "s"
+
+for name in set([menu for _row, menu, _needs in stages]):
     if crafters[name][0].serial() is None:
         log("no %s in the pack" % MENUS[name]["tool_noun"])
         API.Stop()
 
-log("making %d potion kegs, %s in the pack" % (wanted, parts.pack_report()))
+log("making %d %s, %s in the pack" % (wanted, plural, parts.pack_report()))
 
 stop = None
 made = 0
@@ -106,12 +115,12 @@ try:
             break
 
         stock = parts.pack_stock()
-        product, menu_name, needs = next_stage(STAGES, stock)
+        product, menu_name, needs = next_stage(stages, stock)
         short = short_of(needs, stock)
 
         if short:
-            stop = ("short of %s for the %s of potion keg %d of %d - the pack holds %s"
-                    % (shortfall_report(short, PART_ORDER), product, made + 1, wanted,
+            stop = ("short of %s for the %s of %s %d of %d - the pack holds %s"
+                    % (shortfall_report(short, PART_ORDER), product, noun, made + 1, wanted,
                        parts.pack_report()))
             break
 
@@ -134,9 +143,9 @@ try:
             unknown = 0
 
         if outcome == "made":
-            if product == STAGES[-1][0]:
+            if product == stages[-1][0]:
                 made += 1
-                log("potion keg %d of %d" % (made, wanted))
+                log("%s %d of %d" % (noun, made, wanted))
             else:
                 log("made %s" % product)
         elif outcome == "failed":

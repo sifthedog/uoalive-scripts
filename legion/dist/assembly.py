@@ -1,4 +1,4 @@
-# Built from src/potionkeg/index.py by build.py - do not edit.
+# Built from src/assembly/index.py by build.py - do not edit.
 
 import API
 import time
@@ -20,7 +20,7 @@ THROTTLED_TEXT = [
 STOPPED = "stopped from the script manager"
 
 
-# src/potionkeg/config.py
+# src/assembly/config.py
 KEG = "keg"
 POTION_KEG = "potion keg"
 
@@ -31,6 +31,11 @@ BOTTLE = "bottle"
 TAP = "barrel tap"
 BOARDS = "boards"
 INGOTS = "ingots"
+
+CLOCK_FRAME = "clock frame"
+CLOCK_PARTS = "clock parts"
+# The menu spells it out; a bare "clock" is not a row on either table
+CLOCK = "clock (right)"
 
 # Stock art, unverified on UOAlive; an art learned by name joins its set. Board hue is not matched:
 # the menu spends whichever wood it is set to, so set it to the boards in the pack.
@@ -43,23 +48,41 @@ PART_KINDS = [
     (KEG, set([0x1940]), ["keg"]),
     (BOTTLE, set([0x0F0E]), ["bottle", "bottles"]),
     (TAP, set([0x1004]), ["tap"]),
+    (CLOCK_FRAME, set([0x104D, 0x104E]), ["frame"]),
+    (CLOCK_PARTS, set([0x104F, 0x1050]), ["parts"]),
 ]
 PART_ORDER = [kind for kind, _graphics, _words in PART_KINDS]
 
 # A made potion keg is the same 0x1940 as the empty keg it took; only the name tells them apart
 MADE_KEG_TYPES = ["specially lined"]
 
-# In order, a part before what spends it: (row, menu, what one press spends). The last row is the
-# product; how many of each earlier row the next one still needs is worked out from here and from
-# the pack, so parts already there are used first. Bottles have no row on either menu. Stock
-# DefCarpentry and DefTinkering.
-STAGES = [
-    (STAVES, "carpentry", {BOARDS: 5}),
-    (LID, "carpentry", {BOARDS: 4}),
-    (HOOPS, "tinkering", {INGOTS: 5}),
-    (TAP, "tinkering", {INGOTS: 2}),
-    (KEG, "carpentry", {STAVES: 3, LID: 1, HOOPS: 1}),
-    (POTION_KEG, "tinkering", {KEG: 1, BOTTLE: 10, LID: 1, TAP: 1}),
+# One (key, caption, stages) per radio option. A stage is (row, menu, what one press spends), a part
+# always above whatever spends it: the run presses the first row the next product still lacks,
+# counted back through the pack, so parts already there are used first. The last row is the product.
+# Bottles have no row on either menu. Stock DefCarpentry and DefTinkering.
+#
+# The clock's rows are the ones a 10-clock run was watched pressing. Its clock parts are the Parts
+# group's, which spends ingots, not the Assemblies group's axle with gears and springs.
+ASSEMBLIES = [
+    ("keg", "Keg", [
+        (STAVES, "carpentry", {BOARDS: 5}),
+        (LID, "carpentry", {BOARDS: 4}),
+        (HOOPS, "tinkering", {INGOTS: 5}),
+        (KEG, "carpentry", {STAVES: 3, LID: 1, HOOPS: 1}),
+    ]),
+    ("potion keg", "Potion keg", [
+        (STAVES, "carpentry", {BOARDS: 5}),
+        (LID, "carpentry", {BOARDS: 4}),
+        (HOOPS, "tinkering", {INGOTS: 5}),
+        (TAP, "tinkering", {INGOTS: 2}),
+        (KEG, "carpentry", {STAVES: 3, LID: 1, HOOPS: 1}),
+        (POTION_KEG, "tinkering", {KEG: 1, BOTTLE: 10, LID: 1, TAP: 1}),
+    ]),
+    ("clock", "Clock", [
+        (CLOCK_PARTS, "tinkering", {INGOTS: 5}),
+        (CLOCK_FRAME, "tinkering", {BOARDS: 6}),
+        (CLOCK, "tinkering", {CLOCK_FRAME: 1, CLOCK_PARTS: 1}),
+    ]),
 ]
 
 # One craft menu each, as craft-map.py read them off UOAlive; only the rows the stages press
@@ -95,11 +118,20 @@ MENUS = {
         "title_text": ["TINKERING", "TINKER"],
         "category_names": ["jewelry", "wooden items", "tools", "parts", "utensils",
                            "miscellaneous", "assemblies", "traps", "magic jewelry"],
-        "recipes": {TAP: (61, 42), HOOPS: (61, 102), POTION_KEG: (121, 142)},
+        "recipes": {TAP: (61, 42), HOOPS: (61, 102), POTION_KEG: (121, 142), CLOCK_FRAME: (21, 82),
+                    CLOCK_PARTS: (61, 22), CLOCK: (121, 62)},
     },
 }
 
-COUNT_PROMPT = {"text": "How many potion kegs?", "default": 1, "hue": 996, "poll": 0.25}
+START_PROMPT = {
+    "text": "What to make",
+    "options": [(key, caption) for key, caption, _stages in ASSEMBLIES],
+    "assembly_default": "potion keg",
+    "count_text": "How many?",
+    "default": 1,
+    "hue": 996,
+    "poll": 0.25,
+}
 
 WEIGHT_BUFFER = 40
 
@@ -134,7 +166,7 @@ JOURNAL_TAIL_LINES = 4
 
 # The whole gump and journal behind a report, appended here so the game window stays quiet. "" turns
 # it off; a bare name lands beside the script.
-NOTES_PATH = "potion-keg-notes.log"
+NOTES_PATH = "assembly-notes.log"
 NOTES_TAIL_SECONDS = 60.0
 
 # Ordered: 'failed' before 'made' because "You failed to create the item" contains "create the item"
@@ -183,18 +215,21 @@ OUTCOME_TEXT = [
 ]
 
 
-# src/potionkeg/plan.py
+# src/assembly/plan.py
 # Demand runs backwards from one product through what the pack already holds, and the first stage
-# still missing is pressed. The product is never in stock, so it is the last resort.
+# still missing is pressed. The product itself is counted as absent however many are in the pack:
+# a keg or a clock is its own part elsewhere, and the ones already made would otherwise plan nothing.
 def next_stage(stages, stock):
-    demand = {stages[-1][0]: 1}
+    product = stages[-1][0]
+    demand = {product: 1}
     missing = {}
 
-    for product, _menu, needs in reversed(stages):
-        missing[product] = max(0, demand.get(product, 0) - stock.get(product, 0))
+    for row, _menu, needs in reversed(stages):
+        held = 0 if row == product else stock.get(row, 0)
+        missing[row] = max(0, demand.get(row, 0) - held)
 
         for part in needs:
-            demand[part] = demand.get(part, 0) + needs[part] * missing[product]
+            demand[part] = demand.get(part, 0) + needs[part] * missing[row]
 
     for stage in stages:
         if missing[stage[0]] > 0:
@@ -244,129 +279,6 @@ def wait_for_gump(gump, stop_reason, poll, resolve, closed_message="the gump was
         gump.Dispose()
 
     return why
-
-
-# src/potionkeg/prompt.py
-PROMPT_WIDTH = 300
-PROMPT_HEIGHT = 130
-PROMPT_BUTTON_HEIGHT = 26
-PROMPT_BOX_WIDTH = 60
-
-
-class CountPrompt(object):
-    """Asked once, before the loop: how many to make. None means do not start."""
-
-    def __init__(self, config, log, stop_reason):
-        self._config = config
-        self._log = log
-        self._stop_reason = stop_reason
-
-    # A blank, zero, negative or non-numeric box answers the default rather than refusing to start
-    def _count(self, box):
-        text = (box.Text or "").strip()
-
-        return int(text) if text.isdigit() and int(text) > 0 else self._config["default"]
-
-    def _show(self, on_press):
-        gump = API.Gumps.CreateGump(True, True)
-
-        if gump is None:
-            return None, None
-
-        gump.SetRect(0, 0, PROMPT_WIDTH, PROMPT_HEIGHT)
-        gump.CenterXInViewPort()
-        gump.CenterYInViewPort()
-
-        background = API.Gumps.CreateGumpColorBox(0.85, "#1E1E1E")
-        background.SetRect(0, 0, PROMPT_WIDTH, PROMPT_HEIGHT)
-        gump.Add(background)
-
-        label = API.Gumps.CreateGumpLabel(self._config["text"], self._config["hue"])
-        label.SetPos(16, 16)
-        gump.Add(label)
-
-        box = API.Gumps.CreateGumpTextBox(str(self._config["default"]), PROMPT_BOX_WIDTH,
-                                          PROMPT_BUTTON_HEIGHT, False, 20)
-        box.SetPos(16, 46)
-        gump.Add(box)
-
-        ok = API.Gumps.CreateSimpleButton("OK", 90, PROMPT_BUTTON_HEIGHT)
-        ok.SetPos(16, PROMPT_HEIGHT - 42)
-        API.Gumps.AddControlOnClick(ok, lambda: on_press("ok"))
-        gump.Add(ok)
-
-        cancel = API.Gumps.CreateSimpleButton("Cancel", 90, PROMPT_BUTTON_HEIGHT)
-        cancel.SetPos(114, PROMPT_HEIGHT - 42)
-        API.Gumps.AddControlOnClick(cancel, lambda: on_press("cancel"))
-        gump.Add(cancel)
-
-        API.Gumps.AddGump(gump)
-
-        return gump, box
-
-    def ask(self):
-        pressed = [None]
-        gump, box = self._show(lambda button: pressed.__setitem__(0, button))
-
-        if gump is None:
-            self._log("not asking - the run is being stopped")
-
-            return None
-
-        self._log("asking - %s" % self._config["text"])
-
-        why = wait_for_gump(gump, self._stop_reason, self._config["poll"], lambda: pressed[0],
-                            closed_message="cancel")
-
-        if why != "ok":
-            self._log(why)
-
-            return None
-
-        return self._count(box)
-
-
-# src/uo/components.py
-def short_of(needs, counts):
-    short = {}
-
-    for kind in needs:
-        missing = needs[kind] - counts.get(kind, 0)
-
-        if missing > 0:
-            short[kind] = missing
-
-    return short
-
-
-# In the caller's kind order, so the line reads the same each time
-def shortfall_report(short, order):
-    parts = ["%d %s" % (short[kind], kind) for kind in order if kind in short]
-    parts += ["%d %s" % (short[kind], kind) for kind in sorted(short) if kind not in order]
-
-    return ", ".join(parts)
-
-
-# src/uo/clock.py
-def time_text():
-    return time.strftime("%Y-%m-%d %H:%M:%S")
-
-
-# src/uo/entity.py
-# API.Player is None whenever the client is between world states - a recall, a server line change,
-# the moment around a death - and reading through it threw a live restock away
-def player():
-    try:
-        return API.Player
-    except Exception:
-        if API.StopRequested:
-            raise
-
-        return None
-
-
-def hex_of(value):
-    return "0x%x" % (value & 0xFFFFFFFF)
 
 
 # src/uo/text.py
@@ -430,6 +342,182 @@ def spoken(text, word, limit):
         return clipped(flat, limit)
 
     return "..." + clipped(flat[at:], limit)
+
+
+# src/uo/setup.py
+RADIO_CHAR = 8
+RADIO_GAP = 40
+
+
+# src/assembly/prompt.py
+PROMPT_WIDTH = 340
+PROMPT_HEIGHT = 178
+PROMPT_BUTTON_HEIGHT = 26
+PROMPT_BOX_WIDTH = 60
+RADIO_LABEL_Y = 16
+RADIO_ROW_Y = 40
+COUNT_LABEL_Y = 74
+COUNT_BOX_Y = 100
+
+
+class StartPrompt(object):
+    """Asked once, before the loop: which assembly to make, and how many. None means do not start."""
+
+    def __init__(self, config, log, stop_reason):
+        self._config = config
+        self._log = log
+        self._stop_reason = stop_reason
+        self._radios = []
+
+    # A blank, zero, negative or non-numeric box answers the default rather than refusing to start
+    def _count(self, box):
+        text = (box.Text or "").strip()
+
+        return int(text) if text.isdigit() and int(text) > 0 else self._config["default"]
+
+    # None until something has actually clicked one: a radio's isChecked at creation is not always
+    # something GetIsChecked reflects back
+    def _checked(self):
+        options = self._config["options"]
+
+        for index in range(len(self._radios)):
+            if self._radios[index].GetIsChecked():
+                return options[index][0]
+
+        return None
+
+    def _show(self, on_press):
+        gump = API.Gumps.CreateGump(True, True)
+
+        if gump is None:
+            return None, None
+
+        gump.SetRect(0, 0, PROMPT_WIDTH, PROMPT_HEIGHT)
+        gump.CenterXInViewPort()
+        gump.CenterYInViewPort()
+
+        background = API.Gumps.CreateGumpColorBox(0.85, "#1E1E1E")
+        background.SetRect(0, 0, PROMPT_WIDTH, PROMPT_HEIGHT)
+        gump.Add(background)
+
+        label = API.Gumps.CreateGumpLabel(self._config["text"], self._config["hue"])
+        label.SetPos(16, RADIO_LABEL_Y)
+        gump.Add(label)
+
+        options = self._config["options"]
+        default = self._config["assembly_default"]
+        x = 16
+
+        # Spaced by caption: the classic font runs about RADIO_CHAR pixels a letter
+        for index in range(len(options)):
+            key, caption = options[index]
+            radio = API.Gumps.CreateGumpRadioButton(caption, 1, 0x00D0, 0x00D1,
+                                                    self._config["hue"], key == default)
+            radio.SetPos(x, RADIO_ROW_Y)
+            gump.Add(radio)
+            self._radios.append(radio)
+            x += RADIO_GAP + RADIO_CHAR * len(caption)
+
+        count_label = API.Gumps.CreateGumpLabel(self._config["count_text"], self._config["hue"])
+        count_label.SetPos(16, COUNT_LABEL_Y)
+        gump.Add(count_label)
+
+        box = API.Gumps.CreateGumpTextBox(str(self._config["default"]), PROMPT_BOX_WIDTH,
+                                          PROMPT_BUTTON_HEIGHT, False, 20)
+        box.SetPos(16, COUNT_BOX_Y)
+        gump.Add(box)
+
+        ok = API.Gumps.CreateSimpleButton("OK", 90, PROMPT_BUTTON_HEIGHT)
+        ok.SetPos(16, PROMPT_HEIGHT - 42)
+        API.Gumps.AddControlOnClick(ok, lambda: on_press("ok"))
+        gump.Add(ok)
+
+        cancel = API.Gumps.CreateSimpleButton("Cancel", 90, PROMPT_BUTTON_HEIGHT)
+        cancel.SetPos(114, PROMPT_HEIGHT - 42)
+        API.Gumps.AddControlOnClick(cancel, lambda: on_press("cancel"))
+        gump.Add(cancel)
+
+        API.Gumps.AddGump(gump)
+
+        return gump, box
+
+    def ask(self):
+        pressed = [None]
+        answers = {"assembly": self._config["assembly_default"], "wanted": self._config["default"]}
+        gump, box = self._show(lambda button: pressed.__setitem__(0, button))
+
+        if gump is None:
+            self._log("not asking - the run is being stopped")
+
+            return None
+
+        self._log("asking - %s" % self._config["text"])
+
+        # Read every slice, not once at the end: wait_for_gump disposes the gump before returning
+        # and a disposed radio reports nothing checked, which read as the default and sent a clock
+        # run down the potion keg rows
+        def resolve():
+            checked = self._checked()
+
+            if checked is not None:
+                answers["assembly"] = checked
+
+            answers["wanted"] = self._count(box)
+
+            return pressed[0]
+
+        why = wait_for_gump(gump, self._stop_reason, self._config["poll"], resolve,
+                            closed_message="cancel")
+
+        if why != "ok":
+            self._log(why)
+
+            return None
+
+        return answers
+
+
+# src/uo/components.py
+def short_of(needs, counts):
+    short = {}
+
+    for kind in needs:
+        missing = needs[kind] - counts.get(kind, 0)
+
+        if missing > 0:
+            short[kind] = missing
+
+    return short
+
+
+# In the caller's kind order, so the line reads the same each time
+def shortfall_report(short, order):
+    parts = ["%d %s" % (short[kind], kind) for kind in order if kind in short]
+    parts += ["%d %s" % (short[kind], kind) for kind in sorted(short) if kind not in order]
+
+    return ", ".join(parts)
+
+
+# src/uo/clock.py
+def time_text():
+    return time.strftime("%Y-%m-%d %H:%M:%S")
+
+
+# src/uo/entity.py
+# API.Player is None whenever the client is between world states - a recall, a server line change,
+# the moment around a death - and reading through it threw a live restock away
+def player():
+    try:
+        return API.Player
+    except Exception:
+        if API.StopRequested:
+            raise
+
+        return None
+
+
+def hex_of(value):
+    return "0x%x" % (value & 0xFFFFFFFF)
 
 
 # src/uo/journal.py
@@ -1496,8 +1584,8 @@ THROTTLE_BACKOFF_MAX = 8.0
 STEP_DELAY = 0.3
 
 
-# src/potionkeg/index.py
-log = make_log("potion-keg")
+# src/assembly/index.py
+log = make_log("assembly")
 
 if API.HasTarget():
     API.CancelTarget()
@@ -1508,7 +1596,7 @@ def stop_reason():
 
 
 parts = StockBook({
-    "noun": "keg parts",
+    "noun": "assembly parts",
     "kinds": PART_KINDS,
     "types": MADE_KEG_TYPES,
     "hues": {},
@@ -1547,23 +1635,32 @@ def crafter_for(spec):
         "tail_seconds": JOURNAL_TAIL_SECONDS,
         "tail_lines": JOURNAL_TAIL_LINES,
         "notes_seconds": NOTES_TAIL_SECONDS,
-        "material": "keg parts",
+        "material": "assembly parts",
     }, log, log.stamp, notes)
 
 
 crafters = dict((name, crafter_for(MENUS[name])) for name in MENUS)
 
-wanted = CountPrompt(COUNT_PROMPT, log, stop_reason).ask()
+answers = StartPrompt(START_PROMPT, log, stop_reason).ask()
 
-if wanted is None:
+# The stop lands at the next Pause, so the lines until then read a prompt that was never answered
+picked = answers["assembly"] if answers is not None else ASSEMBLIES[0][0]
+wanted = answers["wanted"] if answers is not None else 0
+
+if answers is None:
     API.Stop()
 
-for name in MENUS:
+chosen = [row for row in ASSEMBLIES if row[0] == picked][0]
+stages = chosen[2]
+noun = chosen[1].lower()
+plural = noun if wanted == 1 else noun + "s"
+
+for name in set([menu for _row, menu, _needs in stages]):
     if crafters[name][0].serial() is None:
         log("no %s in the pack" % MENUS[name]["tool_noun"])
         API.Stop()
 
-log("making %d potion kegs, %s in the pack" % (wanted, parts.pack_report()))
+log("making %d %s, %s in the pack" % (wanted, plural, parts.pack_report()))
 
 stop = None
 made = 0
@@ -1582,12 +1679,12 @@ try:
             break
 
         stock = parts.pack_stock()
-        product, menu_name, needs = next_stage(STAGES, stock)
+        product, menu_name, needs = next_stage(stages, stock)
         short = short_of(needs, stock)
 
         if short:
-            stop = ("short of %s for the %s of potion keg %d of %d - the pack holds %s"
-                    % (shortfall_report(short, PART_ORDER), product, made + 1, wanted,
+            stop = ("short of %s for the %s of %s %d of %d - the pack holds %s"
+                    % (shortfall_report(short, PART_ORDER), product, noun, made + 1, wanted,
                        parts.pack_report()))
             break
 
@@ -1610,9 +1707,9 @@ try:
             unknown = 0
 
         if outcome == "made":
-            if product == STAGES[-1][0]:
+            if product == stages[-1][0]:
                 made += 1
-                log("potion keg %d of %d" % (made, wanted))
+                log("%s %d of %d" % (noun, made, wanted))
             else:
                 log("made %s" % product)
         elif outcome == "failed":

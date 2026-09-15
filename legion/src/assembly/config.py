@@ -11,6 +11,11 @@ TAP = "barrel tap"
 BOARDS = "boards"
 INGOTS = "ingots"
 
+CLOCK_FRAME = "clock frame"
+CLOCK_PARTS = "clock parts"
+# The menu spells it out; a bare "clock" is not a row on either table
+CLOCK = "clock (right)"
+
 # Stock art, unverified on UOAlive; an art learned by name joins its set. Board hue is not matched:
 # the menu spends whichever wood it is set to, so set it to the boards in the pack.
 PART_KINDS = [
@@ -22,23 +27,41 @@ PART_KINDS = [
     (KEG, set([0x1940]), ["keg"]),
     (BOTTLE, set([0x0F0E]), ["bottle", "bottles"]),
     (TAP, set([0x1004]), ["tap"]),
+    (CLOCK_FRAME, set([0x104D, 0x104E]), ["frame"]),
+    (CLOCK_PARTS, set([0x104F, 0x1050]), ["parts"]),
 ]
 PART_ORDER = [kind for kind, _graphics, _words in PART_KINDS]
 
 # A made potion keg is the same 0x1940 as the empty keg it took; only the name tells them apart
 MADE_KEG_TYPES = ["specially lined"]
 
-# In order, a part before what spends it: (row, menu, what one press spends). The last row is the
-# product; how many of each earlier row the next one still needs is worked out from here and from
-# the pack, so parts already there are used first. Bottles have no row on either menu. Stock
-# DefCarpentry and DefTinkering.
-STAGES = [
-    (STAVES, "carpentry", {BOARDS: 5}),
-    (LID, "carpentry", {BOARDS: 4}),
-    (HOOPS, "tinkering", {INGOTS: 5}),
-    (TAP, "tinkering", {INGOTS: 2}),
-    (KEG, "carpentry", {STAVES: 3, LID: 1, HOOPS: 1}),
-    (POTION_KEG, "tinkering", {KEG: 1, BOTTLE: 10, LID: 1, TAP: 1}),
+# One (key, caption, stages) per radio option. A stage is (row, menu, what one press spends), a part
+# always above whatever spends it: the run presses the first row the next product still lacks,
+# counted back through the pack, so parts already there are used first. The last row is the product.
+# Bottles have no row on either menu. Stock DefCarpentry and DefTinkering.
+#
+# The clock's rows are the ones a 10-clock run was watched pressing. Its clock parts are the Parts
+# group's, which spends ingots, not the Assemblies group's axle with gears and springs.
+ASSEMBLIES = [
+    ("keg", "Keg", [
+        (STAVES, "carpentry", {BOARDS: 5}),
+        (LID, "carpentry", {BOARDS: 4}),
+        (HOOPS, "tinkering", {INGOTS: 5}),
+        (KEG, "carpentry", {STAVES: 3, LID: 1, HOOPS: 1}),
+    ]),
+    ("potion keg", "Potion keg", [
+        (STAVES, "carpentry", {BOARDS: 5}),
+        (LID, "carpentry", {BOARDS: 4}),
+        (HOOPS, "tinkering", {INGOTS: 5}),
+        (TAP, "tinkering", {INGOTS: 2}),
+        (KEG, "carpentry", {STAVES: 3, LID: 1, HOOPS: 1}),
+        (POTION_KEG, "tinkering", {KEG: 1, BOTTLE: 10, LID: 1, TAP: 1}),
+    ]),
+    ("clock", "Clock", [
+        (CLOCK_PARTS, "tinkering", {INGOTS: 5}),
+        (CLOCK_FRAME, "tinkering", {BOARDS: 6}),
+        (CLOCK, "tinkering", {CLOCK_FRAME: 1, CLOCK_PARTS: 1}),
+    ]),
 ]
 
 # One craft menu each, as craft-map.py read them off UOAlive; only the rows the stages press
@@ -74,11 +97,20 @@ MENUS = {
         "title_text": ["TINKERING", "TINKER"],
         "category_names": ["jewelry", "wooden items", "tools", "parts", "utensils",
                            "miscellaneous", "assemblies", "traps", "magic jewelry"],
-        "recipes": {TAP: (61, 42), HOOPS: (61, 102), POTION_KEG: (121, 142)},
+        "recipes": {TAP: (61, 42), HOOPS: (61, 102), POTION_KEG: (121, 142), CLOCK_FRAME: (21, 82),
+                    CLOCK_PARTS: (61, 22), CLOCK: (121, 62)},
     },
 }
 
-COUNT_PROMPT = {"text": "How many potion kegs?", "default": 1, "hue": 996, "poll": 0.25}
+START_PROMPT = {
+    "text": "What to make",
+    "options": [(key, caption) for key, caption, _stages in ASSEMBLIES],
+    "assembly_default": "potion keg",
+    "count_text": "How many?",
+    "default": 1,
+    "hue": 996,
+    "poll": 0.25,
+}
 
 WEIGHT_BUFFER = 40
 
@@ -113,7 +145,7 @@ JOURNAL_TAIL_LINES = 4
 
 # The whole gump and journal behind a report, appended here so the game window stays quiet. "" turns
 # it off; a bare name lands beside the script.
-NOTES_PATH = "potion-keg-notes.log"
+NOTES_PATH = "assembly-notes.log"
 NOTES_TAIL_SECONDS = 60.0
 
 # Ordered: 'failed' before 'made' because "You failed to create the item" contains "create the item"

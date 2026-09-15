@@ -24,7 +24,7 @@ repo targets the ClassicUO web client; nothing is shared between the two.
 | `chivalry.py` | Trains Chivalry on its five spells, gating each cast on tithing points, putting the weapon away for every trance and drawing it again after, and bandaging itself under the health floor |
 | `bod.py` | Target a Blacksmithing or Alchemy bulk order deed, small or large: crafts what it asks for from the stock in your pack, combines the pieces, and for a large deed gets the smalls from the Bulk Order Deed Box and fills them one by one |
 | `inventory.py` | Target a bag or chest: writes one JSON line per item in it - name, tier, durability, weight and every tooltip property, parsed and verbatim |
-| `potion-keg.py` | Asks how many potion kegs, then makes each one from the boards, ingots and bottles in your pack - staves, lid and keg on the carpentry menu, hoops, tap and the potion keg on the tinkering menu - stopping the moment the next press cannot be afforded |
+| `assembly.py` | Asks which assembly - keg, potion keg or clock - and how many, then makes each one from the boards, ingots and bottles in your pack, pressing every part it needs on the carpentry and tinkering menus and stopping the moment the next press cannot be afforded |
 
 ## How to run it
 
@@ -40,7 +40,8 @@ repo targets the ClassicUO web client; nothing is shared between the two.
    unloaded or kept, and wants the unload container if you press Unload;
    `inscription.py` wants the containers holding scrolls and reagents, then draws the same
    gump and wants the unload container if you press Unload; `bod.py`
-   wants the deed; `inventory.py` wants the bag; `potion-keg.py` draws a gump asking how many. `magery.py`, `mysticism.py`, `buffs.py`, `fishing.py`, `attack.py` and `hiding.py` raise none. ESC
+   wants the deed; `inventory.py` wants the bag; `assembly.py` draws a gump asking which assembly
+   and how many. `magery.py`, `mysticism.py`, `buffs.py`, `fishing.py`, `attack.py` and `hiding.py` raise none. ESC
    declines, and each script says what it does instead.
 
 ## How it is built
@@ -2381,34 +2382,45 @@ small; the small leaving the pack is the proof. The run stops when every entry r
   neither counted nor combined.
 - Whether a potion's tooltip names it the way the deed does, which is what the combine rests on.
 
-## potion-keg.py
+## assembly.py
 
-Draws a gump asking how many potion kegs, then makes each one from boards, ingots and bottles
-through the rows of `STAGES`: barrel staves, barrel lid and the keg on the carpentry menu, barrel
-hoops, barrel tap and the potion keg on the tinkering menu. Each press is the first stage the
-next potion keg still lacks, counted back from the potion keg through what the pack already
-holds, so parts already there are used before more are made. Before each press the pack is counted against what that press spends; the run stops
-the moment the next press cannot be afforded, says what is short, and never restocks or unloads.
-One potion keg is finished before the next is started, so they land one at a time. Every craft
-menu comes up under the same gump id, so each menu is told the other's title words and opens
-afresh when the gump it remembers has become the other skill's menu.
+Draws a gump with a radio per assembly - keg, potion keg, clock - and a box for how many, then
+makes each one from boards, ingots and bottles through that assembly's rows in `ASSEMBLIES`. Each
+press is the first row the next product still lacks, counted back from the product through what
+the pack already holds, so parts already there are used before more are made. Before each press
+the pack is counted against what that press spends; the run stops the moment the next press cannot
+be afforded, says what is short, and never restocks or unloads. One product is finished before the
+next is started, so they land one at a time. Every craft menu comes up under the same gump id, so
+each menu is told the other's title words and opens afresh when the gump it remembers has become
+the other skill's menu. Only the menus the chosen assembly names are checked for a tool, so a
+clock run needs no carpentry tools.
+
+| Assembly | Rows | Per product |
+| --- | --- | --- |
+| Keg | staves, lid and the keg on the carpentry menu, hoops on the tinkering menu | 19 boards, 5 ingots |
+| Potion keg | the keg's rows, plus barrel tap and the potion keg on the tinkering menu | 23 boards, 7 ingots, 10 bottles |
+| Clock | clock parts, clock frame and `clock (right)`, all on the tinkering menu | 6 boards, 5 ingots |
 
 - **Before you run it**: Carpentry and Tinkering at the rows' minimums (57.9 for the keg and 75
-  for the potion keg, stock), carpentry tools and tinker's tools in the pack, the carpentry menu
-  set to the wood in the pack, and per potion keg: 23 boards, 7 ingots and 10 bottles. Bottles
-  have no row on either menu.
-- **What to set**: `STAGES` if a recipe differs; `PART_KINDS` if a part's art differs (a part
-  named with a word in the list is learned); `MENUS` if a row's buttons move, from
-  `craft-map.py`. A finished potion keg is the same art as the empty keg it took, so
-  `MADE_KEG_TYPES` lists the words that mark one as made and keep it out of the next count.
+  for the potion keg, stock), the tools for the menus that assembly uses in the pack, the
+  carpentry menu set to the wood in the pack, and the materials above. Bottles have no row on
+  either menu.
+- **What to set**: `ASSEMBLIES` if a recipe differs or another assembly is wanted; `PART_KINDS` if
+  a part's art differs (a part named with a word in the list is learned); `MENUS` if a row's
+  buttons move, from `craft-map.py`. A finished potion keg is the same art as the empty keg it
+  took, so `MADE_KEG_TYPES` lists the words that mark one as made and keep it out of the next
+  count. A row label has to be spelled exactly as the menu spells it - the clock is
+  `clock (right)`, never a bare `clock`.
 - **`short of … for the keg of potion keg N of M`**: the pack lacks that part for that press.
   The count only sees what is in the pack, and only the parts `PART_KINDS` recognises.
 - **`the shard refused the parts in the pack for a …`**: the count said enough and the menu said
   no. Read the gump's own words above the line; a part by another name or art is the usual cause.
 - **`the shard says you cannot make a … yet`**: skill below that row's minimum.
 - **Unverified**: every art in `PART_KINDS`, the keg names behind `MADE_KEG_TYPES`, the counts in
-  `STAGES`, and which `OUTCOME_TEXT` wording a parts refusal lands in: the buckets were read off
-  wood and ingot refusals.
+  `ASSEMBLIES`, and which `OUTCOME_TEXT` wording a parts refusal lands in: the buckets were read
+  off wood and ingot refusals. The clock's three rows were watched pressing through a run of ten,
+  but what the clock parts row spends was not measured: the Parts group's siblings are 2 to 5
+  ingots and 5 is the guess, so a run can stop short of ingots while it could still have pressed.
 
 ## craft-map.py
 
