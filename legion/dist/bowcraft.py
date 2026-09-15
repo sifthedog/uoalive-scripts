@@ -87,7 +87,7 @@ DATA_PATH = "skill-attempts.jsonl"
 # list may not
 SKILL_NAMES = ["Bowcraft", "Bowcraft/Fletching", "Fletching"]
 
-MIN_SKILL = 30.0
+MIN_SKILL = 0.0
 
 # The two bands that offer a choice: "fukiya dart" and "yumi" are the other way
 LOW_BAND_ITEM = "bow"
@@ -95,6 +95,7 @@ HIGH_BAND_ITEM = "yumi"
 
 # Ceilings are exclusive, in the client's float percentage - the src/training tables are in tenths
 BANDS = [
+    (30.0, "shaft"),
     (60.0, LOW_BAND_ITEM),
     (70.0, "crossbow"),
     (80.0, "composite bow"),
@@ -112,6 +113,7 @@ CATEGORY_NAMES = [
 
 # Name as the SELECTIONS row spells it, and the graphics it lands in the pack as
 PRODUCTS = {
+    "shaft": set([0x1BD4]),
     "bow": set([0x13B2]),
     "crossbow": set([0x0F50]),
     "composite bow": set([0x26C2]),
@@ -146,7 +148,7 @@ REGULAR_WOOD = "regular"
 # not measured, so a wrong graphic under-reports rather than inventing a material.
 MATERIAL_GRAPHICS = set([
     0x1BD1,  # feathers
-    0x1BD4,  # shafts
+    0x1BD4,  # shafts - the 0-30 band's product, and a material to every band above it
 ])
 
 # Read off the tooltip: '74 Oak Boards' is oak, '1580 Boards' is regular. Each is its own resource
@@ -194,6 +196,7 @@ BOWYER_TITLES = ["bowyer", "fletcher", "archer", "bowyers", "fletchers"]
 # Who buys each band's product: the noun for the log, and the titles matched against the name and
 # the tooltip. None when nobody buys it - the bowyer refuses a yumi - and it is unloaded instead.
 VENDORS = {
+    "shaft": None,
     "bow": ("bowyer", BOWYER_TITLES),
     "crossbow": ("bowyer", BOWYER_TITLES),
     "composite bow": ("bowyer", BOWYER_TITLES),
@@ -213,6 +216,11 @@ DUMP_AT = 10
 # Keeping them, or selling with nowhere to put the unsold, the run ends once the pack holds this many
 MAX_HELD = 60
 
+# Per product, because MAX_HELD counts amounts: a shaft stacks, and sixty of them is a minute
+MAX_HELD_BY_ITEM = {
+    "shaft": 600,
+}
+
 # Unloads in a row that moved nothing before the run ends
 MAX_DUMP_MISSES = 3
 
@@ -222,7 +230,7 @@ SETUP = {
     "tool_noun": "fletcher's tools",
     "tool_modes": TOOL_MODES,
     "outputs": OUTPUT_OPTIONS,
-    "unsold_hint": "for what nobody buys - without one the run ends at %d unsold" % MAX_HELD,
+    "unsold_hint": "for what nobody buys - without one the run ends once the pack fills",
     "dump_at": DUMP_AT,
     "hue": 996,
     "poll": 0.25,
@@ -348,6 +356,7 @@ SELL_RETRY_AFTER = 25
 # it after one run the way carpentry.py's WOOD_COST was. LOW_BAND_ITEM/HIGH_BAND_ITEM swap what
 # BANDS makes at the ends, so both are covered here regardless of which is in play.
 WOOD_COST = {
+    "shaft": 1,
     "bow": 7,
     "yumi": 7,
     "crossbow": 6,
@@ -3781,6 +3790,10 @@ def wood_cost(item):
     return cost_of(item, WOOD_COST, MIN_CRAFT_WOOD)
 
 
+def held_cap(item):
+    return cost_of(item, MAX_HELD_BY_ITEM, MAX_HELD)
+
+
 def wood_short(item):
     return short_by(item, wood.in_pack(), WOOD_COST, MIN_CRAFT_WOOD)
 
@@ -3944,11 +3957,12 @@ if output == "sell":
 
     if unsold_ahead(start) and not dump.picked():
         log("nothing picked to unload into - the run ends once the pack holds %d unsold products"
-            % MAX_HELD)
+            % held_cap(band_for(BANDS, start)))
 elif output == "unload":
     log("unloading every %d products" % dump_at)
 elif output == "keep":
-    log("keeping what is made - the run ends once the pack holds %d" % MAX_HELD)
+    log("keeping what is made - the run ends once the pack holds %d"
+        % held_cap(band_for(BANDS, start)))
 
 # A picked tool container fills an empty pack before the first craft
 if (tools.find(FETCH_TIMEOUT, FETCH_POLL) is None
@@ -4062,14 +4076,14 @@ try:
                         stop = ("%d unloads in a row moved nothing into '%s'"
                                 % (unloader.misses, dump.name()))
                         break
-                elif held >= MAX_HELD and not dump.picked():
+                elif held >= held_cap(product) and not dump.picked():
                     stop = "the pack holds %d unsold and nothing was picked to unload into" % held
                     break
             elif (products_in_pack() >= SELL_AT and seller.due(cycle)
                   and seller.sell(VENDORS[product][1], VENDORS[product][0], cycle)):
                 stop = end_cycle(stall, "selling", cycle, tally, stop)
                 continue
-        elif held >= MAX_HELD:
+        elif held >= held_cap(product):
             stop = "the pack holds %d and nothing was picked to unload into" % held
             break
 

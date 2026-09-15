@@ -8,19 +8,19 @@ from bowcraft.config import (BANDS, BATCH_SIZE, BOX, BOX_PRESS_POLL, BOX_PRESS_T
                              ITEM_BUTTON_TYPE, JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS,
                              LAST_TEN_LABEL, LOG_EVERY, MAKE_LAST_BUTTON, MATERIAL_GRAPHICS,
                              MAX_CYCLES, MAX_DUMP_MISSES, MAX_EMPTY_MOVES, MAX_HELD,
-                             MAX_NO_MATERIAL, MAX_NO_TOOL, MAX_PICKS, MAX_SELL_MISSES,
-                             MAX_THROTTLED, MAX_UNKNOWN, MAX_UNREADABLE_REPORTS, MIN_CRAFT_WOOD,
-                             MIN_SKILL, MOVE_DELAY, NOTES_PATH, NOTES_TAIL_SECONDS, OPEN_DELAY,
-                             OPL_WAIT, OUTCOME_TEXT, PATHFIND_TIMEOUT, PICK_TIMEOUT, PRODUCTS,
-                             PRODUCT_GRAPHICS, RECIPES, REFUND_POLL, REFUND_SETTLE, REGULAR_WOOD,
-                             RESTOCK_AT, RETURN_WRONG_WOOD, SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT,
-                             SAVING_TEXT, SELL_AT, SELL_ENTRY, SELL_PHRASE, SELL_POLL,
+                             MAX_HELD_BY_ITEM, MAX_NO_MATERIAL, MAX_NO_TOOL, MAX_PICKS,
+                             MAX_SELL_MISSES, MAX_THROTTLED, MAX_UNKNOWN, MAX_UNREADABLE_REPORTS,
+                             MIN_CRAFT_WOOD, MIN_SKILL, MOVE_DELAY, NOTES_PATH, NOTES_TAIL_SECONDS,
+                             OPEN_DELAY, OPL_WAIT, OUTCOME_TEXT, PATHFIND_TIMEOUT, PICK_TIMEOUT,
+                             PRODUCTS, PRODUCT_GRAPHICS, RECIPES, REFUND_POLL, REFUND_SETTLE,
+                             REGULAR_WOOD, RESTOCK_AT, RETURN_WRONG_WOOD, SAVE_DONE_TEXT, SAVE_POLL,
+                             SAVE_WAIT, SAVING_TEXT, SELL_AT, SELL_ENTRY, SELL_PHRASE, SELL_POLL,
                              SELL_RETRY_AFTER, SELL_TIMEOUT, SETUP, SKILL_NAMES, SKILL_POLL,
                              SKILL_TIMEOUT, STALL_STOP, STALL_WARN, STEP_DELAY, STOPPED,
-                             THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX, TOOL_GRAPHICS,
-                             TOOL_NAME_WORDS, TOO_HEAVY_TEXT, UNREADABLE_TEXT_LIMIT, VENDORS,
-                             VENDOR_RANGE, VENDOR_SCAN_RADIUS, VENDOR_SERIAL, VENDOR_STEPS,
-                             WOOD_COST, WOOD_HUES, WOOD_KINDS, WOOD_TYPE, WOOD_TYPES)
+                             THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX, TOOL_GRAPHICS, TOOL_NAME_WORDS,
+                             TOO_HEAVY_TEXT, UNREADABLE_TEXT_LIMIT, VENDORS, VENDOR_RANGE,
+                             VENDOR_SCAN_RADIUS, VENDOR_SERIAL, VENDOR_STEPS, WOOD_COST, WOOD_HUES,
+                             WOOD_KINDS, WOOD_TYPE, WOOD_TYPES)
 from uo.restock import Restock
 from uo.sources import Sources
 from uo.cost import cost_of, short_by
@@ -69,6 +69,10 @@ def stop_reason():
 
 def wood_cost(item):
     return cost_of(item, WOOD_COST, MIN_CRAFT_WOOD)
+
+
+def held_cap(item):
+    return cost_of(item, MAX_HELD_BY_ITEM, MAX_HELD)
 
 
 def wood_short(item):
@@ -234,11 +238,12 @@ if output == "sell":
 
     if unsold_ahead(start) and not dump.picked():
         log("nothing picked to unload into - the run ends once the pack holds %d unsold products"
-            % MAX_HELD)
+            % held_cap(band_for(BANDS, start)))
 elif output == "unload":
     log("unloading every %d products" % dump_at)
 elif output == "keep":
-    log("keeping what is made - the run ends once the pack holds %d" % MAX_HELD)
+    log("keeping what is made - the run ends once the pack holds %d"
+        % held_cap(band_for(BANDS, start)))
 
 # A picked tool container fills an empty pack before the first craft
 if (tools.find(FETCH_TIMEOUT, FETCH_POLL) is None
@@ -352,14 +357,14 @@ try:
                         stop = ("%d unloads in a row moved nothing into '%s'"
                                 % (unloader.misses, dump.name()))
                         break
-                elif held >= MAX_HELD and not dump.picked():
+                elif held >= held_cap(product) and not dump.picked():
                     stop = "the pack holds %d unsold and nothing was picked to unload into" % held
                     break
             elif (products_in_pack() >= SELL_AT and seller.due(cycle)
                   and seller.sell(VENDORS[product][1], VENDORS[product][0], cycle)):
                 stop = end_cycle(stall, "selling", cycle, tally, stop)
                 continue
-        elif held >= MAX_HELD:
+        elif held >= held_cap(product):
             stop = "the pack holds %d and nothing was picked to unload into" % held
             break
 

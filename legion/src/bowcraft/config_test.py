@@ -1,13 +1,14 @@
 import unittest
 
-from bowcraft.config import (BANDS, OUTCOME_TEXT, OUTPUT_OPTIONS, PRODUCTS, RECIPES, SETUP,
-                             TOOL_MODES, VENDORS, WOOD_COST)
+from bowcraft.config import (BANDS, MAX_HELD_BY_ITEM, OUTCOME_TEXT, OUTPUT_OPTIONS, PRODUCTS,
+                             RECIPES, SETUP, TOOL_MODES, VENDORS, WOOD_COST)
 from uo.stages import band_for
 
 
 class BandsTest(unittest.TestCase):
     def test_the_rows_hand_over_on_the_exclusive_edge(self):
-        self.assertEqual(band_for(BANDS, 29.9), "bow")
+        self.assertEqual(band_for(BANDS, 0.0), "shaft")
+        self.assertEqual(band_for(BANDS, 29.9), "shaft")
         self.assertEqual(band_for(BANDS, 30.0), "bow")
         self.assertEqual(band_for(BANDS, 59.9), "bow")
         self.assertEqual(band_for(BANDS, 60.0), "crossbow")
@@ -27,11 +28,20 @@ class BandsTest(unittest.TestCase):
             self.assertIn(product, WOOD_COST)
 
         self.assertIsNone(VENDORS["yumi"])
+        self.assertIsNone(VENDORS["shaft"])
 
     def test_the_other_way_round_the_end_bands_are_rows_too(self):
         for product in ("fukiya dart", "yumi", "bow"):
             self.assertIn(product, RECIPES)
             self.assertIn(product, WOOD_COST)
+
+
+class HeldCapTest(unittest.TestCase):
+    def test_every_raised_cap_names_a_band_the_run_makes(self):
+        products = [product for _ceiling, product in BANDS]
+
+        for item in MAX_HELD_BY_ITEM:
+            self.assertIn(item, products)
 
 
 class OutcomeOrderTest(unittest.TestCase):

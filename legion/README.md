@@ -14,7 +14,7 @@ repo targets the ClassicUO web client; nothing is shared between the two.
 | `attack.py` | Turns war mode on and attacks the nearest gray or red mobile within 10 tiles that is not your pet or, by its tooltip, anyone else's. Run it again for the next one |
 | `arms-lore.py` | Target a weapon, then read it every half second until Arms Lore caps |
 | `hiding.py` | Uses Hiding over and over until the skill caps, pacing itself off the shard's refusals, and records every roll |
-| `bowcraft.py` | Trains Bowcraft from 30 to cap: makes whatever the band still gains on, restocks wood from the containers and pack animals you pick, and sells it to the bowyer, unloads it or keeps it as a gump at the start decides |
+| `bowcraft.py` | Trains Bowcraft from 0 to cap: makes whatever the band still gains on, restocks wood from the containers and pack animals you pick, and sells it to the bowyer, unloads it or keeps it as a gump at the start decides |
 | `tinkering.py` | Trains Tinkering from 20 to cap on the iron ingots you carry: makes whatever the band still gains on, and sells it to the vendor that buys it, unloads it or keeps it as a gump at the start decides |
 | `carpentry.py` | Trains Carpentry from 0 to cap on the cheapest recipe each band still gains on, restocks wood the way `bowcraft.py` does, and unloads what it made into the container you pick |
 | `inscription.py` | Trains Inscription from 30 to cap on the spell scroll with the fewest reagents each circle gains on, meditating when the pool is short, restocking scrolls and reagents the way `carpentry.py` does, and selling or unloading the scrolls as a gump at the start decides |
@@ -1507,7 +1507,7 @@ Everything below `STAGES` is `magery.py`'s block with the same defaults. These a
 
 ## bowcraft.py
 
-Trains Bowcraft/Fletching from 30 to cap by making whatever the current band gains on. It pulls wood
+Trains Bowcraft/Fletching from 0 to cap by making whatever the current band gains on. It pulls wood
 `BATCH_SIZE` at a time out of what you point at, logs and boards both, and sells what it made to the
 nearest bowyer, unloads it into the container you pick, or keeps it, as the form at the start
 decides.
@@ -1551,6 +1551,7 @@ a box, and a box cannot be unloaded into.
 
 | Bowcraft | Makes | Sold to |
 | --- | --- | --- |
+| 0 – 30 | shaft | nobody: unloaded |
 | 30 – 60 | `LOW_BAND_ITEM`: a bow by default, fukiya darts the other way | bowyer |
 | 60 – 70 | crossbow | bowyer |
 | 70 – 80 | composite bow | bowyer |
@@ -1640,7 +1641,11 @@ when `DATA_PATH` is set.
   each walk because a pathfind that ends early leaves you short. It sends the **Sell** entry matched
   by text, falling back to saying `vendor sell`, and waits for the pack to drop. It does not drive
   the sell gump, so **the auto-sell agent still has to be configured** for the bowyer.
-- **`SELL_AT` and `DUMP_AT` count amounts, not stacks.** Fukiya darts stack ten to a craft.
+- **`SELL_AT` and `DUMP_AT` count amounts, not stacks.** Fukiya darts stack ten to a craft, and
+  the shaft band makes one stack of hundreds, which is what `MAX_HELD_BY_ITEM` raises the cap for.
+- **Start the shaft band with no shafts in the pack.** What the run unloads is only what it made,
+  tracked by serial, and a new shaft merges into the stack you carried in - so that whole stack is
+  kept. Fukiya darts behave the same way.
 - **A storage box on another shard** may lay its rows out differently. The layout is read live,
   so that usually just works; if the run says a row has no button, open the box by hand, run
   `box-probe.py`, and copy the ids from its `PacketGumpText` lines into `BOX["buttons"]`.
@@ -1652,7 +1657,7 @@ when `DATA_PATH` is set.
 | Setting | Default | What it is for |
 | --- | --- | --- |
 | `SKILL_NAMES` | `Bowcraft`, … | Tried in order |
-| `MIN_SKILL` | `30.0` | Below this the run refuses to start |
+| `MIN_SKILL` | `0.0` | Below this the run refuses to start |
 | `LOW_BAND_ITEM` / `HIGH_BAND_ITEM` | `bow` / `yumi` | The two bands with a choice |
 | `BANDS` | see above | Ceiling and product |
 | `PRODUCTS` | table | Row name as the gump spells it, and the graphics it arrives as |
@@ -1672,6 +1677,7 @@ when `DATA_PATH` is set.
 | `TOOL_MODES` / `OUTPUT_OPTIONS` | stop, fetch / sell, unload, keep | The form's dropdown and radio buttons |
 | `FETCH_TIMEOUT` / `FETCH_POLL` | `3.0` / `0.25` | How long the pack has to show a fetched tool |
 | `DUMP_AT` / `MAX_HELD` | `10` / `60` | Products before an unload, and where a keeping run, or a Sell run with nowhere to put the unsold, ends |
+| `MAX_HELD_BY_ITEM` | `shaft`: `600` | A higher `MAX_HELD` for a product that stacks; both count amounts |
 | `MAX_DUMP_MISSES` | `3` | Unloads in a row that moved nothing before the run ends |
 | `TOO_HEAVY_TEXT` | *That container cannot hold more weight* | The shard refusing a move for weight |
 | `BOWYER_TITLES` / `SELL_PHRASE` | `bowyer`, … / `vendor sell` | Matched against name and tooltip, and what is said |
