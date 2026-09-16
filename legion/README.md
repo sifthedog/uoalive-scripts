@@ -21,8 +21,9 @@ repo targets the ClassicUO web client; nothing is shared between the two.
 | `alchemy.py` | Trains Alchemy from 0 to cap on the potion each band gains on, restocks bottles and reagents the way `carpentry.py` does, and pours what it made into the kegs in your pack, unloads it into the container you pick, or keeps it |
 | `magery.py` | Trains Magery on the four spells that gain without a victim, meditating when the pool runs dry |
 | `mysticism.py` | Trains Mysticism on the five spells that gain without a victim, meditating when the pool runs dry |
+| `spellweaving.py` | Trains Spellweaving on the six spells of the book that can be ground solo, stowing the weapon for every trance and meditating when the pool runs dry |
 | `chivalry.py` | Trains Chivalry on its five spells, gating each cast on tithing points, putting the weapon away for every trance and drawing it again after, and bandaging itself under the health floor |
-| `bod.py` | Target a Blacksmithing or Alchemy bulk order deed, small or large: crafts what it asks for from the stock in your pack, combines the pieces, and for a large deed gets the smalls from the Bulk Order Deed Box and fills them one by one |
+| `bod.py` | Target a Blacksmithing, Alchemy or Carpentry bulk order deed, small or large: crafts what it asks for from the stock in your pack, combines the pieces, and for a large deed gets the smalls from the Bulk Order Deed Box and fills them one by one |
 | `inventory.py` | Target a bag or chest: writes one JSON line per item in it - name, tier, durability, weight and every tooltip property, parsed and verbatim |
 | `assembly.py` | Asks which assembly - keg, potion keg or clock - and how many, then makes each one from the boards, ingots and bottles in your pack, pressing every part it needs on the carpentry and tinkering menus and stopping the moment the next press cannot be afforded |
 
@@ -41,7 +42,7 @@ repo targets the ClassicUO web client; nothing is shared between the two.
    `inscription.py` wants the containers holding scrolls and reagents, then draws the same
    gump and wants the unload container if you press Unload; `bod.py`
    wants the deed; `inventory.py` wants the bag; `assembly.py` draws a gump asking which assembly
-   and how many. `magery.py`, `mysticism.py`, `buffs.py`, `fishing.py`, `attack.py` and `hiding.py` raise none. ESC
+   and how many. `magery.py`, `mysticism.py`, `spellweaving.py`, `buffs.py`, `fishing.py`, `attack.py` and `hiding.py` raise none. ESC
    declines, and each script says what it does instead.
 
 ## How it is built
@@ -258,6 +259,7 @@ paladin who never once failed.
 | --- | --- | --- | --- |
 | `magery.py` | `cast`, and `disabled` where `DISABLED_IS_PROGRESS` | `fizzled` | the mana wait, the buff already standing, everything unread |
 | `mysticism.py` | the same | `fizzled` | the same, plus the health floor |
+| `spellweaving.py` | the same | `fizzled` | the same, plus the health floor and the weapon moves |
 | `chivalry.py` | the same | `fizzled`, and `unknown` for an attempt it could not name | the mana wait, the buff already standing, the health floor, the tithing gate and the weapon moves |
 | `tame.py` | `tamed` | `failed` | `pending` |
 | `arms-lore.py` | `read` | `missed` | a use that raised no cursor, unread wordings |
@@ -1395,6 +1397,133 @@ Everything below `STAGES` is `magery.py`'s block with the same defaults. These a
 - The `formLocked` bucket, which no live run has produced.
 - The band bounds, the mana ladder, and the `cast_timeout` figures, scaled from Magery's 3rd circle.
 
+## spellweaving.py
+
+The same loop as `magery.py` on the same shared modules, so *How a cast is read*, *The self cursor*
+and *The mana wait* there describe this one. Its own are the table, the weapon the second band
+wants, and a health floor.
+
+| Band | Spell | Mana | Min | Cursor | What it is |
+| --- | --- | --- | --- | --- | --- |
+| ≤ 20.0 | Arcane Circle | 24 | 0 | none answered | Lights the arcane focus everything else is cheaper under |
+| 20.0 – 35.0 | Immolating Weapon | 32 | 10 | none answered | The book's fastest cast. Wants a weapon in hand |
+| 35.0 – 52.0 | Reaper Form | 34 | 24 | none answered | A transformation, and a toggle |
+| 52.0 – 66.0 | Essence of Wind | 40 | 52 | none answered | Frost damage, six tiles, centred on you |
+| 66.0 – 90.0 | Wildfire | 50 | 66 | at self, harmful | Laid on the ground you stand on |
+| 90.0 – 120.0 | Word of Death | 50 | 83 | at self, harmful | Slays creatures; only chips a player |
+
+**How the rows were picked.** The book is bigger than any training table, and most of it cannot be
+ground at all - a row has to be castable twice running. That rules out more than it leaves:
+
+- **Anything that leaves a timed buff on the caster** answers the recast with `This spell is already
+  in effect`, so it can be cast once a duration and no more. Arcane Empowerment (20 seconds),
+  Ethereal Voyage and Gift of Life go out on this, and Gift of Renewal (1 minute cooldown) and
+  Attunement (2 minutes) go out twice over.
+- **Anything that wants something found or left behind**: Dryad Allure needs a humanoid to charm,
+  Nature's Fury leaves a swarm, and Summon Fey and Summon Fiend park a creature in your follower
+  slots - 10 mana against a minimum of 38, the cheapest spells in the book, and Essence of Wind
+  covers the same range asking nothing back.
+
+What is left recasts freely: an enchant that renews (Arcane Circle, Immolating Weapon), a form that
+toggles (Reaper Form), and three that resolve and are gone. Of those, each band takes the hardest it
+can cast: `min_skill` first, because that is the book's own difficulty ranking, then mana where two
+share a minimum. The top three bands open on their spell's minimum exactly - a spell the shard has
+only just allowed fizzles more, and a fizzle is still a roll. The two below them carry a margin
+because there was nothing harder to move up to. Two tests hold that order.
+
+**The mana figures are the unfocused ones.** An arcane focus takes about a third off every row - the
+journal put one at 7199 seconds, so cast Arcane Circle on a circle before a long run and the whole
+table gets cheaper. The start-up line says so.
+
+**The first band.** Arcane Circle casts solo on this shard - it renews the focus and gains, and
+`Your arcane focus is renewed` is the `cast` wording the band is read by, because it puts up no buff
+this loop sees. The "2+ arcanists" rule is a shard rule where it holds at all; `FIRST_BAND` warns
+under 20.0 and `noCircle` stops the run on a shard that enforces it.
+
+**The weapon.** Immolating Weapon enchants what is in hand, and meditation is refused while anything
+is held - so the trance is bracketed by a stow and a draw, the way `chivalry.py` does it, off the
+same `uo/hands.py`. The weapon is remembered by serial at start-up and comes back to the same layer.
+A band that needs one with empty hands stops before it meditates; a shard that says `You must have a
+weapon` when the layers disagree gets one redraw and a stop if that fails.
+
+`disabled` here is Reaper Form toggling off, a cast the shard charged for, so `DISABLED_IS_PROGRESS`
+is on and the bucket is tallied. `formLocked` stops: the bands above Reaper Form are unreachable
+while the form is up, and nothing here drops it.
+
+**The health floor.** Essence of Wind, Wildfire and Word of Death all land where you stand, and
+nothing here heals. `HURT_FLOOR` stops the run at half health. Word of Death only slays creatures -
+a player takes chaos damage instead - so this is chip damage, not a way to die.
+
+### Before you run it
+
+- **Stand somewhere empty, never in town.** The top three bands are attacks.
+- **A Spellweaving spellbook** with the six spells in it. Half the book drops in dungeons or sells
+  on player vendors; Summon Fey and Summon Fiend are quest-only and this table does not use them.
+- **No reagents**: the school has none, which is why there is no `noReagents` bucket.
+- **A weapon in hand for the 20.0 - 35.0 band.** Any melee weapon. It goes in the pack for every
+  trance and comes back out after.
+- **Cast Arcane Circle on a circle first** if you are starting above 20.0 - the focus is worth about
+  a third of every mana figure for two hours.
+- **A shard that refuses Arcane Circle solo** wants a second arcanist on the circle, or the skill
+  bought to 20.0. This one does not.
+- It aims at 120.0, which needs power scrolls; the run stops at the shard's cap.
+
+### What to set
+
+Everything below `STAGES` is `magery.py`'s block with the same defaults. These are its own:
+
+| Setting | Default | What it is for |
+| --- | --- | --- |
+| `STAGES` | six rows | One row per band |
+| `STAGES[].min_skill` | the shard's figure | Read by the tests that hold the table's order, not by the loop |
+| `STAGES[].needs_weapon` | Immolating Weapon only | Stops the band rather than casting into an empty hand |
+| `STAGES[].target` | `self` on two | The rest raise no cursor, or leave it for the next cycle |
+| `STAGES[].target_kind` | `harmful` on two | The cursor type the shard raises. Defaults to `beneficial` |
+| `STAGES[].buff` | three rows | The rest train on the mana proof |
+| `FIRST_BAND` | `20.0` | Where a solo run can start. Under it the start-up line says what is missing |
+| `HAND_LAYERS` | both hands | What the trance empties and the draw fills again |
+| `HURT_FLOOR` | `0.5` | Fraction of max hits the run stops below |
+
+### When it goes wrong
+
+- **Nothing casts at all**: the names are the strings `API.CastSpell` takes. They have to read the
+  way your spellbook does.
+- **`… needs a circle and another spellweaver`**: this shard enforces the group rule. Buy the skill
+  to 20.0, or bring one.
+- **`nothing in hand for Immolating Weapon`**: draw a weapon before you start; the run remembers
+  what is held at start-up and nothing else.
+- **`the weapon did not come back out of the pack`**: the draw failed after a trance. Raise
+  `EQUIP_ATTEMPTS` or `EQUIP_TIMEOUT`.
+- **`a form is blocking …`**: drop Reaper Form and start again.
+- **`outcome unreadable - the journal held: …`**: the line says which knob it is. **`nothing`** means
+  the shard spoke after the window closed and the next cycle's `ClearJournal` destroyed the line -
+  raise `PROOF_GRACE`, which is already `1.4` here against `magery.py`'s `0.6` for that reason.
+  **A wording** means `OUTCOME_TEXT` is missing it; add it to the bucket it belongs in. Anything
+  `matched_bucket` did recognise has already been taken out of what this prints.
+- **`buff bar:` prints an id the table lacks**: copy the `Type` into that row's `buff`.
+- **`This spell is already in effect`**: that row leaves a timed buff and cannot be ground. Take it
+  out of `STAGES` rather than waiting the buff out - the whole band would run at one cast a duration.
+- **`hurt (N/M)`**: something is hitting you, or Word of Death is landing harder than the book says.
+
+### Unverified
+
+- Every wording in `OUTCOME_TEXT` apart from the shared ones and the two arcane focus lines, which
+  came off a live run.
+- `"ReaperForm"` as a `BuffIconType` name, read from the enum. The `title` fallback and the mana
+  proof cover it either way. Immolating Weapon's turned out to be `"Immolating"`, off a live
+  `buff bar:` line - not what the enum name suggested, which is the warning for this one.
+- **That Reaper Form toggles rather than refusing.** It is the one row holding the 35.0 - 62.0 band,
+  and if this shard answers it with `This spell is already in effect` too, that band has nothing to
+  cast: Thunderstorm, minimum 10, is then the honest fallback.
+- A harmful self-target on Wildfire and Word of Death, and whether the shard accepts the caster for
+  either. Delete `target` and `target_kind` from a row the cursor will not take.
+- Which of the other five raise a cursor at all. Where one does, the row costs its `cast_timeout`
+  per cast until `target: "self"` is added.
+- **That harder spells gain faster**, which is what the whole table rests on. The book publishes no
+  gain rates; `min_skill` and mana are standing in for them. `skill-attempts.jsonl` and
+  `legion/skilldb.py` are what settle it - run a band, read the table, move the bounds.
+- The band bounds, which follow from the above.
+
 ## chivalry.py
 
 The same loop as `magery.py` on the same shared modules, so *How a cast is read* and *The mana wait*
@@ -2171,22 +2300,27 @@ count reaches the total. A large deed is that once per entry, with each filled s
 the large one. Nothing is restocked.
 
 **The trade comes from the deed.** `TRADES` is a list, tried in order, and the first whose `recipes`
-make every item the deed lists is the one used: `smith` for Blacksmithing, `alchemy` for potions.
-The trade carries its own tool, menu title, categories, recipe table, costs, outcome wordings and
-whether there is a material page at all. So one script fills both, and an item in neither table
-stops the run before anything is pressed.
+make every item the deed lists is the one used: `smith` for Blacksmithing, `alchemy` for potions,
+`carpentry` for woodwork. The trade carries its own tool, menu title, categories, recipe table,
+costs, the stock it spends and whether there is a material page at all. So one script fills all
+three, and an item in no table stops the run before anything is pressed. The three recipe tables
+share no item name, so the order they are tried in never decides anything.
 
 The tooltip lines read are `amount to make`, `<item>: <done>`, `All items must be exceptional` and
-`All items must be made with <material> ingots`. A smith deed with no material line means iron; an
-alchemy deed names no material and never opens the material page.
+`All items must be made with <material> ingots`, whose trailing noun may be `ingots` or `boards` -
+the deed is read before the trade is known, so `material_nouns` lists both. A smith deed with no
+material line means iron and a carpentry one regular wood; an alchemy deed names no material and
+never opens the material page.
 
 **Pre-flight.** Before the first craft, unless `CHECK_BEFORE_START = False`, either of these stops
 the run with the numbers:
 
-- Stock: the trade's cost table per piece times pieces owed. For smithing that is `INGOT_COST`,
-  one number, counted as ingots of the deed's material by name then hue. For alchemy it is
-  `POTION_COST`, a bottle and a reagent per potion, each counted by its art from `REAGENT_KINDS`.
-  An item the table lacks is said and not checked. An exceptional deed will take more.
+- Stock: the trade's cost table per piece times pieces owed. A number is the trade's own pool in
+  the deed's material, counted by name then hue and keyed `iron ingots` or `oak boards` -
+  `INGOT_COST` for smithing, `BOARD_COST` for carpentry. A dict is stock per kind, counted by art:
+  `POTION_COST` against `REAGENT_KINDS`, a bottle and a reagent per potion. An item the table lacks
+  is said and not checked, which is where carpentry items wanting more than boards land. An
+  exceptional deed will take more.
 - Tool charges: every tool's `Uses Remaining` summed against the pieces owed. A tool without that
   line is said and not checked.
 
@@ -2264,7 +2398,7 @@ small; the small leaving the pack is the proof. The run stops when every entry r
 
 | Setting | Default | What it is for |
 | --- | --- | --- |
-| `TRADES` | `smith`, then `alchemy` | The trade tables, tried in order. The first whose `recipes` make every item the deed lists is used, and it carries the tool, title, categories, costs, wordings, salvage and material page for the whole run |
+| `TRADES` | `smith`, `alchemy`, then `carpentry` | The trade tables, tried in order. The first whose `recipes` make every item the deed lists is used, and it carries the tool, title, categories, costs, wordings, salvage and material page for the whole run |
 | `SKILL_NAMES` / `ALCHEMY_SKILL_NAMES` | `Blacksmithy`, `Blacksmith` / `Alchemy` | For the start-up line only |
 | `TOOL_GRAPHICS` / `TOOL_NAME_WORDS` | hammer, tongs, sledge / `tongs`, `smith` | Whole words, so a war hammer is not a tool |
 | `ALCHEMY_TOOL_GRAPHICS` / `ALCHEMY_TOOL_NAME_WORDS` | `0x0E9B` / `mortar` | The same for the mortar and pestle |
@@ -2275,7 +2409,7 @@ small; the small leaving the pack is the proof. The run stops when every entry r
 | `DEED_GRAPHICS` / `DEED_NAME_WORDS` | `0x2258` / `bulk order deed` | How small deeds in the pack are found for a large one |
 | `BOX_NAMES` / `BOX_TIMEOUT` | `bulk order deed box` / `10.0` | The box, and how long it has to put the deeds in the pack |
 | `LARGE_COMBINE_BUTTON` / `LARGE_COMBINE_TEXT` | `2` / stock | The large deed gump's combine, and the shard's replies |
-| `PLAIN_MATERIAL` | `iron` | What a smith deed with no material line wants. The alchemy trade sets it to nothing, which is what skips the material page |
+| `PLAIN_MATERIAL` / `PLAIN_WOOD` | `iron` / `regular` | What a deed with no material line wants. The alchemy trade sets it to nothing, which is what skips the material page |
 | `MATERIAL_ALIASES` | `shadow iron` → `shadow` | How the menu row and tooltip may shorten the wording |
 | `MATERIAL_ORDER` | iron … valorite | The material page's rows in stock order, pressed blind when the page's text cannot be split |
 | `DEED_TEXT` | stock | The tooltip lines, lower-cased fragments |
@@ -2287,7 +2421,7 @@ small; the small leaving the pack is the proof. The run stops when every entry r
 | `CRAFT_INTERVAL` / `BATCH_IDLE` | `3.0` / `8.0` | A batch's time budget per piece, and the silence that ends one |
 | `SALVAGE_AT_END` / `SALVAGE_ENTRIES` | `True` / `Salvage All` | The bag's context entry once the deed is full. Off for alchemy |
 | `DONE_SOUND` | `afplay` on a system sound | Played once on this Mac when the deed is filled. `[]` turns it off |
-| `RECIPES` / `ALCHEMY_RECIPES` | the reference tables | `(category button, row button)` per item as the deed names it. The only way an item the page's text does not name is crafted, and what decides which trade a deed is |
+| `RECIPES` / `ALCHEMY_RECIPES` / `CARPENTRY_RECIPES` | the reference tables | `(category button, row button)` per item as the deed names it. The only way an item the page's text does not name is crafted, and what decides which trade a deed is |
 | `OPL_TIMEOUT` / `OPL_ASKS` | `2` / `3` | How long a tooltip has to arrive, and how many times one item is asked |
 | `REREAD_SETTLE` | `3.0` | How long the deed's tooltip has to show a combine the pack proved |
 | `MAX_NO_CURSOR` | `3` | Combine presses that raised no cursor before the run stops |

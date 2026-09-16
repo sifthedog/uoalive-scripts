@@ -19,6 +19,7 @@ ENTRIES = [
     {"in": "src/magery/index.py", "out": "magery"},
     {"in": "src/mysticism/index.py", "out": "mysticism"},
     {"in": "src/chivalry/index.py", "out": "chivalry"},
+    {"in": "src/spellweaving/index.py", "out": "spellweaving"},
     {"in": "src/taming/index.py", "out": "tame"},
     {"in": "src/mining/index.py", "out": "mining"},
     {"in": "src/mining/here.py", "out": "mine-here"},
