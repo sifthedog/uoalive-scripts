@@ -1,6 +1,8 @@
 import unittest
 
 from bod.config import TRADES
+from carpentry.config import RECIPES as CARPENTRY_MENU
+from tinkering.config import RECIPES as TINKERING_MENU
 
 
 class TradesTest(unittest.TestCase):
@@ -57,3 +59,13 @@ class TradesTest(unittest.TestCase):
 
             self.assertLess(names.index("failed"), names.index("made"), name)
             self.assertEqual(names[-1], "throttled", name)
+
+    # The trade tables are transcribed, not imported: build.py refuses two modules that define the
+    # same top-level name. Nothing but this notices when one of the two copies is re-mapped alone.
+    # A subset, because the bod copy also carries the wordings the deed uses for a bracketed row.
+    def test_a_transcribed_menu_still_matches_the_trainer_it_came_from(self):
+        for name, menu in [("carpentry", CARPENTRY_MENU), ("tinkering", TINKERING_MENU)]:
+            mine = dict(TRADES)[name]["recipes"]
+
+            for item in menu:
+                self.assertEqual(mine.get(item), menu[item], "%s: %s" % (name, item))

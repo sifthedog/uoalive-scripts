@@ -23,7 +23,7 @@ repo targets the ClassicUO web client; nothing is shared between the two.
 | `mysticism.py` | Trains Mysticism on the five spells that gain without a victim, meditating when the pool runs dry |
 | `spellweaving.py` | Trains Spellweaving on the six spells of the book that can be ground solo, stowing the weapon for every trance, meditating when the pool runs dry, and casting Greater Heal on itself under the health floor |
 | `chivalry.py` | Trains Chivalry on its five spells, gating each cast on tithing points, putting the weapon away for every trance and drawing it again after, and bandaging itself under the health floor |
-| `bod.py` | Target a Blacksmithing, Alchemy or Carpentry bulk order deed, small or large: crafts what it asks for from the stock in your pack, combines the pieces, and for a large deed gets the smalls from the Bulk Order Deed Box and fills them one by one |
+| `bod.py` | Target a Blacksmithing, Alchemy, Carpentry or Tinkering bulk order deed, small or large: crafts what it asks for from the stock in your pack, combines the pieces, and for a large deed gets the smalls from the Bulk Order Deed Box and fills them one by one |
 | `inventory.py` | Target a bag or chest: writes one JSON line per item in it - name, tier, durability, weight and every tooltip property, parsed and verbatim |
 | `assembly.py` | Asks which assembly - keg, potion keg or clock - and how many, then makes each one from the boards, ingots and bottles in your pack, pressing every part it needs on the carpentry and tinkering menus and stopping the moment the next press cannot be afforded |
 
@@ -2331,14 +2331,15 @@ the large one. Nothing is restocked.
 
 **The trade comes from the deed.** `TRADES` is a list, tried in order, and the first whose `recipes`
 make every item the deed lists is the one used: `smith` for Blacksmithing, `alchemy` for potions,
-`carpentry` for woodwork. The trade carries its own tool, menu title, categories, recipe table,
-costs, the stock it spends and whether there is a material page at all. So one script fills all
-three, and an item in no table stops the run before anything is pressed. The three recipe tables
-share no item name, so the order they are tried in never decides anything.
+`carpentry` for woodwork, `tinkering` for a tinker's tools, parts, utensils and jewelry. The trade
+carries its own tool, menu title, categories, recipe table, costs, the stock it spends and whether
+there is a material page at all. So one script fills all four, and an item in no table stops the run
+before anything is pressed. The four recipe tables share no item name, so the order they are tried
+in never decides anything.
 
 The tooltip lines read are `amount to make`, `<item>: <done>`, `All items must be exceptional` and
 `All items must be made with <material> ingots`, whose trailing noun may be `ingots` or `boards` -
-the deed is read before the trade is known, so `material_nouns` lists both. A smith deed with no
+the deed is read before the trade is known, so `material_nouns` lists both. A smith or tinker deed with no
 material line means iron and a carpentry one regular wood; an alchemy deed names no material and
 never opens the material page.
 
@@ -2347,7 +2348,8 @@ the run with the numbers:
 
 - Stock: the trade's cost table per piece times pieces owed. A number is the trade's own pool in
   the deed's material, counted by name then hue and keyed `iron ingots` or `oak boards` -
-  `INGOT_COST` for smithing, `BOARD_COST` for carpentry. A dict is stock per kind, counted by art:
+  `INGOT_COST` for smithing, `BOARD_COST` for carpentry, `TINKERING_INGOT_COST` for tinkering. A
+  dict is stock per kind, counted by art:
   `POTION_COST` against `REAGENT_KINDS`, a bottle and a reagent per potion. An item the table lacks
   is said and not checked, which is where carpentry items wanting more than boards land. An
   exceptional deed will take more.
@@ -2409,10 +2411,13 @@ small; the small leaving the pack is the proof. The run stops when every entry r
 - **The deed in your backpack.**
 - **For a large deed, the Bulk Order Deed Box in your backpack too**, empty, and the gold it
   charges. The smalls it makes land in your main pack.
-- **For a smith deed, stand next to an anvil and a forge.** The first refusal stops the run.
-- **The stock the deed needs.** Ingots of the kind it names, or bottles and the reagent for the
-  potion. The run never restocks.
-- **A salvage bag in your pack with the tool in it**, the tongs or the mortar and pestle. The run
+- **For a smith deed, stand next to an anvil and a forge.** The first refusal stops the run. A
+  tinker deed needs neither, and nothing is salvaged on one - a salvage bag melts armour and
+  weapons, not a pewter mug.
+- **The stock the deed needs.** Ingots of the kind it names, boards, or bottles and the reagent
+  for the potion. The run never restocks.
+- **A salvage bag in your pack with the tool in it**, the tongs, the mortar and pestle or the
+  tinker's tools. The run
   opens it at start; the shard drops each craft beside the tool, which is what makes the bag the
   thing the deed is aimed at. Tongs are used ahead of a hammer. Without a bag the pack itself is
   offered and nothing is salvaged.
@@ -2428,14 +2433,15 @@ small; the small leaving the pack is the proof. The run stops when every entry r
 
 | Setting | Default | What it is for |
 | --- | --- | --- |
-| `TRADES` | `smith`, `alchemy`, then `carpentry` | The trade tables, tried in order. The first whose `recipes` make every item the deed lists is used, and it carries the tool, title, categories, costs, wordings, salvage and material page for the whole run |
-| `SKILL_NAMES` / `ALCHEMY_SKILL_NAMES` | `Blacksmithy`, `Blacksmith` / `Alchemy` | For the start-up line only |
+| `TRADES` | `smith`, `alchemy`, `carpentry`, then `tinkering` | The trade tables, tried in order. The first whose `recipes` make every item the deed lists is used, and it carries the tool, title, categories, costs, wordings, salvage and material page for the whole run |
+| `SKILL_NAMES` / `ALCHEMY_SKILL_NAMES` / `TINKERING_SKILL_NAMES` | `Blacksmithy`, `Blacksmith` / `Alchemy` / `Tinkering` | For the start-up line only |
 | `TOOL_GRAPHICS` / `TOOL_NAME_WORDS` | hammer, tongs, sledge / `tongs`, `smith` | Whole words, so a war hammer is not a tool |
 | `ALCHEMY_TOOL_GRAPHICS` / `ALCHEMY_TOOL_NAME_WORDS` | `0x0E9B` / `mortar` | The same for the mortar and pestle |
+| `TINKERING_TOOL_GRAPHICS` / `TINKERING_TOOL_NAME_WORDS` | `0x1EB8`, `0x1EB9` / `tinker`, `tinkers` | The same for the tinker's tools |
 | `TOOL_PREFERENCE` / `TOOL_BAG_NAMES` | tongs / `salvage bag` | Which tool wins when several are found, and the bag opened at start. Alchemy prefers none |
 | `INGOT_GRAPHICS` / `INGOT_HUES` | stock | How ingots are counted and told apart. An unknown hue is reported as a hue |
 | `REAGENT_KINDS` | stock art | Bottles and the eight reagents, counted by graphic for the alchemy pre-flight |
-| `CHECK_BEFORE_START` / `INGOT_COST` / `POTION_COST` / `USES_TEXT` | `True` / the wiki table / stock counts / `uses remaining` | The pre-flight: ingots per piece from uoalive.com/wiki/Blacksmithy, bottle and reagent per potion, and the charges line |
+| `CHECK_BEFORE_START` / `INGOT_COST` / `POTION_COST` / `TINKERING_INGOT_COST` / `USES_TEXT` | `True` / the wiki tables / stock counts / `uses remaining` | The pre-flight: ingots per piece from uoalive.com/wiki/Blacksmithy and /wiki/Tinkering, bottle and reagent per potion, and the charges line. The tinker table holds the rows whose whole cost is ingots; the rest are noted, not checked |
 | `DEED_GRAPHICS` / `DEED_NAME_WORDS` | `0x2258` / `bulk order deed` | How small deeds in the pack are found for a large one |
 | `BOX_NAMES` / `BOX_TIMEOUT` | `bulk order deed box` / `10.0` | The box, and how long it has to put the deeds in the pack |
 | `LARGE_COMBINE_BUTTON` / `LARGE_COMBINE_TEXT` | `2` / stock | The large deed gump's combine, and the shard's replies |
@@ -2443,29 +2449,35 @@ small; the small leaving the pack is the proof. The run stops when every entry r
 | `MATERIAL_ALIASES` | `shadow iron` → `shadow` | How the menu row and tooltip may shorten the wording |
 | `MATERIAL_ORDER` | iron … valorite | The material page's rows in stock order, pressed blind when the page's text cannot be split |
 | `DEED_TEXT` | stock | The tooltip lines, lower-cased fragments |
-| `CATEGORY_NAMES` / `ALCHEMY_CATEGORY_NAMES` | the menu's groups | Where the group rows end |
+| `CATEGORY_NAMES` / `ALCHEMY_CATEGORY_NAMES` / `CARPENTRY_CATEGORY_NAMES` / `TINKERING_CATEGORY_NAMES` | the menu's groups | Where the group rows end |
 | `BUTTON_STRIDE`, `*_BUTTON_TYPE` | 20, 0/1/5/6 | A row's details button is its row button plus one; the material page is `1 + 6`, its rows `1 + 5 + i * 20` |
 | `BOD_COMBINE_BUTTON` | `4` | *Combine this deed with contained items*; 2 is the one-item combine |
 | `MAKE_NUMBER_BUTTON` / `CANCEL_MAKE_BUTTON` | `2` / `227` | On the row's details page, and on the menu |
 | `PROMPT_DELAY` | `0.8` | How long the number prompt takes to arrive |
 | `CRAFT_INTERVAL` / `BATCH_IDLE` | `3.0` / `8.0` | A batch's time budget per piece, and the silence that ends one |
-| `SALVAGE_AT_END` / `SALVAGE_ENTRIES` | `True` / `Salvage All` | The bag's context entry once the deed is full. Off for alchemy |
+| `SALVAGE_AT_END` / `SALVAGE_ENTRIES` | `True` / `Salvage All` | The bag's context entry once the deed is full. Off for alchemy, carpentry and tinkering |
 | `DONE_SOUND` | `afplay` on a system sound | Played once on this Mac when the deed is filled. `[]` turns it off |
-| `RECIPES` / `ALCHEMY_RECIPES` / `CARPENTRY_RECIPES` | the reference tables | `(category button, row button)` per item as the deed names it. The only way an item the page's text does not name is crafted, and what decides which trade a deed is |
+| `RECIPES` / `ALCHEMY_RECIPES` / `CARPENTRY_RECIPES` / `TINKERING_RECIPES` | the reference tables | `(category button, row button)` per item as the deed names it. The only way an item the page's text does not name is crafted, and what decides which trade a deed is |
 | `OPL_TIMEOUT` / `OPL_ASKS` | `2` / `3` | How long a tooltip has to arrive, and how many times one item is asked |
 | `REREAD_SETTLE` | `3.0` | How long the deed's tooltip has to show a combine the pack proved |
 | `MAX_NO_CURSOR` | `3` | Combine presses that raised no cursor before the run stops |
-| `OUTCOME_TEXT` / `ALCHEMY_OUTCOME_TEXT` / `COMBINE_TEXT` | stock ServUO | Wordings for a craft and a combine. The alchemy set names each reagent, because a bare "you do not have enough" is inside "enough skill", and keeps the keg line as its own bucket |
+| `OUTCOME_TEXT` / `ALCHEMY_OUTCOME_TEXT` / `CARPENTRY_OUTCOME_TEXT` / `TINKERING_OUTCOME_TEXT` / `COMBINE_TEXT` | stock ServUO | Wordings for a craft and a combine. The alchemy set names each reagent, because a bare "you do not have enough" is inside "enough skill", and keeps the keg line as its own bucket |
 
 ### When it goes wrong
 
 - **`not enough: 140 iron ingots for the 10 pieces owed, and the pack holds 120`** or **`not
   enough: 6 uses left across 2 tool(s) for 10 pieces owed`**: the pre-flight. Load more, or set
   `CHECK_BEFORE_START = False`.
-- **`no cost is known for '…'`**: add the item to `INGOT_COST` or `POTION_COST`; the run goes on
-  unchecked.
-- **`no trade in TRADES makes …`**: the deed's wording is in neither recipe table. Add the row to
-  `RECIPES` or `ALCHEMY_RECIPES` spelled the way the deed spells it.
+- **`no cost is known for '…'`**: add the item to `INGOT_COST`, `POTION_COST`, `BOARD_COST` or
+  `TINKERING_INGOT_COST`; the run goes on unchecked.
+- **`no trade in TRADES makes …`**: the deed's wording is in no recipe table. Add the row spelled
+  the way the deed spells it. A tinker deed is where this bites, because the deed names an item by
+  its own name and the menu by its recipe's: the skillet row makes a `frypan`, the fletcher's tools
+  row makes `arrow fletching`, and the spoon, fork and knife rows the menu brackets left and right
+  the deed names bare. Those five are in `TINKERING_RECIPES` already. `earrings` is not and stops
+  the run on purpose - the menu offers it only gemmed, one row per gem, so there is no row to press
+  that does not also spend a gem the deed never asked for. Open the menu by hand, run
+  `craft-map.py`, and paste its block over `TINKERING_RECIPES` when the menu itself changes.
 - **`a potion keg in the pack is swallowing the crafts`**: take the keg of that potion out of your
   backpack. The shard pours into it and the deed never sees a bottle.
 - **`no bulk order deed box in the pack`**: buy one, or put the small deeds in the pack yourself.

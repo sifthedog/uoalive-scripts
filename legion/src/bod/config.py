@@ -1144,6 +1144,351 @@ CARPENTRY_OUTCOME_TEXT = [
     ("throttled", THROTTLED_TEXT),
 ]
 
+# Tinkering deeds: the menu's rows as craft-map.py read them on 2026-09-13, transcribed from
+# src/tinkering rather than imported - build.py refuses two modules that define the same top-level
+# name, and both configs carry RECIPES, CATEGORY_NAMES and OUTCOME_TEXT. A tinker spends the smith's
+# ingots, so the material page, hues and aliases above are the ones this trade uses too.
+TINKERING_SKILL_NAMES = ["Tinkering"]
+
+# Stock art, unverified on UOAlive: an art learned by name joins the set
+TINKERING_TOOL_GRAPHICS = set([0x1EB8, 0x1EB9])
+TINKERING_TOOL_NAME_WORDS = ["tinker", "tinkers"]
+
+TINKERING_CRAFT_TITLE_TEXT = ["TINKERING", "TINKER"]
+
+# The CATEGORIES rows, lowercased, as craft-map.py read them off UOAlive's menu
+TINKERING_CATEGORY_NAMES = [
+    "jewelry",
+    "wooden items",
+    "tools",
+    "parts",
+    "utensils",
+    "miscellaneous",
+    "assemblies",
+    "traps",
+    "magic jewelry",
+]
+
+# (category button, row button) for every row, as craft-map.py read them off UOAlive's menu. Run
+# craft-map.py again and paste its block over this one when the menu changes.
+TINKERING_RECIPES = {
+    # Jewelry (button 1)
+    "ring": (1, 2),
+    "bracelet": (1, 22),
+    "gargish necklace": (1, 42),
+    "gargish bracelet": (1, 62),
+    "gargish ring": (1, 82),
+    "gargish earrings": (1, 102),
+    "star sapphire ring": (1, 122),
+    "star sapphire necklace (silver)": (1, 142),
+    "star sapphire necklace (jewelled)": (1, 162),
+    "star sapphire earrings": (1, 182),
+    "star sapphire necklace (golden)": (1, 202),
+    "star sapphire bracelet": (1, 222),
+    "emerald ring": (1, 242),
+    "emerald necklace (silver)": (1, 262),
+    "emerald necklace (jewelled)": (1, 282),
+    "emerald earrings": (1, 302),
+    "emerald necklace (golden)": (1, 322),
+    "emerald bracelet": (1, 342),
+    "sapphire ring": (1, 362),
+    "sapphire necklace (silver)": (1, 382),
+    "sapphire necklace (jewelled)": (1, 402),
+    "sapphire earrings": (1, 422),
+    "sapphire necklace (golden)": (1, 442),
+    "sapphire bracelet": (1, 462),
+    "ruby ring": (1, 482),
+    "ruby necklace (silver)": (1, 502),
+    "ruby necklace (jewelled)": (1, 522),
+    "ruby earrings": (1, 542),
+    "ruby necklace (golden)": (1, 562),
+    "ruby bracelet": (1, 582),
+    "citrine ring": (1, 602),
+    "citrine necklace (silver)": (1, 622),
+    "citrine necklace (jewelled)": (1, 642),
+    "citrine earrings": (1, 662),
+    "citrine necklace (golden)": (1, 682),
+    "citrine bracelet": (1, 702),
+    "amethyst ring": (1, 722),
+    "amethyst necklace (silver)": (1, 742),
+    "amethyst necklace (jewelled)": (1, 762),
+    "amethyst earrings": (1, 782),
+    "amethyst necklace (golden)": (1, 802),
+    "amethyst bracelet": (1, 822),
+    "tourmaline ring": (1, 842),
+    "tourmaline necklace (silver)": (1, 862),
+    "tourmaline necklace (jewelled)": (1, 882),
+    "tourmaline earrings": (1, 902),
+    "tourmaline necklace (golden)": (1, 922),
+    "tourmaline bracelet": (1, 942),
+    "amber ring": (1, 962),
+    "amber necklace (silver)": (1, 982),
+    "amber necklace (jewelled)": (1, 1002),
+    "amber earrings": (1, 1022),
+    "amber necklace (golden)": (1, 1042),
+    "amber bracelet": (1, 1062),
+    "diamond ring": (1, 1082),
+    "diamond necklace (silver)": (1, 1102),
+    "diamond necklace (jewelled)": (1, 1122),
+    "diamond earrings": (1, 1142),
+    "diamond necklace (golden)": (1, 1162),
+    "diamond bracelet": (1, 1182),
+    "krampus minion earrings": (1, 1202),
+    "candied staff": (1, 1222),
+    # Wooden Items (button 21)
+    "nunchaku": (21, 2),
+    "jointing plane": (21, 22),
+    "moulding planes": (21, 42),
+    "smoothing plane": (21, 62),
+    "clock frame": (21, 82),
+    "axle": (21, 102),
+    "rolling pin": (21, 122),
+    "ramrod": (21, 142),
+    "softened reeds": (21, 162),
+    "round basket": (21, 182),
+    "bushel": (21, 202),
+    "small bushel": (21, 222),
+    "picnic basket": (21, 242),
+    "winnowing basket": (21, 262),
+    "square basket": (21, 282),
+    "basket": (21, 302),
+    "tall round basket": (21, 322),
+    "small square basket": (21, 342),
+    "tall basket": (21, 362),
+    "small round basket": (21, 382),
+    "enchanted picnic basket": (21, 402),
+    # Tools (button 41)
+    "scissors": (41, 2),
+    "mortar and pestle": (41, 22),
+    "scorp": (41, 42),
+    "tinker's tools": (41, 62),
+    "hatchet": (41, 82),
+    "draw knife": (41, 102),
+    "sewing kit": (41, 122),
+    "saw": (41, 142),
+    "dovetail saw": (41, 162),
+    "froe": (41, 182),
+    "shovel": (41, 202),
+    "hammer": (41, 222),
+    "tongs": (41, 242),
+    "smith's hammer": (41, 262),
+    "sledge hammer": (41, 282),
+    "inshave": (41, 302),
+    "pickaxe": (41, 322),
+    "lockpick": (41, 342),
+    "skillet": (41, 362),
+    "flour sifter": (41, 382),
+    "fletcher's tools": (41, 402),
+    "mapmaker's pen": (41, 422),
+    "scribe's pen": (41, 442),
+    "clippers": (41, 462),
+    "metal container engraving tool": (41, 482),
+    "pitchfork": (41, 502),
+    # Parts (button 61)
+    "gears": (61, 2),
+    "clock parts": (61, 22),
+    "barrel tap": (61, 42),
+    "springs": (61, 62),
+    "sextant parts": (61, 82),
+    "barrel hoops": (61, 102),
+    "hinge": (61, 122),
+    "bola balls": (61, 142),
+    "jeweled filigree": (61, 162),
+    # Utensils (button 81)
+    "butcher knife": (81, 2),
+    "spoon (left)": (81, 22),
+    "spoon (right)": (81, 42),
+    "plate": (81, 62),
+    "fork (left)": (81, 82),
+    "fork (right)": (81, 102),
+    "cleaver": (81, 122),
+    "knife (left)": (81, 142),
+    "knife (right)": (81, 162),
+    "goblet": (81, 182),
+    "pewter mug": (81, 202),
+    "pewter bowl": (81, 222),
+    "a plant bowl": (81, 242),
+    "skinning knife": (81, 262),
+    "gargish cleaver": (81, 282),
+    "gargish butcher's knife": (81, 302),
+    # Miscellaneous (button 101)
+    "key ring": (101, 2),
+    "candelabra": (101, 22),
+    "scales": (101, 42),
+    "iron key": (101, 62),
+    "globe": (101, 82),
+    "spyglass": (101, 102),
+    "lantern": (101, 122),
+    "heating stand": (101, 142),
+    "shoji lantern": (101, 162),
+    "paper lantern": (101, 182),
+    "round paper lantern": (101, 202),
+    "wind chimes": (101, 222),
+    "fancy wind chimes": (101, 242),
+    "ter-mur style candelabra": (101, 262),
+    "communication crystal": (101, 282),
+    "gorgon lens": (101, 302),
+    "a scale collar": (101, 322),
+    "dragon lamp": (101, 342),
+    "stained glass lamp": (101, 362),
+    "tall double lamp": (101, 382),
+    "curled metal sign hanger": (101, 402),
+    "flourished metal sign hanger": (101, 422),
+    "inward curled metal sign hanger": (101, 442),
+    "end curled metal sign hanger": (101, 462),
+    "left metal door (s in)": (101, 482),
+    "right metal door (s in)": (101, 502),
+    "left metal door (e out)": (101, 522),
+    "right metal door (e out)": (101, 542),
+    "currency wall safe": (101, 562),
+    "left metal door (e in)": (101, 582),
+    "right metal door (e in)": (101, 602),
+    "left metal door (s out)": (101, 622),
+    "right metal door (s out)": (101, 642),
+    "kotl power core": (101, 662),
+    "weathered bronze globe sculpture": (101, 682),
+    "weathered bronze man on a bench sculpture": (101, 702),
+    "weathered bronze fairy sculpture": (101, 722),
+    "weathered bronze archer sculpture": (101, 742),
+    "barbed whip": (101, 762),
+    "spiked whip": (101, 782),
+    "bladed whip": (101, 802),
+    # Assemblies (button 121)
+    "axle with gears": (121, 2),
+    # "clock parts": (121, 22),  listed again, the first kept
+    # "sextant parts": (121, 42),  listed again, the first kept
+    "clock (right)": (121, 62),
+    "clock (left)": (121, 82),
+    "sextant": (121, 102),
+    "bola": (121, 122),
+    "potion keg": (121, 142),
+    "leather wolf assembly": (121, 162),
+    "clockwork scorpion assembly": (121, 182),
+    "vollem assembly": (121, 202),
+    "hitching rope": (121, 222),
+    "hitching post (replica)": (121, 242),
+    "arcanic rune stone": (121, 262),
+    "void orb": (121, 282),
+    "advanced training dummy (south)": (121, 302),
+    "advanced training dummy (east)": (121, 322),
+    "distillery (south)": (121, 342),
+    "distillery (east)": (121, 362),
+    "kotl automaton": (121, 382),
+    "telescope": (121, 402),
+    "oracle of the sea": (121, 422),
+    # Traps (button 141)
+    "dart trap": (141, 2),
+    "poison trap": (141, 22),
+    "explosion trap": (141, 42),
+    # Magic Jewelry (button 161)
+    "brilliant amber bracelet": (161, 2),
+    "fire ruby bracelet": (161, 22),
+    "dark sapphire bracelet": (161, 42),
+    "white pearl bracelet": (161, 62),
+    "ecru citrine ring": (161, 82),
+    "blue diamond ring": (161, 102),
+    "perfect emerald ring": (161, 122),
+    "turquoise ring": (161, 142),
+    "resilient bracer": (161, 162),
+    "essence of battle": (161, 182),
+    "pendant of the magi": (161, 202),
+    "dr. spector's lenses": (161, 222),
+    "bracelet of primal consumption": (161, 242),
+    # As the deed words a row the menu names otherwise. The deed uses the item's own name, the menu
+    # its recipe's: 'frypan' is made by the skillet row and 'arrow fletching' by the fletcher's
+    # tools row, and the utensils the menu brackets left and right the deed names bare.
+    # uo.com/wiki/ultima-online-wiki/skills/tinkering/tinker-bulk-orders lists the four groups a
+    # large tinker deed draws from. Every item in them is below or above except 'earrings', which
+    # the menu only offers gemmed, one row per gem - an earrings deed stops on noRow by design
+    # rather than spending a gem on a guess
+    "spoon": (81, 22),
+    "fork": (81, 82),
+    "knife": (81, 142),
+    "frypan": (41, 362),
+    "arrow fletching": (41, 402),
+}
+
+# Ingots per piece from uoalive.com/wiki/Tinkering, keyed as the deed names the item. Only the rows
+# whose whole cost is ingots: a number is ingots of the deed's material, so anything wanting gems,
+# boards, shafts or a part made first is left out - the gemmed and magic jewelry, every wooden item,
+# the paper and shoji lanterns, the candied staff, the three traps, every assembly, the jewelled
+# filigree, the engraving tool, the lamps, the kotl core, the gorgon lens and the scale collar. The
+# four weathered bronze sculptures want 200 *bronze* ingots, which a plain number cannot say. A
+# left-out item is a preflight note, not a refusal.
+TINKERING_INGOT_COST = {
+    # Jewelry (button 1)
+    "ring": 3, "bracelet": 3, "gargish necklace": 3, "gargish bracelet": 3, "gargish ring": 3,
+    "gargish earrings": 3, "krampus minion earrings": 3,
+    # Tools (button 41)
+    "scissors": 2, "mortar and pestle": 3, "scorp": 2, "tinker's tools": 2, "hatchet": 4,
+    "draw knife": 2, "sewing kit": 2, "saw": 4, "dovetail saw": 4, "froe": 2, "shovel": 4,
+    "hammer": 1, "tongs": 1, "smith's hammer": 4, "sledge hammer": 4, "inshave": 2, "pickaxe": 4,
+    "lockpick": 1, "skillet": 4, "flour sifter": 3, "fletcher's tools": 3, "mapmaker's pen": 1,
+    "scribe's pen": 1, "clippers": 4, "pitchfork": 8,
+    # Parts (button 61)
+    "gears": 2, "clock parts": 1, "barrel tap": 2, "springs": 2, "sextant parts": 4,
+    "barrel hoops": 5, "hinge": 2, "bola balls": 10,
+    # Utensils (button 81)
+    "butcher knife": 2, "spoon (left)": 1, "spoon (right)": 1, "plate": 2, "fork (left)": 1,
+    "fork (right)": 1, "cleaver": 3, "knife (left)": 1, "knife (right)": 1, "goblet": 2,
+    "pewter mug": 2, "pewter bowl": 2, "skinning knife": 2, "gargish cleaver": 3,
+    "gargish butcher's knife": 2,
+    # Miscellaneous (button 101)
+    "key ring": 2, "candelabra": 4, "scales": 4, "iron key": 3, "globe": 4, "spyglass": 4,
+    "lantern": 4, "heating stand": 4, "wind chimes": 15, "fancy wind chimes": 15,
+    "ter-mur style candelabra": 4, "curled metal sign hanger": 8,
+    "flourished metal sign hanger": 8, "inward curled metal sign hanger": 8,
+    "end curled metal sign hanger": 8, "left metal door (s in)": 8, "right metal door (s in)": 8,
+    "left metal door (e out)": 8, "right metal door (e out)": 8, "left metal door (e in)": 8,
+    "right metal door (e in)": 8, "left metal door (s out)": 8, "right metal door (s out)": 8,
+    "currency wall safe": 20,
+    # As the deed words the rows above: the bracketed utensils, the skillet and the fletcher's tools
+    "spoon": 1, "fork": 1, "knife": 1, "frypan": 4, "arrow fletching": 3,
+}
+
+# Ordered: 'failed' before 'made' because "You failed to create the item" contains "create the item"
+TINKERING_OUTCOME_TEXT = [
+    (
+        "failed",
+        [
+            "You failed to create the item",
+            "You fail to create",
+            "You have failed to create",
+            "lost some of the raw material",
+        ],
+    ),
+    (
+        "made",
+        [
+            "You create the item",
+            "You create an exceptional",
+            "You put the",
+        ],
+    ),
+    # Said in the gump's NOTICES panel, which the journal may never carry
+    (
+        "noMaterial",
+        [
+            "You do not have sufficient metal",
+            "You don't have the resources",
+            "You do not have the resources",
+            "not enough ingots",
+        ],
+    ),
+    (
+        "skillTooLow",
+        [
+            "You have no idea how to make that",
+            "You do not have enough skill",
+            "You are not skilled enough",
+            "lack the skill",
+        ],
+    ),
+    ("toolWorn", ["You have worn out your tool", "worn out your tool"]),
+    ("saving", SAVING_TEXT),
+    ("throttled", THROTTLED_TEXT),
+]
+
 # The first trade whose recipes make every item on the deed fills it. A number cost is ingots of
 # the deed's material; a dict cost is stock per kind. plain is what a deed with no material line
 # wants: None means there is no material page to press
@@ -1224,5 +1569,31 @@ TRADES = [
         "outcome_text": CARPENTRY_OUTCOME_TEXT,
         "salvage": False,
         "plain": PLAIN_WOOD,
+    }),
+    # A tinker spends the smith's ingot pool and needs no forge, so the stock tables above are
+    # reused whole and the outcome set carries no noAnvil. Nothing salvages a pewter mug
+    ("tinkering", {
+        "skill_names": TINKERING_SKILL_NAMES,
+        "tool_noun": "tinker's tools",
+        "tool_graphics": TINKERING_TOOL_GRAPHICS,
+        "tool_words": TINKERING_TOOL_NAME_WORDS,
+        "tool_preference": None,
+        "title": TINKERING_CRAFT_TITLE_TEXT[0],
+        "title_text": TINKERING_CRAFT_TITLE_TEXT,
+        "category_names": TINKERING_CATEGORY_NAMES,
+        "recipes": TINKERING_RECIPES,
+        "costs": TINKERING_INGOT_COST,
+        "kinds": {},
+        "stock_graphics": INGOT_GRAPHICS,
+        "stock_words": INGOT_NAME_WORDS,
+        "stock_noun": "ingots",
+        "materials": INGOT_MATERIALS,
+        "hues": INGOT_HUES,
+        "material_aliases": MATERIAL_ALIASES,
+        "material_order": MATERIAL_ORDER,
+        "material_rows_after": MATERIAL_ROWS_AFTER,
+        "outcome_text": TINKERING_OUTCOME_TEXT,
+        "salvage": False,
+        "plain": PLAIN_MATERIAL,
     }),
 ]
