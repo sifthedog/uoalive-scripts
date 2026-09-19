@@ -33,8 +33,12 @@ def parse_deed(lines, config):
         elif text["exceptional"] in line:
             exceptional = True
         elif text["material_before"] in line:
-            after = line.split(text["material_before"], 1)[1]
-            material = after.replace(text["material_after"], "").strip(" .")
+            material = line.split(text["material_before"], 1)[1]
+
+            for noun in text["material_nouns"]:
+                material = material.replace(noun, "")
+
+            material = material.strip(" .")
         elif ":" in line:
             name, count = line.rsplit(":", 1)
             done = to_int(count)

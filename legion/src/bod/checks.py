@@ -5,12 +5,12 @@ from uo.pack import amount_of, hue_of, pack_contents
 from uo.text import word_in, words_of
 
 
-def is_ingot(item, config):
-    return item.Graphic in config["ingot_graphics"] or word_in(item.Name, config["ingot_words"])
+def is_stock(item, config):
+    return item.Graphic in config["stock_graphics"] or word_in(item.Name, config["stock_words"])
 
 
-# The name is where the shard writes the metal ('Valorite Ingots'); plain ingots carry none and
-# fall through to the hue
+# The name is where the shard writes the material ('Valorite Ingots'); a plain stack carries none
+# and falls through to the hue
 def material_of(item, config):
     words = words_of(item.Name)
 
@@ -33,14 +33,14 @@ def kind_of(item, kinds):
     return None
 
 
-# Ingots by the material they are ('iron ingots'), and every other stock kind by its art
+# The trade's own stock by the material it is ('iron ingots'), and every other kind by its art
 def stock_counts(config):
     counts = {}
     kinds = config.get("kinds", {})
 
     for item in pack_contents():
-        if is_ingot(item, config):
-            name = "%s ingots" % material_of(item, config)
+        if is_stock(item, config):
+            name = "%s %s" % (material_of(item, config), config["stock_noun"])
         else:
             name = kind_of(item, kinds)
 
@@ -85,12 +85,13 @@ def tool_uses(serials, config):
     return total, unread
 
 
-# A cost is ingots of the deed's material when it is a number, and stock per kind when it is a dict
-def needs_of(request, cost):
+# A cost is the trade's stock in the deed's material when it is a number ('oak boards'), and stock
+# per kind when it is a dict
+def needs_of(request, cost, noun):
     if isinstance(cost, dict):
         return dict(cost)
 
-    return {"%s ingots" % request["material"]: cost}
+    return {"%s %s" % (request["material"], noun): cost}
 
 
 # Problems stop the run; notes are said and the run goes on. Requests are summed: a large deed
@@ -112,7 +113,7 @@ def preflight(requests, tool_serials, config):
         if cost is None:
             unknown.append(request["item"])
         else:
-            for name, each in needs_of(request, cost).items():
+            for name, each in needs_of(request, cost, config["stock_noun"]).items():
                 needed[name] = needed.get(name, 0) + each * pieces
 
     if len(unknown) > 0:

@@ -6,14 +6,13 @@ from bod.combine import DeedCombiner
 from bod.config import (ARTICLES, BATCH_IDLE, BOD_COMBINE_BUTTON, BOD_GUMP_TEXT, BOX_NAMES,
                         BOX_POLL, BOX_TIMEOUT, BUTTON_STRIDE, CANCEL_MAKE_BUTTON,
                         CATEGORY_BUTTON_TYPE, CHECK_BEFORE_START, COMBINE_POLL, COMBINE_TEXT,
-                        COMBINE_TIMEOUT, CONTEXT_TIMEOUT, CRAFT_INTERVAL, CRAFT_POLL,
-                        CRAFT_TIMEOUT, DEED_GRAPHICS, DEED_NAME_WORDS, DEED_TEXT, DONE_SOUND,
-                        EXCEPTIONAL_TEXT, GUMP_POLL, GUMP_TIMEOUT, HEARTBEAT_EVERY, INGOT_GRAPHICS,
-                        INGOT_HUES, INGOT_NAME_WORDS, ITEM_BUTTON_TYPE, JOURNAL_TAIL_LINES,
-                        JOURNAL_TAIL_SECONDS, LARGE_COMBINE_BUTTON, LARGE_COMBINE_TEXT,
-                        LAST_TEN_LABEL, MAKE_NUMBER_BUTTON, MATERIAL_ALIASES, MATERIAL_BUTTON_TYPE,
-                        MATERIAL_ORDER, MATERIAL_ROWS_AFTER, MATERIAL_ROW_TYPE, MAX_CYCLES,
-                        MAX_MATERIAL_ROWS, MAX_NO_CURSOR, MAX_NO_TOOL, MAX_THROTTLED, MAX_UNKNOWN,
+                        COMBINE_TIMEOUT, CONTEXT_TIMEOUT, CRAFT_INTERVAL, CRAFT_POLL, CRAFT_TIMEOUT,
+                        DEED_GRAPHICS, DEED_NAME_WORDS, DEED_TEXT, DONE_SOUND, EXCEPTIONAL_TEXT,
+                        GUMP_POLL, GUMP_TIMEOUT, HEARTBEAT_EVERY, ITEM_BUTTON_TYPE,
+                        JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS, LARGE_COMBINE_BUTTON,
+                        LARGE_COMBINE_TEXT, LAST_TEN_LABEL, MAKE_NUMBER_BUTTON,
+                        MATERIAL_BUTTON_TYPE, MATERIAL_ROW_TYPE, MAX_CYCLES, MAX_MATERIAL_ROWS,
+                        MAX_NO_CURSOR, MAX_NO_TOOL, MAX_THROTTLED, MAX_UNKNOWN,
                         MAX_UNREADABLE_REPORTS, MOVE_DELAY, NOTES_PATH, NOTES_TAIL_SECONDS,
                         OPEN_DELAY, OPL_ASKS, OPL_SETTLE, OPL_TIMEOUT, PICK_TIMEOUT, PROMPT_DELAY,
                         REREAD_POLL, REREAD_SETTLE, SALVAGE_ENTRIES, SALVAGE_SETTLE, SAVE_DONE_TEXT,
@@ -64,15 +63,6 @@ def in_pack(item):
     return (getattr(item, "Container", None) in mine
             or getattr(item, "RootContainer", None) in mine)
 
-
-INGOTS = {
-    "ingot_graphics": INGOT_GRAPHICS,
-    "ingot_words": INGOT_NAME_WORDS,
-    "materials": sorted(set(INGOT_HUES.values()), key=len, reverse=True),
-    "hues": INGOT_HUES,
-    "uses_text": USES_TEXT,
-    "opl_timeout": OPL_TIMEOUT,
-}
 
 # plain is the trade's once the deed says which trade it is
 DEEDS = {
@@ -141,8 +131,18 @@ trade = dict(TRADES).get(trade_name, TRADES[0][1])
 # Read before the trade was known, so the material a deed did not name is filled in here; the
 # smalls the large flow reads later get it from DEEDS
 DEEDS["plain"] = trade["plain"]
-INGOTS["costs"] = trade["costs"]
-INGOTS["kinds"] = trade["kinds"]
+
+STOCK = {
+    "stock_graphics": trade["stock_graphics"],
+    "stock_words": trade["stock_words"],
+    "stock_noun": trade["stock_noun"],
+    "materials": trade["materials"],
+    "hues": trade["hues"],
+    "costs": trade["costs"],
+    "kinds": trade["kinds"],
+    "uses_text": USES_TEXT,
+    "opl_timeout": OPL_TIMEOUT,
+}
 
 if request["material"] is None:
     request["material"] = trade["plain"]
@@ -194,9 +194,9 @@ menu = CraftMenu(tool, {
     "gump_poll": GUMP_POLL,
 }, log)
 picker = MaterialPicker(menu, {
-    "aliases": MATERIAL_ALIASES,
-    "order": MATERIAL_ORDER,
-    "rows_after": MATERIAL_ROWS_AFTER,
+    "aliases": trade["material_aliases"],
+    "order": trade["material_order"],
+    "rows_after": trade["material_rows_after"],
     "button_type": MATERIAL_BUTTON_TYPE,
     "row_type": MATERIAL_ROW_TYPE,
     "max_rows": MAX_MATERIAL_ROWS,
@@ -208,11 +208,12 @@ FILL = {
     "combine_target": bag if bag is not None else API.Backpack,
     "bag": bag,
     "salvage": trade["salvage"],
+    "trade": trade_name,
     "tool_noun": trade["tool_noun"],
     "salvage_entries": SALVAGE_ENTRIES,
     "context_timeout": CONTEXT_TIMEOUT,
     "salvage_settle": SALVAGE_SETTLE,
-    "ingots": INGOTS,
+    "stock": STOCK,
     "max_cycles": MAX_CYCLES,
     "max_unknown": MAX_UNKNOWN,
     "max_throttled": MAX_THROTTLED,
@@ -236,7 +237,7 @@ fills = []
 # One small deed, start to finish: its own tooltip book, combiner and row proof
 def fill_small(small):
     items = ItemBook(small.request, {
-        "aliases": MATERIAL_ALIASES,
+        "aliases": trade["material_aliases"],
         "plain": trade["plain"],
         "articles": ARTICLES,
         "exceptional_text": EXCEPTIONAL_TEXT,
@@ -274,7 +275,7 @@ def check(requests):
     if not CHECK_BEFORE_START:
         return True
 
-    problems, notes = preflight(requests, tool.serials(), INGOTS)
+    problems, notes = preflight(requests, tool.serials(), STOCK)
 
     for note in notes:
         log(note)
@@ -410,7 +411,7 @@ start = skill.read() if skill is not None else None
 
 log("%s: %s%s, %s in the pack"
     % (deed.describe(), skill_name or trade["skill_names"][0], " at %s" % reading(start),
-       stock_report(INGOTS)))
+       stock_report(STOCK)))
 
 try:
     reason = run_large() if request["large"] else run_small()

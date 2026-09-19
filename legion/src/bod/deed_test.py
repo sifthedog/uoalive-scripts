@@ -77,6 +77,12 @@ class ParseDeedTest(unittest.TestCase):
         self.assertEqual(small["material"], "valorite")
         self.assertFalse(small["large"])
 
+    def test_a_wood_material_loses_its_own_noun(self):
+        request, _why = parse_deed(["amount to make: 10", "wooden shield: 0",
+                                    "All items must be made with oak boards."], CONFIG)
+
+        self.assertEqual(request["material"], "oak")
+
     def test_no_amount_is_unreadable(self):
         request, why = parse_deed(["a bulk order deed", "platemail gorget: 3"], CONFIG)
 
@@ -93,12 +99,15 @@ class ParseDeedTest(unittest.TestCase):
 
 class TradeOfTest(unittest.TestCase):
     TRADES = [("smith", {"recipes": {"axe": (81, 2), "dagger": (61, 82)}}),
-              ("alchemy", {"recipes": {"greater heal potion": (1, 82)}})]
+              ("alchemy", {"recipes": {"greater heal potion": (1, 82)}}),
+              ("carpentry", {"recipes": {"wooden shield": (81, 2), "keg": (41, 382)}})]
 
     def test_the_trade_whose_recipes_make_every_entry(self):
         self.assertEqual(trade_of({"entries": [("axe", 0), ("dagger", 2)]}, self.TRADES), "smith")
         self.assertEqual(trade_of({"entries": [("greater heal potion", 0)]}, self.TRADES),
                          "alchemy")
+        self.assertEqual(trade_of({"entries": [("wooden shield", 0), ("keg", 1)]}, self.TRADES),
+                         "carpentry")
 
     def test_no_trade_makes_it(self):
         self.assertIsNone(trade_of({"entries": [("axe", 0), ("greater heal potion", 0)]},

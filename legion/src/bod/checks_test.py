@@ -4,13 +4,28 @@ from bod.checks import material_of, preflight, stock_counts, stock_report, uses_
 from test_support.uo import install, item
 
 CONFIG = {
-    "ingot_graphics": set([0x1BF2]),
-    "ingot_words": ["ingot", "ingots"],
+    "stock_graphics": set([0x1BF2]),
+    "stock_words": ["ingot", "ingots"],
+    "stock_noun": "ingots",
     "materials": ["iron", "dull copper", "shadow iron", "copper", "valorite"],
     "hues": {0: "iron", 0x973: "dull copper"},
     "costs": {"axe": 14, "platemail gorget": 10,
               "greater heal potion": {"empty bottle": 1, "ginseng": 7}},
     "kinds": {"empty bottle": set([0x0F0E]), "ginseng": set([0x0F85])},
+    "uses_text": "uses remaining",
+    "opl_timeout": 1,
+}
+
+
+# A trade whose stock is one pool told apart by material, with no kinds at all
+BOARDS = {
+    "stock_graphics": set([0x1BD7]),
+    "stock_words": [],
+    "stock_noun": "boards",
+    "materials": ["regular", "oak", "ash", "yew"],
+    "hues": {0: "regular"},
+    "costs": {"wooden shield": 9},
+    "kinds": {},
     "uses_text": "uses remaining",
     "opl_timeout": 1,
 }
@@ -50,6 +65,14 @@ class StockCountsTest(unittest.TestCase):
                           "empty bottle": 3})
         self.assertEqual(stock_report(CONFIG),
                          "3 empty bottle, 30 ginseng, 150 iron ingots, 7 valorite ingots")
+
+    def test_counts_another_trades_stock_under_its_own_noun(self):
+        api = install()
+        api.hold(item(serial=1, graphic=0x1BD7, name="Oak Boards", hue=2010, amount=60),
+                 item(serial=2, graphic=0x1BD7, name="Boards", amount=40),
+                 item(serial=3, graphic=0x1BF2, name="Ingots", amount=100))
+
+        self.assertEqual(stock_counts(BOARDS), {"oak boards": 60, "regular boards": 40})
 
     def test_nothing_is_no_stock(self):
         install()
@@ -115,6 +138,14 @@ class PreflightTest(unittest.TestCase):
         self.assertEqual(len(problems), 1)
         self.assertIn("70 ginseng for the 10 pieces owed, and the pack holds 50", problems[0])
         self.assertTrue(any("10 empty bottle cover" in note for note in notes))
+
+    def test_a_number_cost_is_checked_under_the_trades_noun(self):
+        self.api.hold(item(serial=2, graphic=0x1BD7, name="Oak Boards", hue=2010, amount=50))
+        problems, _notes = preflight([request(item="wooden shield", owed=10, material="oak")],
+                                     [7], BOARDS)
+
+        self.assertEqual(len(problems), 1)
+        self.assertIn("90 oak boards for the 10 pieces owed, and the pack holds 50", problems[0])
 
     def test_tools_that_say_nothing_skip_the_uses_check(self):
         problems, notes = preflight([request()], [9], CONFIG)

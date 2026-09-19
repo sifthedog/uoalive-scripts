@@ -102,7 +102,7 @@ class SmallFill(object):
         self._items.forget_missing()
         after = len(API.ItemsInContainer(bag, True) or [])
         self._log("salvaged: the bag went from %d items to %d, %s in the pack"
-                  % (before, after, stock_report(self._config["ingots"])))
+                  % (before, after, stock_report(self._config["stock"])))
 
     def _craft(self):
         item = self._request["item"]
@@ -138,7 +138,7 @@ class SmallFill(object):
                 self._combine_now(waiting)
 
             return ("the shard says the materials ran out - %s in the pack, %d still owed"
-                    % (stock_report(config["ingots"]), self.owed()))
+                    % (stock_report(config["stock"]), self.owed()))
         elif outcome == "keg":
             return "a potion keg in the pack is swallowing the crafts - take it out and run again"
         elif outcome == "toolWorn":
@@ -149,7 +149,7 @@ class SmallFill(object):
         elif outcome == "noAnvil":
             return "stand next to an anvil and a forge"
         elif outcome == "noRow":
-            return "'%s' is not in RECIPES" % item
+            return "'%s' is not in the %s recipes" % (item, config["trade"])
         elif outcome == "noMaterialRow":
             return "the material page has no row for %s" % self._request["material"]
         elif outcome in ("noTool", "noGump"):
@@ -178,8 +178,8 @@ class SmallFill(object):
             API.Pause(waiting)
         else:
             self._unknown += 1
-            self._log("unreadable outcome (%d/%d), check OUTCOME_TEXT"
-                      % (self._unknown, config["max_unknown"]))
+            self._log("unreadable outcome (%d/%d), check the %s outcome text"
+                      % (self._unknown, config["max_unknown"], config["trade"]))
 
         if outcome not in ("noTool", "noGump"):
             self._no_tool = 0
