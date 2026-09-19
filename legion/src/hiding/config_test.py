@@ -1,6 +1,6 @@
 import unittest
 
-from hiding.config import MAX_THROTTLED, OUTCOME_TEXT, PACE_FLOOR, PACE_MAX
+from hiding.config import HIDE_DELAY, MAX_THROTTLED, OUTCOME_TEXT
 
 
 class OutcomeOrderTest(unittest.TestCase):
@@ -25,12 +25,12 @@ class OutcomeOrderTest(unittest.TestCase):
             self.assertIn(name, names)
 
 
-class PaceTest(unittest.TestCase):
+class DelayTest(unittest.TestCase):
     def test_max_throttled_is_positive(self):
         self.assertGreater(MAX_THROTTLED, 0)
 
-    def test_floor_is_under_the_ceiling(self):
-        self.assertLessEqual(PACE_FLOOR, PACE_MAX)
+    def test_leaves_a_pause_between_two_attempts(self):
+        self.assertGreater(HIDE_DELAY, 0)
 
 
 if __name__ == "__main__":

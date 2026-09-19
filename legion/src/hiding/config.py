@@ -9,12 +9,9 @@ SKILL = "Hiding"
 READ_TIMEOUT = 1.5
 READ_POLL = 0.1
 
-# ServUO's Hiding holds the skill timer for 10s after a roll and 1s after a refusal; the pace
-# climbs from the floor by PACE_STEP per throttle and eases back after PACE_EASE_AFTER rolls
-PACE_FLOOR = 1.0
-PACE_STEP = 1.0
-PACE_MAX = 12.0
-PACE_EASE_AFTER = 5
+# The whole pause between two attempts. ServUO's Hiding holds the skill timer for 10s after a roll
+# and 1s after a refusal, and a refusal costs one cycle and says so.
+HIDE_DELAY = 1.0
 
 MAX_THROTTLED = 20
 

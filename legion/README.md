@@ -120,7 +120,6 @@ menu        a context menu entry, matched by its text
 mount       getting off the mount, proved by the flag
 notes       a report's whole gump and journal, appended to a file beside the script
 notoriety   the values the threat scans are handed
-pace        the shard's skill timer, learned from its refusals rather than configured
 pack        counting and diffing what the backpack holds
 parked      the tiles and spots a run is done with for a while, and when to try them again
 paths       where a script's own files land beside it in LegionScripts
@@ -336,7 +335,7 @@ through everything of that type in reach before asking for another. Per cycle:
 4. Pre-target it, then `UseSkill("Animal Taming")`, so the cursor is answered before it is raised.
 5. Wait for the shard to say the attempt started, then for it to resolve, in `TAME_WAIT_SLICE`
    slices with a non-blocking pathfind between them.
-6. Pause for the current pace.
+6. Pause `TAME_DELAY`.
 
 A tame is renamed to `PET_NAME` and dealt with per `AFTER_TAME`. The cursor comes back only when
 nothing of the type is left. ESC, the stop button, or a cursor timing out after `TARGET_TIMEOUT`
@@ -350,7 +349,7 @@ ends the session.
 | `angry` | Waits `ANGRY_DELAY` up to `MAX_ANGRY`, then gives up on this animal |
 | `contested` | Another tamer has it. Counted up to `MAX_CONTESTED` |
 | `tooFar` | Chases it. `MAX_AWAY` chases that gain no ground give up on this animal |
-| `throttled` | The shard's own timer. The pace is raised as well as backed off from |
+| `throttled` | The shard's own timer. Backed off from, growing |
 | `saving` | Waits the save out |
 | `hopeless`, `notAnimal`, `alreadyTame`, `unskilled` | Gives up on this animal |
 | anything else | Counted unreadable and said, never stops the run |
@@ -366,8 +365,7 @@ unreachable animal straight back up), anything with `IsRenamable` set (a pet), a
 than before, buys another cycle) or `stuck`; only `MAX_AWAY` stucks in a row write the animal off.
 A chase that never lands an attempt is ended by the stall watch after `STALL_STOP` cycles.
 
-**The pace** is learned, not configured: `TAME_DELAY` is a floor, `PACE_STEP` is added on every
-refusal and taken back after `PACE_EASE_AFTER` landed attempts.
+**The pace** is flat: `TAME_DELAY` between attempts, and a refusal costs one cycle and says so.
 
 | `AFTER_TAME` | What happens |
 | --- | --- |
@@ -412,12 +410,12 @@ Every timing is in seconds.
 | `TAME_RANGE` | `2` | Pathfound into before every attempt |
 | `CHASE_TIMEOUT` | `10` | How long one blocking pathfind may take |
 | `HUNT_RADIUS` | `12` | How far it looks for the next of the type. 0 asks for every animal |
-| `TAME_DELAY`, `PACE_STEP`, `PACE_MAX`, `PACE_EASE_AFTER` | `1.5`, `0.4`, `8.0`, `5` | The pace floor, and how it learns the shard's timer |
+| `TAME_DELAY` | `1.5` | The whole pause between two attempts |
 | `ANGRY_DELAY` / `MAX_ANGRY` | `10.0` / `10` | How long an angry creature is left, and for how many cycles |
 | `MAX_AWAY` | `10` | Chases that gain no ground before the animal is written off |
 | `MAX_CONTESTED` | `20` | Cycles another tamer may hold it |
 | `MAX_PENDING` | `10` | Attempts that start and never resolve before the run stops |
-| `MAX_THROTTLED` | `20` | Refusals in a row before the run stops. The pace should get there first |
+| `MAX_THROTTLED` | `20` | Refusals in a row before the run stops |
 | `HEALTH_FLOOR` | `0.5` | Fraction of your health at which the run stops |
 | `TARGET_TIMEOUT` | `60.0` | How long you have to answer the taming cursor |
 | `KILL_MENU_TEXT`, `RELEASE_MENU_TEXT` | `['Kill', 'Attack']`, `['Release']` | Context menu entries, case-insensitive fragments |
@@ -439,8 +437,8 @@ Every timing is in seconds.
 
 - **`attempts kept starting and never resolving`**: raise `TAME_RESOLVE_TIMEOUT`.
 - **`outcome unreadable - carrying on`**: add the wording to `OUTCOME_TEXT`.
-- **`shard says wait (n/20), now pacing at Ns`**: intended for the first few cycles. A run that
-  never stops means the real delay is above `PACE_MAX`.
+- **`shard says wait (n/20), backing off`**: the shard's own timer. A run of them means
+  `TAME_DELAY` is under it.
 - **`could not rename`, `could not order … to kill (noEntry)`, `could not release … (noEntry)`**:
   the entry is worded differently; set `KILL_MENU_TEXT` / `RELEASE_MENU_TEXT`. If preceded by
   `is not showing as yours yet`, raise `PET_SETTLE_TIMEOUT` instead.
@@ -1164,17 +1162,14 @@ hidden: a success while hidden keeps you hidden, a failure reveals you.
 
 - The wording is read first. When the journal matched nothing, the player's hidden flag before and
   after the use is the second proof: off to on is `hidden`, on to off is `failed`, unchanged is unread.
-- The pace is learned, not configured: `PACE_FLOOR` is the floor, `PACE_STEP` is added on every
-  throttle and taken back after `PACE_EASE_AFTER` rolls. ServUO holds the timer for 10s after a
+- The pace is flat `HIDE_DELAY` between uses, and a refusal costs one cycle. ServUO holds the
+  timer for 10s after a
   roll, so a run settles near that.
 - `busy` is a refusal without a roll - you are fighting or casting. It is counted and said, not recorded.
 
 | Setting | Default | What it is for |
 | --- | --- | --- |
-| `PACE_FLOOR` | `1.0` | Seconds between uses to start from |
-| `PACE_STEP` | `1.0` | Added per throttle, taken back after `PACE_EASE_AFTER` rolls |
-| `PACE_MAX` | `12.0` | The pace never goes above this |
-| `PACE_EASE_AFTER` | `5` | Rolls in a row before the pace eases by one step |
+| `HIDE_DELAY` | `1.0` | The whole pause between two uses |
 | `MAX_THROTTLED` | `20` | Throttles in a row before the run stops |
 | `READ_TIMEOUT` | `1.5` | How long the outcome has to land in the journal |
 | `READ_POLL` | `0.1` | How often the journal is asked |

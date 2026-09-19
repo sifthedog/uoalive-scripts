@@ -50,12 +50,9 @@ SKILL = "Hiding"
 READ_TIMEOUT = 1.5
 READ_POLL = 0.1
 
-# ServUO's Hiding holds the skill timer for 10s after a roll and 1s after a refusal; the pace
-# climbs from the floor by PACE_STEP per throttle and eases back after PACE_EASE_AFTER rolls
-PACE_FLOOR = 1.0
-PACE_STEP = 1.0
-PACE_MAX = 12.0
-PACE_EASE_AFTER = 5
+# The whole pause between two attempts. ServUO's Hiding holds the skill timer for 10s after a roll
+# and 1s after a refusal, and a refusal costs one cycle and says so.
+HIDE_DELAY = 1.0
 
 MAX_THROTTLED = 20
 
@@ -275,40 +272,6 @@ def make_log(prefix):
 # src/uo/loop.py
 def backoff_for(count, step, cap):
     return min(step * count, cap)
-
-
-# src/uo/pace.py
-class Pace(object):
-    """The shard's own skill timer, learned from its refusals rather than configured."""
-
-    def __init__(self, floor, step, cap, ease_after):
-        self._floor = floor
-        self._step = step
-        self._max = cap
-        self._ease_after = ease_after
-        self._delay = floor
-        self._landed = 0
-
-    def delay(self):
-        return self._delay
-
-    def refused(self):
-        self._landed = 0
-        self._delay = min(self._delay + self._step, self._max)
-
-        return self._delay
-
-    # Easing after a single success oscillates between an attempt and a refusal
-    def landed(self):
-        self._landed += 1
-
-        if self._landed < self._ease_after:
-            return self._delay
-
-        self._landed = 0
-        self._delay = max(self._floor, self._delay - self._step)
-
-        return self._delay
 
 
 # src/uo/paths.py
@@ -680,7 +643,6 @@ def position_and_weight():
 log = make_log("hiding")
 skill = SkillReader(SKILL)
 heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "attempts", position_and_weight)
-pace = Pace(PACE_FLOOR, PACE_STEP, PACE_MAX, PACE_EASE_AFTER)
 
 
 def stop_reason():
@@ -742,12 +704,10 @@ try:
         if outcome == "hidden":
             hidden += 1
             recorder.record(value, outcome, SKILL)
-            pace.landed()
 
         elif outcome == "failed":
             failed += 1
             recorder.record(value, outcome, SKILL)
-            pace.landed()
 
         # No roll: fighting or casting. Nothing to record
         elif outcome == "busy":
@@ -764,8 +724,7 @@ try:
 
         elif outcome == "throttled":
             throttled += 1
-            log("shard says wait (%d/%d), now pacing at %.1fs"
-                % (throttled, MAX_THROTTLED, pace.refused()))
+            log("shard says wait (%d/%d), backing off" % (throttled, MAX_THROTTLED))
             API.Pause(backoff_for(throttled, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX))
 
             if throttled >= MAX_THROTTLED:
@@ -774,7 +733,7 @@ try:
         else:
             unread += 1
 
-        API.Pause(pace.delay())
+        API.Pause(HIDE_DELAY)
 finally:
     recorder.close(skill.last())
 

@@ -271,14 +271,9 @@ HUNT_RADIUS = 12
 
 CHASE_TIMEOUT = 10
 
-# A floor, not the cadence: the shard's skill timer is not something the client can be asked for, so
-# the pace below raises this until the refusals stop.
+# The whole pause between two attempts. A refusal costs one cycle and says so, which is cheaper
+# than standing still for a skill timer the client cannot be asked for.
 TAME_DELAY = 1.5
-PACE_STEP = 0.4
-PACE_MAX = 8.0
-
-# Easing after a single success oscillates between an attempt and a refusal
-PACE_EASE_AFTER = 5
 
 ANGRY_DELAY = 10.0
 
@@ -705,40 +700,6 @@ class StallWatch(object):
         return self._reason
 
 
-# src/uo/pace.py
-class Pace(object):
-    """The shard's own skill timer, learned from its refusals rather than configured."""
-
-    def __init__(self, floor, step, cap, ease_after):
-        self._floor = floor
-        self._step = step
-        self._max = cap
-        self._ease_after = ease_after
-        self._delay = floor
-        self._landed = 0
-
-    def delay(self):
-        return self._delay
-
-    def refused(self):
-        self._landed = 0
-        self._delay = min(self._delay + self._step, self._max)
-
-        return self._delay
-
-    # Easing after a single success oscillates between an attempt and a refusal
-    def landed(self):
-        self._landed += 1
-
-        if self._landed < self._ease_after:
-            return self._delay
-
-        self._landed = 0
-        self._delay = max(self._floor, self._delay - self._step)
-
-        return self._delay
-
-
 # src/uo/paths.py
 # TazUO's working directory is its own folder, and the scripts live in this subfolder of it
 SCRIPTS_FOLDER = "LegionScripts"
@@ -1131,7 +1092,6 @@ def position_and_weight():
 # src/taming/index.py
 log = make_log("tame")
 skill = SkillReader(SKILL_NAME)
-pace = Pace(TAME_DELAY, PACE_STEP, PACE_MAX, PACE_EASE_AFTER)
 heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "attempts", position_and_weight)
 stall = StallWatch("cycles without an attempt", STALL_WARN, STALL_STOP, heartbeat, log)
 
@@ -1364,7 +1324,6 @@ try:
                 failures += 1
                 recorder.record(value, outcome, name)
                 unread_said = False
-                pace.landed()
                 stall.progressed()
 
             # The shard took the attempt and never answered. Raise TAME_RESOLVE_TIMEOUT if this run
@@ -1406,14 +1365,9 @@ try:
                 throttled = 0
                 stall.progressed()
 
-            # The shard's own skill timer, which nothing in the API reports. The pace is raised as
-            # well as backed off from, or the next cycle walks straight back into it.
             elif outcome == "throttled":
                 throttled += 1
-                log(
-                    "shard says wait (%d/%d), now pacing at %.1fs"
-                    % (throttled, MAX_THROTTLED, pace.refused())
-                )
+                log("shard says wait (%d/%d), backing off" % (throttled, MAX_THROTTLED))
                 API.Pause(backoff_for(throttled, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX))
 
                 if throttled >= MAX_THROTTLED:
@@ -1438,7 +1392,7 @@ try:
 
             stall.end_cycle(outcome, cycle, attempts)
             stop = stop or stall.reason()
-            API.Pause(pace.delay())
+            API.Pause(TAME_DELAY)
 
         # Only about this animal: a session-ending fault is reported by the closing lines instead
         if done is not None:

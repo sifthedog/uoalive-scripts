@@ -5,8 +5,8 @@ from taming.config import (AFTER_TAME, ANGRY_DELAY, CHASE_TIMEOUT, CONTEXT_TIMEO
                            GIVE_UP_REASON, HEARTBEAT_EVERY, HUNT_RADIUS, KILL_CURSOR_TIMEOUT,
                            KILL_MENU_TEXT, KILL_PICK_POLL, KILL_PICK_TIMEOUT, LOG_EVERY, MAX_ANGRY,
                            MAX_AWAY, MAX_CONTESTED, MAX_CYCLES, MAX_PENDING, MAX_THROTTLED,
-                           MENU_RETRY_DELAY, OPL_TIMEOUT, OUTCOME_TEXT, PACE_EASE_AFTER, PACE_MAX,
-                           PACE_STEP, PET_NAME, PET_SETTLE_POLL, PET_SETTLE_TIMEOUT,
+                           MENU_RETRY_DELAY, OPL_TIMEOUT, OUTCOME_TEXT,
+                           PET_NAME, PET_SETTLE_POLL, PET_SETTLE_TIMEOUT,
                            RELEASE_ATTEMPTS, RELEASE_CONFIRM_BUTTONS, RELEASE_CONFIRM_POLL,
                            RELEASE_CONFIRM_TEXT, RELEASE_CONFIRM_TIMEOUT, RELEASE_MENU_TEXT,
                            RELEASE_POLL, RELEASE_TIMEOUT, RENAME_ATTEMPTS, RENAME_POLL,
@@ -22,7 +22,6 @@ from uo.guards import dead, first_reason, hurt, no_follower_slots, stopped
 from uo.heartbeat import Heartbeat
 from uo.log import make_log
 from uo.loop import StallWatch, backoff_for
-from uo.pace import Pace
 from uo.record import attempt_log
 from uo.retry import settled
 from uo.save import SaveWatch
@@ -32,7 +31,6 @@ from uo.vitals import position_and_weight
 
 log = make_log("tame")
 skill = SkillReader(SKILL_NAME)
-pace = Pace(TAME_DELAY, PACE_STEP, PACE_MAX, PACE_EASE_AFTER)
 heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "attempts", position_and_weight)
 stall = StallWatch("cycles without an attempt", STALL_WARN, STALL_STOP, heartbeat, log)
 
@@ -265,7 +263,6 @@ try:
                 failures += 1
                 recorder.record(value, outcome, name)
                 unread_said = False
-                pace.landed()
                 stall.progressed()
 
             # The shard took the attempt and never answered. Raise TAME_RESOLVE_TIMEOUT if this run
@@ -307,14 +304,9 @@ try:
                 throttled = 0
                 stall.progressed()
 
-            # The shard's own skill timer, which nothing in the API reports. The pace is raised as
-            # well as backed off from, or the next cycle walks straight back into it.
             elif outcome == "throttled":
                 throttled += 1
-                log(
-                    "shard says wait (%d/%d), now pacing at %.1fs"
-                    % (throttled, MAX_THROTTLED, pace.refused())
-                )
+                log("shard says wait (%d/%d), backing off" % (throttled, MAX_THROTTLED))
                 API.Pause(backoff_for(throttled, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX))
 
                 if throttled >= MAX_THROTTLED:
@@ -339,7 +331,7 @@ try:
 
             stall.end_cycle(outcome, cycle, attempts)
             stop = stop or stall.reason()
-            API.Pause(pace.delay())
+            API.Pause(TAME_DELAY)
 
         # Only about this animal: a session-ending fault is reported by the closing lines instead
         if done is not None:

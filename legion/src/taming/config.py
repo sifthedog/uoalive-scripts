@@ -30,14 +30,9 @@ HUNT_RADIUS = 12
 
 CHASE_TIMEOUT = 10
 
-# A floor, not the cadence: the shard's skill timer is not something the client can be asked for, so
-# the pace below raises this until the refusals stop.
+# The whole pause between two attempts. A refusal costs one cycle and says so, which is cheaper
+# than standing still for a skill timer the client cannot be asked for.
 TAME_DELAY = 1.5
-PACE_STEP = 0.4
-PACE_MAX = 8.0
-
-# Easing after a single success oscillates between an attempt and a refusal
-PACE_EASE_AFTER = 5
 
 ANGRY_DELAY = 10.0
 

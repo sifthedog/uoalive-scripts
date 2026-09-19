@@ -1,7 +1,7 @@
 import API
 
-from hiding.config import (DATA_PATH, HEARTBEAT_EVERY, MAX_THROTTLED, OUTCOME_TEXT, PACE_EASE_AFTER,
-                           PACE_FLOOR, PACE_MAX, PACE_STEP, READ_POLL, READ_TIMEOUT, SAVE_DONE_TEXT,
+from hiding.config import (DATA_PATH, HEARTBEAT_EVERY, HIDE_DELAY, MAX_THROTTLED, OUTCOME_TEXT,
+                           READ_POLL, READ_TIMEOUT, SAVE_DONE_TEXT,
                            SAVE_POLL, SAVE_WAIT, SAVING_TEXT, SKILL, STOPPED, THROTTLE_BACKOFF,
                            THROTTLE_BACKOFF_MAX)
 from hiding.proof import flag_outcome
@@ -11,7 +11,6 @@ from uo.heartbeat import Heartbeat
 from uo.journal import read_outcome
 from uo.log import make_log
 from uo.loop import backoff_for
-from uo.pace import Pace
 from uo.record import attempt_log
 from uo.save import SaveWatch
 from uo.skill import SkillReader, reading
@@ -20,7 +19,6 @@ from uo.vitals import position_and_weight
 log = make_log("hiding")
 skill = SkillReader(SKILL)
 heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "attempts", position_and_weight)
-pace = Pace(PACE_FLOOR, PACE_STEP, PACE_MAX, PACE_EASE_AFTER)
 
 
 def stop_reason():
@@ -82,12 +80,10 @@ try:
         if outcome == "hidden":
             hidden += 1
             recorder.record(value, outcome, SKILL)
-            pace.landed()
 
         elif outcome == "failed":
             failed += 1
             recorder.record(value, outcome, SKILL)
-            pace.landed()
 
         # No roll: fighting or casting. Nothing to record
         elif outcome == "busy":
@@ -104,8 +100,7 @@ try:
 
         elif outcome == "throttled":
             throttled += 1
-            log("shard says wait (%d/%d), now pacing at %.1fs"
-                % (throttled, MAX_THROTTLED, pace.refused()))
+            log("shard says wait (%d/%d), backing off" % (throttled, MAX_THROTTLED))
             API.Pause(backoff_for(throttled, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX))
 
             if throttled >= MAX_THROTTLED:
@@ -114,7 +109,7 @@ try:
         else:
             unread += 1
 
-        API.Pause(pace.delay())
+        API.Pause(HIDE_DELAY)
 finally:
     recorder.close(skill.last())
 
