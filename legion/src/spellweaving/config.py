@@ -10,8 +10,8 @@ DATA_PATH = "skill-attempts.jsonl"
 # BuffIconType member name matched against str(buff.Type); `title` is the localized fallback.
 # target_kind is the cursor the shard raises - the two area rows are harmful, and a pre-target set
 # to the wrong kind does not fire at all. cast_timeout is the book's own casting delay with a
-# margin; cast_delay is the floor between casts. The spell names are the strings handed to
-# API.CastSpell, so they have to read the way your spellbook does.
+# margin; the pause between two casts is one flat CAST_DELAY, not a figure per row. The spell names
+# are the strings handed to API.CastSpell, so they have to read the way your spellbook does.
 #
 # How the rows were picked, because the book is bigger than the table. A spell the loop can grind
 # has to be castable twice running, which rules out most of it:
@@ -42,7 +42,6 @@ STAGES = [
         "min_skill": 0,
         "mana": 24,
         "cast_timeout": 3.5,
-        "cast_delay": 0.4,
     },
     # Enchants what is in hand, so the run stows and redraws the weapon around every trance. The
     # fastest cast in the book at 1.0s, and Thunderstorm's equal on mana without the aggravation.
@@ -55,7 +54,6 @@ STAGES = [
         "mana": 32,
         "needs_weapon": True,
         "cast_timeout": 3.5,
-        "cast_delay": 0.4,
     },
     # A transformation, and a toggle: every other cast takes it back off, which is still a cast the
     # shard charged for and rolled - see DISABLED_IS_PROGRESS. The only spell at its minimum that
@@ -68,7 +66,6 @@ STAGES = [
         "title": "Reaper Form",
         "mana": 34,
         "cast_timeout": 4.0,
-        "cast_delay": 0.5,
     },
     # Frost damage to everything hostile in six tiles, so this band and the two above it belong
     # somewhere empty. Centred on the caster, so no cursor.
@@ -78,7 +75,6 @@ STAGES = [
         "min_skill": 52,
         "mana": 40,
         "cast_timeout": 4.5,
-        "cast_delay": 0.5,
     },
     # Laid on the ground rather than on anything, so the cursor is answered at the caster the way
     # mysticism.py answers Hail Storm's
@@ -90,7 +86,6 @@ STAGES = [
         "target": "self",
         "target_kind": "harmful",
         "cast_timeout": 4.0,
-        "cast_delay": 0.5,
     },
     # Cast at the caster, who is a player: the book says it slays creatures and only chips players,
     # so this is chip damage in a loop rather than a way to die. HURT_FLOOR ends it either way.
@@ -102,7 +97,6 @@ STAGES = [
         "target": "self",
         "target_kind": "harmful",
         "cast_timeout": 5.0,
-        "cast_delay": 0.6,
     },
 ]
 
@@ -132,9 +126,8 @@ SKILL_POLL = 0.5
 # Consecutive cycles the client answered nothing for the skill before the run gives up
 MAX_BLIND_READS = 5
 
-# The fallback for a row that names neither, and every row in STAGES names both
+# The fallback for a row that names no timeout, and every row in STAGES names one
 CAST_TIMEOUT = 2.0
-CAST_DELAY = 0.75
 
 CAST_WAIT_SLICE = 0.2
 
@@ -153,9 +146,10 @@ SELF_ANSWERS = ["Target(player)", "TargetSelf", "Target(serial)"]
 # cast nothing has proved yet; a mana drop or a matched line still leaves in the same slice.
 PROOF_GRACE = 1.4
 
-# What a cast issued before the last one finished costs. Flat, and never counted towards a stop:
-# this is the pacing finding the shard's real cast time rather than anything going wrong.
-CASTING_WAIT = 0.5
+# The whole pause between two casts. Short on purpose: a cast the shard has not released you for
+# is refused in words, costs one cycle and is never counted towards a stop, so there is nothing to
+# buy by waiting longer than this.
+CAST_DELAY = 0.2
 
 BUFF_WAIT = 2.0
 
@@ -165,9 +159,60 @@ SKIP_WHEN_BUFFED = False
 # A toggle the shard turned back off was still a cast it charged for and rolled the skill on
 DISABLED_IS_PROGRESS = True
 
-# The top two bands are cast at the caster's feet and nothing here heals, so a health floor is a
-# stop rather than a pause
-HURT_FLOOR = 0.5
+# The top two bands are cast at the caster's feet, so the run mends itself rather than stopping the
+# first time Word of Death bites. Below HURT_FLOOR the healing could not keep up and the run ends;
+# it has to sit under HEAL_FLOOR or the guard would fire before a mend ever ran.
+HURT_FLOOR = 0.25
+
+# Off is a run that simply stops when it is hurt, and then HEAL_FLOOR is the floor it stops at
+HEAL = True
+
+# Magery, not Spellweaving: it wants the skill and garlic, ginseng and mandrake root in the pack.
+# Cast at the caster, so the cursor is answered the way Wildfire's is, and beneficial rather than
+# harmful.
+HEAL_SPELL = {
+    "spell": "Greater Heal",
+    "mana": 11,
+    "target": "self",
+    "target_kind": "beneficial",
+    "cast_timeout": 3.5,
+}
+
+# Where a mend starts and where it stops. Apart, so one chip of Word of Death does not cost a cast
+# every cycle: under HEAL_FLOOR it heals all the way to HEAL_TO and only then goes back to casting.
+HEAL_FLOOR = 0.4
+HEAL_TO = 1.0
+
+# A backstop per mend, not a budget: a mend that reaches HEAL_TO leaves on the cast that got it
+# there. Each one gathers its own mana first, so a dry pool costs a trance rather than an attempt.
+HEAL_ATTEMPTS = 6
+
+# The heal cast's own buckets. Greater Heal has reagents where the whole Spellweaving book has
+# none, which is the one bucket OUTCOME_TEXT below has no use for.
+HEAL_OUTCOME_TEXT = [
+    ("cast", ["You feel a surge of magic"]),
+    ("fizzled", ["The spell fizzles", "You have failed to cast the spell"]),
+    (
+        "noReagents",
+        [
+            "You do not have enough reagents",
+            "More reagents are needed",
+            "You lack the required reagents",
+        ],
+    ),
+    ("noMana", ["You do not have enough mana", "Insufficient mana"]),
+    ("unskilled", UNSKILLED_TEXT),
+    ("saving", SAVING_TEXT),
+    (
+        "alreadyCasting",
+        [
+            "You have not yet recovered from casting a spell",
+            "You are already casting a spell",
+            "You are already casting",
+        ],
+    ),
+    ("throttled", THROTTLED_TEXT),
+]
 
 # Off waits for natural regeneration instead: slower, always available
 MEDITATE = True

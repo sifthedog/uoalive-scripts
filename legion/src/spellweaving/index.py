@@ -1,20 +1,23 @@
 import API
 
-from spellweaving.config import (BUFF_WAIT, CAST_DELAY, CAST_TIMEOUT, CAST_WAIT_SLICE, CASTING_WAIT,
+from spellweaving.config import (BUFF_WAIT, CAST_DELAY, CAST_TIMEOUT, CAST_WAIT_SLICE,
                                  DATA_PATH, DISABLED_IS_PROGRESS, EQUIP_ATTEMPTS, EQUIP_POLL,
-                                 EQUIP_TIMEOUT, FIRST_BAND, HAND_LAYERS, HEARTBEAT_EVERY,
-                                 HURT_FLOOR, LOG_EVERY, MANA_LOG_EVERY, MANA_POLL, MAX_BLIND_READS,
-                                 MAX_CYCLES, MAX_STALE, MAX_THROTTLED, MEDITATE, MEDITATE_ATTEMPTS,
-                                 MEDITATE_OUTCOME_TEXT, MEDITATE_START_TIMEOUT, MEDITATE_TIMEOUT,
-                                 MEDITATE_TO_FULL, MEDITATION, MEDITATION_BUFF, OUTCOME_TEXT,
-                                 PROOF_GRACE, REGEN_TIMEOUT, SAVE_DONE_TEXT, SAVE_POLL, SAVE_WAIT,
-                                 SAVING_TEXT, SELF_ANSWERS, SELF_TARGET_POLL, SELF_TARGET_TIMEOUT,
-                                 SKILL, SKILL_POLL, SKILL_TIMEOUT, SKIP_WHEN_BUFFED, STAGES,
-                                 STEP_DELAY, STOPPED, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX)
+                                 EQUIP_TIMEOUT, FIRST_BAND, HAND_LAYERS, HEAL, HEAL_ATTEMPTS,
+                                 HEAL_FLOOR, HEAL_OUTCOME_TEXT, HEAL_SPELL, HEAL_TO,
+                                 HEARTBEAT_EVERY, HURT_FLOOR, LOG_EVERY, MANA_LOG_EVERY, MANA_POLL,
+                                 MAX_BLIND_READS, MAX_CYCLES, MAX_STALE, MAX_THROTTLED, MEDITATE,
+                                 MEDITATE_ATTEMPTS, MEDITATE_OUTCOME_TEXT, MEDITATE_START_TIMEOUT,
+                                 MEDITATE_TIMEOUT, MEDITATE_TO_FULL, MEDITATION, MEDITATION_BUFF,
+                                 OUTCOME_TEXT, PROOF_GRACE, REGEN_TIMEOUT, SAVE_DONE_TEXT,
+                                 SAVE_POLL, SAVE_WAIT, SAVING_TEXT, SELF_ANSWERS, SELF_TARGET_POLL,
+                                 SELF_TARGET_TIMEOUT, SKILL, SKILL_POLL, SKILL_TIMEOUT,
+                                 SKIP_WHEN_BUFFED, STAGES, STEP_DELAY, STOPPED, THROTTLE_BACKOFF,
+                                 THROTTLE_BACKOFF_MAX)
 from uo.buffbar import BuffBar
 from uo.cast import Caster
 from uo.guards import dead, first_reason, hurt, skill_capped, stopped
 from uo.hands import Hands, describe_item
+from uo.heal import Healer
 from uo.heartbeat import Heartbeat
 from uo.journal import journal_tail
 from uo.log import make_log
@@ -33,12 +36,21 @@ bar = BuffBar(log)
 skill = SkillReader(SKILL)
 heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "casts", position_and_mana)
 hands = Hands(HAND_LAYERS, EQUIP_ATTEMPTS, EQUIP_TIMEOUT, EQUIP_POLL, log)
+floor = hurt(HURT_FLOOR if HEAL else HEAL_FLOOR)
+mark = hurt(HEAL_FLOOR)
+full = hurt(HEAL_TO)
+
+
+# A mend gathers its own mana, so it runs under the floor that asked for it: left standing, the
+# floor would end that trance on its first slice through ManaWatch
+def hurting():
+    return None if healer.mending() else floor()
 
 
 # The top two bands land at the caster's feet, so what they take off is caught here rather than by
 # the corpse
 def stop_reason():
-    return first_reason([stopped(STOPPED), dead(), hurt(HURT_FLOOR), skill_capped(SKILL)])
+    return first_reason([stopped(STOPPED), dead(), hurting, skill_capped(SKILL)])
 
 
 def standing(stage):
@@ -54,9 +66,12 @@ mana = ManaWatch(MEDITATE_TO_FULL, MANA_POLL, MANA_LOG_EVERY, log, stop_reason, 
 trance = Meditation(MEDITATION, MEDITATE_OUTCOME_TEXT, mana, meditating, log, saves,
                     MEDITATE_ATTEMPTS, MEDITATE_TIMEOUT, MEDITATE_START_TIMEOUT, CAST_WAIT_SLICE,
                     REGEN_TIMEOUT)
-caster = Caster(OUTCOME_TEXT, standing, SelfTarget(SELF_ANSWERS, SELF_TARGET_TIMEOUT,
-                                                   SELF_TARGET_POLL, log),
-                SKIP_WHEN_BUFFED, CAST_TIMEOUT, CAST_DELAY, CAST_WAIT_SLICE, PROOF_GRACE, log)
+# Shared with the heal below, so whichever of SELF_ANSWERS this shard takes is learned once
+selfer = SelfTarget(SELF_ANSWERS, SELF_TARGET_TIMEOUT, SELF_TARGET_POLL, log)
+caster = Caster(OUTCOME_TEXT, standing, selfer, SKIP_WHEN_BUFFED, CAST_TIMEOUT, CAST_DELAY,
+                CAST_WAIT_SLICE, PROOF_GRACE, log)
+mender = Caster(HEAL_OUTCOME_TEXT, lambda stage: False, selfer, False, CAST_TIMEOUT, CAST_DELAY,
+                CAST_WAIT_SLICE, PROOF_GRACE, log)
 
 plan = make_plan(STAGES)
 goal = goal_of(plan)
@@ -82,6 +97,11 @@ def regain_mana(need):
     heartbeat.reset()
 
     return arrived
+
+
+# Built after regain_mana, which it heals on: the trance stows the weapon and draws it again
+healer = Healer(mender, HEAL_SPELL, lambda: regain_mana(cost(HEAL_SPELL["mana"])),
+                lambda: mark() is not None, lambda: full() is None, HEAL_ATTEMPTS, log)
 
 
 def stalled(idle):
@@ -125,11 +145,17 @@ held = hands.remember()
 
 if stop is None:
     log("%s at %.1f/%.1f - %s" % (skill.name(), start, goal, describe_plan(plan)))
-    log("hand %s, %d/%d mana"
+    log("hand %s, %d/%d hits, %d/%d mana"
         % (", ".join(describe_item(item) for item in held) or "empty",
-           API.Player.Mana, API.Player.ManaMax))
+           API.Player.Hits, API.Player.HitsMax, API.Player.Mana, API.Player.ManaMax))
     log("an arcane focus takes about a third off every mana figure here - cast Arcane Circle on a "
         "circle first and it stands for two hours")
+
+    if HEAL:
+        log("under %d%% hits it casts %s until full - that wants Magery and its reagents in the pack"
+            % (HEAL_FLOOR * 100, HEAL_SPELL["spell"]))
+    else:
+        log("nothing here heals - the run stops under %d%% hits" % (HEAL_FLOOR * 100))
 
     if held:
         log("it goes in the pack for every trance and comes back out after")
@@ -158,7 +184,13 @@ try:
     while stop is None and cycle < MAX_CYCLES:
         cycle += 1
 
-        stop = stop_reason()
+        # Before the guards: the floor that asks for the healing is the floor that ends the run
+        if HEAL:
+            healer.mend()
+
+        # Kept, not overwritten: a mend gathers mana through regain_mana, which sets stop itself
+        # when the weapon does not come back out of the pack
+        stop = stop or stop_reason()
 
         if stop is not None:
             break
@@ -248,11 +280,11 @@ try:
             unread_said = False
             API.Pause(BUFF_WAIT)
 
-        # Waited out flat rather than backed off: this is a spell that finishes on its own
+        # Costs one cycle and nothing else: the cast_delay below is the whole wait, and the shard
+        # refusing is cheaper than standing still for a timer nothing here can read
         elif outcome == "alreadyCasting":
             since_progress = 0
             unread_said = False
-            API.Pause(CASTING_WAIT)
 
         elif outcome == "disabled":
             since_progress = 0
@@ -363,6 +395,9 @@ log(
 
 if unread > 0:
     log("%d outcome(s) went unread - add the shard's wording to OUTCOME_TEXT" % unread)
+
+if healer.retired() is not None:
+    log(healer.retired())
 
 reason = stop or "hit the %d cycle backstop" % MAX_CYCLES
 

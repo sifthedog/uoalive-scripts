@@ -54,8 +54,8 @@ DATA_PATH = "skill-attempts.jsonl"
 # BuffIconType member name matched against str(buff.Type); `title` is the localized fallback.
 # target_kind is the cursor the shard raises - the two area rows are harmful, and a pre-target set
 # to the wrong kind does not fire at all. cast_timeout is the book's own casting delay with a
-# margin; cast_delay is the floor between casts. The spell names are the strings handed to
-# API.CastSpell, so they have to read the way your spellbook does.
+# margin; the pause between two casts is one flat CAST_DELAY, not a figure per row. The spell names
+# are the strings handed to API.CastSpell, so they have to read the way your spellbook does.
 #
 # How the rows were picked, because the book is bigger than the table. A spell the loop can grind
 # has to be castable twice running, which rules out most of it:
@@ -86,7 +86,6 @@ STAGES = [
         "min_skill": 0,
         "mana": 24,
         "cast_timeout": 3.5,
-        "cast_delay": 0.4,
     },
     # Enchants what is in hand, so the run stows and redraws the weapon around every trance. The
     # fastest cast in the book at 1.0s, and Thunderstorm's equal on mana without the aggravation.
@@ -99,7 +98,6 @@ STAGES = [
         "mana": 32,
         "needs_weapon": True,
         "cast_timeout": 3.5,
-        "cast_delay": 0.4,
     },
     # A transformation, and a toggle: every other cast takes it back off, which is still a cast the
     # shard charged for and rolled - see DISABLED_IS_PROGRESS. The only spell at its minimum that
@@ -112,7 +110,6 @@ STAGES = [
         "title": "Reaper Form",
         "mana": 34,
         "cast_timeout": 4.0,
-        "cast_delay": 0.5,
     },
     # Frost damage to everything hostile in six tiles, so this band and the two above it belong
     # somewhere empty. Centred on the caster, so no cursor.
@@ -122,7 +119,6 @@ STAGES = [
         "min_skill": 52,
         "mana": 40,
         "cast_timeout": 4.5,
-        "cast_delay": 0.5,
     },
     # Laid on the ground rather than on anything, so the cursor is answered at the caster the way
     # mysticism.py answers Hail Storm's
@@ -134,7 +130,6 @@ STAGES = [
         "target": "self",
         "target_kind": "harmful",
         "cast_timeout": 4.0,
-        "cast_delay": 0.5,
     },
     # Cast at the caster, who is a player: the book says it slays creatures and only chips players,
     # so this is chip damage in a loop rather than a way to die. HURT_FLOOR ends it either way.
@@ -146,7 +141,6 @@ STAGES = [
         "target": "self",
         "target_kind": "harmful",
         "cast_timeout": 5.0,
-        "cast_delay": 0.6,
     },
 ]
 
@@ -174,9 +168,8 @@ SKILL_POLL = 0.5
 # Consecutive cycles the client answered nothing for the skill before the run gives up
 MAX_BLIND_READS = 5
 
-# The fallback for a row that names neither, and every row in STAGES names both
+# The fallback for a row that names no timeout, and every row in STAGES names one
 CAST_TIMEOUT = 2.0
-CAST_DELAY = 0.75
 
 CAST_WAIT_SLICE = 0.2
 
@@ -195,9 +188,10 @@ SELF_ANSWERS = ["Target(player)", "TargetSelf", "Target(serial)"]
 # cast nothing has proved yet; a mana drop or a matched line still leaves in the same slice.
 PROOF_GRACE = 1.4
 
-# What a cast issued before the last one finished costs. Flat, and never counted towards a stop:
-# this is the pacing finding the shard's real cast time rather than anything going wrong.
-CASTING_WAIT = 0.5
+# The whole pause between two casts. Short on purpose: a cast the shard has not released you for
+# is refused in words, costs one cycle and is never counted towards a stop, so there is nothing to
+# buy by waiting longer than this.
+CAST_DELAY = 0.2
 
 BUFF_WAIT = 2.0
 
@@ -207,9 +201,60 @@ SKIP_WHEN_BUFFED = False
 # A toggle the shard turned back off was still a cast it charged for and rolled the skill on
 DISABLED_IS_PROGRESS = True
 
-# The top two bands are cast at the caster's feet and nothing here heals, so a health floor is a
-# stop rather than a pause
-HURT_FLOOR = 0.5
+# The top two bands are cast at the caster's feet, so the run mends itself rather than stopping the
+# first time Word of Death bites. Below HURT_FLOOR the healing could not keep up and the run ends;
+# it has to sit under HEAL_FLOOR or the guard would fire before a mend ever ran.
+HURT_FLOOR = 0.25
+
+# Off is a run that simply stops when it is hurt, and then HEAL_FLOOR is the floor it stops at
+HEAL = True
+
+# Magery, not Spellweaving: it wants the skill and garlic, ginseng and mandrake root in the pack.
+# Cast at the caster, so the cursor is answered the way Wildfire's is, and beneficial rather than
+# harmful.
+HEAL_SPELL = {
+    "spell": "Greater Heal",
+    "mana": 11,
+    "target": "self",
+    "target_kind": "beneficial",
+    "cast_timeout": 3.5,
+}
+
+# Where a mend starts and where it stops. Apart, so one chip of Word of Death does not cost a cast
+# every cycle: under HEAL_FLOOR it heals all the way to HEAL_TO and only then goes back to casting.
+HEAL_FLOOR = 0.4
+HEAL_TO = 1.0
+
+# A backstop per mend, not a budget: a mend that reaches HEAL_TO leaves on the cast that got it
+# there. Each one gathers its own mana first, so a dry pool costs a trance rather than an attempt.
+HEAL_ATTEMPTS = 6
+
+# The heal cast's own buckets. Greater Heal has reagents where the whole Spellweaving book has
+# none, which is the one bucket OUTCOME_TEXT below has no use for.
+HEAL_OUTCOME_TEXT = [
+    ("cast", ["You feel a surge of magic"]),
+    ("fizzled", ["The spell fizzles", "You have failed to cast the spell"]),
+    (
+        "noReagents",
+        [
+            "You do not have enough reagents",
+            "More reagents are needed",
+            "You lack the required reagents",
+        ],
+    ),
+    ("noMana", ["You do not have enough mana", "Insufficient mana"]),
+    ("unskilled", UNSKILLED_TEXT),
+    ("saving", SAVING_TEXT),
+    (
+        "alreadyCasting",
+        [
+            "You have not yet recovered from casting a spell",
+            "You are already casting a spell",
+            "You are already casting",
+        ],
+    ),
+    ("throttled", THROTTLED_TEXT),
+]
 
 # Off waits for natural regeneration instead: slower, always available
 MEDITATE = True
@@ -775,6 +820,79 @@ class Hands(object):
                 self._log("could not draw %s again" % hex_of(serial))
 
         return restored
+
+
+# src/uo/heal.py
+class Healer(object):
+    """Casts a heal at the caster until the hits are back up; the hits rising are the proof."""
+
+    # hurt is the floor a mend starts at and recovered the mark it stops at: one predicate would
+    # either heal on every chip or stop the moment the floor was cleared
+    def __init__(self, caster, stage, gather_mana, hurt, recovered, attempts, log):
+        self._caster = caster
+        self._stage = stage
+        self._gather_mana = gather_mana
+        self._hurt = hurt
+        self._recovered = recovered
+        self._attempts = attempts
+        self._log = log
+        self._retired = None
+        self._mending = False
+
+    def retired(self):
+        return self._retired
+
+    # Read by the stop reason, which stands its health floor down while this is true
+    def mending(self):
+        return self._mending
+
+    # A dry pool ends this mend and nothing more: the next cycle is another trance's worth of
+    # regeneration away, and only a refusal nothing can answer retires the healing for good
+    def _cast_once(self):
+        if not self._gather_mana():
+            self._log("the mana for %s did not come back" % self._stage["spell"])
+
+            return False
+
+        outcome = self._caster.cast_once(self._stage)
+
+        if outcome == "noReagents":
+            self._retired = "out of reagents for %s" % self._stage["spell"]
+        elif outcome == "unskilled":
+            self._retired = "the shard refuses %s from this character" % self._stage["spell"]
+
+        return self._retired is None
+
+    def mend(self):
+        if self._recovered() or not self._hurt():
+            return True
+
+        if self._retired is not None:
+            return False
+
+        self._log("%d/%d hits, healing" % (API.Player.Hits, API.Player.HitsMax))
+        self._mending = True
+
+        try:
+            for _attempt in range(self._attempts):
+                carried = self._cast_once()
+
+                if self._recovered():
+                    self._log("healed to %d/%d" % (API.Player.Hits, API.Player.HitsMax))
+
+                    return True
+
+                if not carried or API.Player.IsDead:
+                    break
+
+                self._caster.pace(self._stage)
+        finally:
+            self._mending = False
+
+        if self._retired is not None:
+            self._log(self._retired)
+
+        return False
 
 
 # src/uo/clock.py
@@ -1416,12 +1534,21 @@ bar = BuffBar(log)
 skill = SkillReader(SKILL)
 heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "casts", position_and_mana)
 hands = Hands(HAND_LAYERS, EQUIP_ATTEMPTS, EQUIP_TIMEOUT, EQUIP_POLL, log)
+floor = hurt(HURT_FLOOR if HEAL else HEAL_FLOOR)
+mark = hurt(HEAL_FLOOR)
+full = hurt(HEAL_TO)
+
+
+# A mend gathers its own mana, so it runs under the floor that asked for it: left standing, the
+# floor would end that trance on its first slice through ManaWatch
+def hurting():
+    return None if healer.mending() else floor()
 
 
 # The top two bands land at the caster's feet, so what they take off is caught here rather than by
 # the corpse
 def stop_reason():
-    return first_reason([stopped(STOPPED), dead(), hurt(HURT_FLOOR), skill_capped(SKILL)])
+    return first_reason([stopped(STOPPED), dead(), hurting, skill_capped(SKILL)])
 
 
 def standing(stage):
@@ -1437,9 +1564,12 @@ mana = ManaWatch(MEDITATE_TO_FULL, MANA_POLL, MANA_LOG_EVERY, log, stop_reason, 
 trance = Meditation(MEDITATION, MEDITATE_OUTCOME_TEXT, mana, meditating, log, saves,
                     MEDITATE_ATTEMPTS, MEDITATE_TIMEOUT, MEDITATE_START_TIMEOUT, CAST_WAIT_SLICE,
                     REGEN_TIMEOUT)
-caster = Caster(OUTCOME_TEXT, standing, SelfTarget(SELF_ANSWERS, SELF_TARGET_TIMEOUT,
-                                                   SELF_TARGET_POLL, log),
-                SKIP_WHEN_BUFFED, CAST_TIMEOUT, CAST_DELAY, CAST_WAIT_SLICE, PROOF_GRACE, log)
+# Shared with the heal below, so whichever of SELF_ANSWERS this shard takes is learned once
+selfer = SelfTarget(SELF_ANSWERS, SELF_TARGET_TIMEOUT, SELF_TARGET_POLL, log)
+caster = Caster(OUTCOME_TEXT, standing, selfer, SKIP_WHEN_BUFFED, CAST_TIMEOUT, CAST_DELAY,
+                CAST_WAIT_SLICE, PROOF_GRACE, log)
+mender = Caster(HEAL_OUTCOME_TEXT, lambda stage: False, selfer, False, CAST_TIMEOUT, CAST_DELAY,
+                CAST_WAIT_SLICE, PROOF_GRACE, log)
 
 plan = make_plan(STAGES)
 goal = goal_of(plan)
@@ -1465,6 +1595,11 @@ def regain_mana(need):
     heartbeat.reset()
 
     return arrived
+
+
+# Built after regain_mana, which it heals on: the trance stows the weapon and draws it again
+healer = Healer(mender, HEAL_SPELL, lambda: regain_mana(cost(HEAL_SPELL["mana"])),
+                lambda: mark() is not None, lambda: full() is None, HEAL_ATTEMPTS, log)
 
 
 def stalled(idle):
@@ -1508,11 +1643,17 @@ held = hands.remember()
 
 if stop is None:
     log("%s at %.1f/%.1f - %s" % (skill.name(), start, goal, describe_plan(plan)))
-    log("hand %s, %d/%d mana"
+    log("hand %s, %d/%d hits, %d/%d mana"
         % (", ".join(describe_item(item) for item in held) or "empty",
-           API.Player.Mana, API.Player.ManaMax))
+           API.Player.Hits, API.Player.HitsMax, API.Player.Mana, API.Player.ManaMax))
     log("an arcane focus takes about a third off every mana figure here - cast Arcane Circle on a "
         "circle first and it stands for two hours")
+
+    if HEAL:
+        log("under %d%% hits it casts %s until full - that wants Magery and its reagents in the pack"
+            % (HEAL_FLOOR * 100, HEAL_SPELL["spell"]))
+    else:
+        log("nothing here heals - the run stops under %d%% hits" % (HEAL_FLOOR * 100))
 
     if held:
         log("it goes in the pack for every trance and comes back out after")
@@ -1541,7 +1682,13 @@ try:
     while stop is None and cycle < MAX_CYCLES:
         cycle += 1
 
-        stop = stop_reason()
+        # Before the guards: the floor that asks for the healing is the floor that ends the run
+        if HEAL:
+            healer.mend()
+
+        # Kept, not overwritten: a mend gathers mana through regain_mana, which sets stop itself
+        # when the weapon does not come back out of the pack
+        stop = stop or stop_reason()
 
         if stop is not None:
             break
@@ -1631,11 +1778,11 @@ try:
             unread_said = False
             API.Pause(BUFF_WAIT)
 
-        # Waited out flat rather than backed off: this is a spell that finishes on its own
+        # Costs one cycle and nothing else: the cast_delay below is the whole wait, and the shard
+        # refusing is cheaper than standing still for a timer nothing here can read
         elif outcome == "alreadyCasting":
             since_progress = 0
             unread_said = False
-            API.Pause(CASTING_WAIT)
 
         elif outcome == "disabled":
             since_progress = 0
@@ -1746,6 +1893,9 @@ log(
 
 if unread > 0:
     log("%d outcome(s) went unread - add the shard's wording to OUTCOME_TEXT" % unread)
+
+if healer.retired() is not None:
+    log(healer.retired())
 
 reason = stop or "hit the %d cycle backstop" % MAX_CYCLES
 

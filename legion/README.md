@@ -21,7 +21,7 @@ repo targets the ClassicUO web client; nothing is shared between the two.
 | `alchemy.py` | Trains Alchemy from 0 to cap on the potion each band gains on, restocks bottles and reagents the way `carpentry.py` does, and pours what it made into the kegs in your pack, unloads it into the container you pick, or keeps it |
 | `magery.py` | Trains Magery on the four spells that gain without a victim, meditating when the pool runs dry |
 | `mysticism.py` | Trains Mysticism on the five spells that gain without a victim, meditating when the pool runs dry |
-| `spellweaving.py` | Trains Spellweaving on the six spells of the book that can be ground solo, stowing the weapon for every trance and meditating when the pool runs dry |
+| `spellweaving.py` | Trains Spellweaving on the six spells of the book that can be ground solo, stowing the weapon for every trance, meditating when the pool runs dry, and casting Greater Heal on itself under the health floor |
 | `chivalry.py` | Trains Chivalry on its five spells, gating each cast on tithing points, putting the weapon away for every trance and drawing it again after, and bandaging itself under the health floor |
 | `bod.py` | Target a Blacksmithing, Alchemy or Carpentry bulk order deed, small or large: crafts what it asks for from the stock in your pack, combines the pieces, and for a large deed gets the smalls from the Bulk Order Deed Box and fills them one by one |
 | `inventory.py` | Target a bag or chest: writes one JSON line per item in it - name, tier, durability, weight and every tooltip property, parsed and verbatim |
@@ -104,7 +104,8 @@ gumpwait    waiting behind a gump the script drew until a click, a close, a stop
             timeout answers it
 hands       what the hands held at start-up, put in the pack for a trance and drawn again by serial
 harvest     one swing at a resource: use the tool, answer the cursor, and read what landed three ways
-heal        bandaging the character it runs on, proved by the hits rising
+heal        mending the character it runs on, by bandage or by a heal cast, proved by the
+            hits rising
 guards      the stop conditions, composed per script
 heartbeat   'still here', on the clock rather than per cycle
 hold        standing still behind a gump the script drew, until its button is pressed
@@ -1396,7 +1397,7 @@ Everything below `STAGES` is `magery.py`'s block with the same defaults. These a
 
 The same loop as `magery.py` on the same shared modules, so *How a cast is read*, *The self cursor*
 and *The mana wait* there describe this one. Its own are the table, the weapon the second band
-wants, and a health floor.
+wants, a health floor it heals under, and one flat pause between casts instead of one per row.
 
 | Band | Spell | Mana | Min | Cursor | What it is |
 | --- | --- | --- | --- | --- | --- |
@@ -1426,6 +1427,11 @@ share a minimum. The top three bands open on their spell's minimum exactly - a s
 only just allowed fizzles more, and a fizzle is still a roll. The two below them carry a margin
 because there was nothing harder to move up to. Two tests hold that order.
 
+**The pace.** Every other casting script carries a `cast_delay` per row, and a `CASTING_WAIT` on
+top of it for a cast the shard refused. This one has neither: `CAST_DELAY` is one flat 0.2s between
+casts, the heal included. A cast the shard has not released you for is refused in words, costs that
+one cycle and is never counted towards a stop, so there is nothing to buy by waiting longer.
+
 **The mana figures are the unfocused ones.** An arcane focus takes about a third off every row - the
 journal put one at 7199 seconds, so cast Arcane Circle on a circle before a long run and the whole
 table gets cheaper. The start-up line says so.
@@ -1445,16 +1451,30 @@ weapon` when the layers disagree gets one redraw and a stop if that fails.
 is on and the bucket is tallied. `formLocked` stops: the bands above Reaper Form are unreachable
 while the form is up, and nothing here drops it.
 
-**The health floor.** Essence of Wind, Wildfire and Word of Death all land where you stand, and
-nothing here heals. `HURT_FLOOR` stops the run at half health. Word of Death only slays creatures -
-a player takes chaos damage instead - so this is chip damage, not a way to die.
+**The health floor.** Essence of Wind, Wildfire and Word of Death all land where you stand. Word
+of Death only slays creatures - a player takes chaos damage instead - but a run from 90.0 to 120.0
+is thousands of casts of it, so the chip adds up faster than regeneration.
+
+Under `HEAL_FLOOR` the run casts `HEAL_SPELL` - **Greater Heal**, a Magery spell - at itself until
+it is back to `HEAL_TO`, the way `chivalry.py` bandages: at the top of the cycle, *before* the guards
+look, so `HURT_FLOOR` ends only a run the healing could not save. The two marks are apart on purpose;
+one is where a mend starts and the other where it stops, so a single chip does not cost a cast every
+cycle. `HURT_FLOOR` has to sit under `HEAL_FLOOR`, or the guard fires before a mend ever runs.
+
+The heal goes through the same `uo/cast.py` reader every other cast does, and gathers its own mana
+first - so a mend on a dry pool costs a trance, weapon stowed and drawn again. The health floor
+stands down for as long as that mend is in flight; left standing it would end that trance on its
+first slice. Out of reagents, or a shard that refuses the spell, retires the healing for the run and
+`HURT_FLOOR` goes back to being a plain stop.
 
 ### Before you run it
 
 - **Stand somewhere empty, never in town.** The top three bands are attacks.
 - **A Spellweaving spellbook** with the six spells in it. Half the book drops in dungeons or sells
   on player vendors; Summon Fey and Summon Fiend are quest-only and this table does not use them.
-- **No reagents**: the school has none, which is why there is no `noReagents` bucket.
+- **No reagents** for the book itself: the school has none, which is why `OUTCOME_TEXT` has no
+  `noReagents` bucket. **Greater Heal does** - carry garlic, ginseng and mandrake root, and the
+  Magery to cast it, or set `HEAL = False` and accept the stop.
 - **A weapon in hand for the 20.0 - 35.0 band.** Any melee weapon. It goes in the pack for every
   trance and comes back out after.
 - **Cast Arcane Circle on a circle first** if you are starting above 20.0 - the focus is worth about
@@ -1465,7 +1485,8 @@ a player takes chaos damage instead - so this is chip damage, not a way to die.
 
 ### What to set
 
-Everything below `STAGES` is `magery.py`'s block with the same defaults. These are its own:
+Everything below `STAGES` is `magery.py`'s block with the same defaults, bar the pace: this script
+has no `CASTING_WAIT` and no per-row `cast_delay`. These are its own:
 
 | Setting | Default | What it is for |
 | --- | --- | --- |
@@ -1477,7 +1498,13 @@ Everything below `STAGES` is `magery.py`'s block with the same defaults. These a
 | `STAGES[].buff` | three rows | The rest train on the mana proof |
 | `FIRST_BAND` | `20.0` | Where a solo run can start. Under it the start-up line says what is missing |
 | `HAND_LAYERS` | both hands | What the trance empties and the draw fills again |
-| `HURT_FLOOR` | `0.5` | Fraction of max hits the run stops below |
+| `HURT_FLOOR` | `0.25` | Fraction of max hits the run stops below, once the healing could not keep up. Must sit under `HEAL_FLOOR` |
+| `HEAL` | `True` | Off is a run that simply stops when hurt, at `HEAL_FLOOR` |
+| `HEAL_SPELL` | Greater Heal | The row the mend casts: `spell`, `mana`, and a `self`/`beneficial` cursor |
+| `HEAL_FLOOR` / `HEAL_TO` | `0.4` / `1.0` | Where a mend starts, and the mark it heals to |
+| `HEAL_ATTEMPTS` | `6` | Casts one mend gets before it gives up and lets the next cycle try again |
+| `HEAL_OUTCOME_TEXT` | guesses | The heal cast's own buckets. `noReagents` and `unskilled` retire it |
+| `CAST_DELAY` | `0.2` | The whole pause between two casts. No row carries a `cast_delay` here |
 
 ### When it goes wrong
 
@@ -1498,12 +1525,20 @@ Everything below `STAGES` is `magery.py`'s block with the same defaults. These a
 - **`buff bar:` prints an id the table lacks**: copy the `Type` into that row's `buff`.
 - **`This spell is already in effect`**: that row leaves a timed buff and cannot be ground. Take it
   out of `STAGES` rather than waiting the buff out - the whole band would run at one cast a duration.
-- **`hurt (N/M)`**: something is hitting you, or Word of Death is landing harder than the book says.
+- **`hurt (N/M)`**: the healing could not keep up. Something is hitting you, or Word of Death is
+  landing harder than the book says; raise `HEAL_FLOOR` so a mend starts sooner.
+- **`out of reagents for Greater Heal`**: restock garlic, ginseng and mandrake root.
+- **`the shard refuses Greater Heal from this character`**: no Magery. Set `HEAL = False`, or swap
+  `HEAL_SPELL` for something this character can cast.
+- **`the mana for Greater Heal did not come back`**: the trance could not fill the pool inside
+  `REGEN_TIMEOUT`. That ends the one mend, not the healing - the next cycle tries again.
 
 ### Unverified
 
 - Every wording in `OUTCOME_TEXT` apart from the shared ones and the two arcane focus lines, which
-  came off a live run.
+  came off a live run, and every wording in `HEAL_OUTCOME_TEXT`, which is `magery.py`'s table.
+- That this shard lets a player Greater Heal themselves mid-grind, and that the mana proof reads it:
+  the spell puts up no buff, so a heal the journal missed rests on the pool dropping.
 - `"ReaperForm"` as a `BuffIconType` name, read from the enum. The `title` fallback and the mana
   proof cover it either way. Immolating Weapon's turned out to be `"Immolating"`, off a live
   `buff bar:` line - not what the enum name suggested, which is the warning for this one.

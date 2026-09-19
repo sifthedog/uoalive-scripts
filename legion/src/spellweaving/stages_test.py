@@ -48,12 +48,16 @@ class ShippedStagesTest(unittest.TestCase):
             self.assertLessEqual(stage["min_skill"], floor, stage["spell"])
             floor = stage["up_to"]
 
-    # Nothing reads the row's timeout back, so a row that named neither would silently fall to the
+    # Nothing reads the row's timeout back, so a row that named none would silently fall to the
     # 2.0s fallback and read every long cast as unreadable
-    def test_every_band_paces_itself(self):
+    def test_every_band_names_its_own_casting_time(self):
         for stage in STAGES:
             self.assertIn("cast_timeout", stage, stage["spell"])
-            self.assertIn("cast_delay", stage, stage["spell"])
+
+    # One flat CAST_DELAY for every row, so a per-row figure would be a second place to look
+    def test_no_band_sets_a_delay_of_its_own(self):
+        for stage in STAGES:
+            self.assertNotIn("cast_delay", stage, stage["spell"])
 
     def test_picks_immolating_weapon_on_the_exclusive_edge_of_the_first_band(self):
         self.assertEqual(stage_now(self.plan, 20.0)["spell"], "Immolating Weapon")
