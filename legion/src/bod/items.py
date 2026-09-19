@@ -24,13 +24,22 @@ class ItemBook(object):
     def _plain(self):
         return self._request["material"] == self._config["plain"]
 
+    # The deed's wording, and every other name the row that makes it may put in the pack: the deed
+    # names an item one way and the menu's row another, so a piece is judged against both
+    def _item_names(self):
+        item = self._request["item"]
+
+        return [item] + list(self._config["item_aliases"].get(item, []))
+
     # Stock folds the material into the name: 'dull copper platemail gorget'
     def _product_names(self):
-        item = self._request["item"]
-        names = [item]
+        names = []
 
-        if not self._plain():
-            names.extend("%s %s" % (name, item) for name in self._material_names())
+        for item in self._item_names():
+            names.append(item)
+
+            if not self._plain():
+                names.extend("%s %s" % (name, item) for name in self._material_names())
 
         return names
 
@@ -45,7 +54,7 @@ class ItemBook(object):
             material = True
         else:
             wanted = [words_of(alias) for alias in self._material_names()]
-            material = (name != self._request["item"]
+            material = (name not in self._item_names()
                         or len([line for line in body if words_of(line) in wanted]) > 0)
 
         return {

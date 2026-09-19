@@ -6,6 +6,7 @@ from test_support.uo import install, item
 
 CONFIG = {
     "aliases": MATERIAL_ALIASES,
+    "item_aliases": {"frypan": ["skillet"]},
     "plain": PLAIN_MATERIAL,
     "articles": ARTICLES,
     "exceptional_text": EXCEPTIONAL_TEXT,
@@ -153,3 +154,28 @@ class ItemBookTest(unittest.TestCase):
         book.forget_missing()
 
         self.assertEqual(book._verdicts, {})
+
+
+class RowNameTest(unittest.TestCase):
+    """The deed names the item and the menu names its recipe: 'frypan' is made by the skillet row."""
+
+    def setUp(self):
+        self.api = install()
+        self.said = []
+
+    def book(self, wanted):
+        asked = {"item": wanted, "done": 0, "total": 20, "exceptional": False, "material": "iron"}
+
+        return ItemBook(asked, CONFIG, self.said.append)
+
+    def test_the_rows_own_name_qualifies_for_the_deeds_wording(self):
+        self.api.hold(item(serial=7, graphic=0x97F))
+        self.api.props[7] = "skillet"
+
+        self.assertEqual(self.book("frypan").qualifying(), [7])
+
+    def test_a_piece_that_is_neither_wording_still_does_not(self):
+        self.api.hold(item(serial=8, graphic=0x97F))
+        self.api.props[8] = "pitchfork"
+
+        self.assertEqual(self.book("frypan").qualifying(), [])

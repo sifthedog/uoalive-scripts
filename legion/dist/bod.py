@@ -1441,6 +1441,9 @@ MAX_THROTTLED = 20
 MAX_NO_TOOL = 5
 MAX_NO_CURSOR = 3
 
+# Batches in a row whose pieces were not the deed's item at all before the run stops
+MAX_UNWANTED = 1
+
 MAX_UNREADABLE_REPORTS = 2
 UNREADABLE_TEXT_LIMIT = 160
 JOURNAL_TAIL_SECONDS = 20.0
@@ -1474,6 +1477,8 @@ OUTCOME_TEXT = [
         ],
     ),
     ("noAnvil", ["near an anvil and a forge", "anvil and forge"]),
+    # Said in the gump's NOTICES panel once the pack is full. Another batch would make nothing
+    ("packFull", ["can't hold anything else", "cannot hold anything else"]),
     (
         "skillTooLow",
         [
@@ -1653,6 +1658,8 @@ ALCHEMY_OUTCOME_TEXT = [
             "enough pig iron",
         ],
     ),
+    # Said in the gump's NOTICES panel once the pack is full. Another batch would make nothing
+    ("packFull", ["can't hold anything else", "cannot hold anything else"]),
     (
         "skillTooLow",
         [
@@ -2147,6 +2154,8 @@ CARPENTRY_OUTCOME_TEXT = [
             "There is not enough wood",
         ],
     ),
+    # Said in the gump's NOTICES panel once the pack is full. Another batch would make nothing
+    ("packFull", ["can't hold anything else", "cannot hold anything else"]),
     (
         "skillTooLow",
         [
@@ -2492,6 +2501,8 @@ TINKERING_OUTCOME_TEXT = [
             "not enough ingots",
         ],
     ),
+    # Said in the gump's NOTICES panel once the pack is full. Another batch would make nothing
+    ("packFull", ["can't hold anything else", "cannot hold anything else"]),
     (
         "skillTooLow",
         [
@@ -2505,6 +2516,16 @@ TINKERING_OUTCOME_TEXT = [
     ("saving", SAVING_TEXT),
     ("throttled", THROTTLED_TEXT),
 ]
+
+# What the deed calls a row, and what the row's own output is called. The deed names the item and
+# the menu names its recipe, so a piece is judged against both wordings
+TINKERING_ITEM_ALIASES = {
+    "frypan": ["skillet"],
+    "arrow fletching": ["fletcher's tools"],
+    "spoon": ["spoon (left)", "spoon (right)"],
+    "fork": ["fork (left)", "fork (right)"],
+    "knife": ["knife (left)", "knife (right)"],
+}
 
 # The first trade whose recipes make every item on the deed fills it. A number cost is ingots of
 # the deed's material; a dict cost is stock per kind. plain is what a deed with no material line
@@ -2520,6 +2541,7 @@ TRADES = [
         "title_text": CRAFT_TITLE_TEXT,
         "category_names": CATEGORY_NAMES,
         "recipes": RECIPES,
+        "item_aliases": {},
         "costs": INGOT_COST,
         "kinds": {},
         "stock_graphics": INGOT_GRAPHICS,
@@ -2546,6 +2568,7 @@ TRADES = [
         "title_text": ALCHEMY_CRAFT_TITLE_TEXT,
         "category_names": ALCHEMY_CATEGORY_NAMES,
         "recipes": ALCHEMY_RECIPES,
+        "item_aliases": {},
         "costs": POTION_COST,
         "kinds": REAGENT_KINDS,
         "stock_graphics": set(),
@@ -2573,6 +2596,7 @@ TRADES = [
         "title_text": CARPENTRY_CRAFT_TITLE_TEXT,
         "category_names": CARPENTRY_CATEGORY_NAMES,
         "recipes": CARPENTRY_RECIPES,
+        "item_aliases": {},
         "costs": BOARD_COST,
         "kinds": {},
         "stock_graphics": BOARD_GRAPHICS,
@@ -2599,6 +2623,7 @@ TRADES = [
         "title_text": TINKERING_CRAFT_TITLE_TEXT,
         "category_names": TINKERING_CATEGORY_NAMES,
         "recipes": TINKERING_RECIPES,
+        "item_aliases": TINKERING_ITEM_ALIASES,
         "costs": TINKERING_INGOT_COST,
         "kinds": {},
         "stock_graphics": INGOT_GRAPHICS,
@@ -2617,7 +2642,8 @@ TRADES = [
 
 
 # src/bod/craft.py
-STOPPERS = ("noMaterial", "noAnvil", "keg", "skillTooLow", "toolWorn", "throttled", "saving")
+STOPPERS = ("noMaterial", "noAnvil", "keg", "packFull", "skillTooLow", "toolWorn",
+           "throttled", "saving")
 
 
 class DeedCrafter(object):
@@ -2851,6 +2877,8 @@ class SmallFill(object):
         self._throttled = 0
         self._no_tool = 0
         self._no_cursor = 0
+        self._unwanted = 0
+        self._made_name = None
         self._cycle = 0
         self._said_throttle = False
 
@@ -2925,14 +2953,31 @@ class SmallFill(object):
         self._log("salvaged: the bag went from %d items to %d, %s in the pack"
                   % (before, after, stock_report(self._config["stock"])))
 
+    # A batch of pieces that are not even the deed's item is a wording mismatch: the row pressed
+    # and the deed name different things. Another batch of them would only fill the pack
+    def _judge_batch(self, before):
+        self._items.prime()
+        fresh = self._items.new_since(before)
+        mine = [piece for piece in fresh if self._items.is_product(piece.Serial)]
+
+        if len(fresh) > 0 and len(mine) == 0:
+            self._unwanted += 1
+            self._made_name = self._items.name_of(fresh[0].Serial)
+        else:
+            self._unwanted = 0
+
     def _craft(self):
         item = self._request["item"]
         material = self._request["material"]
 
         batch = self.owed()
+        before = self._items.serials()
         outcome, made, failed = self._crafter.craft_batch(item, material, batch)
         self.made += made
         self.fails += failed
+
+        if made > 0:
+            self._judge_batch(before)
 
         if made + failed > 0:
             self._log("batch of %d: %d made, %d failed%s"
@@ -2944,6 +2989,10 @@ class SmallFill(object):
     def _after_craft(self, outcome, waiting):
         config = self._config
         item = self._request["item"]
+
+        if self._unwanted >= config["max_unwanted"]:
+            return ("the batch made '%s', and the deed asks for '%s' - the row pressed makes "
+                    "something the deed will never take" % (self._made_name, item))
 
         if outcome != "throttled":
             self._throttled = 0
@@ -2969,6 +3018,8 @@ class SmallFill(object):
             return "the shard says you cannot make a %s" % item
         elif outcome == "noAnvil":
             return "stand next to an anvil and a forge"
+        elif outcome == "packFull":
+            return "your backpack will not hold anything else - empty it and run again"
         elif outcome == "noRow":
             return "'%s' is not in the %s recipes" % (item, config["trade"])
         elif outcome == "noMaterialRow":
@@ -3089,13 +3140,22 @@ class ItemBook(object):
     def _plain(self):
         return self._request["material"] == self._config["plain"]
 
+    # The deed's wording, and every other name the row that makes it may put in the pack: the deed
+    # names an item one way and the menu's row another, so a piece is judged against both
+    def _item_names(self):
+        item = self._request["item"]
+
+        return [item] + list(self._config["item_aliases"].get(item, []))
+
     # Stock folds the material into the name: 'dull copper platemail gorget'
     def _product_names(self):
-        item = self._request["item"]
-        names = [item]
+        names = []
 
-        if not self._plain():
-            names.extend("%s %s" % (name, item) for name in self._material_names())
+        for item in self._item_names():
+            names.append(item)
+
+            if not self._plain():
+                names.extend("%s %s" % (name, item) for name in self._material_names())
 
         return names
 
@@ -3110,7 +3170,7 @@ class ItemBook(object):
             material = True
         else:
             wanted = [words_of(alias) for alias in self._material_names()]
-            material = (name != self._request["item"]
+            material = (name not in self._item_names()
                         or len([line for line in body if words_of(line) in wanted]) > 0)
 
         return {
@@ -4111,6 +4171,7 @@ FILL = {
     "max_throttled": MAX_THROTTLED,
     "max_no_tool": MAX_NO_TOOL,
     "max_no_cursor": MAX_NO_CURSOR,
+    "max_unwanted": MAX_UNWANTED,
     "backoff": THROTTLE_BACKOFF,
     "backoff_max": THROTTLE_BACKOFF_MAX,
     "step_delay": STEP_DELAY,
@@ -4130,6 +4191,7 @@ fills = []
 def fill_small(small):
     items = ItemBook(small.request, {
         "aliases": trade["material_aliases"],
+        "item_aliases": trade["item_aliases"],
         "plain": trade["plain"],
         "articles": ARTICLES,
         "exceptional_text": EXCEPTIONAL_TEXT,

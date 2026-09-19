@@ -19,6 +19,7 @@ CONFIG = {
     "max_throttled": 3,
     "max_no_tool": 2,
     "max_no_cursor": 2,
+    "max_unwanted": 1,
     "backoff": 0.1,
     "backoff_max": 0.2,
     "step_delay": 0.0,
@@ -39,9 +40,26 @@ class FakeItems(object):
     def __init__(self):
         self.waiting = []
         self.rejected = []
+        self.fresh = []
+        self.not_mine = set()
 
     def qualifying(self):
         return [serial for serial in self.waiting if serial not in self.rejected]
+
+    def serials(self):
+        return set()
+
+    def prime(self):
+        pass
+
+    def new_since(self, before):
+        return list(self.fresh)
+
+    def is_product(self, serial):
+        return serial not in self.not_mine
+
+    def name_of(self, serial):
+        return "skillet"
 
     def reject(self, *serials):
         self.rejected.extend(serials)
@@ -81,6 +99,11 @@ class FakeCombiner(object):
 class FakePicker(object):
     def forget(self):
         pass
+
+
+class FakePiece(object):
+    def __init__(self, serial):
+        self.Serial = serial
 
 
 class FakeWatch(object):
@@ -136,6 +159,47 @@ class SmallFillTest(unittest.TestCase):
         self.assertIsNone(fill.run())
         self.assertEqual(crafter.calls, [("batch", 10)])
         self.assertEqual(fill.summary(), "4 combined, 9 made, 1 failed, 10/10 in the deed")
+
+    # Nothing else catches a row whose output the deed will not take: the pieces never qualify, so
+    # the loop crafts another batch of them every cycle until the pack is full
+    def test_a_batch_of_the_wrong_item_stops_the_run(self):
+        crafter = FakeCrafter([("made", 10, 0)])
+
+        def batch(item, material, amount):
+            crafter.calls.append(("batch", amount))
+            self.items.fresh = [FakePiece(200), FakePiece(201)]
+            self.items.not_mine = set([200, 201])
+
+            return crafter.outcomes.pop(0)
+
+        crafter.craft_batch = batch
+        fill = self.fill(FakeDeed(0, 10), crafter)
+        stop = fill.run()
+
+        self.assertIn("skillet", stop)
+        self.assertIn("axe", stop)
+        self.assertEqual(crafter.calls, [("batch", 10)])
+
+    def test_a_batch_of_the_deeds_own_item_is_not_taken_for_the_wrong_row(self):
+        crafter = FakeCrafter([("made", 4, 0)])
+
+        def batch(item, material, amount):
+            crafter.calls.append(("batch", amount))
+            self.items.fresh = [FakePiece(200)]
+            self.items.waiting = [200]
+
+            return crafter.outcomes.pop(0)
+
+        crafter.craft_batch = batch
+        fill = self.fill(FakeDeed(0, 10), crafter)
+        fill._deed.settle_after_combine = lambda count: 10
+
+        self.assertIsNone(fill.run())
+
+    def test_a_full_backpack_stops_the_run(self):
+        fill = self.fill(FakeDeed(0, 10), FakeCrafter([("packFull", 0, 0)]))
+
+        self.assertIn("backpack", fill.run())
 
     def test_out_of_ingots_stops_with_the_count_owed(self):
         fill = self.fill(FakeDeed(3, 10), FakeCrafter([("noMaterial", 0, 0)]))

@@ -2387,6 +2387,8 @@ and makes three more. Out of ingots with pieces waiting, they go in before the r
 | `keg` | Alchemy only: a potion keg in the pack took the craft instead of a bottle. Ends the run |
 | `noAnvil`, `skillTooLow`, `noMaterialRow` | End the run with the reason |
 | `noRow` | Ends the run: the item is not in `RECIPES` |
+| `packFull` | Ends the run: the shard says the backpack will not hold anything else |
+| a batch of the wrong item | Ends the run naming both: the row pressed makes something the deed will never take |
 | `toolWorn`, `noTool`, `noGump`, `throttled`, `saving`, unreadable | As `bowcraft.py` |
 
 ### Large deeds
@@ -2461,6 +2463,8 @@ small; the small leaving the pack is the proof. The run stops when every entry r
 | `OPL_TIMEOUT` / `OPL_ASKS` | `2` / `3` | How long a tooltip has to arrive, and how many times one item is asked |
 | `REREAD_SETTLE` | `3.0` | How long the deed's tooltip has to show a combine the pack proved |
 | `MAX_NO_CURSOR` | `3` | Combine presses that raised no cursor before the run stops |
+| `MAX_UNWANTED` | `1` | Batches in a row whose pieces were not the deed's item at all before the run stops. One is enough: a batch of the wrong thing is a wording mismatch, not bad luck |
+| `TINKERING_ITEM_ALIASES` | `frypan` → `skillet` … | What the deed calls a row against what the row's output is called. A piece is judged against both |
 | `OUTCOME_TEXT` / `ALCHEMY_OUTCOME_TEXT` / `CARPENTRY_OUTCOME_TEXT` / `TINKERING_OUTCOME_TEXT` / `COMBINE_TEXT` | stock ServUO | Wordings for a craft and a combine. The alchemy set names each reagent, because a bare "you do not have enough" is inside "enough skill", and keeps the keg line as its own bucket |
 
 ### When it goes wrong
@@ -2468,6 +2472,11 @@ small; the small leaving the pack is the proof. The run stops when every entry r
 - **`not enough: 140 iron ingots for the 10 pieces owed, and the pack holds 120`** or **`not
   enough: 6 uses left across 2 tool(s) for 10 pieces owed`**: the pre-flight. Load more, or set
   `CHECK_BEFORE_START = False`.
+- **`the batch made 'skillet', and the deed asks for 'frypan'`**: the row in `RECIPES` is the
+  wrong one, or the row is right and the piece it makes simply carries another name. Add the name
+  to the trade's `item_aliases` when it is the same thing under two wordings, and fix the row when
+  it is not. Without this the pieces never qualify, so the loop crafts another batch every cycle
+  and stops only when the pack is full - which is what it used to do.
 - **`no cost is known for '…'`**: add the item to `INGOT_COST`, `POTION_COST`, `BOARD_COST` or
   `TINKERING_INGOT_COST`; the run goes on unchecked.
 - **`no trade in TRADES makes …`**: the deed's wording is in no recipe table. Add the row spelled

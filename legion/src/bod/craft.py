@@ -3,7 +3,8 @@ import API
 from uo.journal import matched_bucket
 from uo.notes import Reporter
 
-STOPPERS = ("noMaterial", "noAnvil", "keg", "skillTooLow", "toolWorn", "throttled", "saving")
+STOPPERS = ("noMaterial", "noAnvil", "keg", "packFull", "skillTooLow", "toolWorn",
+           "throttled", "saving")
 
 
 class DeedCrafter(object):

@@ -424,6 +424,9 @@ MAX_THROTTLED = 20
 MAX_NO_TOOL = 5
 MAX_NO_CURSOR = 3
 
+# Batches in a row whose pieces were not the deed's item at all before the run stops
+MAX_UNWANTED = 1
+
 MAX_UNREADABLE_REPORTS = 2
 UNREADABLE_TEXT_LIMIT = 160
 JOURNAL_TAIL_SECONDS = 20.0
@@ -457,6 +460,8 @@ OUTCOME_TEXT = [
         ],
     ),
     ("noAnvil", ["near an anvil and a forge", "anvil and forge"]),
+    # Said in the gump's NOTICES panel once the pack is full. Another batch would make nothing
+    ("packFull", ["can't hold anything else", "cannot hold anything else"]),
     (
         "skillTooLow",
         [
@@ -636,6 +641,8 @@ ALCHEMY_OUTCOME_TEXT = [
             "enough pig iron",
         ],
     ),
+    # Said in the gump's NOTICES panel once the pack is full. Another batch would make nothing
+    ("packFull", ["can't hold anything else", "cannot hold anything else"]),
     (
         "skillTooLow",
         [
@@ -1130,6 +1137,8 @@ CARPENTRY_OUTCOME_TEXT = [
             "There is not enough wood",
         ],
     ),
+    # Said in the gump's NOTICES panel once the pack is full. Another batch would make nothing
+    ("packFull", ["can't hold anything else", "cannot hold anything else"]),
     (
         "skillTooLow",
         [
@@ -1475,6 +1484,8 @@ TINKERING_OUTCOME_TEXT = [
             "not enough ingots",
         ],
     ),
+    # Said in the gump's NOTICES panel once the pack is full. Another batch would make nothing
+    ("packFull", ["can't hold anything else", "cannot hold anything else"]),
     (
         "skillTooLow",
         [
@@ -1488,6 +1499,16 @@ TINKERING_OUTCOME_TEXT = [
     ("saving", SAVING_TEXT),
     ("throttled", THROTTLED_TEXT),
 ]
+
+# What the deed calls a row, and what the row's own output is called. The deed names the item and
+# the menu names its recipe, so a piece is judged against both wordings
+TINKERING_ITEM_ALIASES = {
+    "frypan": ["skillet"],
+    "arrow fletching": ["fletcher's tools"],
+    "spoon": ["spoon (left)", "spoon (right)"],
+    "fork": ["fork (left)", "fork (right)"],
+    "knife": ["knife (left)", "knife (right)"],
+}
 
 # The first trade whose recipes make every item on the deed fills it. A number cost is ingots of
 # the deed's material; a dict cost is stock per kind. plain is what a deed with no material line
@@ -1503,6 +1524,7 @@ TRADES = [
         "title_text": CRAFT_TITLE_TEXT,
         "category_names": CATEGORY_NAMES,
         "recipes": RECIPES,
+        "item_aliases": {},
         "costs": INGOT_COST,
         "kinds": {},
         "stock_graphics": INGOT_GRAPHICS,
@@ -1529,6 +1551,7 @@ TRADES = [
         "title_text": ALCHEMY_CRAFT_TITLE_TEXT,
         "category_names": ALCHEMY_CATEGORY_NAMES,
         "recipes": ALCHEMY_RECIPES,
+        "item_aliases": {},
         "costs": POTION_COST,
         "kinds": REAGENT_KINDS,
         "stock_graphics": set(),
@@ -1556,6 +1579,7 @@ TRADES = [
         "title_text": CARPENTRY_CRAFT_TITLE_TEXT,
         "category_names": CARPENTRY_CATEGORY_NAMES,
         "recipes": CARPENTRY_RECIPES,
+        "item_aliases": {},
         "costs": BOARD_COST,
         "kinds": {},
         "stock_graphics": BOARD_GRAPHICS,
@@ -1582,6 +1606,7 @@ TRADES = [
         "title_text": TINKERING_CRAFT_TITLE_TEXT,
         "category_names": TINKERING_CATEGORY_NAMES,
         "recipes": TINKERING_RECIPES,
+        "item_aliases": TINKERING_ITEM_ALIASES,
         "costs": TINKERING_INGOT_COST,
         "kinds": {},
         "stock_graphics": INGOT_GRAPHICS,

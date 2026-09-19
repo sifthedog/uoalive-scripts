@@ -30,6 +30,8 @@ class SmallFill(object):
         self._throttled = 0
         self._no_tool = 0
         self._no_cursor = 0
+        self._unwanted = 0
+        self._made_name = None
         self._cycle = 0
         self._said_throttle = False
 
@@ -104,14 +106,31 @@ class SmallFill(object):
         self._log("salvaged: the bag went from %d items to %d, %s in the pack"
                   % (before, after, stock_report(self._config["stock"])))
 
+    # A batch of pieces that are not even the deed's item is a wording mismatch: the row pressed
+    # and the deed name different things. Another batch of them would only fill the pack
+    def _judge_batch(self, before):
+        self._items.prime()
+        fresh = self._items.new_since(before)
+        mine = [piece for piece in fresh if self._items.is_product(piece.Serial)]
+
+        if len(fresh) > 0 and len(mine) == 0:
+            self._unwanted += 1
+            self._made_name = self._items.name_of(fresh[0].Serial)
+        else:
+            self._unwanted = 0
+
     def _craft(self):
         item = self._request["item"]
         material = self._request["material"]
 
         batch = self.owed()
+        before = self._items.serials()
         outcome, made, failed = self._crafter.craft_batch(item, material, batch)
         self.made += made
         self.fails += failed
+
+        if made > 0:
+            self._judge_batch(before)
 
         if made + failed > 0:
             self._log("batch of %d: %d made, %d failed%s"
@@ -123,6 +142,10 @@ class SmallFill(object):
     def _after_craft(self, outcome, waiting):
         config = self._config
         item = self._request["item"]
+
+        if self._unwanted >= config["max_unwanted"]:
+            return ("the batch made '%s', and the deed asks for '%s' - the row pressed makes "
+                    "something the deed will never take" % (self._made_name, item))
 
         if outcome != "throttled":
             self._throttled = 0
@@ -148,6 +171,8 @@ class SmallFill(object):
             return "the shard says you cannot make a %s" % item
         elif outcome == "noAnvil":
             return "stand next to an anvil and a forge"
+        elif outcome == "packFull":
+            return "your backpack will not hold anything else - empty it and run again"
         elif outcome == "noRow":
             return "'%s' is not in the %s recipes" % (item, config["trade"])
         elif outcome == "noMaterialRow":
