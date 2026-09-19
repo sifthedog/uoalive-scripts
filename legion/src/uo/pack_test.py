@@ -17,6 +17,14 @@ class PackReadsTest(unittest.TestCase):
 
         self.assertEqual(pack_contents(), [])
 
+    # API.Stop() only lands at the next Pause, and the backpack answers nothing for the rest of a
+    # stopping script - a read that throws there ends the run in the client's error dialog
+    def test_a_backpack_the_client_no_longer_answers_for_reads_as_empty(self):
+        self.api.Backpack = None
+
+        self.assertEqual(pack_contents(), [])
+        self.assertEqual(pack_top_level(), [])
+
     def test_reads_what_the_pack_holds(self):
         self.api.hold(item(serial=1, graphic=0x19B9))
 

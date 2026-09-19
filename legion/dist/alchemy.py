@@ -366,17 +366,27 @@ RECIPES = {
 
 
 # src/uo/pack.py
-def pack_contents():
-    items = API.ItemsInContainer(API.Backpack, True)
+# API.Stop() only lands at the next Pause, and every client call before it answers nothing - so the
+# backpack reads as null for the rest of a stopping script, and ItemsInContainer throws on a null
+# container rather than answering none. Every caller here wants "nothing in the pack" for that
+def _contents(recursive):
+    backpack = API.Backpack
+
+    if not backpack:
+        return []
+
+    items = API.ItemsInContainer(backpack, recursive)
 
     return items if items else []
+
+
+def pack_contents():
+    return _contents(True)
 
 
 # The item cap is per container, so the guard and the combine both count the top level only
 def pack_top_level():
-    items = API.ItemsInContainer(API.Backpack, False)
-
-    return items if items else []
+    return _contents(False)
 
 
 # None is an unreported stack, not an empty one: counted as 0 it would hide the ore a swing just

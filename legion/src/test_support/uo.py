@@ -385,7 +385,12 @@ class FakeAPI(object):
 
         return False
 
+    # The client throws on a null container rather than answering none, which is what a stopping
+    # script reads the backpack as
     def ItemsInContainer(self, serial, recurse=False):
+        if not serial:
+            raise ValueError("Arg_NullReferenceException")
+
         held = self.containers.get(serial, [])
 
         return list(held) if held is not None else None
