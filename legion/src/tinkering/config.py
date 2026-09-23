@@ -8,12 +8,13 @@ DATA_PATH = "skill-attempts.jsonl"
 
 SKILL_NAMES = ["Tinkering"]
 
-MIN_SKILL = 20.0
+MIN_SKILL = 0.0
 
 # Ceilings are exclusive, in the client's float percentage
 BANDS = [
-    (30.0, "iron key"),
-    (40.0, "hammer"),
+    (20.0, "spoon (left)"),
+    (30.0, "scissors"),
+    (40.0, "butcher knife"),
     (45.0, "tongs"),
     (95.0, "lockpick"),
     (111.8, "ring"),
@@ -33,11 +34,12 @@ CATEGORY_NAMES = [
     "magic jewelry",
 ]
 
-# Name as the SELECTIONS row spells it, and the graphics it lands in the pack as. Iron key and
-# hammer are read off UOAlive; the rest are stock art.
+# Name as the SELECTIONS row spells it, and the graphics it lands in the pack as. Stock art,
+# unverified on UOAlive.
 PRODUCTS = {
-    "iron key": set([0x1010]),
-    "hammer": set([0x102A]),
+    "spoon (left)": set([0x09F4, 0x09F5]),
+    "scissors": set([0x0F9E, 0x0F9F]),
+    "butcher knife": set([0x13F6, 0x13F7]),
     "tongs": set([0x0FBB, 0x0FBC]),
     "lockpick": set([0x14FC]),
     "ring": set([0x108A]),
@@ -49,8 +51,9 @@ PRODUCT_GRAPHICS = set().union(*PRODUCTS.values())
 # Ingots per craft, from the stock recipes. The pack is measured either side of a craft regardless;
 # this only decides when the pack is too short to try.
 INGOT_COST = {
-    "iron key": 3,
-    "hammer": 1,
+    "spoon (left)": 1,
+    "scissors": 2,
+    "butcher knife": 2,
     "tongs": 1,
     "lockpick": 1,
     "ring": 3,
@@ -98,10 +101,12 @@ TINKER_TITLES = ["tinker"]
 
 # Who buys each band's product: the noun for the log, and the titles matched against the name and
 # the tooltip. Stand near the right one for the band. None when nobody buys it - a tinker refused
-# the wind chimes - and it is unloaded into the container picked at the start instead.
+# the wind chimes, and the three low bands are not offered to anyone - and it is unloaded into the
+# container picked at the start instead.
 VENDORS = {
-    "iron key": ("tinker", TINKER_TITLES),
-    "hammer": ("tinker", TINKER_TITLES),
+    "spoon (left)": None,
+    "scissors": None,
+    "butcher knife": None,
     "tongs": ("blacksmith or tinker", ["blacksmith", "tinker"]),
     "lockpick": ("provisioner", ["provisioner"]),
     "ring": ("jeweler", ["jeweler", "jeweller"]),

@@ -7,9 +7,12 @@ from uo.stages import band_for
 
 class BandsTest(unittest.TestCase):
     def test_the_rows_hand_over_on_the_exclusive_edge(self):
-        self.assertEqual(band_for(BANDS, 20.0), "iron key")
-        self.assertEqual(band_for(BANDS, 29.9), "iron key")
-        self.assertEqual(band_for(BANDS, 30.0), "hammer")
+        self.assertEqual(band_for(BANDS, 0.0), "spoon (left)")
+        self.assertEqual(band_for(BANDS, 19.9), "spoon (left)")
+        self.assertEqual(band_for(BANDS, 20.0), "scissors")
+        self.assertEqual(band_for(BANDS, 30.0), "butcher knife")
+        self.assertEqual(band_for(BANDS, 39.9), "butcher knife")
+        self.assertEqual(band_for(BANDS, 40.0), "tongs")
         self.assertEqual(band_for(BANDS, 44.9), "tongs")
         self.assertEqual(band_for(BANDS, 45.0), "lockpick")
         self.assertEqual(band_for(BANDS, 111.7), "ring")
@@ -23,7 +26,8 @@ class BandsTest(unittest.TestCase):
             self.assertIn(product, INGOT_COST)
             self.assertIn(product, VENDORS)
 
-        self.assertIsNone(VENDORS["fancy wind chimes"])
+        for name in ("spoon (left)", "scissors", "butcher knife", "fancy wind chimes"):
+            self.assertIsNone(VENDORS[name])
 
 
 class OutcomeOrderTest(unittest.TestCase):
