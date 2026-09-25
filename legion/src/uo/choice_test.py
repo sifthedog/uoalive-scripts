@@ -62,6 +62,18 @@ class ChoiceTest(unittest.TestCase):
         self.assertIsNone(self.choice.ask(OPTIONS))
         self.assertEqual(self.said[-1], "the run is being stopped")
 
+    def test_rows_stacks_the_buttons_in_a_scroll_area_that_still_answers_a_press(self):
+        self.choice = Choice(dict(CONFIG, rows=2), self.said.append, lambda: self.stop[0])
+        self.after_pauses(1, lambda: self.api.press("Keep"))
+
+        self.assertEqual(self.choice.ask(OPTIONS), "keep")
+
+        gump = self.api.drawn[-1]
+        area = [child for child in gump.children if child.kind == "scroll"][0]
+
+        self.assertEqual([child.text for child in area.children], ["Sell", "Unload", "Keep"])
+        self.assertEqual([child.rect[1] for child in area.children], [0, 34, 68])
+
     def test_a_run_already_being_stopped_draws_nothing(self):
         self.api.StopRequested = True
 

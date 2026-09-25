@@ -12,8 +12,7 @@ repo targets the ClassicUO web client; nothing is shared between the two.
 | `lumberjack.py` | Chops the nearest tree, turns the logs into boards, and loads the boards onto your pack animals |
 | `fishing.py` | Gets off the mount, says `all guard`, casts the fishing pole once at the nearest water and records what came out. Run it again for the next cast |
 | `attack.py` | Turns war mode on and attacks the nearest gray or red mobile within 10 tiles that is not your pet or, by its tooltip, anyone else's. Run it again for the next one |
-| `arms-lore.py` | Target a weapon, then read it every half second until Arms Lore caps |
-| `hiding.py` | Uses Hiding over and over until the skill caps, pacing itself off the shard's refusals, and records every roll |
+| `skills.py` | Asks which of Anatomy, Animal Lore, Arms Lore, Hiding, Item ID, Taste ID or Begging to train, wants one target for all but Hiding, then uses the skill on it every half second until the skill caps, recording every roll |
 | `lockpicking.py` | Stands at one of the shard's training chests, sets it with a double-click and picks it with a lockpick out of the pack, over and over until the skill caps |
 | `bowcraft.py` | Trains Bowcraft from 0 to cap: makes whatever the band still gains on, restocks wood from the containers and pack animals you pick, and sells it to the bowyer, unloads it or keeps it as a gump at the start decides |
 | `tinkering.py` | Trains Tinkering from 0 to cap on the iron ingots you carry: makes whatever the band still gains on, and sells it to the vendor that buys it, unloads it or keeps it as a gump at the start decides |
@@ -34,7 +33,7 @@ repo targets the ClassicUO web client; nothing is shared between the two.
 2. Open **Legion Script** from the top menu and run it from the Script Manager.
 3. Answer the cursor. `tame.py` wants an animal, and another after each tame; `mining.py` and
    `mine-here.py` want your fire beetle; `lumberjack.py` wants your pack animals, one after another;
-   `arms-lore.py` wants the weapon; `bowcraft.py`, `carpentry.py` and `alchemy.py` draw a form: what happens when
+   `skills.py` draws a gump asking which skill, then wants the weapon, creature, item or NPC to use it on, Hiding excepted; `bowcraft.py`, `carpentry.py` and `alchemy.py` draw a form: what happens when
    the tools run out, the chests, storage box and pack animals holding the material, added one cursor at a
    time, whether what is made is sold, unloaded or kept, with a cursor for each container the
    choices need, and how many products pile up before each unload, then OK - `alchemy.py`'s Kegs
@@ -43,7 +42,7 @@ repo targets the ClassicUO web client; nothing is shared between the two.
    `inscription.py` wants the containers holding scrolls and reagents, then draws the same
    gump and wants the unload container if you press Unload; `bod.py`
    wants the deed; `inventory.py` wants the bag; `assembly.py` draws a gump asking which assembly
-   and how many. `magery.py`, `mysticism.py`, `spellweaving.py`, `buffs.py`, `fishing.py`, `attack.py`, `hiding.py` and `lockpicking.py` raise none. ESC
+   and how many. `magery.py`, `mysticism.py`, `spellweaving.py`, `buffs.py`, `fishing.py`, `attack.py` and `lockpicking.py` raise none. ESC
    declines, and each script says what it does instead.
 
 ## How it is built
@@ -249,7 +248,7 @@ reports everything as unread is also crawling; fix the wording, not the timeout.
 
 ## The attempt log
 
-Sixteen scripts append one JSON line per attempt to `DATA_PATH`; `skilldb.py` turns them into two CSV
+Fifteen scripts append one JSON line per attempt to `DATA_PATH`; `skilldb.py` turns them into two CSV
 tables. A bare filename lands beside the running script, in the `LegionScripts` folder, read off
 `API.ScriptPath` or assumed when the client does not say; the run logs `recording to …` at the start.
 A path with a folder in it is used as written. `DATA_PATH = ""` records nothing. The file is opened and closed per row; a run that cannot write says so once and
@@ -268,8 +267,7 @@ paladin who never once failed.
 | `spellweaving.py` | the same | `fizzled` | the same, plus the health floor and the weapon moves |
 | `chivalry.py` | the same | `fizzled`, and `unknown` for an attempt it could not name | the mana wait, the buff already standing, the health floor, the tithing gate and the weapon moves |
 | `tame.py` | `tamed` | `failed` | `pending` |
-| `arms-lore.py` | `read` | `missed` | a use that raised no cursor, unread wordings |
-| `hiding.py` | `hidden` | `failed` | `busy` (fighting or casting, no roll), throttles, unread wordings |
+| `skills.py` | `read` (`given` for Begging, `hidden` for Hiding) | `missed` (`refused`, `failed`) | a use that raised no cursor, every bucket that is not a roll (`busy`, `broke`, `tooFar`, `throttled`, Animal Lore's `refused`), unread wordings |
 | `lockpicking.py` | `picked` | `failed` | the double-click that sets the box, a pick that raised no cursor, throttles, unread wordings |
 | `bowcraft.py` | `made` | `failed` | `noMaterial`, a worn tool, the sell trips |
 | `tinkering.py` | `made` | `failed` | the same, and the unloading |
@@ -1147,52 +1145,45 @@ one. There is no loop, no chase and no heartbeat: the client's own follow does t
 - That `Attack` after `SetWarMode(True)` starts a swing without a target cursor.
 - That a gray pet of a criminal or murderer carries the same tooltip words as a blue one.
 
-## arms-lore.py
+## skills.py
 
-Target one weapon, then use Arms Lore on it every `DELAY` seconds until the skill caps or you stop
-the script. The weapon can sit in your pack.
+Draws a gump listing the skills alphabetically, then uses the one you press every `DELAY` seconds
+until the skill caps or you stop the script. The pace is flat: a throttle is counted like any other
+non-roll and the next use goes out on time. Every skill but Hiding wants one target at the start -
+a weapon for Arms Lore, an item for Item ID and Taste ID, a creature for Anatomy and Animal Lore,
+an NPC for Begging - and answers every cursor with it. Each roll is recorded as the row's success
+or failure; a bucket that is neither is counted and said, never recorded.
 
-- The weapon has to stay resolvable; dropped or handed away ends the run.
+- One `SKILLS` row per skill: the client's names for it, whether it targets, the two proofs below,
+  and its outcome buckets. Adding a skill is adding a row.
+- The target has to stay resolvable as an item or a mobile; dropped, handed away or walked out of
+  sight ends the run.
 - A refused use raises no cursor, so the pass times out after `TARGET_TIMEOUT`. Nothing is recorded.
+- **Hiding** reads the wording first; when the journal matched nothing, the hidden flag before and
+  after the use is the second proof (off to on is `hidden`, on to off is `failed`). `busy` is a
+  refusal without a roll - fighting or casting.
+- **Animal Lore** has no success line: a gump the use opened is the `read`, and it is closed by id
+  every cycle so it never piles up.
 
 | Setting | Default | What it is for |
 | --- | --- | --- |
-| `DELAY` | `0.5` | Seconds between uses. Below the skill timer this only spends passes on refusals |
+| `DELAY` | `0.5` | The whole pause between two uses, throttled or not |
 | `TARGET_TIMEOUT` | `1.0` | How long a use has to put a cursor up |
-| `READ_TIMEOUT` | `1.5` | How long a reading has to say what it found |
-| `READ_POLL` | `0.1` | How often the journal is asked |
-| `PICK_TIMEOUT` | `30.0` | How long the opening cursor waits for you |
-| `DATA_PATH` | `skill-attempts.jsonl` | Where each reading is appended. `""` records nothing |
-
-Nothing here has watched Arms Lore on this shard. `read` is a list of stems (`damage`,
-`durability`, `quality`) rather than a sentence, because shards report the reading in different
-wording. Unmatched outcomes are counted and reported as `N outcome(s) went unread`.
-
-## hiding.py
-
-Uses Hiding every cycle until the skill caps or you stop the script. It raises no cursor and needs
-nothing in the pack. Each roll is recorded as `hidden` or `failed`, whether or not you were already
-hidden: a success while hidden keeps you hidden, a failure reveals you.
-
-- The wording is read first. When the journal matched nothing, the player's hidden flag before and
-  after the use is the second proof: off to on is `hidden`, on to off is `failed`, unchanged is unread.
-- The pace is flat `HIDE_DELAY` between uses, and a refusal costs one cycle. ServUO holds the
-  timer for 10s after a
-  roll, so a run settles near that.
-- `busy` is a refusal without a roll - you are fighting or casting. It is counted and said, not recorded.
-
-| Setting | Default | What it is for |
-| --- | --- | --- |
-| `HIDE_DELAY` | `1.0` | The whole pause between two uses |
-| `MAX_THROTTLED` | `20` | Throttles in a row before the run stops |
 | `READ_TIMEOUT` | `1.5` | How long the outcome has to land in the journal |
 | `READ_POLL` | `0.1` | How often the journal is asked |
+| `PICK_TIMEOUT` | `30.0` | How long the opening cursor waits for you |
+| `SKILL_CHOICE` | 60s, 6 rows | The gump's text, how long it waits for a press, and how many skills show before the list scrolls |
 | `DATA_PATH` | `skill-attempts.jsonl` | Where each roll is appended. `""` records nothing |
 
-`You have hidden yourself well.` and `You fail to hide` were watched on UOAlive; the `busy` phrases
-are ServUO's. UOAlive lets Hiding go to 120 with a power scroll and fail past 100, so a capped run
-is longer than stock.
-Unmatched outcomes are counted and reported as `N outcome(s) went unread`.
+### Unverified
+
+Only Hiding has been watched on UOAlive (`You have hidden yourself well.`, `You fail to hide`; the
+`busy` phrases are ServUO's, and Hiding goes to 120 with a power scroll and fails past 100 there).
+Everything else in `SKILLS` is a RunUO guess: Arms Lore's `read` is stems (`damage`, `durability`,
+`quality`) because shards word the reading differently; Anatomy, Item ID and Taste ID follow the same
+shape; Begging's lines are the NPC's replies, and `broke` (`I have not enough money`) and `tooFar`
+are refusals without a roll. `Item ID` and `Taste ID` are looked up under both the skills.mul name
+and the long one. Unmatched outcomes are counted and reported as `N outcome(s) went unread`.
 
 ## lockpicking.py
 

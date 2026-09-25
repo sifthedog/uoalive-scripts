@@ -1,4 +1,4 @@
-# Built from src/hiding/index.py by build.py - do not edit.
+# Built from src/skills/index.py by build.py - do not edit.
 
 import API
 import time
@@ -32,50 +32,120 @@ STOPPED = "stopped from the script manager"
 
 SAVE_WAIT = 60.0
 SAVE_POLL = 1.0
-
-THROTTLE_BACKOFF = 1.0
-THROTTLE_BACKOFF_MAX = 8.0
 HEARTBEAT_EVERY = 30.0
 
 GAIN_PATH_TIMEOUT = 5.0
 GAIN_PATH_POLL = 0.25
 
 
-# src/hiding/config.py
-# Every success and failure is appended here, one JSON object per line. "" turns recording off.
+# src/skills/config.py
+# Every success and failure is appended here, one JSON object per line, for legion/skilldb.py to
+# turn into a table later. "" turns recording off. A bare name lands beside the script.
 DATA_PATH = "skill-attempts.jsonl"
 
-SKILL = "Hiding"
+# The whole pause between two uses, flat: a throttle is counted and the next use goes out anyway
+DELAY = 0.5
+
+PICK_TIMEOUT = 30.0
+TARGET_TIMEOUT = 1.0
 
 READ_TIMEOUT = 1.5
 READ_POLL = 0.1
 
-# The whole pause between two attempts. ServUO's Hiding holds the skill timer for 10s after a roll
-# and 1s after a refusal, and a refusal costs one cycle and says so.
-HIDE_DELAY = 1.0
+SKILL_CHOICE = {
+    "text": "Which skill to train?",
+    "hue": 996,
+    "poll": 0.5,
+    "timeout": 60.0,
+    "rows": 6,
+}
 
-MAX_THROTTLED = 20
-
-# Polled in declaration order, first match wins. `hidden` and the first `failed` phrase were watched
-# on UOAlive; the rest are ServUO guesses. `busy` sits before `failed`, which contains its stem.
-OUTCOME_TEXT = [
-    (
-        "busy",
-        [
-            "You can't seem to hide right now",
-            "You cannot seem to hide right now",
-            "You are busy doing something else and cannot hide",
-        ],
-    ),
-    ("failed", ["You fail to hide", "You can't seem to hide here", "You cannot seem to hide here"]),
-    ("hidden", ["You have hidden yourself well"]),
+SHARED_OUTCOMES = [
     ("unskilled", UNSKILLED_TEXT),
     ("saving", SAVING_TEXT),
     ("throttled", THROTTLED_TEXT),
 ]
 
+# One row per skill; `skills` is the client's name for it, first one found wins. `targets` asks for one target at the start and answers every cursor with it.
+# `flag` proves an unread roll off the hidden flag, `gump` off a gump the use opened (closed after).
+# `outcomes` is polled in order, first match wins, and a bucket that is neither the row's success
+# nor its failure is counted and said, never recorded. Only Hiding and Arms Lore have been watched
+# on UOAlive; every other phrase is a RunUO guess, so a wrong table under-reports rather than lies.
+SKILLS = [
+    {
+        "key": "anatomy", "caption": "Anatomy", "skills": ["Anatomy"],
+        "targets": True, "flag": False, "gump": False, "success": "read", "failure": "missed",
+        "outcomes": [
+            ("missed", ["You can not analyze", "You cannot analyze", "You can't analyze"]),
+        ] + SHARED_OUTCOMES + [
+            ("read", ["That being is", "looks", "appears to be"]),
+        ],
+    },
+    {
+        "key": "animalLore", "caption": "Animal Lore", "skills": ["Animal Lore"],
+        "targets": True, "flag": False, "gump": True, "success": "read", "failure": "missed",
+        "outcomes": [
+            ("missed", ["You can't think of anything you know offhand",
+                        "You cannot think of anything you know offhand"]),
+            ("refused", ["That's not an animal", "At your skill level, you can only lore"]),
+        ] + SHARED_OUTCOMES,
+    },
+    {
+        "key": "armsLore", "caption": "Arms Lore", "skills": ["Arms Lore"],
+        "targets": True, "flag": False, "gump": False, "success": "read", "failure": "missed",
+        "outcomes": [
+            ("missed", ["You are not certain", "You have no idea", "You are not sure",
+                        "You can not tell anything about", "You cannot tell anything about",
+                        "You can't tell anything about"]),
+        ] + SHARED_OUTCOMES + [
+            ("read", ["damage", "durability", "quality", "appears to be", "is made of"]),
+        ],
+    },
+    {
+        "key": "hiding", "caption": "Hiding", "skills": ["Hiding"],
+        "targets": False, "flag": True, "gump": False, "success": "hidden", "failure": "failed",
+        # `busy` before `failed`, which contains its stem. Neither hides you: fighting or casting
+        "outcomes": [
+            ("busy", ["You can't seem to hide right now", "You cannot seem to hide right now",
+                      "You are busy doing something else and cannot hide"]),
+            ("failed", ["You fail to hide", "You can't seem to hide here",
+                        "You cannot seem to hide here"]),
+            ("hidden", ["You have hidden yourself well"]),
+        ] + SHARED_OUTCOMES,
+    },
+    {
+        "key": "itemId", "caption": "Item ID", "skills": ["Item ID", "Item Identification"],
+        "targets": True, "flag": False, "gump": False, "success": "read", "failure": "missed",
+        "outcomes": [
+            ("missed", ["You are not certain", "You have no idea", "You are not sure"]),
+        ] + SHARED_OUTCOMES + [
+            ("read", ["You identify", "appears to be", "is made of"]),
+        ],
+    },
+    {
+        "key": "tasteId", "caption": "Taste ID", "skills": ["Taste ID", "Taste Identification"],
+        "targets": True, "flag": False, "gump": False, "success": "read", "failure": "missed",
+        "outcomes": [
+            ("missed", ["You cannot discern anything", "You can't discern anything",
+                        "You are not sure"]),
+        ] + SHARED_OUTCOMES + [
+            ("read", ["is not poisoned", "It is a", "tastes like"]),
+        ],
+    },
+    {
+        "key": "begging", "caption": "Begging", "skills": ["Begging"],
+        "targets": True, "flag": False, "gump": False, "success": "given", "failure": "refused",
+        "outcomes": [
+            ("refused", ["no gold for thee", "Thou dost not look trustworthy"]),
+            ("broke", ["I have not enough money"]),
+            ("tooFar", ["Thou art too far", "too far away"]),
+            ("given", ["I feel sorry for thee", "Thou dost look hungry", "worthy fellow"]),
+        ] + SHARED_OUTCOMES,
+    },
+]
 
-# src/hiding/proof.py
+
+# src/skills/proof.py
 # The shard sets the flag on a success and reveals on a failed roll, so a flip is a roll the
 # journal did not name
 def flag_outcome(hidden_before, hidden_after):
@@ -86,6 +156,162 @@ def flag_outcome(hidden_before, hidden_after):
         return "failed"
 
     return None
+
+
+# Only a success opens the lore gump, so a gump that was not up before the use is one
+def gump_outcome(gump_before, gump_after):
+    return "read" if gump_after and gump_after != gump_before else None
+
+
+# src/uo/gumpwait.py
+# Waits behind a gump the script drew, one poll slice at a time, until resolve() answers a reason
+# to stop (checked first, so a click wins over the gump closing), the gump is disposed, stop_reason
+# gives one, or timeout seconds pass - timeout=None means no ceiling. each(), when given, runs once
+# a slice before resolve(), so an alarm or a heartbeat keeps going while the gump is up. Disposes
+# the gump before returning why. The click only arrives through ProcessCallbacks, and a stopped
+# script's client calls all answer with nothing, so the stop flag is the one read that still means
+# something then.
+def wait_for_gump(gump, stop_reason, poll, resolve, closed_message="the gump was closed",
+                  timeout=None, each=None):
+    waited = 0.0
+    why = None
+
+    while why is None:
+        if API.StopRequested:
+            why = "the run is being stopped"
+            break
+
+        if each is not None:
+            each()
+
+        API.ProcessCallbacks()
+
+        why = resolve()
+
+        if why is not None:
+            pass
+        elif gump.IsDisposed:
+            why = closed_message
+        elif stop_reason() is not None:
+            why = "the run has a reason to stop"
+        elif timeout is not None and waited >= timeout:
+            why = "nothing was pressed in %.0fs" % timeout
+        else:
+            API.Pause(poll)
+            waited += poll
+
+    if not gump.IsDisposed:
+        gump.Dispose()
+
+    return why
+
+
+# src/uo/choice.py
+CHOICE_WIDTH = 340
+CHOICE_BUTTON_WIDTH = 96
+CHOICE_BUTTON_HEIGHT = 26
+CHOICE_GAP = 8
+CHOICE_SCROLLBAR = 16
+
+
+class Choice(object):
+    """A gump the script draws with one button per option, answered by the first press."""
+
+    def __init__(self, config, log, stop_reason):
+        self._config = config
+        self._log = log
+        self._stop_reason = stop_reason
+
+    # Stacked in a scroll area when `rows` says how many show at once, otherwise side by side
+    def _show(self, options, on_press):
+        rows = self._config.get("rows")
+        step = CHOICE_BUTTON_HEIGHT + CHOICE_GAP
+
+        if rows:
+            width = CHOICE_WIDTH
+            height = 16 + 20 + 16 + min(rows, len(options)) * step + 16
+        else:
+            width = max(CHOICE_WIDTH, 16 + len(options) * (CHOICE_BUTTON_WIDTH + CHOICE_GAP) + 8)
+            height = 16 + 20 + 16 + CHOICE_BUTTON_HEIGHT + 16
+
+        gump = API.Gumps.CreateGump(True, True)
+
+        if gump is None:
+            return None
+
+        gump.SetRect(0, 0, width, height)
+        gump.CenterXInViewPort()
+        gump.CenterYInViewPort()
+
+        background = API.Gumps.CreateGumpColorBox(0.85, "#1E1E1E")
+        background.SetRect(0, 0, width, height)
+        gump.Add(background)
+
+        label = API.Gumps.CreateGumpLabel(self._config["text"], self._config["hue"])
+        label.SetPos(16, 16)
+        gump.Add(label)
+
+        if rows:
+            area = API.Gumps.CreateGumpScrollArea(16, 16 + 20 + 16, width - 32,
+                                                  min(rows, len(options)) * step)
+            gump.Add(area)
+
+        for index in range(len(options)):
+            key, caption = options[index]
+
+            if rows:
+                button = API.Gumps.CreateSimpleButton(caption, width - 32 - CHOICE_SCROLLBAR,
+                                                      CHOICE_BUTTON_HEIGHT)
+                button.SetPos(0, index * step)
+                area.Add(button)
+            else:
+                button = API.Gumps.CreateSimpleButton(caption, CHOICE_BUTTON_WIDTH,
+                                                      CHOICE_BUTTON_HEIGHT)
+                button.SetPos(16 + index * (CHOICE_BUTTON_WIDTH + CHOICE_GAP),
+                              height - CHOICE_BUTTON_HEIGHT - 16)
+                gump.Add(button)
+
+            API.Gumps.AddControlOnClick(button, self._presser(key, on_press))
+
+        API.Gumps.AddGump(gump)
+
+        return gump
+
+    # A closure per button rather than one in the loop: the loop variable would be the last key
+    def _presser(self, key, on_press):
+        def press():
+            on_press(key)
+
+        return press
+
+    # The pressed key, or None when the gump was closed, timed out, or the run has a reason to stop
+    def ask(self, options):
+        if API.HasTarget():
+            API.CancelTarget()
+
+        chosen = [None]
+
+        def on_press(key):
+            chosen[0] = key
+
+        gump = self._show(options, on_press)
+
+        # API.Stop() only lands at the next Pause, and every client call before it answers nothing
+        if gump is None:
+            self._log("not asking - the run is being stopped")
+            return None
+
+        self._log("asking - %s" % self._config["text"])
+
+        def resolve():
+            return "'%s' was pressed" % dict(options)[chosen[0]] if chosen[0] is not None else None
+
+        why = wait_for_gump(gump, self._stop_reason, self._config["poll"], resolve,
+                            timeout=self._config["timeout"])
+
+        self._log(why)
+
+        return chosen[0]
 
 
 # src/uo/entity.py
@@ -267,11 +493,6 @@ def make_log(prefix):
     log.enabled = True
 
     return log
-
-
-# src/uo/loop.py
-def backoff_for(count, step, cap):
-    return min(step * count, cap)
 
 
 # src/uo/paths.py
@@ -547,6 +768,21 @@ class SaveWatch(object):
 
 
 # src/uo/skill.py
+# A name the client does not carry throws on some builds rather than answering None
+def find_skill_name(names):
+    for name in names:
+        try:
+            if API.GetSkill(name) is not None:
+                return name
+        except Exception:
+            if API.StopRequested:
+                raise
+
+            continue
+
+    return None
+
+
 def reading(value):
     return "unknown" if value is None else "%.1f" % value
 
@@ -622,6 +858,21 @@ class SkillReader(object):
         return skill.Value
 
 
+# src/uo/target.py
+# The serial one cursor answered, or None for ESC or a timeout. Clears a cursor left open from
+# before, and the one just answered too, so a target flag never survives past it.
+def request_one(timeout):
+    if API.HasTarget():
+        API.CancelTarget()
+
+    serial = API.RequestTarget(timeout)
+
+    if API.HasTarget():
+        API.CancelTarget()
+
+    return serial or None
+
+
 # src/uo/vitals.py
 def weight_reading():
     me = player()
@@ -639,14 +890,17 @@ def position_and_weight():
     return "%s, %s" % (where(), weight_reading())
 
 
-# src/hiding/index.py
-log = make_log("hiding")
-skill = SkillReader(SKILL)
+# src/skills/index.py
+log = make_log("skills")
 heartbeat = Heartbeat(HEARTBEAT_EVERY, log, "attempts", position_and_weight)
 
 
+def picking_reason():
+    return first_reason([stopped(STOPPED), dead()])
+
+
 def stop_reason():
-    return first_reason([stopped(STOPPED), dead(), skill_capped(SKILL)])
+    return first_reason([stopped(STOPPED), dead(), skill_capped(skill_name)])
 
 
 def hidden_flag():
@@ -655,21 +909,56 @@ def hidden_flag():
     return bool(me.IsHidden) if me is not None else False
 
 
+def caption_of(option):
+    return option[1]
+
+
+def target_gone(serial):
+    return API.FindItem(serial) is None and API.FindMobile(serial) is None
+
+
+def target_name(serial):
+    found = API.FindItem(serial) or API.FindMobile(serial)
+
+    return (found.Name if found is not None else None) or hex_of(serial)
+
+
+chosen = Choice(SKILL_CHOICE, log, picking_reason).ask(
+    sorted([(row["key"], row["caption"]) for row in SKILLS], key=caption_of))
+
+if chosen is None:
+    log("nothing chosen - stopping")
+    API.Stop()
+
+row = [row for row in SKILLS if row["key"] == chosen][0]
+skill_name = find_skill_name(row["skills"]) or row["skills"][0]
+skill = SkillReader(skill_name)
 saves = SaveWatch(SAVING_TEXT, SAVE_DONE_TEXT, SAVE_WAIT, SAVE_POLL, log, heartbeat, stop_reason)
+target = None
+used = skill_name
+
+if row["targets"]:
+    log("target what to use %s on, ESC to stop" % row["caption"])
+    target = request_one(PICK_TIMEOUT)
+
+    if target is None:
+        log("nothing targeted - stopping")
+        API.Stop()
+
+    used = target_name(target)
 
 start = skill.read()
 recorder = attempt_log(DATA_PATH, skill.name(), log)
 
 if start is None:
-    log("the client is not reporting %s - hiding anyway" % SKILL)
+    log("the client is not reporting %s - using it on '%s' anyway" % (skill_name, used))
 else:
-    log("hiding - %s at %s/%s" % (skill.name(), reading(start), reading(skill.cap())))
+    log("using %s on '%s' - at %s/%s" % (skill.name(), used, reading(start), reading(skill.cap())))
 
-hidden = 0
+succeeded = 0
 failed = 0
-busy = 0
+others = {}
 unread = 0
-throttled = 0
 cycle = 0
 stop = None
 
@@ -683,70 +972,81 @@ try:
 
         if saves.is_saving():
             saves.wait_out()
-            throttled = 0
             continue
 
+        if target is not None and target_gone(target):
+            stop = "'%s' is gone" % used
+            break
+
         value = skill.read()
-        before = hidden_flag()
+        hidden_before = hidden_flag() if row["flag"] else False
+        gump_before = API.HasGump() if row["gump"] else 0
 
         API.ClearJournal()
-        API.UseSkill(SKILL)
-        heartbeat.beat("hiding", cycle, hidden + failed)
+        API.UseSkill(skill_name)
+        heartbeat.beat("using", cycle, succeeded + failed)
 
-        outcome = read_outcome(OUTCOME_TEXT, READ_TIMEOUT, READ_POLL)
+        # A refused use puts no cursor up, so this times out and the next pass simply asks again
+        answered = True
 
-        if outcome is None:
-            outcome = flag_outcome(before, hidden_flag())
+        if target is not None:
+            answered = bool(API.WaitForTarget("any", TARGET_TIMEOUT))
 
-        if outcome != "throttled":
-            throttled = 0
+            if answered:
+                API.Target(target)
 
-        if outcome == "hidden":
-            hidden += 1
-            recorder.record(value, outcome, SKILL)
+        if answered:
+            outcome = read_outcome(row["outcomes"], READ_TIMEOUT, READ_POLL)
 
-        elif outcome == "failed":
-            failed += 1
-            recorder.record(value, outcome, SKILL)
+            if outcome is None and row["flag"]:
+                outcome = flag_outcome(hidden_before, hidden_flag())
 
-        # No roll: fighting or casting. Nothing to record
-        elif outcome == "busy":
-            busy += 1
+            if row["gump"]:
+                gump_after = API.HasGump()
 
-            if busy == 1:
-                log("the shard says you cannot hide right now - trying again each cycle")
+                if outcome is None:
+                    outcome = gump_outcome(gump_before, gump_after)
 
-        elif outcome == "unskilled":
-            stop = "the shard says this character cannot use %s" % SKILL
+                if gump_after:
+                    API.CloseGump(gump_after)
 
-        elif outcome == "saving":
-            saves.wait_out()
+            if outcome == row["success"]:
+                succeeded += 1
+                recorder.record(value, outcome, used)
 
-        elif outcome == "throttled":
-            throttled += 1
-            log("shard says wait (%d/%d), backing off" % (throttled, MAX_THROTTLED))
-            API.Pause(backoff_for(throttled, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX))
+            elif outcome == row["failure"]:
+                failed += 1
+                recorder.record(value, outcome, used)
 
-            if throttled >= MAX_THROTTLED:
-                stop = "the shard kept refusing the attempt"
+            elif outcome == "unskilled":
+                stop = "the shard says this character cannot use %s" % skill_name
 
-        else:
-            unread += 1
+            elif outcome == "saving":
+                saves.wait_out()
 
-        API.Pause(HIDE_DELAY)
+            elif outcome is None:
+                unread += 1
+
+            else:
+                others[outcome] = others.get(outcome, 0) + 1
+
+                if others[outcome] == 1:
+                    log("the shard answered '%s' - not a roll, using again in %.1fs" % (outcome, DELAY))
+
+        API.Pause(DELAY)
 finally:
     recorder.close(skill.last())
 
 ended = skill.read()
 
-log("%d hidden, %d failed, %s %s -> %s"
-    % (hidden, failed, skill.name(), reading(start), reading(ended)))
+log("%d %s, %d %s, %s %s -> %s" % (succeeded, row["success"], failed, row["failure"],
+                                    skill.name(), reading(start), reading(ended)))
 
-if busy > 0:
-    log("%d attempt(s) refused for being busy" % busy)
+for name in sorted(others):
+    log("%d attempt(s) answered '%s' and were not recorded" % (others[name], name))
 
 if unread > 0:
-    log("%d outcome(s) went unread - add the shard's wording to OUTCOME_TEXT" % unread)
+    log("%d outcome(s) went unread - add the shard's wording to SKILLS" % unread)
 
 if stop is not None:
     log(stop)

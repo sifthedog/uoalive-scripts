@@ -263,6 +263,9 @@ class FakeGumps(object):
     def CreateGumpTextBox(self, text="", width=200, height=30, multiline=False, fontSize=20):
         return FakeTextBox(text)
 
+    def CreateGumpScrollArea(self, x, y, width, height):
+        return FakeControl("scroll")
+
     def AddControlOnClick(self, control, onClick, leftOnly=True):
         control.on_click.append(onClick)
         return control

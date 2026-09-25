@@ -6,6 +6,7 @@ CHOICE_WIDTH = 340
 CHOICE_BUTTON_WIDTH = 96
 CHOICE_BUTTON_HEIGHT = 26
 CHOICE_GAP = 8
+CHOICE_SCROLLBAR = 16
 
 
 class Choice(object):
@@ -16,9 +17,17 @@ class Choice(object):
         self._log = log
         self._stop_reason = stop_reason
 
+    # Stacked in a scroll area when `rows` says how many show at once, otherwise side by side
     def _show(self, options, on_press):
-        height = 16 + 20 + 16 + CHOICE_BUTTON_HEIGHT + 16
-        width = max(CHOICE_WIDTH, 16 + len(options) * (CHOICE_BUTTON_WIDTH + CHOICE_GAP) + 8)
+        rows = self._config.get("rows")
+        step = CHOICE_BUTTON_HEIGHT + CHOICE_GAP
+
+        if rows:
+            width = CHOICE_WIDTH
+            height = 16 + 20 + 16 + min(rows, len(options)) * step + 16
+        else:
+            width = max(CHOICE_WIDTH, 16 + len(options) * (CHOICE_BUTTON_WIDTH + CHOICE_GAP) + 8)
+            height = 16 + 20 + 16 + CHOICE_BUTTON_HEIGHT + 16
 
         gump = API.Gumps.CreateGump(True, True)
 
@@ -37,14 +46,27 @@ class Choice(object):
         label.SetPos(16, 16)
         gump.Add(label)
 
+        if rows:
+            area = API.Gumps.CreateGumpScrollArea(16, 16 + 20 + 16, width - 32,
+                                                  min(rows, len(options)) * step)
+            gump.Add(area)
+
         for index in range(len(options)):
             key, caption = options[index]
-            button = API.Gumps.CreateSimpleButton(caption, CHOICE_BUTTON_WIDTH,
-                                                  CHOICE_BUTTON_HEIGHT)
-            button.SetPos(16 + index * (CHOICE_BUTTON_WIDTH + CHOICE_GAP),
-                          height - CHOICE_BUTTON_HEIGHT - 16)
+
+            if rows:
+                button = API.Gumps.CreateSimpleButton(caption, width - 32 - CHOICE_SCROLLBAR,
+                                                      CHOICE_BUTTON_HEIGHT)
+                button.SetPos(0, index * step)
+                area.Add(button)
+            else:
+                button = API.Gumps.CreateSimpleButton(caption, CHOICE_BUTTON_WIDTH,
+                                                      CHOICE_BUTTON_HEIGHT)
+                button.SetPos(16 + index * (CHOICE_BUTTON_WIDTH + CHOICE_GAP),
+                              height - CHOICE_BUTTON_HEIGHT - 16)
+                gump.Add(button)
+
             API.Gumps.AddControlOnClick(button, self._presser(key, on_press))
-            gump.Add(button)
 
         API.Gumps.AddGump(gump)
 

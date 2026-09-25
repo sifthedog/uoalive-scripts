@@ -13,8 +13,7 @@ SRC = os.path.join(ROOT, "src")
 DIST = os.path.join(ROOT, "dist")
 
 ENTRIES = [
-    {"in": "src/armslore/index.py", "out": "arms-lore"},
-    {"in": "src/hiding/index.py", "out": "hiding"},
+    {"in": "src/skills/index.py", "out": "skills"},
     {"in": "src/lockpicking/index.py", "out": "lockpicking"},
     {"in": "src/buffs/index.py", "out": "buffs"},
     {"in": "src/magery/index.py", "out": "magery"},
