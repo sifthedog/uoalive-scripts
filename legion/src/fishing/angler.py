@@ -97,9 +97,12 @@ class Angler(object):
         if not self._cursor_opened():
             return self._refused_outcome()
 
-        # The four-argument overload: a static carries no serial, so the tile and its art are the
-        # only way to name it, and a self-target is refused for fishing on this shard
-        API.Target(tile["x"], tile["y"], tile["z"], tile["graphic"])
+        # Art names a static; a land tile named by its own art makes the shard look for a static
+        # that is not there and answer nothing. Open ocean, all a boat deck casts over, is land.
+        if tile.get("source") == "static":
+            API.Target(tile["x"], tile["y"], tile["z"], tile["graphic"])
+        else:
+            API.Target(tile["x"], tile["y"], tile["z"])
 
         name, caught = self._read(self._config["cast_timeout"], self._config["cast_poll"])
 

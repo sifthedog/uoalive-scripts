@@ -10,12 +10,15 @@ from bod.config import (ARTICLES, BATCH_IDLE, BOD_COMBINE_BUTTON, BOD_GUMP_TEXT,
                         DEED_GRAPHICS, DEED_NAME_WORDS, DEED_TEXT, DONE_SOUND, EXCEPTIONAL_TEXT,
                         GUMP_POLL, GUMP_TIMEOUT, HEARTBEAT_EVERY, ITEM_BUTTON_TYPE,
                         JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS, LARGE_COMBINE_BUTTON,
-                        LARGE_COMBINE_TEXT, LAST_TEN_LABEL, MAKE_NUMBER_BUTTON,
-                        MATERIAL_BUTTON_TYPE, MATERIAL_ROW_TYPE, MAX_CYCLES, MAX_MATERIAL_ROWS,
-                        MAX_NO_CURSOR, MAX_NO_TOOL, MAX_THROTTLED, MAX_UNKNOWN,
-                        MAX_UNREADABLE_REPORTS, MAX_UNWANTED, MOVE_DELAY, NOTES_PATH, NOTES_TAIL_SECONDS,
-                        OPEN_DELAY, OPL_ASKS, OPL_SETTLE, OPL_TIMEOUT, PICK_TIMEOUT, PROMPT_DELAY,
-                        REREAD_POLL, REREAD_SETTLE, SALVAGE_ENTRIES, SALVAGE_SETTLE, SAVE_DONE_TEXT,
+                        LARGE_COMBINE_TEXT, LAST_TEN_LABEL, MAKE_NUMBER_BUTTON, MANA_LOG_EVERY,
+                        MANA_POLL, MANA_WAIT_SLICE, MATERIAL_BUTTON_TYPE, MATERIAL_ROW_TYPE,
+                        MAX_CYCLES, MAX_DRY, MAX_MATERIAL_ROWS, MAX_NO_CURSOR, MAX_NO_TOOL,
+                        MAX_THROTTLED, MAX_UNKNOWN, MAX_UNREADABLE_REPORTS, MAX_UNWANTED, MEDITATE,
+                        MEDITATE_ATTEMPTS, MEDITATE_OUTCOME_TEXT, MEDITATE_START_TIMEOUT,
+                        MEDITATE_TIMEOUT, MEDITATE_TO_FULL, MEDITATION, MEDITATION_BUFF, MOVE_DELAY,
+                        NOTES_PATH, NOTES_TAIL_SECONDS, OPEN_DELAY, OPL_ASKS, OPL_SETTLE,
+                        OPL_TIMEOUT, PICK_TIMEOUT, PROMPT_DELAY, REGEN_TIMEOUT, REREAD_POLL,
+                        REREAD_SETTLE, SALVAGE_ENTRIES, SALVAGE_SETTLE, SAVE_DONE_TEXT,
                         SAVE_POLL, SAVE_WAIT, SAVING_TEXT, STALL_STOP, STALL_WARN, STEP_DELAY,
                         STOPPED, TARGET_TIMEOUT, THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX,
                         TOOL_BAG_NAMES, TRADES, UNREADABLE_TEXT_LIMIT, USES_TEXT)
@@ -26,6 +29,7 @@ from bod.items import ItemBook
 from bod.material import MaterialPicker
 from bod.smalls import find_small_deeds
 from uo.alert import Launcher
+from uo.buffbar import BuffBar
 from uo.craftmenu import CraftMenu
 from uo.crafttool import CraftTool
 from uo.entity import hex_of, player
@@ -34,6 +38,8 @@ from uo.heartbeat import Heartbeat
 from uo.log import make_log
 from uo.notes import note_log
 from uo.loop import StallWatch
+from uo.mana import ManaWatch
+from uo.meditate import Meditation
 from uo.pack import pack_contents
 from uo.save import SaveWatch
 from uo.skill import SkillReader, find_skill_name, reading
@@ -99,6 +105,27 @@ def combine_config(button):
 
 
 saves = SaveWatch(SAVING_TEXT, SAVE_DONE_TEXT, SAVE_WAIT, SAVE_POLL, log, heartbeat, stop_reason)
+bar = BuffBar(log)
+
+
+def meditating():
+    return bar.standing(MEDITATION_BUFF)
+
+
+mana = ManaWatch(MEDITATE_TO_FULL, MANA_POLL, MANA_LOG_EVERY, log, stop_reason, meditating)
+trance = Meditation(MEDITATION, MEDITATE_OUTCOME_TEXT, mana, meditating, log, saves,
+                    MEDITATE_ATTEMPTS, MEDITATE_TIMEOUT, MEDITATE_START_TIMEOUT, MANA_WAIT_SLICE,
+                    REGEN_TIMEOUT)
+
+
+def regain_mana(need):
+    arrived = trance.regain(need, MEDITATE)
+
+    # This path has just spent up to a minute reporting on its own cadence
+    heartbeat.reset()
+
+    return arrived
+
 
 log("target the bulk order deed to fill, small or large, ESC to stop")
 
@@ -223,6 +250,8 @@ FILL = {
     "backoff": THROTTLE_BACKOFF,
     "backoff_max": THROTTLE_BACKOFF_MAX,
     "step_delay": STEP_DELAY,
+    "mana": trade["mana"],
+    "max_dry": MAX_DRY,
 }
 
 WATCH = {
@@ -230,6 +259,7 @@ WATCH = {
     "stall": stall,
     "saves": saves,
     "stop_reason": stop_reason,
+    "regain_mana": regain_mana,
 }
 
 fills = []

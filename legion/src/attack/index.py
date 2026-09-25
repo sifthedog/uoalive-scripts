@@ -1,7 +1,7 @@
 import API
 
 from attack.config import OPL_TIMEOUT, OWNED_PROP_WORDS, RANGE
-from attack.foe import nearest_foe
+from attack.foe import label, nearest_foe
 from uo.entity import hex_of
 from uo.guards import dead, first_reason
 from uo.log import make_log
@@ -18,7 +18,7 @@ def attack():
     if reason is not None:
         return reason
 
-    foe = nearest_foe(RANGE, OWNED_PROP_WORDS, OPL_TIMEOUT)
+    foe, props = nearest_foe(RANGE, OWNED_PROP_WORDS, OPL_TIMEOUT)
 
     if foe is None:
         return "nothing hostile within %d tiles" % RANGE
@@ -26,7 +26,9 @@ def attack():
     API.SetWarMode(True)
     API.Attack(foe.Serial)
 
-    return "attacking '%s' %s %d tiles off" % (foe.Name or "?", hex_of(foe.Graphic), foe.Distance)
+    ending = "attacking '%s' %s %d tiles off" % (label(foe, props), hex_of(foe.Graphic), foe.Distance)
+
+    return ending if props else ending + " - tooltip never came"
 
 
 try:

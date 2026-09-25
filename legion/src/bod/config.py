@@ -1,4 +1,4 @@
-from uo.phrases import SAVE_DONE_TEXT, SAVING_TEXT, STOPPED, THROTTLED_TEXT
+from uo.phrases import SAVE_DONE_TEXT, SAVING_TEXT, STOPPED, THROTTLED_TEXT, UNSKILLED_TEXT
 from uo.timings import (HEARTBEAT_EVERY, SAVE_POLL, SAVE_WAIT, STALL_STOP, STALL_WARN, STEP_DELAY,
                         THROTTLE_BACKOFF, THROTTLE_BACKOFF_MAX)
 
@@ -1510,6 +1510,392 @@ TINKERING_ITEM_ALIASES = {
     "knife": ["knife (left)", "knife (right)"],
 }
 
+# Inscription deeds: the pen's menu, transcribed from src/inscription like tinkering. No material
+# page; a scroll spends a blank scroll, its reagents and mana, so this is the one trade that meditates
+INSCRIPTION_SKILL_NAMES = ["Inscription", "Inscribe"]
+INSCRIPTION_TOOL_GRAPHICS = set([0x0FBF, 0x0FC0])
+INSCRIPTION_TOOL_NAME_WORDS = ["pen"]
+INSCRIPTION_CRAFT_TITLE_TEXT = ["INSCRIPTION", "INSCRIBE"]
+
+INSCRIPTION_CATEGORY_NAMES = [
+    "first - second circle",
+    "third - fourth circle",
+    "fifth - sixth circle",
+    "seventh - eighth circle",
+    "spells of necromancy",
+    "other",
+    "spells of mysticism",
+]
+
+# (category button, row button) for every row, as craft-map.py read them off UOAlive's menu
+INSCRIPTION_RECIPES = {
+    # First - Second Circle (button 1)
+    "reactive armor": (1, 2),
+    "clumsy": (1, 22),
+    "create food": (1, 42),
+    "feeblemind": (1, 62),
+    "heal": (1, 82),
+    "magic arrow": (1, 102),
+    "night sight": (1, 122),
+    "weaken": (1, 142),
+    "agility": (1, 162),
+    "cunning": (1, 182),
+    "cure": (1, 202),
+    "harm": (1, 222),
+    "magic trap": (1, 242),
+    "magic untrap": (1, 262),
+    "protection": (1, 282),
+    "strength": (1, 302),
+    # Third - Fourth Circle (button 21)
+    "bless": (21, 2),
+    "fireball": (21, 22),
+    "magic lock": (21, 42),
+    "poison": (21, 62),
+    "telekinesis": (21, 82),
+    "teleport": (21, 102),
+    "unlock": (21, 122),
+    "wall of stone": (21, 142),
+    "arch cure": (21, 162),
+    "arch protection": (21, 182),
+    "curse": (21, 202),
+    "fire field": (21, 222),
+    "greater heal": (21, 242),
+    "lightning": (21, 262),
+    "mana drain": (21, 282),
+    "recall": (21, 302),
+    # Fifth - Sixth Circle (button 41)
+    "blade spirits": (41, 2),
+    "dispel field": (41, 22),
+    "incognito": (41, 42),
+    "magic reflection": (41, 62),
+    "mind blast": (41, 82),
+    "paralyze": (41, 102),
+    "poison field": (41, 122),
+    "summon creature": (41, 142),
+    "dispel": (41, 162),
+    "energy bolt": (41, 182),
+    "explosion": (41, 202),
+    "invisibility": (41, 222),
+    "mark": (41, 242),
+    "mass curse": (41, 262),
+    "paralyze field": (41, 282),
+    "reveal": (41, 302),
+    # Seventh - Eighth Circle (button 61)
+    "chain lightning": (61, 2),
+    "energy field": (61, 22),
+    "flamestrike": (61, 42),
+    "gate travel": (61, 62),
+    "mana vampire": (61, 82),
+    "mass dispel": (61, 102),
+    "meteor swarm": (61, 122),
+    "polymorph": (61, 142),
+    "earthquake": (61, 162),
+    "energy vortex": (61, 182),
+    "resurrection": (61, 202),
+    "summon air elemental": (61, 222),
+    "summon daemon": (61, 242),
+    "summon earth elemental": (61, 262),
+    "summon fire elemental": (61, 282),
+    "summon water elemental": (61, 302),
+    # Spells of Necromancy (button 81)
+    "animate dead": (81, 2),
+    "blood oath": (81, 22),
+    "corpse skin": (81, 42),
+    "curse weapon": (81, 62),
+    "evil omen": (81, 82),
+    "horrific beast": (81, 102),
+    "lich form": (81, 122),
+    "mind rot": (81, 142),
+    "pain spike": (81, 162),
+    "poison strike": (81, 182),
+    "strangle": (81, 202),
+    "summon familiar": (81, 222),
+    "vampiric embrace": (81, 242),
+    "vengeful spirit": (81, 262),
+    "wither": (81, 282),
+    "wraith form": (81, 302),
+    "exorcism": (81, 322),
+    # Other (button 101)
+    "enchanted switch": (101, 2),
+    "runed prism": (101, 22),
+    "runebook": (101, 42),
+    "bulk order book": (101, 62),
+    "spellbook": (101, 82),
+    "scrapper's compendium": (101, 102),
+    "spellbook engraving tool": (101, 122),
+    "mysticism spellbook": (101, 142),
+    "necromancer spellbook": (101, 162),
+    "exodus summoning rite": (101, 182),
+    "prophetic manuscript": (101, 202),
+    "blank scroll": (101, 222),
+    "scroll binder": (101, 242),
+    "book (100 pages)": (101, 262),
+    "book (200 pages)": (101, 282),
+    "runic atlas": (101, 302),
+    # Spells of Mysticism (button 121)
+    "nether bolt": (121, 2),
+    "healing stone": (121, 22),
+    "purge magic": (121, 42),
+    "enchant": (121, 62),
+    "sleep": (121, 82),
+    "eagle strike": (121, 102),
+    "animated weapon": (121, 122),
+    "stone form": (121, 142),
+    "spell trigger": (121, 162),
+    "mass sleep": (121, 182),
+    "cleansing winds": (121, 202),
+    "bombard": (121, 222),
+    "spell plague": (121, 242),
+    "hail storm": (121, 262),
+    "nether cyclone": (121, 282),
+    "rising colossus": (121, 302),
+}
+
+BLANK = "blank scrolls"
+PEARL = "black pearl"
+MOSS = "blood moss"
+GARLIC = "garlic"
+GINSENG = "ginseng"
+MANDRAKE = "mandrake root"
+NIGHTSHADE = "nightshade"
+SILK = "spider's silk"
+ASH = "sulfurous ash"
+BAT_WING = "bat wing"
+DAEMON_BLOOD = "daemon blood"
+GRAVE_DUST = "grave dust"
+NOX = "nox crystal"
+PIG_IRON = "pig iron"
+BONE = "bone"
+DRAGON_BLOOD = "dragon's blood"
+DAEMON_BONE = "daemon bone"
+DIRT = "fertile dirt"
+
+# Stock art, unverified on UOAlive; 0x0E34 is the blank scroll turned the other way
+INSCRIPTION_KINDS = dict(REAGENT_KINDS, **{
+    BLANK: set([0x0EF3, 0x0E34]),
+    BAT_WING: set([0x0F78]),
+    DAEMON_BLOOD: set([0x0F7D]),
+    NOX: set([0x0F8E]),
+    BONE: set([0x0F7E]),
+    DRAGON_BLOOD: set([0x4077]),
+    DAEMON_BONE: set([0x0F80]),
+    DIRT: set([0x0F81]),
+})
+
+# Every scroll row: (mana, reagents), stock ServUO DefInscription. The 'other' rows carry no cost
+# here, so the preflight notes them and the shard's own refusal is what ends a short run
+INSCRIPTION_SCROLLS = {
+    "reactive armor": (4, [GARLIC, SILK, ASH]),
+    "clumsy": (4, [MOSS, NIGHTSHADE]),
+    "create food": (4, [GARLIC, GINSENG, MANDRAKE]),
+    "feeblemind": (4, [GINSENG, NIGHTSHADE]),
+    "heal": (4, [GARLIC, GINSENG, SILK]),
+    "magic arrow": (4, [ASH]),
+    "night sight": (4, [SILK, ASH]),
+    "weaken": (4, [GARLIC, NIGHTSHADE]),
+    "agility": (6, [MOSS, MANDRAKE]),
+    "cunning": (6, [MANDRAKE, NIGHTSHADE]),
+    "cure": (6, [GARLIC, GINSENG]),
+    "harm": (6, [NIGHTSHADE, SILK]),
+    "magic trap": (6, [GARLIC, SILK, ASH]),
+    "magic untrap": (6, [MOSS, ASH]),
+    "protection": (6, [GARLIC, GINSENG, ASH]),
+    "strength": (6, [MANDRAKE, NIGHTSHADE]),
+    "bless": (9, [GARLIC, MANDRAKE]),
+    "fireball": (9, [PEARL]),
+    "magic lock": (9, [MOSS, GARLIC, ASH]),
+    "poison": (9, [NIGHTSHADE]),
+    "telekinesis": (9, [MOSS, MANDRAKE]),
+    "teleport": (9, [MOSS, MANDRAKE]),
+    "unlock": (9, [MOSS, ASH]),
+    "wall of stone": (9, [MOSS, GARLIC]),
+    "arch cure": (11, [GARLIC, GINSENG, MANDRAKE]),
+    "arch protection": (11, [GARLIC, GINSENG, MANDRAKE, ASH]),
+    "curse": (11, [GARLIC, NIGHTSHADE, ASH]),
+    "fire field": (11, [PEARL, SILK, ASH]),
+    "greater heal": (11, [GARLIC, GINSENG, MANDRAKE, SILK]),
+    "lightning": (11, [MANDRAKE, ASH]),
+    "mana drain": (11, [PEARL, MANDRAKE, SILK]),
+    "recall": (11, [PEARL, MOSS, MANDRAKE]),
+    "blade spirits": (14, [PEARL, MANDRAKE, NIGHTSHADE]),
+    "dispel field": (14, [PEARL, GARLIC, SILK, ASH]),
+    "incognito": (14, [MOSS, GARLIC, NIGHTSHADE]),
+    "magic reflection": (14, [GARLIC, MANDRAKE, SILK]),
+    "mind blast": (14, [PEARL, MANDRAKE, NIGHTSHADE, ASH]),
+    "paralyze": (14, [GARLIC, MANDRAKE, SILK]),
+    "poison field": (14, [PEARL, NIGHTSHADE, SILK]),
+    "summon creature": (14, [MOSS, MANDRAKE, SILK]),
+    "dispel": (20, [GARLIC, MANDRAKE, ASH]),
+    "energy bolt": (20, [PEARL, NIGHTSHADE]),
+    "explosion": (20, [MOSS, MANDRAKE, NIGHTSHADE]),
+    "invisibility": (20, [MOSS, NIGHTSHADE]),
+    "mark": (20, [PEARL, MOSS, MANDRAKE]),
+    "mass curse": (20, [GARLIC, MANDRAKE, NIGHTSHADE, ASH]),
+    "paralyze field": (20, [PEARL, GINSENG, SILK]),
+    "reveal": (20, [MOSS, ASH]),
+    "chain lightning": (40, [PEARL, MOSS, MANDRAKE, ASH]),
+    "energy field": (40, [PEARL, MANDRAKE, SILK, ASH]),
+    "flamestrike": (40, [SILK, ASH]),
+    "gate travel": (40, [PEARL, MANDRAKE, ASH]),
+    "mana vampire": (40, [PEARL, MOSS, MANDRAKE, SILK]),
+    "mass dispel": (40, [PEARL, GARLIC, MANDRAKE, ASH]),
+    "meteor swarm": (40, [MOSS, MANDRAKE, SILK, ASH]),
+    "polymorph": (40, [MOSS, MANDRAKE, SILK]),
+    "earthquake": (50, [MOSS, GINSENG, MANDRAKE, ASH]),
+    "energy vortex": (50, [PEARL, MOSS, MANDRAKE, NIGHTSHADE]),
+    "resurrection": (50, [MOSS, GARLIC, GINSENG]),
+    "summon air elemental": (50, [MOSS, MANDRAKE, SILK]),
+    "summon daemon": (50, [MOSS, MANDRAKE, SILK, ASH]),
+    "summon earth elemental": (50, [MOSS, MANDRAKE, SILK]),
+    "summon fire elemental": (50, [MOSS, MANDRAKE, SILK, ASH]),
+    "summon water elemental": (50, [MOSS, MANDRAKE, SILK]),
+    "animate dead": (23, [GRAVE_DUST, DAEMON_BLOOD]),
+    "blood oath": (13, [DAEMON_BLOOD]),
+    "corpse skin": (11, [BAT_WING, GRAVE_DUST]),
+    "curse weapon": (7, [PIG_IRON]),
+    "evil omen": (11, [BAT_WING, NOX]),
+    "horrific beast": (11, [BAT_WING, DAEMON_BLOOD]),
+    "lich form": (23, [NOX, DAEMON_BLOOD, GRAVE_DUST]),
+    "mind rot": (17, [BAT_WING, PIG_IRON, DAEMON_BLOOD]),
+    "pain spike": (5, [GRAVE_DUST, PIG_IRON]),
+    "poison strike": (17, [NOX]),
+    "strangle": (29, [DAEMON_BLOOD, NOX]),
+    "summon familiar": (17, [BAT_WING, GRAVE_DUST, DAEMON_BLOOD]),
+    "vampiric embrace": (23, [BAT_WING, NOX, PIG_IRON]),
+    "vengeful spirit": (41, [BAT_WING, GRAVE_DUST, PIG_IRON]),
+    "wither": (23, [NOX, GRAVE_DUST, PIG_IRON]),
+    "wraith form": (17, [NOX, PIG_IRON]),
+    "exorcism": (40, [NOX, GRAVE_DUST]),
+    "nether bolt": (4, [PEARL, ASH]),
+    "healing stone": (4, [BONE, GARLIC, GINSENG, SILK]),
+    "purge magic": (6, [DIRT, GARLIC, MANDRAKE, ASH]),
+    "enchant": (6, [SILK, MANDRAKE, ASH]),
+    "sleep": (9, [NIGHTSHADE, SILK, PEARL]),
+    "eagle strike": (9, [MOSS, BONE, SILK, MANDRAKE]),
+    "animated weapon": (11, [BONE, PEARL, DIRT, NIGHTSHADE]),
+    "stone form": (11, [MOSS, DIRT, GARLIC]),
+    "spell trigger": (14, [DRAGON_BLOOD, GARLIC, MANDRAKE, SILK]),
+    "mass sleep": (14, [GINSENG, NIGHTSHADE, SILK]),
+    "cleansing winds": (20, [DRAGON_BLOOD, GARLIC, GINSENG, MANDRAKE]),
+    "bombard": (20, [MOSS, DRAGON_BLOOD, GARLIC, ASH]),
+    "spell plague": (40, [DAEMON_BONE, DRAGON_BLOOD, NIGHTSHADE, ASH]),
+    "hail storm": (50, [DRAGON_BLOOD, MOSS, PEARL, MANDRAKE]),
+    "nether cyclone": (50, [MANDRAKE, NIGHTSHADE, ASH, MOSS]),
+    "rising colossus": (50, [DAEMON_BONE, DRAGON_BLOOD, DIRT, NIGHTSHADE]),
+}
+
+
+def _scroll(reagents):
+    cost = {BLANK: 1}
+
+    for kind in reagents:
+        cost[kind] = 1
+
+    return cost
+
+
+INSCRIPTION_COST = dict((name, _scroll(INSCRIPTION_SCROLLS[name][1])) for name in INSCRIPTION_SCROLLS)
+INSCRIPTION_MANA = dict((name, INSCRIPTION_SCROLLS[name][0]) for name in INSCRIPTION_SCROLLS)
+
+# Ordered: 'failed' before 'made' because "You failed to create the item" contains "create the item".
+# noMana is said in the gump's NOTICES panel, which the journal may never carry
+INSCRIPTION_OUTCOME_TEXT = [
+    (
+        "failed",
+        [
+            "You fail to inscribe the scroll",
+            "You failed to create the item",
+            "You fail to create",
+            "You have failed to create",
+            "lost some of the raw material",
+        ],
+    ),
+    (
+        "made",
+        [
+            "You inscribe the spell and put the scroll",
+            "You create the item",
+            "You create an exceptional",
+            "You put the",
+        ],
+    ),
+    (
+        "noMana",
+        [
+            "You don't have enough mana to inscribe",
+            "You do not have enough mana",
+            "Insufficient mana",
+        ],
+    ),
+    (
+        "noMaterial",
+        [
+            "You don't have enough blank scrolls",
+            "You do not have enough blank scrolls",
+            "You don't have the components needed",
+            "You do not have the components needed",
+            "You don't have the resources",
+            "You do not have the resources",
+            "You do not have enough reagents",
+        ],
+    ),
+    (
+        "skillTooLow",
+        [
+            "You have no idea how to make that",
+            "You do not have enough skill",
+            "You are not skilled enough",
+            "lack the skill",
+        ],
+    ),
+    ("toolWorn", ["You have worn out your tool", "worn out your tool"]),
+    ("packFull", ["can't hold anything else", "cannot hold anything else"]),
+    ("saving", SAVING_TEXT),
+    ("throttled", THROTTLED_TEXT),
+]
+
+MEDITATION = "Meditation"
+
+# The BuffIconType the client publishes while a trance is running
+MEDITATION_BUFF = "ActiveMeditation"
+
+# Off waits for natural regeneration instead: slower, always available
+MEDITATE = True
+
+# An eighth circle scroll charges 50, so a pool topped right up pays for several
+MEDITATE_TO_FULL = True
+
+MEDITATE_TIMEOUT = 20.0
+MEDITATE_ATTEMPTS = 4
+MEDITATE_START_TIMEOUT = 2.0
+MANA_WAIT_SLICE = 0.2
+MANA_POLL = 0.5
+MANA_LOG_EVERY = 10.0
+REGEN_TIMEOUT = 120.0
+
+# Waits in a row that brought the pool no higher than the row needs before the run ends
+MAX_DRY = 5
+
+# trance is the only wording here that is not a guess: it is the client's own documented example
+MEDITATE_OUTCOME_TEXT = [
+    ("trance", ["You enter a meditative trance."]),
+    ("full", ["You are at peace"]),
+    # Before unfocused, whose trailing full stop is deliberate: without it 'You cannot focus your
+    # concentration' would also match the equipped-weapon sentence
+    (
+        "blocked",
+        [
+            "You cannot focus your concentration with an equipped weapon",
+            "You cannot focus your concentration with an equipped shield",
+            "You are preoccupied with thoughts of battle",
+        ],
+    ),
+    ("unfocused", ["You cannot focus your concentration.", "You lose your concentration"]),
+    ("unskilled", UNSKILLED_TEXT),
+    ("saving", SAVING_TEXT),
+    ("throttled", ["You must wait a few moments to use another skill"] + THROTTLED_TEXT),
+]
+
 # The first trade whose recipes make every item on the deed fills it. A number cost is ingots of
 # the deed's material; a dict cost is stock per kind. plain is what a deed with no material line
 # wants: None means there is no material page to press
@@ -1538,6 +1924,7 @@ TRADES = [
         "outcome_text": OUTCOME_TEXT,
         "salvage": SALVAGE_AT_END,
         "plain": PLAIN_MATERIAL,
+        "mana": None,
     }),
     # Every potion cost is a dict, so the stock keys are empty rather than unused: reagents are
     # counted by art through kinds, and an ingot in the pack is not this run's stock
@@ -1566,6 +1953,7 @@ TRADES = [
         "outcome_text": ALCHEMY_OUTCOME_TEXT,
         "salvage": False,
         "plain": None,
+        "mana": None,
     }),
     # Boards are one pool told apart by the wood they are, so the cost is a number and kinds is
     # empty - the same shape as the smith's ingots
@@ -1593,6 +1981,7 @@ TRADES = [
         "outcome_text": CARPENTRY_OUTCOME_TEXT,
         "salvage": False,
         "plain": PLAIN_WOOD,
+        "mana": None,
     }),
     # A tinker spends the smith's ingot pool and needs no forge, so the stock tables above are
     # reused whole and the outcome set carries no noAnvil. Nothing salvages a pewter mug
@@ -1620,5 +2009,32 @@ TRADES = [
         "outcome_text": TINKERING_OUTCOME_TEXT,
         "salvage": False,
         "plain": PLAIN_MATERIAL,
+        "mana": None,
+    }),
+    ("inscription", {
+        "skill_names": INSCRIPTION_SKILL_NAMES,
+        "tool_noun": "scribe's pen",
+        "tool_graphics": INSCRIPTION_TOOL_GRAPHICS,
+        "tool_words": INSCRIPTION_TOOL_NAME_WORDS,
+        "tool_preference": None,
+        "title": INSCRIPTION_CRAFT_TITLE_TEXT[0],
+        "title_text": INSCRIPTION_CRAFT_TITLE_TEXT,
+        "category_names": INSCRIPTION_CATEGORY_NAMES,
+        "recipes": INSCRIPTION_RECIPES,
+        "item_aliases": {},
+        "costs": INSCRIPTION_COST,
+        "kinds": INSCRIPTION_KINDS,
+        "stock_graphics": set(),
+        "stock_words": [],
+        "stock_noun": None,
+        "materials": [],
+        "hues": {},
+        "material_aliases": {},
+        "material_order": [],
+        "material_rows_after": "",
+        "outcome_text": INSCRIPTION_OUTCOME_TEXT,
+        "salvage": False,
+        "plain": None,
+        "mana": INSCRIPTION_MANA,
     }),
 ]

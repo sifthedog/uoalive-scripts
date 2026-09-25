@@ -50,13 +50,25 @@ TILES_AHEAD_POLL = 0.5
 # How long a turn (API.Turn) needs before the client's own Direction reflects it
 TURN_DELAY = 0.5
 
-# Matched against the caught item's own name text (the part after the colon in "You pull out an
-# item: ..."), not its graphic - there is no confirmed graphic ID for any of these on this shard
-JUNK_TEXT = ["fish", "boots", "sandals", "shoes", "thigh boots"]
+# (graphic, hue), exact: 0x4303 is a kokanee salmon at 0 and a yellow perch at 2214. Swept off the
+# pack before every cast, whatever the journal called the catch
+JUNK_ITEMS = set([
+    (0x4306, 1960),  # bluegill sunfish
+    (0x09CD, 0),     # smallmouth bass
+    (0x09CC, 0),     # brook trout
+    (0x44C4, 0),     # pike
+    (0x44C6, 2109),  # green catfish
+    (0x573A, 0),  # delicate scale
+    (0x4307, 2672), (0x4307, 1922), (0x4307, 2607),  # redbelly beam, pumpkinseed sunfish, rainbow trout
+    (0x4303, 0), (0x4303, 2214),                         # kokanee salmon, #yellow perch
+    (0x0DD6, 86), (0x0DD6, 51),                          # wondrous fish, prized fish
+    (0x09CE, 0), (0x09CF, 0),                            # plain fish
+    (0x170B, 0), (0x170D, 0), (0x170F, 0), (0x1711, 0),  # boots, sandals, shoes, thigh boots
+])
 
 # Asked on the same start-up gump as the tiles-ahead question. Discard preserves the run's old
 # always-drop behavior as the default
-CATCH_MODE_TEXT = "What should happen to junk catches (fish, boots, sandals, shoes, thigh boots)?"
+CATCH_MODE_TEXT = "What should happen to junk catches?"
 CATCH_MODE_OPTIONS = [("container", "Container"), ("keep", "Keep"), ("discard", "Discard")]
 CATCH_MODE_DEFAULT = "discard"
 CATCH_MODE_HUE = 996

@@ -23,6 +23,8 @@ CONFIG = {
     "backoff": 0.1,
     "backoff_max": 0.2,
     "step_delay": 0.0,
+    "mana": None,
+    "max_dry": 2,
 }
 
 
@@ -131,11 +133,57 @@ class SmallFillTest(unittest.TestCase):
         self.combiner = FakeCombiner(self.items)
         self.watch = FakeWatch()
 
-    def fill(self, deed, crafter):
-        return SmallFill(deed, self.items, crafter, FakePicker(), self.combiner, CONFIG,
+    def fill(self, deed, crafter, config=CONFIG, regain=None):
+        self.regains = []
+
+        def regain_mana(need):
+            self.regains.append(need)
+
+            return True if regain is None else regain(need)
+
+        return SmallFill(deed, self.items, crafter, FakePicker(), self.combiner, config,
                          self.said.append,
                          {"heartbeat": None, "stall": self.watch, "saves": self.watch,
-                          "stop_reason": lambda: None})
+                          "stop_reason": lambda: None, "regain_mana": regain_mana})
+
+    def mana_config(self):
+        return dict(CONFIG, trade="inscription", mana={"axe": 11})
+
+    def test_a_trade_that_spends_mana_tops_up_before_every_batch(self):
+        crafter = FakeCrafter([("noMana", 4, 0), ("made", 6, 0)])
+        fill = self.fill(FakeDeed(0, 10), crafter, self.mana_config())
+        fill._deed.settle_after_combine = lambda count: 10
+
+        def batch(item, material, amount):
+            crafter.calls.append(("batch", amount))
+            outcome = crafter.outcomes.pop(0)
+            self.items.waiting = [200] if outcome[0] == "made" else []
+
+            return outcome
+
+        crafter.craft_batch = batch
+
+        self.assertIsNone(fill.run())
+        self.assertEqual(self.regains, [11, 11])
+        self.assertEqual(crafter.calls, [("batch", 10), ("batch", 10)])
+
+    def test_a_pool_that_never_fills_stops_after_max_dry(self):
+        crafter = FakeCrafter([])
+        fill = self.fill(FakeDeed(0, 10), crafter, self.mana_config(), lambda need: False)
+
+        stop = fill.run()
+
+        self.assertIn("mana is not coming back", stop)
+        self.assertIn("one axe takes 11", stop)
+        self.assertEqual(len(self.regains), 2)
+        self.assertEqual(crafter.calls, [])
+
+    def test_a_trade_without_mana_never_meditates(self):
+        fill = self.fill(FakeDeed(0, 10), FakeCrafter([("packFull", 0, 0)]))
+
+        fill.run()
+
+        self.assertEqual(self.regains, [])
 
     def test_a_full_deed_does_nothing(self):
         fill = self.fill(FakeDeed(10, 10), FakeCrafter([]))

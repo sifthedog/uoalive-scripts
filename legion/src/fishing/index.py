@@ -10,7 +10,7 @@ from fishing.config import (AMBUSH_ALARM, AMBUSH_HOLD, AMBUSH_HOLD_BUTTON, AMBUS
                             CATCH_SETTLE, CAUGHT_TEXT, CURSOR_POLL, CURSOR_TIMEOUT, DATA_PATH,
                             DISMOUNT_ATTEMPTS, DISMOUNT_POLL, DISMOUNT_TIMEOUT, DROP_OFFSETS,
                             GAIN_POLL, GAIN_SETTLE, GUARD_PHRASE, HAND_LAYERS, HEARTBEAT_EVERY,
-                            JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS, JUNK_TEXT, LAND_TILE_GRAPHIC,
+                            JOURNAL_TAIL_LINES, JOURNAL_TAIL_SECONDS, JUNK_ITEMS, LAND_TILE_GRAPHIC,
                             LOG_EVERY, MAX_CYCLES, MAX_THROTTLED, MAX_UNKNOWN,
                             MAX_UNREADABLE_REPORTS, MOVE_DELAY, NO_CURSOR_READ, OUTCOME_TEXT,
                             PICK_TIMEOUT, POLE_GRAPHICS, POLE_NAME_WORDS, PROMPT_TEXT,
@@ -32,13 +32,12 @@ from uo.journal import journal_tail
 from uo.log import make_log
 from uo.loop import backoff_for
 from uo.mount import dismount
-from uo.pack import amount_of, counts_by_graphic, diff_counts, hue_of, pack_contents
+from uo.pack import amount_of, counts_by_graphic, diff_counts, items_of, pack_contents
 from uo.record import attempt_log
 from uo.retry import settled
 from uo.save import SaveWatch
 from uo.skill import SkillReader, find_skill_name, reading
 from uo.target import request_one
-from uo.text import any_in
 from uo.threat import ThreatWatch
 from uo.vitals import position_and_weight
 
@@ -130,25 +129,17 @@ def record_cast(recorder, skill, start, outcome, caught, before):
     recorder.close(skill.last())
 
 
-def gained_items(before):
-    settled(CATCH_SETTLE, CATCH_POLL, lambda: pack_total(pack_counts()) > pack_total(before))
-    gained, _lost = diff_counts(before, pack_counts())
-
-    return [item for graphic, hue in gained for item in pack_contents()
-            if item.Graphic == graphic and hue_of(item) == hue]
-
-
 # x/y are an offset from your own position (confirmed off TazUO's own LegionAPI.cs), so (0, 0)
 # already drops at your feet - one of the eight adjacent tiles is used instead so catches spread out
 # rather than stack underfoot. Picked off the clock since the sandbox has no random module
-def drop_caught(before):
-    for item in gained_items(before):
+def drop_junk(items):
+    for item in items:
         x, y = DROP_OFFSETS[int(now() * 1000) % len(DROP_OFFSETS)]
         API.MoveItemOffset(item.Serial, amount_of(item), x, y, 0)
 
 
-def move_caught(container, before):
-    for item in gained_items(before):
+def move_junk(container, items):
+    for item in items:
         API.MoveItem(item.Serial, container, amount_of(item))
         API.Pause(MOVE_DELAY)
 
@@ -246,20 +237,24 @@ try:
         log("casting at %d,%d,%d (graphic %s, %s), standing at %d,%d, facing %s"
             % (tile["x"], tile["y"], tile["z"], hex_of(tile["graphic"]), tile["source"],
                API.Player.X, API.Player.Y, API.Player.Direction))
+        # Swept off the pack rather than read off the catch line: the shard names species, and a
+        # fish that lands after the read timed out is still here next cycle
+        junk = items_of(JUNK_ITEMS) if catch_mode != "keep" else []
+
+        if junk:
+            log("%d junk in the pack" % len(junk))
+
+            if catch_mode == "discard":
+                drop_junk(junk)
+            else:
+                move_junk(container, junk)
+
         value = skill.read()
         before = pack_counts()
         outcome, caught = angler.cast_once(pole, tile)
 
-        # Recorded before the item moves - drop_caught/move_caught's own diff would otherwise see
-        # nothing gained, the item having already left the pack they are both diffing against
         if outcome in ("caught", "failed") and recorder.recording():
             record_cast(recorder, skill, value, outcome, caught, before)
-
-        if outcome == "caught" and any_in(caught, JUNK_TEXT):
-            if catch_mode == "discard":
-                drop_caught(before)
-            elif catch_mode == "container":
-                move_caught(container, before)
 
         if outcome == "caught":
             tally += 1

@@ -28,6 +28,8 @@ CONFIG = {
 
 POLE = 0x40000123
 WATER = tile(101, 98, -5, 0x00A8)
+WATER["source"] = "land"
+WAVE = dict(WATER, graphic=0x1797, source="static")
 
 
 class CaughtNameTest(unittest.TestCase):
@@ -63,13 +65,20 @@ class CastOnceTest(unittest.TestCase):
     def cast(self):
         return self.angler.cast_once(POLE, WATER)
 
-    def test_the_pole_is_used_and_the_water_tile_is_named_with_its_art(self):
+    def test_the_pole_is_used_and_a_land_water_tile_is_named_without_its_art(self):
         self.on_use(["You fish a while, but fail to catch anything."])
 
         self.cast()
 
         self.assertEqual(self.api.used, [POLE])
-        self.assertEqual(self.api.targeted, [(101, 98, -5, 0x00A8)])
+        self.assertEqual(self.api.targeted, [(101, 98, -5)])
+
+    def test_a_water_static_is_named_with_its_art(self):
+        self.on_use(["You fish a while, but fail to catch anything."])
+
+        self.angler.cast_once(POLE, WAVE)
+
+        self.assertEqual(self.api.targeted, [(101, 98, -5, 0x1797)])
 
     def test_a_catch_carries_the_name_of_what_came_out(self):
         self.on_use(["You pull out an item: a fish"])

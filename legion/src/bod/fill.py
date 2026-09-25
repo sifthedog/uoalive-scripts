@@ -21,6 +21,7 @@ class SmallFill(object):
         self._stall = watch["stall"]
         self._saves = watch["saves"]
         self._stop_reason = watch["stop_reason"]
+        self._regain_mana = watch["regain_mana"]
 
         self.done = self._request["done"]
         self.combined = 0
@@ -31,6 +32,7 @@ class SmallFill(object):
         self._no_tool = 0
         self._no_cursor = 0
         self._unwanted = 0
+        self._dry = 0
         self._made_name = None
         self._cycle = 0
         self._said_throttle = False
@@ -123,6 +125,11 @@ class SmallFill(object):
         item = self._request["item"]
         material = self._request["material"]
 
+        mana = self._config["mana"]
+
+        if mana is not None and not self._regain_mana(mana.get(item, 0)):
+            return "noMana"
+
         batch = self.owed()
         before = self._items.serials()
         outcome, made, failed = self._crafter.craft_batch(item, material, batch)
@@ -133,6 +140,7 @@ class SmallFill(object):
             self._judge_batch(before)
 
         if made + failed > 0:
+            self._dry = 0
             self._log("batch of %d: %d made, %d failed%s"
                       % (batch, made, failed, "" if outcome == "made" else " (%s)" % outcome))
             self._stall.progressed()
@@ -164,6 +172,16 @@ class SmallFill(object):
                     % (stock_report(config["stock"]), self.owed()))
         elif outcome == "keg":
             return "a potion keg in the pack is swallowing the crafts - take it out and run again"
+        elif outcome == "noMana":
+            self._dry += 1
+
+            if self._dry >= config["max_dry"]:
+                return ("mana is not coming back - %d/%d, and one %s takes %d"
+                        % (API.Player.Mana, API.Player.ManaMax, item, config["mana"].get(item, 0)))
+
+            self._stall.progressed()
+            self._log("short of mana (%d/%d), meditating before the next batch"
+                      % (self._dry, config["max_dry"]))
         elif outcome == "toolWorn":
             self._stall.progressed()
             self._log("the tool wore out, looking for another")

@@ -1,7 +1,8 @@
 import unittest
 
 from test_support.uo import install, item
-from uo.pack import amount_of, counts_by_graphic, diff_counts, hue_of, pack_contents, pack_top_level
+from uo.pack import (amount_of, counts_by_graphic, diff_counts, hue_of, items_of, pack_contents,
+                     pack_top_level)
 
 
 class PackReadsTest(unittest.TestCase):
@@ -70,3 +71,13 @@ class DiffCountsTest(unittest.TestCase):
         gained, lost = diff_counts({("ore", 0): 10}, {("ore", 0): 10})
 
         self.assertEqual((gained, lost), ({}, {}))
+
+
+class ItemsOfTest(unittest.TestCase):
+    def test_picks_by_graphic_and_hue_together(self):
+        api = install()
+        api.hold(item(serial=1, graphic=0x4303, hue=0), item(serial=2, graphic=0x4303, hue=2214),
+                 item(serial=3, graphic=0x4303, hue=5))
+
+        self.assertEqual([found.Serial for found in items_of(set([(0x4303, 0), (0x4303, 2214)]))],
+                         [1, 2])

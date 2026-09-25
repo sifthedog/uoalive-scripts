@@ -714,6 +714,26 @@ def matched_bucket(buckets):
     return None
 
 
+def read_outcome(buckets, budget, poll, between=None):
+    waited = 0.0
+
+    while not API.StopRequested:
+        hit = matched_bucket(buckets)
+
+        if hit is not None:
+            return hit
+
+        if waited >= budget:
+            return None
+
+        # Between the slices rather than around the wait: a mobile walks while its attempt resolves
+        if between is not None:
+            between()
+
+        API.Pause(poll)
+        waited += poll
+
+
 # src/uo/clock.py
 def now():
     return time.time()
@@ -998,6 +1018,12 @@ THROTTLED_TEXT = [
     "You must wait to perform another action",
     "You must wait a moment",
     "You must wait",
+]
+
+UNSKILLED_TEXT = [
+    "You are not skilled enough",
+    "You lack the required skill",
+    "You do not have enough skill",
 ]
 
 STOPPED = "stopped from the script manager"
@@ -2527,6 +2553,392 @@ TINKERING_ITEM_ALIASES = {
     "knife": ["knife (left)", "knife (right)"],
 }
 
+# Inscription deeds: the pen's menu, transcribed from src/inscription like tinkering. No material
+# page; a scroll spends a blank scroll, its reagents and mana, so this is the one trade that meditates
+INSCRIPTION_SKILL_NAMES = ["Inscription", "Inscribe"]
+INSCRIPTION_TOOL_GRAPHICS = set([0x0FBF, 0x0FC0])
+INSCRIPTION_TOOL_NAME_WORDS = ["pen"]
+INSCRIPTION_CRAFT_TITLE_TEXT = ["INSCRIPTION", "INSCRIBE"]
+
+INSCRIPTION_CATEGORY_NAMES = [
+    "first - second circle",
+    "third - fourth circle",
+    "fifth - sixth circle",
+    "seventh - eighth circle",
+    "spells of necromancy",
+    "other",
+    "spells of mysticism",
+]
+
+# (category button, row button) for every row, as craft-map.py read them off UOAlive's menu
+INSCRIPTION_RECIPES = {
+    # First - Second Circle (button 1)
+    "reactive armor": (1, 2),
+    "clumsy": (1, 22),
+    "create food": (1, 42),
+    "feeblemind": (1, 62),
+    "heal": (1, 82),
+    "magic arrow": (1, 102),
+    "night sight": (1, 122),
+    "weaken": (1, 142),
+    "agility": (1, 162),
+    "cunning": (1, 182),
+    "cure": (1, 202),
+    "harm": (1, 222),
+    "magic trap": (1, 242),
+    "magic untrap": (1, 262),
+    "protection": (1, 282),
+    "strength": (1, 302),
+    # Third - Fourth Circle (button 21)
+    "bless": (21, 2),
+    "fireball": (21, 22),
+    "magic lock": (21, 42),
+    "poison": (21, 62),
+    "telekinesis": (21, 82),
+    "teleport": (21, 102),
+    "unlock": (21, 122),
+    "wall of stone": (21, 142),
+    "arch cure": (21, 162),
+    "arch protection": (21, 182),
+    "curse": (21, 202),
+    "fire field": (21, 222),
+    "greater heal": (21, 242),
+    "lightning": (21, 262),
+    "mana drain": (21, 282),
+    "recall": (21, 302),
+    # Fifth - Sixth Circle (button 41)
+    "blade spirits": (41, 2),
+    "dispel field": (41, 22),
+    "incognito": (41, 42),
+    "magic reflection": (41, 62),
+    "mind blast": (41, 82),
+    "paralyze": (41, 102),
+    "poison field": (41, 122),
+    "summon creature": (41, 142),
+    "dispel": (41, 162),
+    "energy bolt": (41, 182),
+    "explosion": (41, 202),
+    "invisibility": (41, 222),
+    "mark": (41, 242),
+    "mass curse": (41, 262),
+    "paralyze field": (41, 282),
+    "reveal": (41, 302),
+    # Seventh - Eighth Circle (button 61)
+    "chain lightning": (61, 2),
+    "energy field": (61, 22),
+    "flamestrike": (61, 42),
+    "gate travel": (61, 62),
+    "mana vampire": (61, 82),
+    "mass dispel": (61, 102),
+    "meteor swarm": (61, 122),
+    "polymorph": (61, 142),
+    "earthquake": (61, 162),
+    "energy vortex": (61, 182),
+    "resurrection": (61, 202),
+    "summon air elemental": (61, 222),
+    "summon daemon": (61, 242),
+    "summon earth elemental": (61, 262),
+    "summon fire elemental": (61, 282),
+    "summon water elemental": (61, 302),
+    # Spells of Necromancy (button 81)
+    "animate dead": (81, 2),
+    "blood oath": (81, 22),
+    "corpse skin": (81, 42),
+    "curse weapon": (81, 62),
+    "evil omen": (81, 82),
+    "horrific beast": (81, 102),
+    "lich form": (81, 122),
+    "mind rot": (81, 142),
+    "pain spike": (81, 162),
+    "poison strike": (81, 182),
+    "strangle": (81, 202),
+    "summon familiar": (81, 222),
+    "vampiric embrace": (81, 242),
+    "vengeful spirit": (81, 262),
+    "wither": (81, 282),
+    "wraith form": (81, 302),
+    "exorcism": (81, 322),
+    # Other (button 101)
+    "enchanted switch": (101, 2),
+    "runed prism": (101, 22),
+    "runebook": (101, 42),
+    "bulk order book": (101, 62),
+    "spellbook": (101, 82),
+    "scrapper's compendium": (101, 102),
+    "spellbook engraving tool": (101, 122),
+    "mysticism spellbook": (101, 142),
+    "necromancer spellbook": (101, 162),
+    "exodus summoning rite": (101, 182),
+    "prophetic manuscript": (101, 202),
+    "blank scroll": (101, 222),
+    "scroll binder": (101, 242),
+    "book (100 pages)": (101, 262),
+    "book (200 pages)": (101, 282),
+    "runic atlas": (101, 302),
+    # Spells of Mysticism (button 121)
+    "nether bolt": (121, 2),
+    "healing stone": (121, 22),
+    "purge magic": (121, 42),
+    "enchant": (121, 62),
+    "sleep": (121, 82),
+    "eagle strike": (121, 102),
+    "animated weapon": (121, 122),
+    "stone form": (121, 142),
+    "spell trigger": (121, 162),
+    "mass sleep": (121, 182),
+    "cleansing winds": (121, 202),
+    "bombard": (121, 222),
+    "spell plague": (121, 242),
+    "hail storm": (121, 262),
+    "nether cyclone": (121, 282),
+    "rising colossus": (121, 302),
+}
+
+BLANK = "blank scrolls"
+PEARL = "black pearl"
+MOSS = "blood moss"
+GARLIC = "garlic"
+GINSENG = "ginseng"
+MANDRAKE = "mandrake root"
+NIGHTSHADE = "nightshade"
+SILK = "spider's silk"
+ASH = "sulfurous ash"
+BAT_WING = "bat wing"
+DAEMON_BLOOD = "daemon blood"
+GRAVE_DUST = "grave dust"
+NOX = "nox crystal"
+PIG_IRON = "pig iron"
+BONE = "bone"
+DRAGON_BLOOD = "dragon's blood"
+DAEMON_BONE = "daemon bone"
+DIRT = "fertile dirt"
+
+# Stock art, unverified on UOAlive; 0x0E34 is the blank scroll turned the other way
+INSCRIPTION_KINDS = dict(REAGENT_KINDS, **{
+    BLANK: set([0x0EF3, 0x0E34]),
+    BAT_WING: set([0x0F78]),
+    DAEMON_BLOOD: set([0x0F7D]),
+    NOX: set([0x0F8E]),
+    BONE: set([0x0F7E]),
+    DRAGON_BLOOD: set([0x4077]),
+    DAEMON_BONE: set([0x0F80]),
+    DIRT: set([0x0F81]),
+})
+
+# Every scroll row: (mana, reagents), stock ServUO DefInscription. The 'other' rows carry no cost
+# here, so the preflight notes them and the shard's own refusal is what ends a short run
+INSCRIPTION_SCROLLS = {
+    "reactive armor": (4, [GARLIC, SILK, ASH]),
+    "clumsy": (4, [MOSS, NIGHTSHADE]),
+    "create food": (4, [GARLIC, GINSENG, MANDRAKE]),
+    "feeblemind": (4, [GINSENG, NIGHTSHADE]),
+    "heal": (4, [GARLIC, GINSENG, SILK]),
+    "magic arrow": (4, [ASH]),
+    "night sight": (4, [SILK, ASH]),
+    "weaken": (4, [GARLIC, NIGHTSHADE]),
+    "agility": (6, [MOSS, MANDRAKE]),
+    "cunning": (6, [MANDRAKE, NIGHTSHADE]),
+    "cure": (6, [GARLIC, GINSENG]),
+    "harm": (6, [NIGHTSHADE, SILK]),
+    "magic trap": (6, [GARLIC, SILK, ASH]),
+    "magic untrap": (6, [MOSS, ASH]),
+    "protection": (6, [GARLIC, GINSENG, ASH]),
+    "strength": (6, [MANDRAKE, NIGHTSHADE]),
+    "bless": (9, [GARLIC, MANDRAKE]),
+    "fireball": (9, [PEARL]),
+    "magic lock": (9, [MOSS, GARLIC, ASH]),
+    "poison": (9, [NIGHTSHADE]),
+    "telekinesis": (9, [MOSS, MANDRAKE]),
+    "teleport": (9, [MOSS, MANDRAKE]),
+    "unlock": (9, [MOSS, ASH]),
+    "wall of stone": (9, [MOSS, GARLIC]),
+    "arch cure": (11, [GARLIC, GINSENG, MANDRAKE]),
+    "arch protection": (11, [GARLIC, GINSENG, MANDRAKE, ASH]),
+    "curse": (11, [GARLIC, NIGHTSHADE, ASH]),
+    "fire field": (11, [PEARL, SILK, ASH]),
+    "greater heal": (11, [GARLIC, GINSENG, MANDRAKE, SILK]),
+    "lightning": (11, [MANDRAKE, ASH]),
+    "mana drain": (11, [PEARL, MANDRAKE, SILK]),
+    "recall": (11, [PEARL, MOSS, MANDRAKE]),
+    "blade spirits": (14, [PEARL, MANDRAKE, NIGHTSHADE]),
+    "dispel field": (14, [PEARL, GARLIC, SILK, ASH]),
+    "incognito": (14, [MOSS, GARLIC, NIGHTSHADE]),
+    "magic reflection": (14, [GARLIC, MANDRAKE, SILK]),
+    "mind blast": (14, [PEARL, MANDRAKE, NIGHTSHADE, ASH]),
+    "paralyze": (14, [GARLIC, MANDRAKE, SILK]),
+    "poison field": (14, [PEARL, NIGHTSHADE, SILK]),
+    "summon creature": (14, [MOSS, MANDRAKE, SILK]),
+    "dispel": (20, [GARLIC, MANDRAKE, ASH]),
+    "energy bolt": (20, [PEARL, NIGHTSHADE]),
+    "explosion": (20, [MOSS, MANDRAKE, NIGHTSHADE]),
+    "invisibility": (20, [MOSS, NIGHTSHADE]),
+    "mark": (20, [PEARL, MOSS, MANDRAKE]),
+    "mass curse": (20, [GARLIC, MANDRAKE, NIGHTSHADE, ASH]),
+    "paralyze field": (20, [PEARL, GINSENG, SILK]),
+    "reveal": (20, [MOSS, ASH]),
+    "chain lightning": (40, [PEARL, MOSS, MANDRAKE, ASH]),
+    "energy field": (40, [PEARL, MANDRAKE, SILK, ASH]),
+    "flamestrike": (40, [SILK, ASH]),
+    "gate travel": (40, [PEARL, MANDRAKE, ASH]),
+    "mana vampire": (40, [PEARL, MOSS, MANDRAKE, SILK]),
+    "mass dispel": (40, [PEARL, GARLIC, MANDRAKE, ASH]),
+    "meteor swarm": (40, [MOSS, MANDRAKE, SILK, ASH]),
+    "polymorph": (40, [MOSS, MANDRAKE, SILK]),
+    "earthquake": (50, [MOSS, GINSENG, MANDRAKE, ASH]),
+    "energy vortex": (50, [PEARL, MOSS, MANDRAKE, NIGHTSHADE]),
+    "resurrection": (50, [MOSS, GARLIC, GINSENG]),
+    "summon air elemental": (50, [MOSS, MANDRAKE, SILK]),
+    "summon daemon": (50, [MOSS, MANDRAKE, SILK, ASH]),
+    "summon earth elemental": (50, [MOSS, MANDRAKE, SILK]),
+    "summon fire elemental": (50, [MOSS, MANDRAKE, SILK, ASH]),
+    "summon water elemental": (50, [MOSS, MANDRAKE, SILK]),
+    "animate dead": (23, [GRAVE_DUST, DAEMON_BLOOD]),
+    "blood oath": (13, [DAEMON_BLOOD]),
+    "corpse skin": (11, [BAT_WING, GRAVE_DUST]),
+    "curse weapon": (7, [PIG_IRON]),
+    "evil omen": (11, [BAT_WING, NOX]),
+    "horrific beast": (11, [BAT_WING, DAEMON_BLOOD]),
+    "lich form": (23, [NOX, DAEMON_BLOOD, GRAVE_DUST]),
+    "mind rot": (17, [BAT_WING, PIG_IRON, DAEMON_BLOOD]),
+    "pain spike": (5, [GRAVE_DUST, PIG_IRON]),
+    "poison strike": (17, [NOX]),
+    "strangle": (29, [DAEMON_BLOOD, NOX]),
+    "summon familiar": (17, [BAT_WING, GRAVE_DUST, DAEMON_BLOOD]),
+    "vampiric embrace": (23, [BAT_WING, NOX, PIG_IRON]),
+    "vengeful spirit": (41, [BAT_WING, GRAVE_DUST, PIG_IRON]),
+    "wither": (23, [NOX, GRAVE_DUST, PIG_IRON]),
+    "wraith form": (17, [NOX, PIG_IRON]),
+    "exorcism": (40, [NOX, GRAVE_DUST]),
+    "nether bolt": (4, [PEARL, ASH]),
+    "healing stone": (4, [BONE, GARLIC, GINSENG, SILK]),
+    "purge magic": (6, [DIRT, GARLIC, MANDRAKE, ASH]),
+    "enchant": (6, [SILK, MANDRAKE, ASH]),
+    "sleep": (9, [NIGHTSHADE, SILK, PEARL]),
+    "eagle strike": (9, [MOSS, BONE, SILK, MANDRAKE]),
+    "animated weapon": (11, [BONE, PEARL, DIRT, NIGHTSHADE]),
+    "stone form": (11, [MOSS, DIRT, GARLIC]),
+    "spell trigger": (14, [DRAGON_BLOOD, GARLIC, MANDRAKE, SILK]),
+    "mass sleep": (14, [GINSENG, NIGHTSHADE, SILK]),
+    "cleansing winds": (20, [DRAGON_BLOOD, GARLIC, GINSENG, MANDRAKE]),
+    "bombard": (20, [MOSS, DRAGON_BLOOD, GARLIC, ASH]),
+    "spell plague": (40, [DAEMON_BONE, DRAGON_BLOOD, NIGHTSHADE, ASH]),
+    "hail storm": (50, [DRAGON_BLOOD, MOSS, PEARL, MANDRAKE]),
+    "nether cyclone": (50, [MANDRAKE, NIGHTSHADE, ASH, MOSS]),
+    "rising colossus": (50, [DAEMON_BONE, DRAGON_BLOOD, DIRT, NIGHTSHADE]),
+}
+
+
+def _scroll(reagents):
+    cost = {BLANK: 1}
+
+    for kind in reagents:
+        cost[kind] = 1
+
+    return cost
+
+
+INSCRIPTION_COST = dict((name, _scroll(INSCRIPTION_SCROLLS[name][1])) for name in INSCRIPTION_SCROLLS)
+INSCRIPTION_MANA = dict((name, INSCRIPTION_SCROLLS[name][0]) for name in INSCRIPTION_SCROLLS)
+
+# Ordered: 'failed' before 'made' because "You failed to create the item" contains "create the item".
+# noMana is said in the gump's NOTICES panel, which the journal may never carry
+INSCRIPTION_OUTCOME_TEXT = [
+    (
+        "failed",
+        [
+            "You fail to inscribe the scroll",
+            "You failed to create the item",
+            "You fail to create",
+            "You have failed to create",
+            "lost some of the raw material",
+        ],
+    ),
+    (
+        "made",
+        [
+            "You inscribe the spell and put the scroll",
+            "You create the item",
+            "You create an exceptional",
+            "You put the",
+        ],
+    ),
+    (
+        "noMana",
+        [
+            "You don't have enough mana to inscribe",
+            "You do not have enough mana",
+            "Insufficient mana",
+        ],
+    ),
+    (
+        "noMaterial",
+        [
+            "You don't have enough blank scrolls",
+            "You do not have enough blank scrolls",
+            "You don't have the components needed",
+            "You do not have the components needed",
+            "You don't have the resources",
+            "You do not have the resources",
+            "You do not have enough reagents",
+        ],
+    ),
+    (
+        "skillTooLow",
+        [
+            "You have no idea how to make that",
+            "You do not have enough skill",
+            "You are not skilled enough",
+            "lack the skill",
+        ],
+    ),
+    ("toolWorn", ["You have worn out your tool", "worn out your tool"]),
+    ("packFull", ["can't hold anything else", "cannot hold anything else"]),
+    ("saving", SAVING_TEXT),
+    ("throttled", THROTTLED_TEXT),
+]
+
+MEDITATION = "Meditation"
+
+# The BuffIconType the client publishes while a trance is running
+MEDITATION_BUFF = "ActiveMeditation"
+
+# Off waits for natural regeneration instead: slower, always available
+MEDITATE = True
+
+# An eighth circle scroll charges 50, so a pool topped right up pays for several
+MEDITATE_TO_FULL = True
+
+MEDITATE_TIMEOUT = 20.0
+MEDITATE_ATTEMPTS = 4
+MEDITATE_START_TIMEOUT = 2.0
+MANA_WAIT_SLICE = 0.2
+MANA_POLL = 0.5
+MANA_LOG_EVERY = 10.0
+REGEN_TIMEOUT = 120.0
+
+# Waits in a row that brought the pool no higher than the row needs before the run ends
+MAX_DRY = 5
+
+# trance is the only wording here that is not a guess: it is the client's own documented example
+MEDITATE_OUTCOME_TEXT = [
+    ("trance", ["You enter a meditative trance."]),
+    ("full", ["You are at peace"]),
+    # Before unfocused, whose trailing full stop is deliberate: without it 'You cannot focus your
+    # concentration' would also match the equipped-weapon sentence
+    (
+        "blocked",
+        [
+            "You cannot focus your concentration with an equipped weapon",
+            "You cannot focus your concentration with an equipped shield",
+            "You are preoccupied with thoughts of battle",
+        ],
+    ),
+    ("unfocused", ["You cannot focus your concentration.", "You lose your concentration"]),
+    ("unskilled", UNSKILLED_TEXT),
+    ("saving", SAVING_TEXT),
+    ("throttled", ["You must wait a few moments to use another skill"] + THROTTLED_TEXT),
+]
+
 # The first trade whose recipes make every item on the deed fills it. A number cost is ingots of
 # the deed's material; a dict cost is stock per kind. plain is what a deed with no material line
 # wants: None means there is no material page to press
@@ -2555,6 +2967,7 @@ TRADES = [
         "outcome_text": OUTCOME_TEXT,
         "salvage": SALVAGE_AT_END,
         "plain": PLAIN_MATERIAL,
+        "mana": None,
     }),
     # Every potion cost is a dict, so the stock keys are empty rather than unused: reagents are
     # counted by art through kinds, and an ingot in the pack is not this run's stock
@@ -2583,6 +2996,7 @@ TRADES = [
         "outcome_text": ALCHEMY_OUTCOME_TEXT,
         "salvage": False,
         "plain": None,
+        "mana": None,
     }),
     # Boards are one pool told apart by the wood they are, so the cost is a number and kinds is
     # empty - the same shape as the smith's ingots
@@ -2610,6 +3024,7 @@ TRADES = [
         "outcome_text": CARPENTRY_OUTCOME_TEXT,
         "salvage": False,
         "plain": PLAIN_WOOD,
+        "mana": None,
     }),
     # A tinker spends the smith's ingot pool and needs no forge, so the stock tables above are
     # reused whole and the outcome set carries no noAnvil. Nothing salvages a pewter mug
@@ -2637,12 +3052,39 @@ TRADES = [
         "outcome_text": TINKERING_OUTCOME_TEXT,
         "salvage": False,
         "plain": PLAIN_MATERIAL,
+        "mana": None,
+    }),
+    ("inscription", {
+        "skill_names": INSCRIPTION_SKILL_NAMES,
+        "tool_noun": "scribe's pen",
+        "tool_graphics": INSCRIPTION_TOOL_GRAPHICS,
+        "tool_words": INSCRIPTION_TOOL_NAME_WORDS,
+        "tool_preference": None,
+        "title": INSCRIPTION_CRAFT_TITLE_TEXT[0],
+        "title_text": INSCRIPTION_CRAFT_TITLE_TEXT,
+        "category_names": INSCRIPTION_CATEGORY_NAMES,
+        "recipes": INSCRIPTION_RECIPES,
+        "item_aliases": {},
+        "costs": INSCRIPTION_COST,
+        "kinds": INSCRIPTION_KINDS,
+        "stock_graphics": set(),
+        "stock_words": [],
+        "stock_noun": None,
+        "materials": [],
+        "hues": {},
+        "material_aliases": {},
+        "material_order": [],
+        "material_rows_after": "",
+        "outcome_text": INSCRIPTION_OUTCOME_TEXT,
+        "salvage": False,
+        "plain": None,
+        "mana": INSCRIPTION_MANA,
     }),
 ]
 
 
 # src/bod/craft.py
-STOPPERS = ("noMaterial", "noAnvil", "keg", "packFull", "skillTooLow", "toolWorn",
+STOPPERS = ("noMaterial", "noMana", "noAnvil", "keg", "packFull", "skillTooLow", "toolWorn",
            "throttled", "saving")
 
 
@@ -2868,6 +3310,7 @@ class SmallFill(object):
         self._stall = watch["stall"]
         self._saves = watch["saves"]
         self._stop_reason = watch["stop_reason"]
+        self._regain_mana = watch["regain_mana"]
 
         self.done = self._request["done"]
         self.combined = 0
@@ -2878,6 +3321,7 @@ class SmallFill(object):
         self._no_tool = 0
         self._no_cursor = 0
         self._unwanted = 0
+        self._dry = 0
         self._made_name = None
         self._cycle = 0
         self._said_throttle = False
@@ -2970,6 +3414,11 @@ class SmallFill(object):
         item = self._request["item"]
         material = self._request["material"]
 
+        mana = self._config["mana"]
+
+        if mana is not None and not self._regain_mana(mana.get(item, 0)):
+            return "noMana"
+
         batch = self.owed()
         before = self._items.serials()
         outcome, made, failed = self._crafter.craft_batch(item, material, batch)
@@ -2980,6 +3429,7 @@ class SmallFill(object):
             self._judge_batch(before)
 
         if made + failed > 0:
+            self._dry = 0
             self._log("batch of %d: %d made, %d failed%s"
                       % (batch, made, failed, "" if outcome == "made" else " (%s)" % outcome))
             self._stall.progressed()
@@ -3011,6 +3461,16 @@ class SmallFill(object):
                     % (stock_report(config["stock"]), self.owed()))
         elif outcome == "keg":
             return "a potion keg in the pack is swallowing the crafts - take it out and run again"
+        elif outcome == "noMana":
+            self._dry += 1
+
+            if self._dry >= config["max_dry"]:
+                return ("mana is not coming back - %d/%d, and one %s takes %d"
+                        % (API.Player.Mana, API.Player.ManaMax, item, config["mana"].get(item, 0)))
+
+            self._stall.progressed()
+            self._log("short of mana (%d/%d), meditating before the next batch"
+                      % (self._dry, config["max_dry"]))
         elif outcome == "toolWorn":
             self._stall.progressed()
             self._log("the tool wore out, looking for another")
@@ -3434,6 +3894,41 @@ class Launcher(object):
                 pass
 
 
+# src/uo/buffbar.py
+class BuffBar(object):
+    """ApiBuff never refreshes after it is handed over, so the bar is re-read every time it matters."""
+
+    def __init__(self, log):
+        self._log = log
+        self._dumped = False
+
+    def active(self):
+        buffs = API.ActiveBuffs()
+
+        if not buffs:
+            return []
+
+        if not self._dumped:
+            self._dumped = True
+            self._log("buff bar: " + ", ".join("%s/%s" % (b.Type, b.Title or "") for b in buffs))
+
+        return buffs
+
+    # title is the localized fallback for a shard whose BuffIconType member name does not match
+    def standing(self, kind, title=None):
+        if not kind:
+            return False
+
+        for buff in self.active():
+            if str(buff.Type) == kind:
+                return True
+
+            if title and title.lower() in (buff.Title or "").lower():
+                return True
+
+        return False
+
+
 # src/uo/craftmenu.py
 class CraftMenu(object):
     """A craft gump: opening it, finding the category, and finding the row."""
@@ -3845,6 +4340,150 @@ def make_log(prefix):
     return log
 
 
+# src/uo/mana.py
+LMC_CAP = 40  # OSI caps Lower Mana Cost at 40%; raise on shards that don't
+
+
+# ceil(base * (100 - lmc) / 100), the server's Spell.ScaleMana. `or 0`: the field is None between
+# world states and 0 while the client refreshes stats
+def cost(base):
+    lmc = min(API.Player.LowerManaCost or 0, LMC_CAP)
+    return -(-base * (100 - lmc) // 100)
+
+
+class ManaWatch(object):
+    def __init__(self, to_full, poll, log_every, log, stop_reason, meditating):
+        self._to_full = to_full
+        self._poll = poll
+        self._log_every = log_every
+        self._log = log
+        self._stop_reason = stop_reason
+        self._meditating = meditating
+
+    # Worked out on every read rather than once: ManaMax is 0 while the client refreshes stats, and
+    # a ceiling taken in that window would either end the wait as it started or never end it at all
+    def target(self, need):
+        ceiling = API.Player.ManaMax
+
+        if not self._to_full or ceiling <= 0:
+            return need
+
+        return max(need, ceiling)
+
+    # >= and never !=: a regenerating pool passes a figure as often as it lands on it
+    def enough(self, need):
+        return API.Player.Mana >= self.target(need)
+
+    # Sliced rather than slept through, so the guards get a look in and the pool is reported on
+    def watch(self, need, budget):
+        waited = 0.0
+        since = 0.0
+
+        while waited < budget:
+            if self.enough(need):
+                return True
+
+            if self._stop_reason() is not None:
+                return False
+
+            API.Pause(self._poll)
+            waited += self._poll
+            since += self._poll
+
+            if since >= self._log_every:
+                since = 0.0
+                self._log(
+                    "%d/%d mana%s"
+                    % (
+                        API.Player.Mana,
+                        self.target(need),
+                        ", meditating" if self._meditating() else "",
+                    )
+                )
+
+        return self.enough(need)
+
+
+# src/uo/meditate.py
+class Meditation(object):
+    def __init__(self, skill, buckets, mana, meditating, log, saves, attempts, timeout,
+                 start_timeout, wait_slice, regen_timeout):
+        self._skill = skill
+        self._buckets = buckets
+        self._mana = mana
+        self._meditating = meditating
+        self._log = log
+        self._saves = saves
+        self._attempts = attempts
+        self._timeout = timeout
+        self._start_timeout = start_timeout
+        self._wait_slice = wait_slice
+        self._regen_timeout = regen_timeout
+        self._refused = None
+
+    def refused(self):
+        return self._refused
+
+    def _start_outcome(self):
+        hit = read_outcome(self._buckets, self._start_timeout, self._wait_slice)
+
+        if hit is not None:
+            return hit
+
+        # Silence is what every use looks like on a shard whose wordings this table has wrong, so
+        # the buff is the proof that does not go through the journal at all
+        if self._meditating() or settled(self._start_timeout, self._wait_slice, self._meditating):
+            return "trance"
+
+        return "unknown"
+
+    def _for(self, need):
+        for attempt in range(1, self._attempts + 1):
+            # Using the skill again mid-trance is at best a wasted action and at worst the shard
+            # ending the very trance this attempt is waiting on
+            if not self._meditating():
+                API.ClearJournal()
+                API.UseSkill(self._skill)
+
+                outcome = self._start_outcome()
+
+                # Nothing here undresses the character, so a refusal is final for the run
+                if outcome == "blocked" or outcome == "unskilled":
+                    self._refused = "the shard refuses meditation (%s)" % outcome
+                    self._log("%s - empty your hands; falling back on natural regeneration"
+                              % self._refused)
+
+                    return self._mana.watch(need, self._regen_timeout)
+
+                # The shard knows the pool is full better than a stat read does
+                if outcome == "full":
+                    return True
+
+                # A pause and not a refusal: nothing about meditation is learned from it
+                if outcome == "saving":
+                    self._saves.wait_out()
+
+            if self._mana.watch(need, self._timeout):
+                return True
+
+            # Not 'gave up': a failed concentration roll, a trance broken by a hit and a use the
+            # shard threw away all look like this, and all are answered by using the skill again
+            self._log("meditation attempt %d did not fill the pool, using the skill again" % attempt)
+
+        return False
+
+    def regain(self, need, allowed):
+        if self._mana.enough(need):
+            return True
+
+        self._log("%d mana, waiting for %d" % (API.Player.Mana, self._mana.target(need)))
+
+        if allowed and self._refused is None:
+            return self._for(need)
+
+        return self._mana.watch(need, self._regen_timeout)
+
+
 # src/uo/save.py
 class SaveWatch(object):
     def __init__(self, saving_text, done_text, wait, poll, log, heartbeat, stop_reason):
@@ -4051,6 +4690,27 @@ def combine_config(button):
 
 
 saves = SaveWatch(SAVING_TEXT, SAVE_DONE_TEXT, SAVE_WAIT, SAVE_POLL, log, heartbeat, stop_reason)
+bar = BuffBar(log)
+
+
+def meditating():
+    return bar.standing(MEDITATION_BUFF)
+
+
+mana = ManaWatch(MEDITATE_TO_FULL, MANA_POLL, MANA_LOG_EVERY, log, stop_reason, meditating)
+trance = Meditation(MEDITATION, MEDITATE_OUTCOME_TEXT, mana, meditating, log, saves,
+                    MEDITATE_ATTEMPTS, MEDITATE_TIMEOUT, MEDITATE_START_TIMEOUT, MANA_WAIT_SLICE,
+                    REGEN_TIMEOUT)
+
+
+def regain_mana(need):
+    arrived = trance.regain(need, MEDITATE)
+
+    # This path has just spent up to a minute reporting on its own cadence
+    heartbeat.reset()
+
+    return arrived
+
 
 log("target the bulk order deed to fill, small or large, ESC to stop")
 
@@ -4175,6 +4835,8 @@ FILL = {
     "backoff": THROTTLE_BACKOFF,
     "backoff_max": THROTTLE_BACKOFF_MAX,
     "step_delay": STEP_DELAY,
+    "mana": trade["mana"],
+    "max_dry": MAX_DRY,
 }
 
 WATCH = {
@@ -4182,6 +4844,7 @@ WATCH = {
     "stall": stall,
     "saves": saves,
     "stop_reason": stop_reason,
+    "regain_mana": regain_mana,
 }
 
 fills = []

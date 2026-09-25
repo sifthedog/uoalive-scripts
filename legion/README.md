@@ -14,8 +14,9 @@ repo targets the ClassicUO web client; nothing is shared between the two.
 | `attack.py` | Turns war mode on and attacks the nearest gray or red mobile within 10 tiles that is not your pet or, by its tooltip, anyone else's. Run it again for the next one |
 | `arms-lore.py` | Target a weapon, then read it every half second until Arms Lore caps |
 | `hiding.py` | Uses Hiding over and over until the skill caps, pacing itself off the shard's refusals, and records every roll |
+| `lockpicking.py` | Stands at one of the shard's training chests, sets it with a double-click and picks it with a lockpick out of the pack, over and over until the skill caps |
 | `bowcraft.py` | Trains Bowcraft from 0 to cap: makes whatever the band still gains on, restocks wood from the containers and pack animals you pick, and sells it to the bowyer, unloads it or keeps it as a gump at the start decides |
-| `tinkering.py` | Trains Tinkering from 20 to cap on the iron ingots you carry: makes whatever the band still gains on, and sells it to the vendor that buys it, unloads it or keeps it as a gump at the start decides |
+| `tinkering.py` | Trains Tinkering from 0 to cap on the iron ingots you carry: makes whatever the band still gains on, and sells it to the vendor that buys it, unloads it or keeps it as a gump at the start decides |
 | `carpentry.py` | Trains Carpentry from 0 to cap on the cheapest recipe each band still gains on, restocks wood the way `bowcraft.py` does, and unloads what it made into the container you pick |
 | `inscription.py` | Trains Inscription from 30 to cap on the spell scroll with the fewest reagents each circle gains on, meditating when the pool is short, restocking scrolls and reagents the way `carpentry.py` does, and selling or unloading the scrolls as a gump at the start decides |
 | `alchemy.py` | Trains Alchemy from 0 to cap on the potion each band gains on, restocks bottles and reagents the way `carpentry.py` does, and pours what it made into the kegs in your pack, unloads it into the container you pick, or keeps it |
@@ -23,7 +24,7 @@ repo targets the ClassicUO web client; nothing is shared between the two.
 | `mysticism.py` | Trains Mysticism on the five spells that gain without a victim, meditating when the pool runs dry |
 | `spellweaving.py` | Trains Spellweaving on the six spells of the book that can be ground solo, stowing the weapon for every trance, meditating when the pool runs dry, and casting Greater Heal on itself under the health floor |
 | `chivalry.py` | Trains Chivalry on its five spells, gating each cast on tithing points, putting the weapon away for every trance and drawing it again after, and bandaging itself under the health floor |
-| `bod.py` | Target a Blacksmithing, Alchemy, Carpentry or Tinkering bulk order deed, small or large: crafts what it asks for from the stock in your pack, combines the pieces, and for a large deed gets the smalls from the Bulk Order Deed Box and fills them one by one |
+| `bod.py` | Target a Blacksmithing, Alchemy, Carpentry, Tinkering or Inscription bulk order deed, small or large: crafts what it asks for from the stock in your pack, meditating between batches for an inscription deed, combines the pieces, and for a large deed gets the smalls from the Bulk Order Deed Box and fills them one by one |
 | `inventory.py` | Target a bag or chest: writes one JSON line per item in it - name, tier, durability, weight and every tooltip property, parsed and verbatim |
 | `assembly.py` | Asks which assembly - keg, potion keg or clock - and how many, then makes each one from the boards, ingots and bottles in your pack, pressing every part it needs on the carpentry and tinkering menus and stopping the moment the next press cannot be afforded |
 
@@ -42,7 +43,7 @@ repo targets the ClassicUO web client; nothing is shared between the two.
    `inscription.py` wants the containers holding scrolls and reagents, then draws the same
    gump and wants the unload container if you press Unload; `bod.py`
    wants the deed; `inventory.py` wants the bag; `assembly.py` draws a gump asking which assembly
-   and how many. `magery.py`, `mysticism.py`, `spellweaving.py`, `buffs.py`, `fishing.py`, `attack.py` and `hiding.py` raise none. ESC
+   and how many. `magery.py`, `mysticism.py`, `spellweaving.py`, `buffs.py`, `fishing.py`, `attack.py`, `hiding.py` and `lockpicking.py` raise none. ESC
    declines, and each script says what it does instead.
 
 ## How it is built
@@ -212,6 +213,11 @@ What the typings do not say, learned on UOAlive. Script-specific notes sit under
   `API.StopRequested` first.
 - **`API.ContextMenu(serial, text, timeout)` returns the moment a menu without the entry arrives**,
   so an entry that is not there *yet* looks like one that never will be.
+- **`API.FindType` and `API.FindTypeAll` answer nothing for a world item.** A probe standing one
+  tile from a chest got `None` out of every variant, filters off and all, while
+  `API.GetItemsOnGround(distance)` returned it. Items are found the way the rest of this repo
+  already does it: `ItemsInContainer` for the pack, `GetItemsOnGround` for the ground, each
+  filtered on `.Graphic` and `.Hue` here.
 - **`API.ItemsInContainer(container, True)` reads the pack recursively.** Item-cap guards and the
   combine count the top level only, because the cap is per container. A bag the client has not
   opened this session reads as empty. Books read as containers too: a shard's own book art goes
@@ -243,7 +249,7 @@ reports everything as unread is also crawling; fix the wording, not the timeout.
 
 ## The attempt log
 
-Fifteen scripts append one JSON line per attempt to `DATA_PATH`; `skilldb.py` turns them into two CSV
+Sixteen scripts append one JSON line per attempt to `DATA_PATH`; `skilldb.py` turns them into two CSV
 tables. A bare filename lands beside the running script, in the `LegionScripts` folder, read off
 `API.ScriptPath` or assumed when the client does not say; the run logs `recording to …` at the start.
 A path with a folder in it is used as written. `DATA_PATH = ""` records nothing. The file is opened and closed per row; a run that cannot write says so once and
@@ -264,6 +270,7 @@ paladin who never once failed.
 | `tame.py` | `tamed` | `failed` | `pending` |
 | `arms-lore.py` | `read` | `missed` | a use that raised no cursor, unread wordings |
 | `hiding.py` | `hidden` | `failed` | `busy` (fighting or casting, no roll), throttles, unread wordings |
+| `lockpicking.py` | `picked` | `failed` | the double-click that sets the box, a pick that raised no cursor, throttles, unread wordings |
 | `bowcraft.py` | `made` | `failed` | `noMaterial`, a worn tool, the sell trips |
 | `tinkering.py` | `made` | `failed` | the same, and the unloading |
 | `carpentry.py` | `made` | `failed` | the same, and the unloading |
@@ -946,9 +953,9 @@ A loop, meant for standing on a boat: ask once how many tiles ahead to aim and w
 junk catch, say `GUARD_PHRASE`, then each cycle get off the mount, turn toward water if the current
 facing is not recognized as any, double-click the fishing pole, and answer the cursor with the tile
 straight ahead of whichever way you end up facing. Runs until told to stop, `Fishing` caps, you die,
-`MAX_CYCLES` is hit, or the shard keeps refusing. A junk catch - fish, boots, sandals, shoes or thigh
-boots, matched by the caught item's own name text (`JUNK_TEXT`) - is put in a container, left in the
-pack, or dropped on the ground, whichever the start-up gump chose. Anything else caught is always
+`MAX_CYCLES` is hit, or the shard keeps refusing. Junk - any item in the pack whose art and hue is
+in `JUNK_ITEMS`, the shard's plain fish and footwear - is swept before every cast into a container
+or onto the ground, or left alone, whichever the start-up gump chose. Anything else caught is always
 left in the pack.
 
 1. Ask once, via a gump, how many tiles ahead to cast at (`TILES_AHEAD_DEFAULT` prefilled) and what
@@ -965,20 +972,23 @@ left in the pack.
    this only turns in place, the way a single directional key press does when not already facing
    that way, and never steps forward. If none of the eight match, the run casts at whatever is
    ahead anyway, same as before this existed.
-6. Read `API.Player.Direction`, the tiles-ahead answer out from where you stand. A water static
+6. Sweep the pack: every item whose `(graphic, hue)` is in `JUNK_ITEMS` is moved into the picked
+   container or dropped on the ground one tile over through `API.MoveItemOffset` (its `x`/`y` are an
+   offset from your own position, confirmed off TazUO's own `LegionAPI.cs` - `(0, 0)` already drops
+   at your feet; one of the eight adjacent tiles is used instead so catches do not all stack there).
+   The journal is not consulted: the shard names species, and a fish that landed after the last
+   read timed out is still in the pack now.
+7. Read `API.Player.Direction`, the tiles-ahead answer out from where you stand. A water static
    there (common at a shoreline) wins over the land tile it sits on; otherwise the land tile is
    used as given, whatever its art - `LAND_TILE_GRAPHIC` is only a fallback for a spot the client
    has no land data for at all.
-7. Use the pole, wait for the cursor, answer it with `Target(x, y, z, graphic)`.
-8. Read the outcome. A catch is named off the text past the colon of `You pull out an item: …` and
-   recorded. If the name matches `JUNK_TEXT`, it is then moved into the picked container, left in
-   the pack, or dropped on the ground one tile over through `API.MoveItemOffset` (its `x`/`y` are an
-   offset from your own position, confirmed off TazUO's own `LegionAPI.cs` - `(0, 0)` already drops
-   at your feet; one of the eight adjacent tiles is used instead so catches do not all stack there).
+8. Use the pole, wait for the cursor, answer it with `Target(x, y, z, graphic)`.
+9. Read the outcome. A catch is named off the text past the colon of `You pull out an item: …` and
+   recorded. Junk it may be is swept on the next cycle.
 
 | Outcome | What it means |
 | --- | --- |
-| `caught` | `You pull out an item: …`. Recorded with what the pack gained, then a junk catch is moved per the start-up choice |
+| `caught` | `You pull out an item: …`. Recorded with what the pack gained |
 | `failed` | `You fish a while, but fail to catch anything`. Recorded |
 | `empty` | The fish are not biting off this tile |
 | `tooFar` | The shard wants you closer to the water - answer a smaller number next run, or move |
@@ -991,8 +1001,7 @@ left in the pack.
 
 Only `caught` and `failed` are recorded. The row is written after `GAIN_SETTLE`, or as soon as the
 skill value moves, because the client applies the gain after the outcome line. A `caught` row waits
-`CATCH_SETTLE` for the pack to show the fish first, before it is recorded - and, if it is junk,
-before it is moved out of the pack.
+`CATCH_SETTLE` for the pack to show the fish first, before it is recorded.
 
 ### Before you run it
 
@@ -1014,7 +1023,7 @@ before it is moved out of the pack.
 | `LAND_TILE_GRAPHIC` | `1337` | Fallback art for the aimed-at tile, used only when the client has no land data there at all - normally the real tile there is read and used, static or land |
 | `TILES_AHEAD_DEFAULT` | `4` | Prefilled in the start-up gump. Not a cap - whatever is typed there is used as given |
 | `TURN_DELAY` | `0.5` | How long a turn needs before `API.Player.Direction` reflects it |
-| `JUNK_TEXT` | `fish`, `boots`, `sandals`, `shoes`, `thigh boots` | Matched against the caught item's own name text, not its graphic |
+| `JUNK_ITEMS` | five named fish, plain fish `0x9CC`-`0x9CF`, boots, sandals, shoes, thigh boots | `(graphic, hue)` pairs, matched exactly, swept off the whole pack before every cast. `0x4303` is a kokanee salmon at hue 0 and a yellow perch at 2214 |
 | `CATCH_MODE_OPTIONS` / `CATCH_MODE_DEFAULT` | Container, Keep, Discard / `discard` | The start-up gump's radio choice for a junk catch. Discard matches the run's old always-drop behavior |
 | `PICK_TIMEOUT` | `60.0` | How long the Container target cursor waits before it counts as ESC |
 | `MOVE_DELAY` | `0.7` | Paced between moves into the picked container |
@@ -1046,8 +1055,7 @@ before it is moved out of the pack.
   the matching bucket. A short `CAST_TIMEOUT` on a shard that answers slowly hits this often as a
   matter of course, not just on wording this run has never seen.
 - **`caught something the journal did not name`**: the catch line had no colon. The row is still
-  written, with an empty name - an empty name never matches `JUNK_TEXT`, so the item stays in the
-  pack.
+  written, with an empty name. The sweep does not care.
 
 ### Notes
 
@@ -1074,18 +1082,18 @@ before it is moved out of the pack.
   and whether "Running" is really how it says a running character's Direction, is unconfirmed.
 - **The boat-stopped wording.** `BOAT_STOPPED_TEXT` guesses `"Ar, we've stopped, sir"`, matched as
   a fragment with the trailing punctuation dropped on purpose, the way other phrase tables here do.
-- Whether preferring a water static over the land tile under it is actually what makes
-  `Target(x, y, z, graphic)` land as a fishing spot. Two earlier versions - a made-up `1337`
-  graphic with no land lookup at all, then the real land tile's own graphic with no static check -
-  both got no answer whatsoever from the shard; every cast timed out `unreadable` with nothing in
-  the journal either time. Live testing is what turned up both failures; a third has not been
-  ruled out.
+- How the aimed-at tile has to be named for the shard to read it as a fishing spot. A water
+  static is named by art, `Target(x, y, z, graphic)`; a water *land* tile - open ocean, which is
+  all a boat deck ever casts over - is named without it, `Target(x, y, z)`, the way `lumberjack.py`
+  notes an artless target hits the land tile. Naming a land tile by its own art is what a cast from
+  a deck did until now, and the shard answered nothing at all: the prompt came up and no line
+  followed it. That the artless call fixes it is a hypothesis, untested live; a static cast from
+  the shoreline is the part that is known to work.
 - Every wording in `OUTCOME_TEXT` past `caught`/`failed` - none has been seen on this shard yet.
 - That a pole in the pack is accepted without being equipped.
 - The catch line's shape on this shard. Anything past the first colon is the name.
-- **`JUNK_TEXT`'s wording.** `fish`, `boots`, `sandals`, `shoes`, and `thigh boots` are a guess at
-  how this shard names its junk catches - unconfirmed. A catch that never matches is simply left in
-  the pack, same as before this was added.
+- `JUNK_ITEMS`' hues came off the pack by hand and off the attempt log, not a probe. A catch not in
+  the set is simply left in the pack.
 - `DROP_OFFSETS` assumes the eight adjacent tiles are all valid drop spots from wherever the run
   happens to be standing - confirmed the offset is relative to the player (TazUO's `LegionAPI.cs`),
   not confirmed that every one of the eight tiles is always a legal drop target (a wall, a rail, or
@@ -1107,9 +1115,11 @@ one. There is no loop, no chase and no heartbeat: the client's own follow does t
 2. `GetAllMobiles` with the hostile notoriety list. Blue never comes back, and on ServUO a pet or
    summon takes its owner's colour, so an innocent player's pets are out before anything is read.
 3. Skip yourself, the dead, and anything with `IsRenamable` set.
-4. Nearest first, read the tooltip and skip it if any `OWNED_PROP_WORDS` word is in it. Only the
-   ones in line are read.
-5. `SetWarMode(True)`, `Attack(serial)`, say who.
+4. Nearest first - and among mobiles at the same reach, the one nearest on screen - ask the client
+   for every candidate's tooltip at once, then read them in order and skip any with an
+   `OWNED_PROP_WORDS` word in it. Only the ones in line are waited on.
+5. `SetWarMode(True)`, `Attack(serial)`, say who. The name comes off the tooltip, since the client
+   only fills `Name` for mobiles it has been told about.
 
 ### What to set
 
@@ -1117,7 +1127,7 @@ one. There is no loop, no chase and no heartbeat: the client's own follow does t
 | --- | --- | --- |
 | `RANGE` | `10` | How far out it looks. The API's own `NearestMobile` default |
 | `OWNED_PROP_WORDS` | `(tame)`, `(summoned)`, `(bonded)` | Tooltip words that mark someone's creature. ServUO's `AddNameProperties` wording, case-insensitive |
-| `OPL_TIMEOUT` | `1` | Whole seconds a tooltip the client has not fetched yet is waited for. The API takes an int |
+| `OPL_TIMEOUT` | `2` | Whole seconds a tooltip the client has not fetched yet is waited for. The API takes an int |
 
 ### When it goes wrong
 
@@ -1125,6 +1135,9 @@ one. There is no loop, no chase and no heartbeat: the client's own follow does t
   was yours, dead, or read as owned.
 - **It attacked a player's pet or summon**: read the pet's tooltip and put the shard's wording in
   `OWNED_PROP_WORDS`.
+- **`attacking ... - tooltip never came`**: the shard did not answer the tooltip within
+  `OPL_TIMEOUT`, so it was attacked unread: it may have been someone's. Raise `OPL_TIMEOUT` if this
+  keeps happening.
 - **It attacked a gray or red player**: a player is not told from a monster. Only the tooltip words
   screen anything that passes the notoriety scan.
 
@@ -1179,6 +1192,54 @@ hidden: a success while hidden keeps you hidden, a failure reveals you.
 `You have hidden yourself well.` and `You fail to hide` were watched on UOAlive; the `busy` phrases
 are ServUO's. UOAlive lets Hiding go to 120 with a power scroll and fail past 100, so a capped run
 is longer than stock.
+Unmatched outcomes are counted and reported as `N outcome(s) went unread`.
+
+## lockpicking.py
+
+Stands where you put it and works one of the shard's lockpick training chests until Lockpicking caps
+or you stop the script. It raises no cursor of its own. Per cycle: find the chest by art and hue
+within `BOX_RANGE`, find a lockpick in the pack, double-click the chest and wait for it to say it
+has been set, then use the lockpick on it and read the outcome. Each roll is recorded as `picked` or
+`failed`.
+
+- The chest re-rolls its own difficulty to your skill on every double-click, which is what the
+  script leans on: there is no band table and nothing to pick between.
+- **The double-click is not an attempt.** It is never recorded, and a chest that does not answer
+  within `SET_TIMEOUT` is picked as it stands and counted as an unanswered double-click.
+- The chest is found again every cycle rather than held by serial, so moving to another one works
+  without restarting. Out of range, and the run stops. It is picked off `API.GetItemsOnGround` by
+  art and hue, because `API.FindType` does not see world items - see the notes on the API. The
+  **nearest** match wins: the training room stands two of them two tiles apart, and picking at
+  the far one is an attempt out of reach.
+- A lockpick that breaks is not an outcome of its own; it shows up as the next cycle finding one
+  fewer, and the run ends when the pack has none left.
+- The pace is flat `DELAY` between attempts, and a refused use costs one cycle: a use that puts no
+  cursor up is waited out and asked again on the next pass.
+
+| Setting | Default | What it is for |
+| --- | --- | --- |
+| `BOX_GRAPHIC` | `2474` | The training chest's art |
+| `BOX_HUE` | `33` | Its hue, so an ordinary chest beside it is left alone |
+| `BOX_RANGE` | `2` | Tiles the chest is looked for within. A lockpick reaches two |
+| `LOCKPICK_GRAPHIC` | `0x14FC` | The lockpick's art, taken out of the pack one at a time |
+| `DELAY` | `0.5` | The whole pause between two attempts |
+| `SET_TIMEOUT` | `1.0` | How long the double-click has to say the chest was set |
+| `TARGET_TIMEOUT` | `1.0` | How long a lockpick has to put a cursor up |
+| `READ_TIMEOUT` | `2.0` | How long the outcome has to land in the journal |
+| `READ_POLL` | `0.1` | How often the journal is asked |
+| `MAX_THROTTLED` | `20` | Throttles in a row before the run stops |
+| `DATA_PATH` | `skill-attempts.jsonl` | Where each roll is appended. `""` records nothing |
+
+### Unverified
+
+`You are unable to pick the lock` and `This chest has been set for ... lockpicking skill!` came from
+whoever runs the shard. `The lock quickly yields to your skill` is the RunUO wording and has not
+been watched here. `unskilled` stops the run, which a chest that sets itself to your skill should
+never produce.
+
+`BOX_GRAPHIC`, `BOX_HUE` and `LOCKPICK_GRAPHIC` were all read off a probe run on UOAlive: the
+chest is `2474`/`33` on the ground, the pick is `5372` in the pack.
+
 Unmatched outcomes are counted and reported as `N outcome(s) went unread`.
 
 ## magery.py
@@ -1913,15 +1974,16 @@ when `DATA_PATH` is set.
 
 ## tinkering.py
 
-Trains Tinkering from 20 to cap on the iron ingots in your pack. There is no restock: it makes the
+Trains Tinkering from 0 to cap on the iron ingots in your pack. There is no restock: it makes the
 band's item until the pack is short of a craft, and does with it what the gump at the start says.
 Everything under the loop is shared with `bowcraft.py`, which is where the craft menu, the row and
 the outcomes are described.
 
 | Tinkering | Makes | Ingots | Sells to |
 | --- | --- | --- | --- |
-| 20 – 30 | iron key | 3 | tinker |
-| 30 – 40 | hammer | 1 | tinker |
+| 0 – 20 | spoon | 1 | nobody: unloaded |
+| 20 – 30 | scissors | 2 | nobody: unloaded |
+| 30 – 40 | butcher knife | 2 | nobody: unloaded |
 | 40 – 45 | tongs | 1 | blacksmith or tinker |
 | 45 – 95 | lockpick | 1 | provisioner |
 | 95 – 111.8 | ring | 3 | jeweler |
@@ -1978,12 +2040,12 @@ then counts toward `MAX_NO_MATERIAL`, since a menu set to another metal is the o
 
 ### When it goes wrong
 
-- **`the pack holds no ingots, and one iron key takes 3 ingots`** at the start, or **`out of
+- **`the pack holds no ingots, and one spoon (left) takes 1 ingots`** at the start, or **`out of
   iron ingots`** later: what is in the pack is all it uses.
 - **`the shard refused 40 ingots in the pack 3 times`**: the menu's material is not iron. The gump's
   own words are printed above it.
 - **`no jeweler within 18`**: said once per band. Walk to one; the trips retry on their own.
-- **`'iron key' is not in RECIPES`**: the band names a row the table lacks. Run `craft-map.py` and
+- **`'spoon (left)' is not in RECIPES`**: the band names a row the table lacks. Run `craft-map.py` and
   paste the block it writes; fix `BANDS` and `PRODUCTS` to the label it read.
 - **`the pack holds 60 unsold and nothing was picked to unload into`**, or **`the pack holds 60 and
   nothing was picked to unload into`** on a keeping run: pick a container next time.
@@ -1993,9 +2055,8 @@ then counts toward `MAX_NO_MATERIAL`, since a menu set to another metal is the o
 
 ### Unverified
 
-- The tool graphics and every product graphic but the iron key and the hammer are stock art.
+- The tool graphics and every product graphic are stock art.
 - `MAKE_LAST_BUTTON` and the button stride are assumed to be `bowcraft.py`'s, as the same gump.
-- Whether the SELECTIONS row says `iron key` or `key`.
 - On a page whose rows cannot be split from the text, `ring` is also inside `earrings`, `springs`
   and `key ring`, and the fallback substring match could settle on the wrong category.
 
@@ -2331,11 +2392,16 @@ the large one. Nothing is restocked.
 
 **The trade comes from the deed.** `TRADES` is a list, tried in order, and the first whose `recipes`
 make every item the deed lists is the one used: `smith` for Blacksmithing, `alchemy` for potions,
-`carpentry` for woodwork, `tinkering` for a tinker's tools, parts, utensils and jewelry. The trade
-carries its own tool, menu title, categories, recipe table, costs, the stock it spends and whether
-there is a material page at all. So one script fills all four, and an item in no table stops the run
-before anything is pressed. The four recipe tables share no item name, so the order they are tried
-in never decides anything.
+`carpentry` for woodwork, `tinkering` for a tinker's tools, parts, utensils and jewelry,
+`inscription` for every row of the pen's menu. The trade carries its own tool, menu title,
+categories, recipe table, costs, the stock it spends and whether there is a material page at all. So
+one script fills all five, and an item in no table stops the run before anything is pressed. The
+five recipe tables share no item name, so the order they are tried in never decides anything.
+
+**Inscription spends mana.** Before every batch the run meditates the pool to full (`MEDITATE_TO_FULL`),
+or waits for it to regenerate when `MEDITATE = False` or the shard refuses the trance with something
+in hand. A batch the shard stops for mana is cancelled, the pool refilled, and the next batch asks
+for what is still owed. `MAX_DRY` waits in a row that brought the pool no higher end the run.
 
 The tooltip lines read are `amount to make`, `<item>: <done>`, `All items must be exceptional` and
 `All items must be made with <material> ingots`, whose trailing noun may be `ingots` or `boards` -
@@ -2350,9 +2416,11 @@ the run with the numbers:
   the deed's material, counted by name then hue and keyed `iron ingots` or `oak boards` -
   `INGOT_COST` for smithing, `BOARD_COST` for carpentry, `TINKERING_INGOT_COST` for tinkering. A
   dict is stock per kind, counted by art:
-  `POTION_COST` against `REAGENT_KINDS`, a bottle and a reagent per potion. An item the table lacks
-  is said and not checked, which is where carpentry items wanting more than boards land. An
-  exceptional deed will take more.
+  `POTION_COST` against `REAGENT_KINDS`, a bottle and a reagent per potion; `INSCRIPTION_COST`
+  against `INSCRIPTION_KINDS`, a blank scroll and each reagent per scroll. An item the table lacks
+  is said and not checked, which is where carpentry items wanting more than boards and the
+  inscription menu's `other` rows (spellbook, runebook, runic atlas) land. An exceptional deed will
+  take more.
 - Tool charges: every tool's `Uses Remaining` summed against the pieces owed. A tool without that
   line is said and not checked.
 
@@ -2435,14 +2503,17 @@ small; the small leaving the pack is the proof. The run stops when every entry r
 
 | Setting | Default | What it is for |
 | --- | --- | --- |
-| `TRADES` | `smith`, `alchemy`, `carpentry`, then `tinkering` | The trade tables, tried in order. The first whose `recipes` make every item the deed lists is used, and it carries the tool, title, categories, costs, wordings, salvage and material page for the whole run |
-| `SKILL_NAMES` / `ALCHEMY_SKILL_NAMES` / `TINKERING_SKILL_NAMES` | `Blacksmithy`, `Blacksmith` / `Alchemy` / `Tinkering` | For the start-up line only |
+| `TRADES` | `smith`, `alchemy`, `carpentry`, `tinkering`, then `inscription` | The trade tables, tried in order. The first whose `recipes` make every item the deed lists is used, and it carries the tool, title, categories, costs, wordings, salvage and material page for the whole run |
+| `SKILL_NAMES` / `ALCHEMY_SKILL_NAMES` / `TINKERING_SKILL_NAMES` / `INSCRIPTION_SKILL_NAMES` | `Blacksmithy`, `Blacksmith` / `Alchemy` / `Tinkering` / `Inscription`, `Inscribe` | For the start-up line only |
 | `TOOL_GRAPHICS` / `TOOL_NAME_WORDS` | hammer, tongs, sledge / `tongs`, `smith` | Whole words, so a war hammer is not a tool |
 | `ALCHEMY_TOOL_GRAPHICS` / `ALCHEMY_TOOL_NAME_WORDS` | `0x0E9B` / `mortar` | The same for the mortar and pestle |
 | `TINKERING_TOOL_GRAPHICS` / `TINKERING_TOOL_NAME_WORDS` | `0x1EB8`, `0x1EB9` / `tinker`, `tinkers` | The same for the tinker's tools |
+| `INSCRIPTION_TOOL_GRAPHICS` / `INSCRIPTION_TOOL_NAME_WORDS` | `0x0FBF`, `0x0FC0` / `pen` | The same for the scribe's pen |
 | `TOOL_PREFERENCE` / `TOOL_BAG_NAMES` | tongs / `salvage bag` | Which tool wins when several are found, and the bag opened at start. Alchemy prefers none |
 | `INGOT_GRAPHICS` / `INGOT_HUES` | stock | How ingots are counted and told apart. An unknown hue is reported as a hue |
-| `REAGENT_KINDS` | stock art | Bottles and the eight reagents, counted by graphic for the alchemy pre-flight |
+| `REAGENT_KINDS` / `INSCRIPTION_KINDS` | stock art | Bottles and the eight reagents, counted by graphic for the alchemy pre-flight; the same plus blank scrolls and the necromancy and mysticism reagents for inscription |
+| `INSCRIPTION_SCROLLS` | stock ServUO | `(mana, reagents)` per scroll row, from which `INSCRIPTION_COST` and `INSCRIPTION_MANA` are derived. The mana figure is only the floor under a to-full top-up; a wrong one is corrected by the shard's own refusal |
+| `MEDITATE` / `MEDITATE_TO_FULL` / `MEDITATE_ATTEMPTS` / `MEDITATE_TIMEOUT` / `REGEN_TIMEOUT` / `MAX_DRY` | `True` / `True` / `4` / `20.0` / `120.0` / `5` | The pool top-up before each inscription batch, as `inscription.py` has them |
 | `CHECK_BEFORE_START` / `INGOT_COST` / `POTION_COST` / `TINKERING_INGOT_COST` / `USES_TEXT` | `True` / the wiki tables / stock counts / `uses remaining` | The pre-flight: ingots per piece from uoalive.com/wiki/Blacksmithy and /wiki/Tinkering, bottle and reagent per potion, and the charges line. The tinker table holds the rows whose whole cost is ingots; the rest are noted, not checked |
 | `DEED_GRAPHICS` / `DEED_NAME_WORDS` | `0x2258` / `bulk order deed` | How small deeds in the pack are found for a large one |
 | `BOX_NAMES` / `BOX_TIMEOUT` | `bulk order deed box` / `10.0` | The box, and how long it has to put the deeds in the pack |
@@ -2451,21 +2522,22 @@ small; the small leaving the pack is the proof. The run stops when every entry r
 | `MATERIAL_ALIASES` | `shadow iron` → `shadow` | How the menu row and tooltip may shorten the wording |
 | `MATERIAL_ORDER` | iron … valorite | The material page's rows in stock order, pressed blind when the page's text cannot be split |
 | `DEED_TEXT` | stock | The tooltip lines, lower-cased fragments |
-| `CATEGORY_NAMES` / `ALCHEMY_CATEGORY_NAMES` / `CARPENTRY_CATEGORY_NAMES` / `TINKERING_CATEGORY_NAMES` | the menu's groups | Where the group rows end |
+| `CATEGORY_NAMES` / `ALCHEMY_CATEGORY_NAMES` / `CARPENTRY_CATEGORY_NAMES` / `TINKERING_CATEGORY_NAMES` / `INSCRIPTION_CATEGORY_NAMES` | the menu's groups | Where the group rows end |
 | `BUTTON_STRIDE`, `*_BUTTON_TYPE` | 20, 0/1/5/6 | A row's details button is its row button plus one; the material page is `1 + 6`, its rows `1 + 5 + i * 20` |
 | `BOD_COMBINE_BUTTON` | `4` | *Combine this deed with contained items*; 2 is the one-item combine |
 | `MAKE_NUMBER_BUTTON` / `CANCEL_MAKE_BUTTON` | `2` / `227` | On the row's details page, and on the menu |
 | `PROMPT_DELAY` | `0.8` | How long the number prompt takes to arrive |
 | `CRAFT_INTERVAL` / `BATCH_IDLE` | `3.0` / `8.0` | A batch's time budget per piece, and the silence that ends one |
-| `SALVAGE_AT_END` / `SALVAGE_ENTRIES` | `True` / `Salvage All` | The bag's context entry once the deed is full. Off for alchemy, carpentry and tinkering |
+| `SALVAGE_AT_END` / `SALVAGE_ENTRIES` | `True` / `Salvage All` | The bag's context entry once the deed is full. Off for every trade but smith |
 | `DONE_SOUND` | `afplay` on a system sound | Played once on this Mac when the deed is filled. `[]` turns it off |
-| `RECIPES` / `ALCHEMY_RECIPES` / `CARPENTRY_RECIPES` / `TINKERING_RECIPES` | the reference tables | `(category button, row button)` per item as the deed names it. The only way an item the page's text does not name is crafted, and what decides which trade a deed is |
+| `RECIPES` / `ALCHEMY_RECIPES` / `CARPENTRY_RECIPES` / `TINKERING_RECIPES` / `INSCRIPTION_RECIPES` | the reference tables | `(category button, row button)` per item as the deed names it. The only way an item the page's text does not name is crafted, and what decides which trade a deed is |
 | `OPL_TIMEOUT` / `OPL_ASKS` | `2` / `3` | How long a tooltip has to arrive, and how many times one item is asked |
 | `REREAD_SETTLE` | `3.0` | How long the deed's tooltip has to show a combine the pack proved |
 | `MAX_NO_CURSOR` | `3` | Combine presses that raised no cursor before the run stops |
 | `MAX_UNWANTED` | `1` | Batches in a row whose pieces were not the deed's item at all before the run stops. One is enough: a batch of the wrong thing is a wording mismatch, not bad luck |
 | `TINKERING_ITEM_ALIASES` | `frypan` → `skillet` … | What the deed calls a row against what the row's output is called. A piece is judged against both |
-| `OUTCOME_TEXT` / `ALCHEMY_OUTCOME_TEXT` / `CARPENTRY_OUTCOME_TEXT` / `TINKERING_OUTCOME_TEXT` / `COMBINE_TEXT` | stock ServUO | Wordings for a craft and a combine. The alchemy set names each reagent, because a bare "you do not have enough" is inside "enough skill", and keeps the keg line as its own bucket |
+| `OUTCOME_TEXT` / `ALCHEMY_OUTCOME_TEXT` / `CARPENTRY_OUTCOME_TEXT` / `TINKERING_OUTCOME_TEXT` / `INSCRIPTION_OUTCOME_TEXT` / `COMBINE_TEXT` | stock ServUO | Wordings for a craft and a combine. The alchemy set names each reagent, because a bare "you do not have enough" is inside "enough skill", and keeps the keg line as its own bucket. The inscription set carries `noMana`, which the gump's NOTICES panel says and the journal may not |
+| `MEDITATE_OUTCOME_TEXT` | stock | The shard's replies to the Meditation skill: a refusal with something in hand retires the trance for the run |
 
 ### When it goes wrong
 
@@ -2477,8 +2549,11 @@ small; the small leaving the pack is the proof. The run stops when every entry r
   to the trade's `item_aliases` when it is the same thing under two wordings, and fix the row when
   it is not. Without this the pieces never qualify, so the loop crafts another batch every cycle
   and stops only when the pack is full - which is what it used to do.
-- **`no cost is known for '…'`**: add the item to `INGOT_COST`, `POTION_COST`, `BOARD_COST` or
-  `TINKERING_INGOT_COST`; the run goes on unchecked.
+- **`no cost is known for '…'`**: add the item to `INGOT_COST`, `POTION_COST`, `BOARD_COST`,
+  `TINKERING_INGOT_COST` or `INSCRIPTION_SCROLLS`; the run goes on unchecked.
+- **`mana is not coming back - 12/40, and one flamestrike takes 40`**: `MAX_DRY` top-ups in a row
+  left the pool short. Empty your hands if the line above says the shard refused the trance, or
+  the character's pool is smaller than the scroll's cost.
 - **`no trade in TRADES makes …`**: the deed's wording is in no recipe table. Add the row spelled
   the way the deed spells it. A tinker deed is where this bites, because the deed names an item by
   its own name and the menu by its recipe's: the skillet row makes a `frypan`, the fletcher's tools

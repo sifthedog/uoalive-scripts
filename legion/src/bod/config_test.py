@@ -2,6 +2,7 @@ import unittest
 
 from bod.config import TRADES
 from carpentry.config import RECIPES as CARPENTRY_MENU
+from inscription.config import RECIPES as INSCRIPTION_MENU
 from tinkering.config import RECIPES as TINKERING_MENU
 
 
@@ -64,7 +65,8 @@ class TradesTest(unittest.TestCase):
     # same top-level name. Nothing but this notices when one of the two copies is re-mapped alone.
     # A subset, because the bod copy also carries the wordings the deed uses for a bracketed row.
     def test_a_transcribed_menu_still_matches_the_trainer_it_came_from(self):
-        for name, menu in [("carpentry", CARPENTRY_MENU), ("tinkering", TINKERING_MENU)]:
+        for name, menu in [("carpentry", CARPENTRY_MENU), ("tinkering", TINKERING_MENU),
+                           ("inscription", INSCRIPTION_MENU)]:
             mine = dict(TRADES)[name]["recipes"]
 
             for item in menu:

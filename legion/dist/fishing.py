@@ -210,9 +210,12 @@ class Angler(object):
         if not self._cursor_opened():
             return self._refused_outcome()
 
-        # The four-argument overload: a static carries no serial, so the tile and its art are the
-        # only way to name it, and a self-target is refused for fishing on this shard
-        API.Target(tile["x"], tile["y"], tile["z"], tile["graphic"])
+        # Art names a static; a land tile named by its own art makes the shard look for a static
+        # that is not there and answer nothing. Open ocean, all a boat deck casts over, is land.
+        if tile.get("source") == "static":
+            API.Target(tile["x"], tile["y"], tile["z"], tile["graphic"])
+        else:
+            API.Target(tile["x"], tile["y"], tile["z"])
 
         name, caught = self._read(self._config["cast_timeout"], self._config["cast_poll"])
 
@@ -306,13 +309,25 @@ TILES_AHEAD_POLL = 0.5
 # How long a turn (API.Turn) needs before the client's own Direction reflects it
 TURN_DELAY = 0.5
 
-# Matched against the caught item's own name text (the part after the colon in "You pull out an
-# item: ..."), not its graphic - there is no confirmed graphic ID for any of these on this shard
-JUNK_TEXT = ["fish", "boots", "sandals", "shoes", "thigh boots"]
+# (graphic, hue), exact: 0x4303 is a kokanee salmon at 0 and a yellow perch at 2214. Swept off the
+# pack before every cast, whatever the journal called the catch
+JUNK_ITEMS = set([
+    (0x4306, 1960),  # bluegill sunfish
+    (0x09CD, 0),     # smallmouth bass
+    (0x09CC, 0),     # brook trout
+    (0x44C4, 0),     # pike
+    (0x44C6, 2109),  # green catfish
+    (0x573A, 0),  # delicate scale
+    (0x4307, 2672), (0x4307, 1922), (0x4307, 2607),  # redbelly beam, pumpkinseed sunfish, rainbow trout
+    (0x4303, 0), (0x4303, 2214),                         # kokanee salmon, #yellow perch
+    (0x0DD6, 86), (0x0DD6, 51),                          # wondrous fish, prized fish
+    (0x09CE, 0), (0x09CF, 0),                            # plain fish
+    (0x170B, 0), (0x170D, 0), (0x170F, 0), (0x1711, 0),  # boots, sandals, shoes, thigh boots
+])
 
 # Asked on the same start-up gump as the tiles-ahead question. Discard preserves the run's old
 # always-drop behavior as the default
-CATCH_MODE_TEXT = "What should happen to junk catches (fish, boots, sandals, shoes, thigh boots)?"
+CATCH_MODE_TEXT = "What should happen to junk catches?"
 CATCH_MODE_OPTIONS = [("container", "Container"), ("keep", "Keep"), ("discard", "Discard")]
 CATCH_MODE_DEFAULT = "discard"
 CATCH_MODE_HUE = 996
@@ -553,6 +568,10 @@ def diff_counts(before, after):
             lost[key] = -change
 
     return gained, lost
+
+
+def items_of(keys):
+    return [item for item in pack_contents() if (item.Graphic, hue_of(item)) in keys]
 
 
 # src/uo/retry.py
@@ -1800,25 +1819,17 @@ def record_cast(recorder, skill, start, outcome, caught, before):
     recorder.close(skill.last())
 
 
-def gained_items(before):
-    settled(CATCH_SETTLE, CATCH_POLL, lambda: pack_total(pack_counts()) > pack_total(before))
-    gained, _lost = diff_counts(before, pack_counts())
-
-    return [item for graphic, hue in gained for item in pack_contents()
-            if item.Graphic == graphic and hue_of(item) == hue]
-
-
 # x/y are an offset from your own position (confirmed off TazUO's own LegionAPI.cs), so (0, 0)
 # already drops at your feet - one of the eight adjacent tiles is used instead so catches spread out
 # rather than stack underfoot. Picked off the clock since the sandbox has no random module
-def drop_caught(before):
-    for item in gained_items(before):
+def drop_junk(items):
+    for item in items:
         x, y = DROP_OFFSETS[int(now() * 1000) % len(DROP_OFFSETS)]
         API.MoveItemOffset(item.Serial, amount_of(item), x, y, 0)
 
 
-def move_caught(container, before):
-    for item in gained_items(before):
+def move_junk(container, items):
+    for item in items:
         API.MoveItem(item.Serial, container, amount_of(item))
         API.Pause(MOVE_DELAY)
 
@@ -1916,20 +1927,24 @@ try:
         log("casting at %d,%d,%d (graphic %s, %s), standing at %d,%d, facing %s"
             % (tile["x"], tile["y"], tile["z"], hex_of(tile["graphic"]), tile["source"],
                API.Player.X, API.Player.Y, API.Player.Direction))
+        # Swept off the pack rather than read off the catch line: the shard names species, and a
+        # fish that lands after the read timed out is still here next cycle
+        junk = items_of(JUNK_ITEMS) if catch_mode != "keep" else []
+
+        if junk:
+            log("%d junk in the pack" % len(junk))
+
+            if catch_mode == "discard":
+                drop_junk(junk)
+            else:
+                move_junk(container, junk)
+
         value = skill.read()
         before = pack_counts()
         outcome, caught = angler.cast_once(pole, tile)
 
-        # Recorded before the item moves - drop_caught/move_caught's own diff would otherwise see
-        # nothing gained, the item having already left the pack they are both diffing against
         if outcome in ("caught", "failed") and recorder.recording():
             record_cast(recorder, skill, value, outcome, caught, before)
-
-        if outcome == "caught" and any_in(caught, JUNK_TEXT):
-            if catch_mode == "discard":
-                drop_caught(before)
-            elif catch_mode == "container":
-                move_caught(container, before)
 
         if outcome == "caught":
             tally += 1

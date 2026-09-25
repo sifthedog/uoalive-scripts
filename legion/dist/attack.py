@@ -10,47 +10,7 @@ RANGE = 10
 OWNED_PROP_WORDS = ["(tame)", "(summoned)", "(bonded)"]
 
 # Whole seconds NameAndProps may wait for a tooltip the client has not fetched. The API takes an int
-OPL_TIMEOUT = 1
-
-
-# src/uo/notoriety.py
-"""Passed through to the scans, never compared or OR-ed: the API.py stub lists every value as 1."""
-
-# Innocent is out, or every blue NPC in the world is trouble
-HOSTILE = [
-    API.Notoriety.Gray,
-    API.Notoriety.Criminal,
-    API.Notoriety.Enemy,
-    API.Notoriety.Murderer,
-]
-
-
-# src/attack/foe.py
-def owned(mobile, words, opl_timeout):
-    props = (mobile.NameAndProps(True, opl_timeout) or "").lower()
-
-    return any(word.lower() in props for word in words)
-
-
-def nearest_foe(within, owned_words, opl_timeout):
-    found = API.GetAllMobiles(None, within, HOSTILE) or []
-    me = API.Player.Serial
-
-    candidates = [
-        mobile
-        for mobile in sorted(found, key=lambda mobile: mobile.Distance)
-        if mobile.Serial != me
-        and not mobile.IsDead
-        and not mobile.IsDestroyed
-        and not mobile.IsRenamable
-    ]
-
-    # The tooltip is a fetch, so only the ones in line for the attack are asked
-    for mobile in candidates:
-        if not owned(mobile, owned_words, opl_timeout):
-            return mobile
-
-    return None
+OPL_TIMEOUT = 2
 
 
 # src/uo/entity.py
@@ -68,6 +28,67 @@ def player():
 
 def hex_of(value):
     return "0x%x" % (value & 0xFFFFFFFF)
+
+
+# src/uo/notoriety.py
+"""Passed through to the scans, never compared or OR-ed: the API.py stub lists every value as 1."""
+
+# Innocent is out, or every blue NPC in the world is trouble
+HOSTILE = [
+    API.Notoriety.Gray,
+    API.Notoriety.Criminal,
+    API.Notoriety.Enemy,
+    API.Notoriety.Murderer,
+]
+
+
+# src/attack/foe.py
+# Name is empty until the client has been told it, and the tooltip's first line is the name
+def label(mobile, props):
+    first = props.splitlines()[0].strip() if props else ""
+
+    return first or mobile.Name or hex_of(mobile.Serial)
+
+
+def owned(props, words):
+    low = props.lower()
+
+    return any(word.lower() in low for word in words)
+
+
+# Chebyshev is the reach, but two mobiles at the same reach draw at very different places on the
+# isometric screen, so the one that looks nearest goes first among equals
+def nearness(mobile):
+    dx = mobile.X - API.Player.X
+    dy = mobile.Y - API.Player.Y
+
+    return (mobile.Distance, dx * dx + dy * dy)
+
+
+def nearest_foe(within, owned_words, opl_timeout):
+    """(the mobile, its tooltip) - the tooltip is "" when it never came"""
+    found = API.GetAllMobiles(None, within, HOSTILE) or []
+    me = API.Player.Serial
+
+    candidates = [
+        mobile
+        for mobile in sorted(found, key=nearness)
+        if mobile.Serial != me
+        and not mobile.IsDead
+        and not mobile.IsDestroyed
+        and not mobile.IsRenamable
+    ]
+
+    if candidates:
+        API.RequestOPLData([mobile.Serial for mobile in candidates])
+
+    for mobile in candidates:
+        props = mobile.NameAndProps(True, opl_timeout) or ""
+
+        if not owned(props, owned_words):
+            return mobile, props
+
+    return None, ""
 
 
 # src/uo/guards.py
@@ -123,7 +144,7 @@ def attack():
     if reason is not None:
         return reason
 
-    foe = nearest_foe(RANGE, OWNED_PROP_WORDS, OPL_TIMEOUT)
+    foe, props = nearest_foe(RANGE, OWNED_PROP_WORDS, OPL_TIMEOUT)
 
     if foe is None:
         return "nothing hostile within %d tiles" % RANGE
@@ -131,7 +152,9 @@ def attack():
     API.SetWarMode(True)
     API.Attack(foe.Serial)
 
-    return "attacking '%s' %s %d tiles off" % (foe.Name or "?", hex_of(foe.Graphic), foe.Distance)
+    ending = "attacking '%s' %s %d tiles off" % (label(foe, props), hex_of(foe.Graphic), foe.Distance)
+
+    return ending if props else ending + " - tooltip never came"
 
 
 try:

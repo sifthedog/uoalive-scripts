@@ -63,3 +63,7 @@ def diff_counts(before, after):
 
 def count_of(graphics):
     return sum(amount_of(item) for item in pack_contents() if item.Graphic in graphics)
+
+
+def items_of(keys):
+    return [item for item in pack_contents() if (item.Graphic, hue_of(item)) in keys]

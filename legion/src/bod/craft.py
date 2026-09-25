@@ -3,7 +3,7 @@ import API
 from uo.journal import matched_bucket
 from uo.notes import Reporter
 
-STOPPERS = ("noMaterial", "noAnvil", "keg", "packFull", "skillTooLow", "toolWorn",
+STOPPERS = ("noMaterial", "noMana", "noAnvil", "keg", "packFull", "skillTooLow", "toolWorn",
            "throttled", "saving")
 
 
